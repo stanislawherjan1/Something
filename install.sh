@@ -266,41 +266,57 @@ if ssh_works; then
     SSH_OK=1
 else
     SSH_OK=0
-    warn "Couldn't connect to $HETZNER_HOST with your default SSH setup."
-    say  "  The server may be reachable but using a key that plain 'ssh' doesn't"
-    say  "  try automatically — e.g. one you generated just for this server, with"
-    say  "  a non-default name. If so, point me at it and I'll wire it up."
-    say  ""
-    keypath="$(ask "Path to the SSH private key for this server (blank to skip):")"
-    if [ -n "$keypath" ]; then
-        keypath="${keypath/#\~/$HOME}"
-        if [ -f "$keypath" ] && ssh -i "$keypath" -o BatchMode=yes -o ConnectTimeout=10 \
-               -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" 'echo ok' >/dev/null 2>&1; then
-            ok "That key works."
-            # Persist it for this host so plain ssh/scp (installer + deploy.sh) use
-            # it automatically — without this, the deploy's scp would fail later.
-            mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
-            if ! grep -qiE "^[[:space:]]*Host[[:space:]]+$SERVER_HOST([[:space:]]|\$)" "$HOME/.ssh/config" 2>/dev/null; then
-                printf '\nHost %s\n    User %s\n    IdentityFile %s\n    IdentitiesOnly yes\n' \
-                    "$SERVER_HOST" "$SERVER_USER" "$keypath" >> "$HOME/.ssh/config"
-                chmod 600 "$HOME/.ssh/config"
-                ok "Wired it into ~/.ssh/config so the deploy uses it automatically."
+    warn "Couldn't connect to $HETZNER_HOST over SSH yet."
+    say  "Let's fix it — pick what matches your server:"
+    say  "  ${BOLD}1${NC}) It uses an SSH key with a custom name — point me at the key file"
+    say  "  ${BOLD}2${NC}) It only has a root password — generate a key and install it for me"
+    say  "  ${BOLD}3${NC}) Skip — I'll sort SSH out myself"
+    choice="$(ask "Choose 1, 2, or 3:")"
+    case "$choice" in
+        1)
+            keypath="$(ask "Path to the SSH private key for this server:")"
+            keypath="${keypath/#\~/$HOME}"
+            if [ -n "$keypath" ] && [ -f "$keypath" ] && ssh -i "$keypath" -o BatchMode=yes \
+                   -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" 'echo ok' >/dev/null 2>&1; then
+                ok "That key works."
+                # Persist it for this host so plain ssh/scp (installer + deploy.sh) use it.
+                mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+                if ! grep -qiE "^[[:space:]]*Host[[:space:]]+$SERVER_HOST([[:space:]]|\$)" "$HOME/.ssh/config" 2>/dev/null; then
+                    printf '\nHost %s\n    User %s\n    IdentityFile %s\n    IdentitiesOnly yes\n' \
+                        "$SERVER_HOST" "$SERVER_USER" "$keypath" >> "$HOME/.ssh/config"
+                    chmod 600 "$HOME/.ssh/config"
+                    ok "Wired it into ~/.ssh/config — the deploy will use it automatically."
+                fi
+                ssh_works && SSH_OK=1
             else
-                warn "~/.ssh/config already has a Host entry for $SERVER_HOST — leaving it."
+                warn "Couldn't connect with that key."
             fi
-            ssh_works && { SSH_OK=1; ok "SSH now works without -i."; }
-        else
-            warn "Couldn't connect with that key either."
-        fi
-    fi
+            ;;
+        2)
+            if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+                info "No SSH key found — generating ~/.ssh/id_ed25519 ..."
+                mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
+                ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1 && ok "Key created."
+            fi
+            say "Installing your public key on the server."
+            say "${BOLD}Enter the server's root password when prompted${NC} ${DIM}(Hetzner emails it when${NC}"
+            say "${DIM}you create a server without an SSH key).${NC}"
+            if command -v ssh-copy-id >/dev/null 2>&1; then
+                ssh-copy-id -i "$HOME/.ssh/id_ed25519.pub" -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" || true
+            else
+                ssh -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" \
+                    'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys' \
+                    < "$HOME/.ssh/id_ed25519.pub" || true
+            fi
+            ssh_works && { SSH_OK=1; ok "SSH key installed — connected."; }
+            ;;
+        *) : ;;
+    esac
     if [ "$SSH_OK" -ne 1 ]; then
-        warn "SSH still isn't working. Two common fixes:"
-        say  "  • Put your public key on the server:  ${BOLD}ssh-copy-id $HETZNER_HOST${NC}"
-        say  "  • If your key has a custom name, add it to ~/.ssh/config:"
-        say  "        Host $SERVER_HOST"
-        say  "            IdentityFile ~/.ssh/<your-key>"
-        say  "            IdentitiesOnly yes"
-        say  "  Then re-test:  ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
+        warn "SSH still isn't working. Fix it manually, then re-run the installer:"
+        say  "  • Install your key:  ${BOLD}ssh-copy-id $HETZNER_HOST${NC}"
+        say  "  • Custom key name?  add to ~/.ssh/config:  Host $SERVER_HOST / IdentityFile ~/.ssh/<key> / IdentitiesOnly yes"
+        say  "  • Re-test:  ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
         confirm "Continue anyway? (the deploy will fail later if SSH can't connect)" no \
             || { say "Stopped. Fix SSH and re-run the installer."; exit 1; }
     fi

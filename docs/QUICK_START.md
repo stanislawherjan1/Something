@@ -49,6 +49,29 @@ reliable, fast). Any Ubuntu server works, but the steps below are for Hetzner.
 > Hetzner asks for a payment method (card or PayPal) at signup before you can
 > create a server. The server itself is ~€4.50–8/mo depending on the size.
 
+### 2a. First, make your SSH key  *(on your computer)*
+
+An SSH key is how your computer — and the installer — log in to the server.
+**You need it before creating the server**, because you paste it in during
+setup. Run this on your computer (macOS or Linux; on Windows use WSL):
+
+```bash
+# Creates a key only if you don't already have one — it never overwrites:
+[ -f ~/.ssh/id_ed25519 ] || ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+cat ~/.ssh/id_ed25519.pub
+```
+
+This prints one line starting with `ssh-ed25519` — **copy that whole line.**
+You'll paste it in step 2b. (No passphrase is set, so the installer can log in
+without prompting.)
+
+> **Don't want to deal with keys before buying?** Skip this and create the
+> server with a **root password** instead (Hetzner emails it to you). When you
+> run the installer, pick the *"only has a root password"* option in Step 1 and
+> it will generate and install a key for you automatically.
+
+### 2b. Then create the server  *(in your browser)*
+
 1. Sign up / log in at <https://console.hetzner.com>.
 2. **Add Server**.
 3. **Location:** pick the one closest to you or your team.
@@ -56,35 +79,22 @@ reliable, fast). Any Ubuntu server works, but the steps below are for Hetzner.
 5. **Type:** **CX22** (2 vCPU / 4 GB RAM, ~€4.50/mo) is the cheapest that
    works. For faster builds and a bit more headroom, **CPX21** (3 vCPU / 4 GB,
    ~€8/mo). 4 GB RAM is the floor — don't go smaller.
-6. **SSH key:** this is how your computer logs in. If you don't have one yet,
-   create one first (on your computer):
-   ```bash
-   ls ~/.ssh/id_ed25519.pub 2>/dev/null || ssh-keygen -t ed25519 -C "you@example.com"
-   cat ~/.ssh/id_ed25519.pub
-   ```
-   Copy the printed line and paste it into Hetzner's **Add SSH key** box.
-   *(Skipping this and using a root password also works, but a key is easier
-   and the installer expects key-based login.)*
-
-   > **Using a custom-named key?** If you created a key with a name other than
-   > `id_ed25519`/`id_rsa` (e.g. `~/.ssh/myproject`), plain `ssh` won't try it
-   > automatically. The installer detects this and offers to wire it up — just
-   > give it the key's path when asked. (It writes a `~/.ssh/config` entry so
-   > the deploy uses the right key.)
+6. **SSH key:** click **Add SSH key** and paste the line you copied in 2a.
 7. **Create & Buy**.
 
 After ~30 seconds the server shows an **IP address** (e.g. `203.0.113.4`).
-Write it down — you'll need it twice.
+Keep it handy — you'll need it next.
 
-**Check you can log in** (from your computer):
+### 2c. Check you can log in  *(on your computer)*
 
 ```bash
 ssh root@<YOUR_SERVER_IP> 'echo connected'
-# Expected: connected
+# Expected: connected   (type "yes" if asked to confirm the fingerprint)
 ```
 
-If you see `Permission denied (publickey)`, your SSH key wasn't attached at
-creation — see [Troubleshooting](#troubleshooting).
+If you see `Permission denied (publickey)`, the key wasn't attached at
+creation — see [Troubleshooting](#troubleshooting). If your key has a custom
+name (not `id_ed25519`), the installer will offer to wire it up for you.
 
 ---
 
