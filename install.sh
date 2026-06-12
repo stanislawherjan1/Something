@@ -153,6 +153,31 @@ for f in bin/bootstrap-client-env.sh clients/example-client/deploy.sh ide-templa
 done
 
 # =============================================================================
+# Overview — what's about to happen, and what to have ready
+# =============================================================================
+say ""; hr
+say "${BOLD}Here's the plan${NC}"
+say "I'll ask 4 short questions, then build and deploy your workspace to your"
+say "server. End to end it's ~45–60 min — most of it waiting on the build and DNS."
+say ""
+say "${BOLD}Have these ready before continuing:${NC}"
+say "  ${CYAN}1.${NC} A Linux server (e.g. Hetzner CX22, ~€4.50/mo) with your SSH key on it"
+say "  ${CYAN}2.${NC} A domain with a DNS A record pointing at that server's IP"
+say "  ${CYAN}3.${NC} A Google OAuth app — Client ID + Secret"
+say "  ${CYAN}4.${NC} The Google email you'll sign in with"
+say "  ${CYAN}5.${NC} ${DIM}(after deploy, in the wizard)${NC} a paid Claude plan (Pro/Max) for the token"
+say ""
+say "${DIM}New to any of this? The full step-by-step is at:${NC}"
+say "${DIM}  ${QUICK_START_URL}${NC}"
+say ""
+say "${BOLD}Tip — you don't have to do this alone.${NC} Open this folder in an AI coding"
+say "tool (Claude Code, Cursor, Codex) and let it drive the install, read any"
+say "errors back to itself, and make changes for you."
+say ""
+printf '%b' "${BOLD}Ready? Press Enter to begin${NC} ${DIM}(or Ctrl-C to prepare first)${NC} " >&2
+IFS= read -r _ <"$TTY" || true
+
+# =============================================================================
 # Step 0/4 — Google OAuth credentials
 # =============================================================================
 say ""; hr
