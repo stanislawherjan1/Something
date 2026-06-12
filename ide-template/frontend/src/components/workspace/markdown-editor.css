@@ -1,0 +1,259 @@
+/* Notion-style typography overrides for the BlockNote editor.
+ *
+ * Defaults are too aggressive (H1 huge, tight line-height); tune to match the
+ * rest of the workspace UI: Geist, generous spacing between blocks, smaller
+ * heading scale. Selectors use the .bn-default-styles wrapper that
+ * @blocknote/shadcn renders. */
+
+/* Make the editor surface inherit the workspace body bg (#f7f6f2) instead of
+ * BlockNote's default near-white card. The whole pane should read as one warm
+ * surface — no card boundary between header and content. */
+.bn-container,
+.bn-shadcn,
+.bn-editor,
+[data-node-view-wrapper],
+.bn-default-styles .ProseMirror {
+  background: transparent !important;
+}
+
+.bn-default-styles {
+  font-family: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01", "ss03", "calt";
+  line-height: 1.7;
+  color: var(--foreground);
+}
+
+/* Block padding — give every paragraph more breathing room. */
+.bn-default-styles .bn-block-content {
+  padding-block: 0.25rem;
+}
+.bn-default-styles .bn-block + .bn-block {
+  margin-top: 0.15rem;
+}
+
+/* Headings — Notion-ish proportions. H1 is just bigger body, not display size. */
+.bn-default-styles h1.bn-block-content,
+.bn-default-styles [data-content-type="heading"][data-level="1"] {
+  font-size: 1.625rem;       /* ~26 px */
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 1.6rem;
+  margin-bottom: 0.4rem;
+}
+.bn-default-styles h2.bn-block-content,
+.bn-default-styles [data-content-type="heading"][data-level="2"] {
+  font-size: 1.25rem;        /* ~20 px */
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-top: 1.25rem;
+  margin-bottom: 0.3rem;
+}
+.bn-default-styles h3.bn-block-content,
+.bn-default-styles [data-content-type="heading"][data-level="3"] {
+  font-size: 1.0625rem;      /* ~17 px */
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1rem;
+  margin-bottom: 0.2rem;
+}
+
+/* Body paragraph defaults */
+.bn-default-styles p.bn-block-content,
+.bn-default-styles [data-content-type="paragraph"] {
+  font-size: 0.9375rem;      /* ~15 px */
+  line-height: 1.75;
+}
+
+/* Lists — keep them comfortable */
+.bn-default-styles [data-content-type="bulletListItem"],
+.bn-default-styles [data-content-type="numberedListItem"] {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+/* Inline code + code blocks */
+.bn-default-styles code {
+  font-size: 0.85em;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  color: var(--foreground) !important;
+}
+
+/* Code blocks — BlockNote uses data-content-type="codeBlock" */
+.bn-default-styles [data-content-type="codeBlock"],
+.bn-default-styles [data-content-type="codeBlock"] .bn-block-content,
+.bn-default-styles pre {
+  background: var(--secondary) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  padding: 1rem !important;
+  border-radius: 6px !important;
+  overflow-x: auto !important;
+  font-size: 1em !important;
+  line-height: 1.6 !important;
+}
+
+.bn-default-styles [data-content-type="codeBlock"] code,
+.bn-default-styles pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  color: var(--foreground) !important;
+  border-radius: 0 !important;
+  font-size: 1em !important;
+}
+
+/* Remove any dark backgrounds from code block containers */
+.bn-default-styles [data-content-type="codeBlock"] > * {
+  background: transparent !important;
+  color: var(--foreground) !important;
+}
+
+/* BlockNote code block toolbar/header override */
+.bn-default-styles [data-content-type="codeBlock"] [data-node-view-wrapper] {
+  background: var(--secondary) !important;
+}
+
+.bn-default-styles [data-content-type="codeBlock"] .language-label,
+.bn-default-styles [data-content-type="codeBlock"] [role="combobox"] {
+  background: transparent !important;
+  color: var(--foreground) !important;
+}
+
+/* Override any @blocknote/shadcn dark theme leakage */
+.bn-container [data-content-type="codeBlock"],
+.ProseMirror [data-content-type="codeBlock"] {
+  background: var(--secondary) !important;
+  color: var(--foreground) !important;
+}
+
+/* Prism syntax highlighting override */
+.bn-default-styles .token {
+  color: var(--foreground) !important;
+}
+
+.bn-default-styles .token.comment,
+.bn-default-styles .token.prolog,
+.bn-default-styles .token.doctype,
+.bn-default-styles .token.cdata {
+  color: var(--muted-foreground) !important;
+}
+
+/* Mobile gutter — BlockNote hard-codes `padding-inline: 54px` on
+ * `.bn-editor` (see @blocknote/core/dist/style.css). That's fine on
+ * desktop where a 54px gutter holds the +/drag handle without stealing
+ * reading width, but on a phone it consumes ~108px / ~30% of the
+ * viewport. Override at the editor wrapper itself (where the rule
+ * actually lives) rather than at .ProseMirror, which inherits nothing.
+ *
+ * Also drop nested block-group indent from 24px → 12px and shrink the
+ * outer wrapper's px-1 to 0 (handled in MarkdownEditor.jsx).
+ *
+ * Breakpoint 640px = Tailwind `sm`. Handles still appear on tap;
+ * BlockNote positions them absolutely so they don't need the gutter. */
+@media (max-width: 640px) {
+  .bn-editor {
+    padding-inline: 16px !important;
+  }
+  .bn-default-styles .bn-block-group .bn-block-group {
+    margin-left: 12px !important;
+  }
+  /* Tables on phones — let them scroll horizontally inside their own
+   * container so long rows don't force the whole pane to scroll. */
+  .bn-default-styles [data-content-type="table"] {
+    overflow-x: auto;
+  }
+}
+
+/* Table extend buttons + drag handles. BlockNote's default fills these
+ * with a solid colored bar (compiled dark default is #0f0f0f which goes
+ * invisible against our dark surface; light default is #3f3f3f). We
+ * don't want the heavy filled look — drop the background entirely and
+ * just show the icon glyph in --foreground so it reads as a subtle
+ * pen-stroke. Auto-mirrors: black icon on light, white icon on dark. */
+.bn-extend-button-add-remove-rows,
+.bn-extend-button-add-remove-columns,
+.bn-table-handle {
+  background-color: transparent !important;
+  color: var(--foreground) !important;
+}
+
+/* Inline comments / thread marks. Default is BlockNote's amber (#ffc800
+ * with low alpha) — reads as a Post-It-yellow stripe that fights the
+ * neutral palette. Replace with a subtle muted tint and a dashed
+ * underline; the active/selected variant uses a stronger tint so the
+ * currently-anchored comment still stands out. */
+.bn-default-styles .bn-thread-mark:not([data-orphan="true"]) {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent) !important;
+  border-bottom: 1px dashed color-mix(in srgb, var(--foreground) 35%, transparent) !important;
+  padding-block: 1px;
+  border-radius: 2px;
+}
+.bn-default-styles .bn-thread-mark .bn-thread-mark-selected,
+.bn-default-styles .bn-thread-mark[data-selected="true"] {
+  background: color-mix(in srgb, var(--foreground) 14%, transparent) !important;
+}
+
+/* Checklist items — BlockNote's default is too compact (12px checkbox
+ * + 8px right margin + bn-block-content padding=3px gives ~0.9rem line
+ * height, no breathing room between items, second line of wrapped text
+ * hugs the very-left gutter under the checkbox). Add a touch of vertical
+ * room and widen the checkbox-to-text gap. */
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] {
+  padding-block: 5px;
+}
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] > div > input {
+  margin-right: 12px !important;
+  margin-top: 4px;
+  /* slightly larger box reads better at our 15px body size */
+  width: 14px !important;
+  height: 14px !important;
+}
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] .bn-inline-content {
+  line-height: 1.65;
+}
+
+/* BlockNote ships its own copy of shadcn DropdownMenu primitives baked
+ * into its bundle (see @blocknote/shadcn/dist/blocknote-shadcn.js).
+ * The bundled classes use a very tight `px-1.5 py-1` / `pr-8 pl-1.5`
+ * sizing which made items feel cramped — the leading colour-swatch icon
+ * collided with the right-side check indicator on the colour picker.
+ * Target the radix attributes (BlockNote's dropdowns render through
+ * Radix Portal with these attrs) so we hit BlockNote items without
+ * touching every menu in the app.
+ *
+ * `.bn-menu-dropdown` and `.bn-color-picker-dropdown` are the BlockNote
+ * wrapper classes that mark their portals. */
+.bn-menu-dropdown [role="menuitem"],
+.bn-menu-dropdown [role="menuitemcheckbox"],
+.bn-menu-dropdown [role="menuitemradio"],
+.bn-color-picker-dropdown [role="menuitem"],
+.bn-color-picker-dropdown [role="menuitemcheckbox"],
+.bn-color-picker-dropdown [role="menuitemradio"] {
+  padding: 9px 14px !important;
+  gap: 10px !important;
+  min-height: 36px;
+}
+/* Checkbox/radio items reserve room on the right for the check indicator
+ * — push it further out so it doesn't collide with leading-icon items. */
+.bn-menu-dropdown [role="menuitemcheckbox"],
+.bn-menu-dropdown [role="menuitemradio"],
+.bn-color-picker-dropdown [role="menuitemcheckbox"],
+.bn-color-picker-dropdown [role="menuitemradio"] {
+  padding-right: 38px !important;
+}
+/* Outer popover padding around the item list so the first/last items
+ * don't touch the popover edge. */
+.bn-menu-dropdown,
+.bn-color-picker-dropdown {
+  padding: 6px !important;
+}
+/* Section labels ("Text", "Background" in the colour picker) get a touch
+ * more breathing room above so they read as section headers, not
+ * crammed dividers. */
+.bn-color-picker-dropdown [role="group"] + [role="group"] {
+  margin-top: 6px;
+}

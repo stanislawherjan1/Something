@@ -1,0 +1,14 @@
+{
+  "name": "docs-comments-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP for adding range-anchored inline comments to Google Docs via Playwright (the one comment op the Drive API can't do). Reply/resolve/delete live in gdocs-mcp over the Drive API.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "playwright-core": "^1.48.0"
+  }
+}

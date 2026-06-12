@@ -1,0 +1,16 @@
+{
+  "name": "gtasks-mcp",
+  "version": "1.0.0",
+  "description": "Google Tasks MCP — list/create/update/delete items via Tasks API v1. Reuses gdocs OAuth credentials.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

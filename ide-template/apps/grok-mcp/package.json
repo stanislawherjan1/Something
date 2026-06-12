@@ -1,0 +1,13 @@
+{
+  "name": "grok-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server exposing xAI Grok via OpenAI-compatible /v1/chat/completions",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

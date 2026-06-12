@@ -1,0 +1,2 @@
+{"id":"memory-loader-full-templates","kind":"memory-loader","input":{},"expected":{"sources_present":["AGENT_IDENTITY","AGENT_TOOLS","RULES","INDEX","USER_PROFILE","USER_PREFERENCES"],"meets_cache_floor":true,"breakpoint_type":"ephemeral","breakpoint_ttl":"1h","has_preamble":true,"block_nonempty":true},"scorer":"schema-match"}
+{"id":"memory-loader-missing-cards","kind":"memory-loader","input":{"cards":["INDEX"]},"expected":{"sources_present":["INDEX"],"breakpoint_type":"ephemeral","has_preamble":true,"block_nonempty":true},"scorer":"schema-match"}

@@ -1,0 +1,14 @@
+{
+  "name": "nano-banana-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Google Gemini image generation MCP — Imagen 3 (text-to-image) + Gemini 2.0 Flash (editing)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@google/genai": "^1.0.0"
+  }
+}

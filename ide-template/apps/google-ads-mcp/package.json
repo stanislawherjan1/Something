@@ -1,0 +1,14 @@
+{
+  "name": "google-ads-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Google Ads MCP server — search, keyword planning, campaign management",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "google-ads-api": "^23.0.0"
+  }
+}

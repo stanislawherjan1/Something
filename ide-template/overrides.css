@@ -1,0 +1,156 @@
+/* IDE — code-server overrides */
+
+/* Desktop: hide Accounts + Manage (bottom of activity bar) */
+.activitybar .global-actions {
+    display: none !important;
+}
+
+/* Desktop: hide SCM, Debug, Testing, Chat from activity bar */
+.action-item[id="workbench.view.scm"] {
+    display: none !important;
+}
+
+.action-item[id="workbench.view.debug"] {
+    display: none !important;
+}
+
+.action-item[id="workbench.view.testing"] {
+    display: none !important;
+}
+
+.action-item[id="workbench.view.chat"] {
+    display: none !important;
+}
+
+.action-item[id="workbench.panel.chat"] {
+    display: none !important;
+}
+
+.action-item[id="workbench.view.extension.github-copilot-chat"] {
+    display: none !important;
+}
+
+/* Hide Outline and Timeline from Sidebar Explorer */
+.view-outline {
+    display: none !important;
+}
+
+.view-timeline {
+    display: none !important;
+}
+
+/* Scrollbar decorations */
+.decorationsOverviewRuler {
+    opacity: 0.3 !important;
+}
+
+/* === Mobile: hide chrome === */
+body.ide-mobile .part.activitybar {
+    display: none !important;
+}
+
+body.ide-mobile .part.titlebar {
+    display: none !important;
+}
+
+body.ide-mobile .editor .title {
+    display: none !important;
+}
+
+body.ide-mobile .part.statusbar {
+    display: none !important;
+}
+
+/* === Editor (Code) tab: only the editor visible === */
+body.ide-mobile:not(.ide-view-files):not(.ide-view-claude) .part.sidebar {
+    display: none !important;
+}
+
+body.ide-mobile:not(.ide-view-files):not(.ide-view-claude) .part.auxiliarybar {
+    display: none !important;
+}
+
+body.ide-mobile:not(.ide-view-files):not(.ide-view-claude) .part.panel {
+    display: none !important;
+}
+
+/* === Files view: sidebar fullscreen === */
+body.ide-view-files .part.sidebar {
+    display: flex !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 100 !important;
+    background: #fafafa !important;
+}
+
+/* Fix two-column layout in sidebar */
+body.ide-view-files .part.sidebar .composite.title {
+    display: none !important;
+}
+
+body.ide-view-files .part.sidebar .content {
+    flex: 1 !important;
+    min-height: 0 !important;
+}
+
+body.ide-view-files .part.editor {
+    display: none !important;
+}
+
+body.ide-view-files .part.auxiliarybar {
+    display: none !important;
+}
+
+body.ide-view-files .part.panel {
+    display: none !important;
+}
+
+/* === Claude view ===
+   Strategy: hide sidebar + editor + panel and let VS Code's own layout engine
+   (triggered by resize event from mobile.js) expand the aux bar to fill
+   the full available width. This avoids position:fixed which breaks webview sizing.
+*/
+body.ide-view-claude .part.sidebar {
+    display: none !important;
+}
+
+body.ide-view-claude .part.editor {
+    display: none !important;
+}
+
+body.ide-view-claude .part.panel {
+    display: none !important;
+}
+
+/* Ensure aux bar fills available space after VS Code recalculates layout */
+body.ide-view-claude .part.auxiliarybar {
+    min-width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Force Claude webview to fill container (counters VS Code's JS-set pixel values) */
+body.ide-view-claude .part.auxiliarybar .pane-body,
+body.ide-view-claude .part.auxiliarybar .content,
+body.ide-view-claude .part.auxiliarybar .monaco-scrollable-element {
+    height: 100% !important;
+    flex: 1 !important;
+}
+
+body.ide-view-claude .part.auxiliarybar iframe {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+    visibility: visible !important;
+}
+
+/* === Bigger touch targets on mobile === */
+body.ide-mobile .monaco-list-row {
+    min-height: 32px !important;
+}
+
+body.ide-mobile .monaco-tl-row {
+    min-height: 28px !important;
+}

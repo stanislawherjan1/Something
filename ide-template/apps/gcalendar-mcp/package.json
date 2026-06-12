@@ -1,0 +1,16 @@
+{
+  "name": "gcalendar-mcp",
+  "version": "1.0.0",
+  "description": "Google Calendar MCP — list/get/create/update/delete events via Calendar API v3. Reuses gdocs OAuth credentials.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,24 @@
+.env
+.env.local
+rclone.conf
+*.vsix
+*.log
+extensions/*/out/
+extensions/*/node_modules/
+.google/
+.mcp.json
+.DS_Store
+.claude/
+frontend/node_modules
+.playwright-mcp/
+
+# Per-client branding lives in clients/<client>/overrides/public/ and
+# is copied into ide-template/frontend/public/ by the per-client
+# deploy wrapper. The template's public/ stays branding-neutral; any
+# PNG left here is a leftover from a previous deploy and would leak
+# into the next client's image. SVG branding (favicon.svg,
+# workspace-logo.svg) is template-shared so it stays tracked.
+frontend/public/bot.png
+frontend/public/logo.png
+frontend/public/icon.png
+frontend/public/favicon.png

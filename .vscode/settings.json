@@ -1,0 +1,6 @@
+{
+  "git.autoRepositoryDetection": false,
+  "git.repositories": [
+    "."
+  ]
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "press",
+    "label": "Press / PR",
+    "host": "imap.gmail.com",
+    "port": 993,
+    "user": "press@example.com",
+    "pass": "REPLACE_WITH_GMAIL_APP_PASSWORD"
+  },
+  {
+    "id": "info",
+    "label": "General",
+    "host": "imap.gmail.com",
+    "port": 993,
+    "user": "info@example.com",
+    "pass": "REPLACE_WITH_GMAIL_APP_PASSWORD"
+  }
+]

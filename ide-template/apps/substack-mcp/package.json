@@ -1,0 +1,13 @@
+{
+  "name": "substack-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server for Substack — read public posts, search, author profiles; optional session cookie unlocks publishing, Notes, paid content.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

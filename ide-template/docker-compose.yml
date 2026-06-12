@@ -1,0 +1,305 @@
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Egress proxy — see scripts/egress-proxy.js for design.
+  # Sits on TWO networks:
+  #   - bot-net  (internal: true)  → code-server reaches us here
+  #   - default                    → we reach the open internet from here
+  # No client process inside code-server can ever bypass us because bot-net
+  # is `internal: true` — Docker drops all egress from that network at the
+  # bridge level. Anything that doesn't honour HTTPS_PROXY env vars simply
+  # gets ECONNREFUSED rather than silently exfiltrating.
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.egress-proxy
+    container_name: ${IDE_NAME:-template}-egress-proxy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # CAP_NET_BIND_SERVICE only — required for the DNS forwarder to
+    # bind 53/udp inside the container. The cap is granted at image
+    # build time via `setcap` on the node binary (see
+    # Dockerfile.egress-proxy); we re-grant it here at runtime so it
+    # survives any future security_opt tightening. This is the
+    # minimum capability for low-port binds — no NET_RAW, no NET_ADMIN.
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    networks:
+      # Static IP on bot-net so the code-server container's `dns:`
+      # directive can point at us. Docker compose lets us pin an IP
+      # only when the network is using an explicit ipam config (see
+      # networks: section at the bottom of this file).
+      bot-net:
+        ipv4_address: 172.30.0.10
+      default:
+    volumes:
+      # workspace-api writes the active integration's hostname union here
+      # via egress.js writeAllowedHostsFile(). Proxy watches this file
+      # with a 5s poll and reloads its allow-list.
+      - /srv/${IDE_NAME:-template}/egress:/srv/egress:ro
+    environment:
+      - EGRESS_PROXY_HOST=0.0.0.0
+      - EGRESS_PROXY_PORT=3129
+      - EGRESS_ALLOWED_HOSTS_FILE=/srv/egress/allowed-hosts.txt
+      - EGRESS_PROXY_DNS_PORT=53
+      - EGRESS_PROXY_DNS_UPSTREAM=1.1.1.1
+
+  code-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${IDE_NAME:-template-ide}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # All outbound traffic from this container goes through egress-proxy.
+    # bot-net is `internal: true` (see networks: at the bottom) so direct
+    # egress is structurally impossible at the Docker network layer. DNS
+    # is forwarded by the egress-proxy sidecar — `dns:` below points at
+    # its static IP on bot-net.
+    networks:
+      - bot-net
+    depends_on:
+      - egress-proxy
+    # DNS queries from inside code-server go to the egress-proxy
+    # container's UDP :53 forwarder, which proxies them to 1.1.1.1 over
+    # its default-network interface. Without this, Node fetch / undici
+    # / curl / npm / bun do a local `getaddrinfo` against Docker's
+    # built-in 127.0.0.11 resolver, which on an `internal: true`
+    # network resolves only inter-container names — every external
+    # lookup returns EAI_AGAIN and the MCP dies at startup. This is
+    # the fix for the 2026-05-12 shopify-mcp crash.
+    dns:
+      - 172.30.0.10
+    # NOTE: no-new-privileges cannot be set here — the entrypoint runs as root and uses
+    # `exec sudo -u coder` to drop privileges. no-new-privileges disables the sudo setuid
+    # bit, which would prevent the privilege drop and crash the container on startup.
+    # NET_ADMIN: needed for entrypoint.sh to configure iptables OUTPUT REDIRECT
+    # at boot, routing all TCP through the transparent redsocks → egress-proxy
+    # chain. Only the root entrypoint process can use this (bot uid 1003 has
+    # no-new-privs via bot-runner; coder uid 1000 needs sudo password). The
+    # cap is scoped to this container's network namespace only — cannot touch
+    # host networking. See docs/future-plans/EGRESS_TRANSPARENT_OPTION_A.md
+    # for the threat-model writeup.
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - claude-data:/home/coder/.claude
+      - bot-logs:/home/coder/.${BOT_NAME:-bot}
+      - project-data:/home/coder/project
+      # Phase-2 broker: encrypted credentials store + broker UDS dir.
+      # Owned by uid 1001 (wsapi) inside the container. Persisted on a
+      # Docker volume so the encrypted store survives container recreates;
+      # without this, every redeploy wipes /var/wsapi-store/ and the
+      # migration block in entrypoint.sh has nothing to copy from (legacy
+      # .integrations was renamed to .migrated.bak on first migration).
+      - wsapi-store:/var/wsapi-store
+      # bot user's home — specifically the .telegram/conversation.jsonl
+      # log that bot.sh Patch 4 appends to on every inbound/outbound TG
+      # message. Without this volume the file lived on the overlay layer
+      # and got wiped on every container recreate (any `./deploy.sh`).
+      # Result: snapshot-monitor rebuilt RECENT_TELEGRAM.md from a freshly-
+      # empty file → bot's memory of past Telegram conversations got
+      # truncated to "messages since last deploy" only. Caught 2026-06-05:
+      # bot honestly reported "snapshot ma tylko 2 wiadomości" hours
+      # after the morning's deploy. .claude/.credentials.json + plugin
+      # state already persist via the wsapi-managed setup flow (different
+      # path), so this volume specifically covers /home/bot/.telegram +
+      # any other bot-owned operational state that should outlive a
+      # container swap.
+      - bot-home:/home/bot
+      # Legacy admin-placed configs (read-only by design — admin owns these).
+      - /home/coder/.google:/home/coder/.google:ro
+      - /home/coder/.email:/home/coder/.email:ro
+      # UI-managed integration data (accounts.json, ga4-credentials.json, …).
+      # Writable on purpose: workspace-api creates these files when the user
+      # activates an integration. Host directory must exist and be owned by
+      # the container user (deploy.sh handles this).
+      - /srv/${IDE_NAME:-template}/integrations-data:/home/coder/.integrations-data:rw
+      # Egress allow-list — workspace-api writes the active integration's
+      # hostname union here. The egress-proxy sidecar mounts the same host
+      # dir read-only at /srv/egress/ (see the egress-proxy service above)
+      # and watches the file with fs.watchFile (5s poll), reloading its
+      # CONNECT allow-list when it changes.
+      - /srv/${IDE_NAME:-template}/egress:/home/coder/.egress:rw
+      # Master encryption key for the integrations store. Generated once on
+      # first deploy by deploy.sh; mode 0600 root-owned on the host. Mounted
+      # read-only so a compromised app process cannot rotate it from inside.
+      - /srv/${IDE_NAME:-template}/secrets/integrations.key:/run/secrets/integrations.key:ro
+    environment:
+      # Express + workspace-api use NODE_ENV=production for both perf
+      # (cached views, fewer warnings) and security gating: lib/auth.js
+      # refuses to boot without SESSION_SECRET when NODE_ENV=production.
+      - NODE_ENV=production
+      - CODE_SERVER_PASSWORD=${CODE_SERVER_PASSWORD}
+      - PASSWORD=${CODE_SERVER_PASSWORD}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - RCLONE_GDRIVE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - RCLONE_GDRIVE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - RCLONE_GDRIVE_TOKEN=${RCLONE_GDRIVE_TOKEN}
+      - RCLONE_GDRIVE_ROOT_FOLDER_ID=${CORPORATE_FOLDER_ID}
+      - BOT_NAME=${BOT_NAME:-bot}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
+      - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - GA4_PROPERTY_ID=${GA4_PROPERTY_ID:-}
+      - GA4_CREDENTIALS_JSON=${GA4_CREDENTIALS_JSON:-}
+      - GOOGLE_ADS_DEVELOPER_TOKEN=${GOOGLE_ADS_DEVELOPER_TOKEN:-}
+      - GOOGLE_ADS_LOGIN_CUSTOMER_ID=${GOOGLE_ADS_LOGIN_CUSTOMER_ID:-}
+      - GOOGLE_ADS_REFRESH_TOKEN=${GOOGLE_ADS_REFRESH_TOKEN:-}
+      - SHOPIFY_STORE_DOMAIN=${SHOPIFY_STORE_DOMAIN:-}
+      - SHOPIFY_CLIENT_ID=${SHOPIFY_CLIENT_ID:-}
+      - SHOPIFY_CLIENT_SECRET=${SHOPIFY_CLIENT_SECRET:-}
+      - SHOPIFY_APP_NAME=${SHOPIFY_APP_NAME:-shopify-mcp}
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN:-}
+      - META_AD_ACCOUNT_ID=${META_AD_ACCOUNT_ID:-}
+      - META_PAGE_ID=${META_PAGE_ID:-}
+      - META_INSTAGRAM_ACCOUNT_ID=${META_INSTAGRAM_ACCOUNT_ID:-}
+      - META_BUSINESS_ID=${META_BUSINESS_ID:-}
+      - BYTEPLUS_API_KEY=${BYTEPLUS_API_KEY:-}
+      - BYTEPLUS_MODEL_ID=${BYTEPLUS_MODEL_ID:-}
+      - BYTEPLUS_EDIT_MODEL_ID=${BYTEPLUS_EDIT_MODEL_ID:-}
+      - SEEDREAM_OUTPUT_DIR=${SEEDREAM_OUTPUT_DIR:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_T2I_MODEL=${GEMINI_T2I_MODEL:-}
+      - GEMINI_EDIT_MODEL=${GEMINI_EDIT_MODEL:-}
+      - NANO_BANANA_OUTPUT_DIR=${NANO_BANANA_OUTPUT_DIR:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # All outbound HTTPS/HTTP from this container must go through the
+      # egress-proxy sidecar — bot-net is `internal: true` so there is
+      # no direct path to the internet anyway. Every process that
+      # honours these env vars (claude, Node fetch, undici, npm, curl,
+      # bun, git) routes via proxy:3129 where requests are filtered
+      # by hostname against /srv/egress/allowed-hosts.txt.
+      # NO_PROXY lists everything that must NOT be proxied — loopback
+      # + the proxy hostname itself (otherwise we'd loop), plus Docker
+      # internal hostnames used by inter-container traffic.
+      - HTTPS_PROXY=http://egress-proxy:3129
+      - HTTP_PROXY=http://egress-proxy:3129
+      - NO_PROXY=localhost,127.0.0.1,egress-proxy,frontend,auth-service,caddy,${IDE_NAME:-template}-frontend,${IDE_NAME:-template}-auth,${IDE_NAME:-template}-caddy
+      # Shared with auth-service so workspace-api can verify the same session
+      # JWTs auth-service issues. Required: workspace-api refuses to trust the
+      # X-IDE-User header alone — it cross-checks the cookie's signature on
+      # every admin write.
+      - SESSION_SECRET=${SESSION_SECRET}
+      - SESSION_COOKIE_NAME=${SESSION_COOKIE_NAME:-ide_session}
+      # Bootstrap inputs read by entrypoint.sh on first boot:
+      #   IDE_ALLOWED_EMAILS  — seeds .allowed-emails.json (first = admin)
+      #   LEGACY_DRIVE_SYNC   — gates the rclone sync block
+      #   VITE_APP_TITLE      — seeds .branding.json title for legacy clients
+      #                         that pre-date the wizard
+      - IDE_ALLOWED_EMAILS=${IDE_ALLOWED_EMAILS:-}
+      - LEGACY_DRIVE_SYNC=${LEGACY_DRIVE_SYNC:-false}
+      - VITE_APP_TITLE=${VITE_APP_TITLE:-}
+      # LEGACY_CONFIG=true → branding (title / botName / avatar / logo / backstory
+      # / personality) is read-only via UI. Source of truth is per-client .env +
+      # overrides/public/. Set for clients that pre-date the wizard; leave unset
+      # for new clients to use the in-UI editor.
+      - LEGACY_CONFIG=${LEGACY_CONFIG:-false}
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: ${IDE_NAME:-template}-auth
+    restart: unless-stopped
+    # Port 3002 is internal only - accessible only via Docker network
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Read-only access to PROJECT_DIR so the whitelist resolver can read
+      # .allowed-emails.json (managed via the workspace's Team dashboard).
+      # Falls back to IDE_ALLOWED_EMAILS env when the file is missing.
+      - project-data:/home/coder/project:ro
+    environment:
+      - NODE_ENV=production
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN}
+      - IDE_ALLOWED_EMAILS=${IDE_ALLOWED_EMAILS}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - SESSION_COOKIE_NAME=${SESSION_COOKIE_NAME:-ide_session}
+      - PROJECT_DIR=/home/coder/project
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_APP_TITLE: ${VITE_APP_TITLE:-IDE}
+        VITE_HIDE_IDE_TEXT: ${VITE_HIDE_IDE_TEXT:-false}
+        VITE_LOGO_SIZE_LOGIN: ${VITE_LOGO_SIZE_LOGIN:-24px}
+        VITE_LOGO_SIZE_TOPBAR: ${VITE_LOGO_SIZE_TOPBAR:-22px}
+        VITE_BOT_NAME: ${BOT_NAME:-bot}
+    container_name: ${IDE_NAME:-template}-frontend
+    restart: unless-stopped
+    # Frontend (nginx) reverse-proxies /code-server/* to code-server:8080,
+    # which lives on bot-net only. So frontend needs bot-net access too.
+    # default network kept so caddy on default can reach frontend.
+    networks:
+      - bot-net
+      - default
+    environment:
+      - CODE_SERVER_PASSWORD=${CODE_SERVER_PASSWORD}
+  caddy:
+    image: caddy:latest
+    container_name: ${IDE_NAME:-template}-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - FRONTEND_DOMAIN=${FRONTEND_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  claude-data:
+  bot-logs:
+  project-data:
+  wsapi-store:
+  # bot user's home — primarily /home/bot/.telegram/conversation.jsonl
+  # for cross-deploy persistence of TG inbound/outbound history.
+  bot-home:
+  caddy_data:
+  caddy_config:
+
+networks:
+  # bot-net is internal (no direct route to the internet) AND uses an
+  # explicit ipam config so we can pin the egress-proxy at a known IP
+  # that code-server can target with its `dns:` directive.
+  #
+  # Structural enforcement: containers attached to bot-net cannot
+  # reach the host gateway, the internet, or any other docker network.
+  # Their only paths out are (a) the egress-proxy sidecar at the
+  # static IP below, and (b) other bot-net members reachable by name
+  # via the embedded 127.0.0.11 resolver (frontend, etc.). Code that
+  # tries to dial 1.2.3.4:443 directly gets dropped at the bridge —
+  # there's no NAT to follow.
+  #
+  # DNS for external hostnames: forwarded by egress-proxy:53 via
+  # `dns: [172.30.0.10]` on code-server. The forwarder lives in
+  # scripts/egress-proxy.js alongside the CONNECT proxy and proxies
+  # queries to 1.1.1.1 over its default-network interface.
+  bot-net:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  # NOTE: we deliberately do NOT redefine `default` here. compose's
+  # implicit default bridge stays as-is, so a redeploy doesn't try to
+  # recreate the existing <project>_default network (which would
+  # disconnect every container in the project to swap network drivers
+  # and fail catastrophically if any orphan still has an endpoint
+  # there — caught during a 2026-05-12 deploy).

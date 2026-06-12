@@ -1,0 +1,69 @@
+---
+name: memory-cards
+description: Stable 7-card memory model (USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS, RULES). Read all seven at session start to ground responses in the user's profile, preferences, relationships, agent identity, available tools, and hard rules. Write back here when the user shares a fact, preference, or rule worth remembering — `memory-router` skill picks the destination card.
+allowed-tools: Read, Edit, Write
+---
+
+# Memory cards — the workspace's 7-card model
+
+The bot keeps a small, stable knowledge base in `project/memory/` consisting of **exactly seven cards**. The structure does not change. Content evolves over time.
+
+| Card | Holds |
+|---|---|
+| `USER_PROFILE.md` | Facts about the user — role, locations, dates, languages spoken, biographical context that doesn't change weekly |
+| `USER_PREFERENCES.md` | Soft preferences — tools, communication style, working hours, what to surface vs. silence |
+| `USER_RELATIONSHIPS.md` | People in the user's life — colleagues, family, clients, with role + how they prefer to be communicated with |
+| `USER_REFLECTIONS.md` | Introspections, observed patterns, recurring themes the user has noted about themselves |
+| `AGENT_IDENTITY.md` | The agent's character — voice, mood, default disposition. Owned by the agent, refined over time. |
+| `AGENT_TOOLS.md` | Tools, accounts, integrations the agent has access to in this workspace, plus per-tool gotchas learnt the hard way |
+| `RULES.md` | Hard rules — never/always commitments. Tightly worded. The bot reads these last; they override everything else when in conflict. |
+
+## Reading
+
+**Five of the seven cards are already in your cached system prompt** — `RULES`, `USER_PROFILE`, `USER_PREFERENCES`, `AGENT_IDENTITY`, `AGENT_TOOLS` (plus `INDEX` and the two `RECENT_*` conversation tails). The loader (`workspace-api/lib/memory-loader.js`) builds this prefix deterministically every turn so prompt caching fires. You have them — don't re-read at session start.
+
+**Two cards are NOT preloaded** and you should `Read` them when a turn needs them:
+
+- `USER_RELATIONSHIPS.md` — pull when the conversation names or is about a specific person
+- `USER_REFLECTIONS.md` — pull when the user references their own past introspection or you need their self-noted patterns
+
+Both are excluded from the cached prefix on purpose: they can grow long (one section per person; dated entries on top), and re-loading them every turn would bloat the prefix without consistent payoff. Pull on demand.
+
+## Writing
+
+Use the `memory-router` skill to decide which card a new fact belongs in. Then `Edit` or `Write` to the appropriate file. Rules of engagement, by card:
+
+| Card | Append vs tighten | Conflict resolution |
+|---|---|---|
+| USER_PROFILE | tighten — replace stale facts in place, don't accrete | new fact contradicts old → replace, add `[was: …, since YYYY-MM-DD]` if non-trivial |
+| USER_PREFERENCES | tighten | same |
+| USER_RELATIONSHIPS | append per-person section; tighten within a person | add new person at end; updates within their section |
+| USER_REFLECTIONS | append (each entry dated) | rarely conflicts — different observations are different |
+| AGENT_IDENTITY | tighten | the agent picks one self; conflicting traits get merged |
+| AGENT_TOOLS | tighten | per-tool sections; replace per-tool when a gotcha is superseded |
+| RULES | tighten and label | each rule is one short bullet; never silently delete a rule — strike-through with date if retired |
+
+**Universal rules:**
+
+- One fact per line. No prose paragraphs.
+- Departed entries get a date stamp + reason rather than deletion (recovery is cheap, regret is dear).
+- Cite source for non-obvious facts: `[Source: who, channel, date]`.
+- File-naming convention for ANY documents created in `project/documents/` from a memory write: `YYYY-MM-DD_Brief_Description.md`.
+- Don't write the same fact to two cards. Pick one home (`memory-router` decides) and cross-reference if needed.
+
+## YAML contracts in each card
+
+Every card opens with a YAML frontmatter block that's the operational directive for THIS card — when to write here, when not to, how to merge. The contract is for the bot, not the user. Don't strip the frontmatter on edits.
+
+## When to NOT use memory cards
+
+- **Project work** (a specific task, a research note, a draft) → `project/documents/` with `YYYY-MM-DD_*.md`
+- **Ephemeral scratch** (mid-session reasoning, one-off computations) → `project/session/` (TTL ~14 days)
+- **Workflow recipes** (how to do X end-to-end) → `project/.claude/skills/<name>/`
+- **Structured graph data** (entities/relations the bot will query programmatically) → `mcp__memory__create_entities` (writes to `~/.claude/memory.jsonl`)
+
+The 7 cards are the **stable, narrative core**. Everything else is supporting material.
+
+## Drift check
+
+Before acting on a fact recalled from memory, verify it's still current. Memory cards age — a "user prefers email over Slack" entry from six months ago may be stale. If acting would matter, ask: "I have on record that you prefer email — still true?"

@@ -1,0 +1,80 @@
+{$FRONTEND_DOMAIN} {
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # ─── Security headers ────────────────────────────────────────────────────────
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header X-Content-Type-Options "nosniff"
+    header Referrer-Policy "strict-origin-when-cross-origin"
+    header X-Frame-Options "SAMEORIGIN"
+    # Prevent search engine indexing — this is a private tool, not a public website
+    header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+
+    # Content-Security-Policy — report-only first so an unforeseen UI break
+    # surfaces as a console warning, not a broken workspace. Promote to the
+    # enforcing `Content-Security-Policy` header after one production run
+    # confirms no unexpected violations.
+    #
+    # `style-src 'unsafe-inline'` is required by Tailwind v4 (utility class
+    # injection) and shadcn/Radix (inline transform styles for animations).
+    # `connect-src 'self'` covers fetch + EventSource (SSE) — both same-origin.
+    # `img-src 'self' data: blob:` covers uploaded avatars, raw file viewer,
+    # and react-markdown's data: image inlining.
+    # `worker-src blob:` covers BlockNote (uses Web Workers from blob URLs).
+    # `frame-src 'self'` allows the legacy code-server iframe.
+    # `object-src 'none'` blocks the historical PDF/Flash plugin attack surface.
+    # `base-uri 'self'` blocks <base href> hijack.
+    header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+
+    # Strip identity headers injected by clients before they reach the upstream
+    request_header -X-IDE-User
+    request_header -X-Real-IP
+
+    # Allow clipboard access in iframe
+    header Permissions-Policy "clipboard-read=*, clipboard-write=*"
+
+    # ─── robots.txt — block all crawlers ────────────────────────────────────────
+    handle /robots.txt {
+        respond "User-agent: *\nDisallow: /\n" 200 {
+            close
+        }
+    }
+
+    # ─── SPA at /app/* (login page, TopBar wrapper) ─────────────────────────────
+    handle /app/* {
+        uri strip_prefix /app
+        reverse_proxy frontend:3000
+    }
+
+    # ─── Redirect direct browser navigation to /app/ (TopBar wrapper) ────────────
+    # Iframe requests (Sec-Fetch-Dest: iframe) pass through to code-server
+    @directRoot {
+        path /
+        header Sec-Fetch-Dest document
+    }
+    redir @directRoot /app/ temporary
+
+    # ─── WebSocket support (code-server terminal, live reload) ───────────────────
+    @websockets {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websockets frontend:3001 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # ─── Everything else: IDE proxy via nginx (auth_request protected) ───────────
+    reverse_proxy frontend:3001 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Cookie {http.request.header.Cookie}
+    }
+}

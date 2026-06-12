@@ -1,0 +1,45 @@
+# Egress proxy — HTTP CONNECT-only proxy that gates outbound TCP by
+# hostname for the code-server container.  See scripts/egress-proxy.js
+# for the full design + risk analysis.
+#
+# Image is intentionally tiny: alpine + Node 20 + a single .js file
+# (zero npm deps — pure Node stdlib). Smaller image = smaller pull,
+# faster restart, smaller audit surface.
+FROM node:20-alpine
+
+# Run as an unprivileged user. We're not setuid'ing anywhere, dropping
+# from root removes the only escalation path a hypothetical proxy RCE
+# could exploit. We DO need to bind port 53/udp (DNS forwarder for
+# bot-net containers — see scripts/egress-proxy.js DNS section), which
+# is below the unprivileged threshold (1024). Install libcap and grant
+# the node binary CAP_NET_BIND_SERVICE — minimum capability needed for
+# bind(<1024) without going back to root. No other elevated permissions
+# are granted: setcap is per-file and doesn't widen the rest of the
+# process's caps.
+RUN apk add --no-cache libcap && \
+    setcap 'cap_net_bind_service=+ep' /usr/local/bin/node && \
+    addgroup -S egress -g 1099 && \
+    adduser  -S egress -G egress -u 1099
+
+COPY scripts/egress-proxy.js /opt/egress-proxy.js
+RUN chmod 0555 /opt/egress-proxy.js && chown root:root /opt/egress-proxy.js
+
+USER egress
+EXPOSE 3129/tcp
+EXPOSE 3130/tcp
+EXPOSE 53/udp
+# Healthcheck: open a TCP socket to ourselves on :3129. If we can
+# connect, the listener is up and accepting CONNECT; if not, the
+# proxy has crashed or hung and docker should restart us
+# (combined with `restart: unless-stopped` in docker-compose.yml).
+# Plain Node socket open avoids needing curl/wget in the alpine
+# base — node is the only thing in here. 3s timeout keeps the
+# check snappy; 30s interval is plenty for catching a real crash
+# without spamming logs.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('net').createConnection({host:'127.0.0.1',port:3129,timeout:3000}).on('connect',function(){this.end();process.exit(0)}).on('error',()=>process.exit(1)).on('timeout',()=>process.exit(1))"
+
+# tini gives us proper signal forwarding so docker stop returns
+# quickly (the proxy itself also catches SIGTERM, but tini is belt
+# + braces and a Docker convention).
+ENTRYPOINT ["node", "/opt/egress-proxy.js"]

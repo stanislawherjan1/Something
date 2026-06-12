@@ -1,0 +1,37 @@
+# Secrets & credentials
+**/.env
+**/.env.local
+**/admin.env
+**/rclone.conf
+**/.google/
+**/.claude/
+
+# Dependencies & build artifacts
+**/node_modules/
+**/extensions/*/out/
+**/extensions/*/node_modules/
+ide-template/frontend/dist/
+ide-template/frontend/.env.local
+
+# Packages
+**/*.vsix
+
+# Logs
+**/*.log
+
+# macOS
+**/.DS_Store
+
+# Local-only planning notes (kept out of the repo so future-plans/ can be a scratch pad)
+docs/future-plans/
+
+# Incident postmortems — internal/operational, kept out of the public repo
+docs/postmortems/
+
+# Per-operator-machine integration extensions. Presence of this file on a
+# given client's deploy host adds private entries to the catalog merged at
+# wsapi startup (lib/integrations/catalog.js) — a private integration ships
+# locally → picked up at deploy time, absent → never shown. Kept generic for
+# any future operator-only integration (docs-comments is now a tracked,
+# ship-to-everyone integration and no longer uses this path).
+ide-template/workspace-api/integrations.catalog.local.json

@@ -1,0 +1,14 @@
+# Daily restic backup for one IDE deployment. Drop into /etc/cron.d/ as
+# `ide-backup-<client>` (one file per client on multi-tenant hosts).
+#
+# Replace <CLIENT> with the IDE_NAME (matches docker-compose container name).
+# Restic env (B2 credentials, repository URL, password) lives in
+# /root/.workspace-admin/restic.env — `mode 0600`, root-only.
+#
+# Schedule: 03:17 every day. Spread across the hour to avoid B2 thundering
+# herd if you back up multiple clients off the same host.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+17 3 * * *   root   /opt/ide-template/scripts/restic-backup.sh <CLIENT> >> /var/log/ide-backup-<CLIENT>.log 2>&1

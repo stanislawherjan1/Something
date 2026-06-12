@@ -1,0 +1,325 @@
+#!/usr/bin/env node
+/**
+ * Reminder MCP — persistent reminders stored in ~/project/.reminders.json
+ * Survives container restarts via Google Drive sync.
+ * Tools: set_reminder, list_reminders, cancel_reminder
+ *
+ * Paired with reminder-monitor.sh (PM2 process) which fires bot-notify.sh
+ * when a reminder becomes due.
+ */
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { randomUUID } from 'crypto';
+
+const REMINDERS_FILE =
+  process.env.REMINDERS_FILE ||
+  path.join(process.env.HOME || '/home/coder', 'project', '.reminders.json');
+
+async function readReminders() {
+  try {
+    const data = await fs.readFile(REMINDERS_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+async function writeReminders(reminders) {
+  const dir = path.dirname(REMINDERS_FILE);
+  await fs.mkdir(dir, { recursive: true });
+  const tmp = REMINDERS_FILE + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(reminders, null, 2));
+  await fs.rename(tmp, REMINDERS_FILE); // atomic swap — prevents corruption on crash
+}
+
+/**
+ * Parse a human-readable due time into a Date.
+ * Accepts:
+ *   - ISO 8601: "2026-04-17T15:00:00Z"
+ *   - Relative:  "in 2 hours", "in 30 minutes", "in 3 days"
+ *   - Named:     "tomorrow at 10:00", "tomorrow at 9am"
+ *   - Fallback:  native Date parsing
+ */
+function parseDue(input) {
+  const s = input.trim();
+
+  // ISO 8601
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return new Date(s);
+
+  const now = new Date();
+
+  // "in N unit"
+  const inMatch = s.match(/^in\s+(\d+)\s+(minute|hour|day|week)s?$/i);
+  if (inMatch) {
+    const n = parseInt(inMatch[1]);
+    const unit = inMatch[2].toLowerCase();
+    const d = new Date(now);
+    if (unit === 'minute') d.setMinutes(d.getMinutes() + n);
+    else if (unit === 'hour') d.setHours(d.getHours() + n);
+    else if (unit === 'day') d.setDate(d.getDate() + n);
+    else if (unit === 'week') d.setDate(d.getDate() + n * 7);
+    return d;
+  }
+
+  // "tomorrow [at HH:MM / at Xam/pm]"
+  if (/^tomorrow/i.test(s)) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    const t = s.match(/at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (t) {
+      let h = parseInt(t[1]);
+      const m = parseInt(t[2] || '0');
+      const ap = t[3]?.toLowerCase();
+      if (ap === 'pm' && h < 12) h += 12;
+      if (ap === 'am' && h === 12) h = 0;
+      d.setHours(h, m, 0, 0);
+    } else {
+      d.setHours(9, 0, 0, 0);
+    }
+    return d;
+  }
+
+  // Native fallback
+  return new Date(s);
+}
+
+// ─── Server ──────────────────────────────────────────────────────────────────
+
+const server = new Server(
+  { name: 'reminder-mcp', version: '1.0.0' },
+  { capabilities: { tools: {} } }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: 'set_reminder',
+      description:
+        'Set a persistent reminder. Stored in ~/project/.reminders.json and ' +
+        'sent via Telegram when due, even across container restarts. Prefer ' +
+        'the structured form (title + optional description) — title shows as ' +
+        'the row heading in the dashboard, description as a muted second line. ' +
+        'Use plain `message` only for one-line reminders without context.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description:
+              'Short imperative heading (≤ ~60 chars). Examples: ' +
+              '"Send Q3 report to acme", "Call John about the contract", ' +
+              '"Pay invoice INV-1042". This is the line the user reads first.',
+          },
+          description: {
+            type: 'string',
+            description:
+              'Optional context, paragraph form. Why it matters, who is waiting, ' +
+              'what to include. Skip when the title is self-explanatory.',
+          },
+          message: {
+            type: 'string',
+            description:
+              'Legacy single-string form. If you set this without title/description, ' +
+              'the dashboard renders it as a single-line reminder. Multi-line strings ' +
+              'are auto-split: first line becomes the title, rest the description.',
+          },
+          due: {
+            type: 'string',
+            description:
+              'When to fire the reminder. ISO 8601 (e.g. "2026-04-17T15:00:00Z") ' +
+              'or human-readable: "in 2 hours", "in 30 minutes", "tomorrow at 10:00", "tomorrow at 9am"',
+          },
+          repeat: {
+            type: 'string',
+            enum: ['none', 'daily', 'weekly'],
+            description: 'Repeat schedule. Default: none',
+          },
+        },
+        required: ['due'],
+      },
+    },
+    {
+      name: 'list_reminders',
+      description: 'List all pending reminders with their IDs, due times, and messages.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'cancel_reminder',
+      description: 'Cancel a reminder by its ID (from list_reminders).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Reminder ID, e.g. "r_a1b2c3d4"' },
+        },
+        required: ['id'],
+      },
+    },
+  ],
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  // ── set_reminder ───────────────────────────────────────────────────────────
+  if (name === 'set_reminder') {
+    const dueDate = parseDue(args.due);
+
+    if (isNaN(dueDate.getTime())) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Could not parse due time: "${args.due}".\nUse ISO format (2026-04-17T15:00:00Z) or relative time like "in 2 hours", "tomorrow at 10:00".`,
+        }],
+        isError: true,
+      };
+    }
+
+    // Three input shapes accepted:
+    //   { title, description?, due }   ← preferred, structured
+    //   { message, due }                ← legacy single-string
+    //   { title, message, due }         ← message-as-description with explicit title
+    // Reject if neither title nor message is supplied.
+    const titleIn       = typeof args.title       === 'string' ? args.title.trim()       : '';
+    const descriptionIn = typeof args.description === 'string' ? args.description.trim() : '';
+    const messageIn     = typeof args.message     === 'string' ? args.message.trim()     : '';
+    if (!titleIn && !messageIn) {
+      return {
+        content: [{ type: 'text', text: 'Provide either `title` (preferred) or `message`.' }],
+        isError: true,
+      };
+    }
+
+    const reminders = await readReminders();
+    const reminder = {
+      id: `r_${randomUUID().slice(0, 8)}`,
+      // kind is always "user" for reminders set via this tool. System
+      // reminders (kind: "system") are seeded by bootstrap-project.sh and
+      // never created through MCP — they're protected from cancel_reminder
+      // below so the bot can't accidentally tear down baseline rituals.
+      kind: 'user',
+      // Normalise to the structured shape on disk. Keep `message` mirroring
+      // title (and description joined with " — ") so consumers that haven't
+      // upgraded to title/description (reminder-monitor, older UI) keep
+      // working unchanged.
+      title: titleIn || messageIn,
+      description: descriptionIn || (titleIn ? '' : ''),
+      message: titleIn
+        ? (descriptionIn ? `${titleIn} — ${descriptionIn}` : titleIn)
+        : messageIn,
+      due: dueDate.toISOString(),
+      repeat: args.repeat || 'none',
+      created: new Date().toISOString(),
+      status: 'pending',
+    };
+
+    reminders.push(reminder);
+    await writeReminders(reminders);
+
+    const dueStr = dueDate.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    return {
+      content: [{
+        type: 'text',
+        text: `Reminder set.\nID: ${reminder.id}\nTitle: ${reminder.title}` +
+              (reminder.description ? `\nDescription: ${reminder.description}` : '') +
+              `\nDue: ${dueStr}\nRepeat: ${reminder.repeat}`,
+      }],
+    };
+  }
+
+  // ── list_reminders ─────────────────────────────────────────────────────────
+  if (name === 'list_reminders') {
+    const reminders = await readReminders();
+    const pending = reminders.filter((r) => r.status === 'pending');
+
+    if (pending.length === 0) {
+      return { content: [{ type: 'text', text: 'No pending reminders.' }] };
+    }
+
+    const now = Date.now();
+    const fmt = (r) => {
+      const due = new Date(r.due);
+      const diff = due.getTime() - now;
+      const overdue = diff < 0 ? ' (OVERDUE)' : '';
+      const abs = Math.abs(diff);
+      const diffStr =
+        abs < 60_000 ? 'now' :
+        abs < 3_600_000 ? `${Math.round(abs / 60_000)}m` :
+        abs < 86_400_000 ? `${Math.round(abs / 3_600_000)}h` :
+        `${Math.round(abs / 86_400_000)}d`;
+      const sign = diff < 0 ? '-' : '+';
+      const repeatStr = r.repeat !== 'none' ? ` [${r.repeat}]` : '';
+      return `${r.id} | ${due.toISOString().slice(0, 16).replace('T', ' ')} UTC${overdue} (${sign}${diffStr}) | ${r.message}${repeatStr}`;
+    };
+
+    // Group: user reminders first (the ones the user actually cares to
+    // review/cancel), then system reminders (baseline rituals — listed for
+    // transparency, but tagged so the bot knows not to offer cancellation).
+    const userReminders   = pending.filter(r => (r.kind || 'user') !== 'system').sort((a, b) => new Date(a.due) - new Date(b.due));
+    const systemReminders = pending.filter(r => r.kind === 'system').sort((a, b) => new Date(a.due) - new Date(b.due));
+
+    const sections = [];
+    if (userReminders.length) {
+      sections.push(`User reminders (${userReminders.length}):\n${userReminders.map(fmt).join('\n')}`);
+    }
+    if (systemReminders.length) {
+      sections.push(`System reminders (${systemReminders.length}) — baseline rituals; cannot be cancelled via MCP, manage via UI:\n${systemReminders.map(fmt).join('\n')}`);
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: sections.join('\n\n'),
+      }],
+    };
+  }
+
+  // ── cancel_reminder ────────────────────────────────────────────────────────
+  if (name === 'cancel_reminder') {
+    const reminders = await readReminders();
+    const idx = reminders.findIndex((r) => r.id === args.id);
+
+    if (idx === -1) {
+      return {
+        content: [{ type: 'text', text: `Reminder ${args.id} not found.` }],
+        isError: true,
+      };
+    }
+
+    // Refuse to delete system reminders. They're baseline rituals seeded by
+    // bootstrap and intended to keep the workspace healthy. If the user
+    // really wants one off, they can disable it via the Reminders UI toggle
+    // (which sets status: 'disabled' instead of removing the entry — so a
+    // future redeploy doesn't silently re-seed it).
+    if (reminders[idx].kind === 'system') {
+      return {
+        content: [{
+          type: 'text',
+          text: `Cannot cancel ${args.id} — this is a system reminder (baseline ritual). To turn it off, use the Reminders panel in the workspace UI; the user can toggle it off there. Don't try to delete the file directly either; bootstrap will re-seed it.`,
+        }],
+        isError: true,
+      };
+    }
+
+    const [removed] = reminders.splice(idx, 1);
+    await writeReminders(reminders);
+
+    return {
+      content: [{
+        type: 'text',
+        text: `Cancelled: "${removed.message}" (was due ${removed.due})`,
+      }],
+    };
+  }
+
+  return {
+    content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+    isError: true,
+  };
+});
+
+const transport = new StdioServerTransport();
+await server.connect(transport);

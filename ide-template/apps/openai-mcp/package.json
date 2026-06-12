@@ -1,0 +1,13 @@
+{
+  "name": "openai-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server exposing OpenAI's GPT models for second-opinion / cross-check queries from the chat agent",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

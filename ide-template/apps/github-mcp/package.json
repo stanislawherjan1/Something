@@ -1,0 +1,13 @@
+{
+  "name": "github-mcp",
+  "version": "1.0.0",
+  "description": "Thin wrapper around the official github/github-mcp-server Go binary. Pulls the PAT from the credential broker at startup, then exec's the binary with --read-only / --toolsets flags derived from user-toggled fields.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

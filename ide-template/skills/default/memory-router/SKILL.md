@@ -1,0 +1,72 @@
+---
+name: memory-router
+description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS) or to documents/ / session/ / skills/. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
+allowed-tools: Read, Edit, Write
+---
+
+# Memory router — where does this fact go?
+
+When the user shares something worth keeping, this skill picks the destination. The structure of memory is fixed (`memory-cards` skill describes the seven cards); this skill applies the routing rules.
+
+## Routing decision tree
+
+Walk these in order. **Stop at the first match.**
+
+1. **Hard rule** — phrases like "from now on never", "always", "never", "must", "don't ever", or a correction the user explicitly wants to stick.
+   → `memory/RULES.md`. Add one short bullet under `## Never` or `## Always`. Max ~10 words. No preamble.
+
+2. **Stable fact about the user** — role, location, language, tools they use professionally, dates that don't change weekly.
+   → `memory/USER_PROFILE.md`. Place under the matching subsection (Identity / Background / Currently focused on / Schedule). Tighten existing entries — don't accrete duplicates.
+
+3. **Soft preference** — how the user likes to be communicated with, formatting, tone, what to surface vs silence, channel preference, working style.
+   → `memory/USER_PREFERENCES.md`. One line per preference. Replace when a preference is updated.
+
+4. **Person** — anyone whose context will recur (colleague, family, client, friend). Includes the person's role, communication preference, things to avoid, recurring themes.
+   → `memory/USER_RELATIONSHIPS.md`. Append a new `## Name (Role)` section if the person is new; tighten within their section if they exist. Long-form dossiers go in `documents/relationships/<slug>/` — link from the card when relevant.
+
+5. **Self-introspection** — the user noting a pattern about themselves (energy, mood, productivity, tendency).
+   → `memory/USER_REFLECTIONS.md`. Append dated entry. Newer on top.
+
+6. **Tool / integration / account context** — auth method, gotcha, "use this not that", caveat learned the hard way.
+   → `memory/AGENT_TOOLS.md`. One section per tool. Replace within a section when superseded.
+
+7. **Agent character** — voice, default disposition, what to lean into, what to flag back to the user.
+   → `memory/AGENT_IDENTITY.md`. Tighten — the agent picks one self.
+
+8. **Workflow recipe** — how to do X end-to-end, repeatable procedure, multi-step playbook.
+   → `project/.claude/skills/<name>/SKILL.md`. Skills, not memory cards.
+
+9. **Persistent document** — research, brief, decision rationale, anything the user might re-open later.
+   → `project/documents/<topic>/YYYY-MM-DD_Brief_Description.md`. Free-form file. Cross-link from the relevant memory card if there's a connection worth surfacing.
+
+10. **Ephemeral / scratch** — mid-task reasoning, a one-off computation, draft that won't survive past this conversation.
+    → `project/session/<filename>.md`. Session has TTL ~14 days; the bot may purge stale entries.
+
+## Mechanical rules + overflow + conflict resolution
+
+See [references/routing-rules.md](references/routing-rules.md) for:
+- Per-write mechanical rules (one fact per line, citation format, retire-don't-delete, frontmatter preservation, drift check)
+- Card overflow → topic page promotion procedure (when a card crosses ~60 lines)
+- Per-card conflict resolution (newer-wins / replace / append per card semantics)
+- Ambiguous-routing confidence guardrail
+
+Load when applying a routing decision. Skip when the decision tree above resolved cleanly to one card with no conflict.
+
+## When NOT to invoke this skill
+
+- The user is asking the agent to **do** something ("draft an email", "schedule a meeting"). That's task execution, not memory routing.
+- The fact is captured implicitly in a file the user just saved. Don't double-record.
+- The user is making small talk ("the weather's nice today"). Skip.
+- The agent is mid-flow on another tool call. Don't interrupt to route memory mid-stream.
+
+## Output shape
+
+The skill doesn't write the file directly — it returns the routing decision so the agent uses normal `Edit` / `Write` tools to apply it. Skill output to the agent looks like:
+
+```
+ROUTE → memory/USER_RELATIONSHIPS.md → Maciej section
+ACTION → tighten (existing line "Maciej dislikes early meetings" → replace with new line "Maciej dislikes morning meetings")
+SOURCE → [Source: the user, voice note, 2026-05-10]
+```
+
+The agent then opens the target file with Edit and applies the change verbatim, preserving YAML frontmatter at the top.

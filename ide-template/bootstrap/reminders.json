@@ -1,0 +1,46 @@
+[
+  {
+    "id": "r_system_audit",
+    "kind": "system",
+    "title": "Weekly project audit",
+    "description": "[REPO_AUDIT_TRIGGER] Run the repo-audit skill — review project structure, propose cleanups, surface stale files. Auto-execute obvious safe actions, ask before judgment calls.",
+    "message": "[REPO_AUDIT_TRIGGER] Weekly project audit — Run the repo-audit skill — review project structure, propose cleanups, surface stale files. Auto-execute obvious safe actions, ask before judgment calls.",
+    "due": "BOOTSTRAP_NEXT_MONDAY_09_UTC",
+    "repeat": "weekly",
+    "created": "BOOTSTRAP_NOW",
+    "status": "pending"
+  },
+  {
+    "id": "r_system_backup",
+    "kind": "system",
+    "title": "Weekly project backup",
+    "description": "[BACKUP_TRIGGER] Run the project-backup skill — create a tar.gz of ~/project, send via Telegram to the admin chat.",
+    "message": "[BACKUP_TRIGGER] Weekly project backup — Run the project-backup skill — create a tar.gz of ~/project, send via Telegram to the admin chat.",
+    "due": "BOOTSTRAP_NEXT_FRIDAY_14_UTC",
+    "repeat": "weekly",
+    "created": "BOOTSTRAP_NOW",
+    "status": "pending"
+  },
+  {
+    "id": "r_system_reindex",
+    "kind": "system",
+    "title": "Weekly memory reindex",
+    "description": "[MEMORY_INDEX_TRIGGER] Run the memory-reindex skill — silent re-scan of new and modified files into the knowledge graph since last run.",
+    "message": "[MEMORY_INDEX_TRIGGER] Weekly memory reindex — Run the memory-reindex skill — silent re-scan of new and modified files into the knowledge graph since last run.",
+    "due": "BOOTSTRAP_NEXT_SUNDAY_22_UTC",
+    "repeat": "weekly",
+    "created": "BOOTSTRAP_NOW",
+    "status": "pending"
+  },
+  {
+    "id": "r_system_reflect",
+    "kind": "system",
+    "title": "Daily reflect-learnings",
+    "description": "[REFLECT_LEARNINGS_TRIGGER] Run the reflect-learnings skill — review the day's RECENT_WEB + RECENT_TELEGRAM tails and propose memory-card additions. Output is queued in memory/_drafts/ for operator approval via /memory review on Telegram. Never writes to canonical cards directly.",
+    "message": "[REFLECT_LEARNINGS_TRIGGER] Daily reflect-learnings — Run the reflect-learnings skill — review the day's RECENT_WEB + RECENT_TELEGRAM tails and propose memory-card additions. Output is queued in memory/_drafts/ for operator approval via /memory review on Telegram. Never writes to canonical cards directly.",
+    "due": "BOOTSTRAP_NEXT_DAILY_22_UTC",
+    "repeat": "daily",
+    "created": "BOOTSTRAP_NOW",
+    "status": "pending"
+  }
+]

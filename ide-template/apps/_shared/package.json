@@ -1,0 +1,10 @@
+{
+  "name": "ide-apps-shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared deps for every MCP under /opt/ide/apps/. Node's ESM resolver walks up node_modules from the importing module — broker-client.js lives here, so anything imported from it (undici for HTTPS_PROXY ProxyAgent, etc.) resolves from this directory's node_modules. Putting the dep here once avoids duplicating it in every MCP's package.json.",
+  "dependencies": {
+    "undici": "^7.16.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "shopify-mcp",
+  "version": "1.0.0",
+  "description": "Internal Shopify Admin API MCP server — read-only (write tools coming soon)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

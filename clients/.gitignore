@@ -1,0 +1,9 @@
+# All client directories are local-only — never committed to git.
+# Only example-client is tracked as a starting template.
+*
+!.gitignore
+!example-client
+!example-client/**
+# admin.env holds shared OAuth secrets for the operator — never committed.
+# admin.env.example is the template, tracked so new admins know what to fill in.
+!admin.env.example

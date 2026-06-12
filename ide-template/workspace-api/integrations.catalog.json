@@ -1,0 +1,1036 @@
+{
+  "$schema_comment": "Catalog of integrations the user can self-activate. Frontend renders one card per entry. fields[].optional skips the required-check; mcp.envMap maps catalog field names to env-var name the MCP code reads; mcp.inheritEnv lists platform env vars (e.g. GOOGLE_CLIENT_ID) to copy from process.env at spawn time. mcp.args supports {appsDir} placeholder so the same catalog works locally and in /opt/ide. mcp.allowedHosts lists every outbound hostname the integration needs at runtime — egress.js writes the active union to /srv/<ide>/egress/allowed-hosts.txt and the host-side egress-allowlist.sh resolves these to ipset entries; values wrapped in {{FIELD}} are substituted from the active store per-tenant (e.g. {{SHOPIFY_STORE_DOMAIN}}, {{EMAIL_HOSTS_RESOLVED}}).",
+  "integrations": [
+    {
+      "id":          "grok",
+      "label":       "Grok (xAI)",
+      "logo":        "/integrations/grok.svg",
+      "description": "Ask Grok with live X (Twitter) + web search — real-time takes, breaking news, fact-checks against current sources, second opinions.",
+      "category":    "ai",
+      "fields": [
+        {
+          "name":        "XAI_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "xai-...",
+          "helper":      "Starts with \"xai-\". Long random string."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Sign in to xAI",
+          "body":  "Open [console.x.ai](https://console.x.ai) and sign in with your X account.\n\nYou need a payment method on file (xAI doesn't offer a free tier)."
+        },
+        {
+          "title": "Create an API key",
+          "body":  "Sidebar → **API Keys** → **Create API Key**.\n\nName it something like `{{botDisplayName}} workspace`. Copy the key right away — xAI shows it only once."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/grok-mcp/index.js"],
+        "envMap":  { "XAI_API_KEY": "XAI_API_KEY" },
+        "name":    "grok",
+        "allowedHosts": ["api.x.ai"]
+      }
+    },
+
+    {
+      "id":          "openai",
+      "label":       "OpenAI (GPT)",
+      "logo":        "/integrations/openai.svg",
+      "description": "Ask GPT models (gpt-5, gpt-4.1, o-series) for second opinions, cross-checks, or specialised tasks. Your API key is billed per token by OpenAI directly.",
+      "category":    "ai",
+      "fields": [
+        {
+          "name":        "OPENAI_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "sk-...",
+          "helper":      "Starts with \"sk-\" or \"sk-proj-\". From platform.openai.com/api-keys."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Sign in to OpenAI",
+          "body":  "Open [platform.openai.com](https://platform.openai.com) and sign in. You need a payment method on file — OpenAI is per-token billed, no free tier for API access."
+        },
+        {
+          "title": "Create an API key",
+          "body":  "Go to [API keys](https://platform.openai.com/api-keys) → **Create new secret key**. Name it `{{botDisplayName}} workspace`, copy the key right away (shown only once). Paste it below."
+        },
+        {
+          "title": "Set a spending cap (recommended)",
+          "body":  "Go to [Billing → Limits](https://platform.openai.com/settings/organization/limits) and set a monthly hard cap. Keeps a runaway loop from burning your budget if the bot decides to chat with GPT a lot."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/openai-mcp/index.js"],
+        "envMap":  { "OPENAI_API_KEY": "OPENAI_API_KEY" },
+        "name":    "openai",
+        "allowedHosts": ["api.openai.com"]
+      }
+    },
+
+    {
+      "id":          "gemini-chat",
+      "label":       "Gemini",
+      "logo":        "/integrations/gemini-chat.svg",
+      "description": "Ask Google Gemini chat models (gemini-2.5-pro / -flash) for second opinions, long-context reads, and cross-checks. Separate from Gemini Image (which generates pictures) — same API key works for both if you activate them.",
+      "category":    "ai",
+      "fields": [
+        {
+          "name":        "GEMINI_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "AIza...",
+          "helper":      "Starts with \"AIza\". From Google AI Studio. Same key works for the Gemini Image integration."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Open Google AI Studio",
+          "body":  "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want billed.\n\nFree tier covers a lot of usage — no payment method needed to start."
+        },
+        {
+          "title": "Create the key",
+          "body":  "Click **Create API key** → pick a Cloud project (or accept the default). Copy the resulting key — it starts with `AIza`."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/gemini-chat-mcp/index.js"],
+        "envMap":  { "GEMINI_API_KEY": "GEMINI_API_KEY" },
+        "name":    "gemini-chat",
+        "allowedHosts": ["generativelanguage.googleapis.com"]
+      }
+    },
+
+    {
+      "id":          "gemini-image",
+      "label":       "Gemini Image",
+      "logo":        "/integrations/gemini.svg",
+      "description": "Generate images via Google's Imagen 3 and edit them via Gemini 2.0 Flash. Files land in project/generated/.",
+      "category":    "ai",
+      "fields": [
+        {
+          "name":        "GEMINI_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "AIza...",
+          "helper":      "Starts with \"AIza\". From Google AI Studio."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Open Google AI Studio",
+          "body":  "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want to use for image generation.\n\nFree tier is enough to get going."
+        },
+        {
+          "title": "Create the key",
+          "body":  "Click **Create API key** → pick a Cloud project (or accept the default). Copy the resulting key — it starts with `AIza`."
+        }
+      ],
+      "mcp": {
+        "command":  "node",
+        "args":     ["{appsDir}/nano-banana-mcp/index.js"],
+        "envMap":   { "GEMINI_API_KEY": "GEMINI_API_KEY" },
+        "extraEnv": {
+          "GEMINI_T2I_MODEL":       "imagen-3.0-generate-002",
+          "GEMINI_EDIT_MODEL":      "gemini-2.0-flash-preview-image-generation",
+          "NANO_BANANA_OUTPUT_DIR": "/home/coder/project/generated"
+        },
+        "name": "nano-banana",
+        "allowedHosts": ["generativelanguage.googleapis.com"]
+      }
+    },
+
+    {
+      "id":          "seedream",
+      "label":       "Seedream (BytePlus)",
+      "logo":        "/integrations/seedream.svg",
+      "description": "Image generation via Seedream 4.5 + image editing / background removal via Seededit. Saves to project/generated/.",
+      "category":    "ai",
+      "fields": [
+        {
+          "name":        "BYTEPLUS_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "ak-...",
+          "helper":      "BytePlus ModelArk API key."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Open BytePlus ModelArk",
+          "body":  "Go to [console.byteplus.com](https://console.byteplus.com) and sign in (or create an account). In the product menu, open **ModelArk**."
+        },
+        {
+          "title": "Create the key",
+          "body":  "ModelArk → **API Keys** → **Create**. Copy the key — starts with `ak-`.\n\nDefault models are wired in already, no setup needed."
+        }
+      ],
+      "mcp": {
+        "command":  "node",
+        "args":     ["{appsDir}/seedream-mcp/index.js"],
+        "envMap":   { "BYTEPLUS_API_KEY": "BYTEPLUS_API_KEY" },
+        "extraEnv": {
+          "BYTEPLUS_MODEL_ID":      "seedream-4-5-251128",
+          "BYTEPLUS_EDIT_MODEL_ID": "seedream-5-0-260128",
+          "SEEDREAM_OUTPUT_DIR":    "/home/coder/project/generated"
+        },
+        "name": "seedream",
+        "allowedHosts": [
+          "ark.ap-southeast.bytepluses.com",
+          "ark.eu-west.bytepluses.com"
+        ]
+      }
+    },
+
+    {
+      "id":          "telegram",
+      "label":       "Telegram",
+      "logo":        "/integrations/telegram.svg",
+      "description": "Chat with the assistant via a Telegram bot. The bot process restarts (~5s) when you activate or remove this.",
+      "category":    "messaging",
+      "process":     "telegram-bot",
+      "fields": [
+        {
+          "name":        "TELEGRAM_BOT_TOKEN",
+          "label":       "Bot token",
+          "type":        "secret",
+          "placeholder": "1234567890:AAE...",
+          "helper":      "Format: <bot_id>:<35-char-secret>. Issued by @BotFather."
+        },
+        {
+          "name":        "TELEGRAM_ADMIN_CHAT_ID",
+          "label":       "Admin chat ID",
+          "type":        "text",
+          "placeholder": "123456789",
+          "helper":      "Your Telegram numeric user ID. Send /start to @userinfobot to see it."
+        },
+        {
+          "name":        "TELEGRAM_ALLOWED_IDS",
+          "label":       "Additional allowed IDs (optional)",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "234567890,345678901",
+          "helper":      "Comma-separated user IDs that can also chat with the bot. Leave empty for admin-only."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create the bot with @BotFather",
+          "body":  "On Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`.\n\n- Display name: **{{botDisplayName}}**\n- Username: must end with `bot` and be globally unique. Try `{{botName}}_bot`, `{{botName}}bot`, or `{{botName}}_team_bot`.\n\nBotFather replies with a token like `1234567890:AAE...` — paste it as the **Bot token** below."
+        },
+        {
+          "title": "Set a profile picture (optional)",
+          "body":  "Want {{botDisplayName}} to have a face in Telegram? Download one of these and upload it via @BotFather → menu → set bot's photo.",
+          "downloads": [
+            { "label": "Bot avatar",      "url": "{{botAvatarUrl}}", "filename": "{{botName}}-avatar.png" },
+            { "label": "Workspace logo",  "url": "{{logoUrl}}",      "filename": "{{title}}-logo.png" }
+          ]
+        },
+        {
+          "title": "Get your admin chat ID",
+          "body":  "Open [@userinfobot](https://t.me/userinfobot) on Telegram and send `/start`.\n\nIt replies with your numeric ID — paste it as **Admin chat ID** below. Only this account will be able to chat with {{botDisplayName}}."
+        },
+        {
+          "title": "Add teammates (optional)",
+          "body":  "Each extra person sends `/start` to @userinfobot to get their ID. Paste them comma-separated in **Additional allowed IDs**.\n\nSkip if just you."
+        }
+      ],
+      "mcp": {
+        "writeFiles": [
+          {
+            "format": "shell-env",
+            "path":   "{home}/.{bot}/integrations.env",
+            "mode":   384,
+            "fields": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "TELEGRAM_ALLOWED_IDS"]
+          }
+        ],
+        "allowedHosts": ["api.telegram.org"]
+      }
+    },
+
+    {
+      "id":          "shopify",
+      "label":       "Shopify",
+      "logo":        "/integrations/shopify.svg",
+      "description": "Read orders, products, inventory; create draft orders and products; manage fulfillments — all from chat.",
+      "category":    "commerce",
+      "fields": [
+        {
+          "name":        "SHOPIFY_STORE_DOMAIN",
+          "label":       "Store domain",
+          "type":        "text",
+          "placeholder": "yourstore.myshopify.com",
+          "helper":      "Internal .myshopify.com domain — not your public domain."
+        },
+        {
+          "name":        "SHOPIFY_CLIENT_ID",
+          "label":       "Client ID",
+          "type":        "secret",
+          "placeholder": "Client ID from Shopify Dev Dashboard",
+          "helper":      "Settings → Credentials in your Shopify Dev Dashboard app."
+        },
+        {
+          "name":        "SHOPIFY_CLIENT_SECRET",
+          "label":       "Client Secret",
+          "type":        "secret",
+          "placeholder": "shpss_...",
+          "helper":      "Starts with \"shpss_\". Same Settings → Credentials page."
+        },
+        {
+          "name":        "SHOPIFY_APP_NAME",
+          "label":       "App name (optional)",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "shopify-mcp",
+          "helper":      "Must match the app name in Shopify Dev Dashboard. Defaults to \"shopify-mcp\" if empty."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create a Shopify dev app",
+          "body":  "Open [dev.shopify.com](https://dev.shopify.com), select your store, click **Create app**. Name it something memorable (e.g. `shopify-mcp`)."
+        },
+        {
+          "title": "Add Admin API scopes",
+          "body":  "App → **Configuration** → **Admin API access scopes**. Tick all of these:\n\n- `read/write_customers`\n- `read/write_inventory`\n- `read/write_orders`\n- `read/write_products`\n- `read_locations`\n- `read/write_fulfillments`\n- `read/write_draft_orders`\n- `write_discounts`\n- `read/write_publications`\n\nSave, then click **Install app** to install it on your store."
+        },
+        {
+          "title": "Find your .myshopify.com domain",
+          "body":  "Your custom domain (`yourstore.com`) won't work for API calls — Shopify needs the internal one.\n\nLook at your Shopify Admin URL: `admin.shopify.com/store/`**`<handle>`**`/...`\n\nYour domain is `<handle>.myshopify.com`. Paste that as **Store domain**."
+        },
+        {
+          "title": "Copy Client ID and Secret",
+          "body":  "App → **Settings** → **Credentials** → copy **Client ID** and **Client Secret** (the secret starts with `shpss_`).\n\nIgnore the `shpat_` token — that's the legacy system, we don't use it."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/shopify-mcp/index.js"],
+        "envMap":  {
+          "SHOPIFY_STORE_DOMAIN":  "SHOPIFY_STORE_DOMAIN",
+          "SHOPIFY_CLIENT_ID":     "SHOPIFY_CLIENT_ID",
+          "SHOPIFY_CLIENT_SECRET": "SHOPIFY_CLIENT_SECRET",
+          "SHOPIFY_APP_NAME":      "SHOPIFY_APP_NAME"
+        },
+        "extraEnv": { "SHOPIFY_APP_NAME": "shopify-mcp" },
+        "name": "shopify",
+        "allowedHosts": ["{{SHOPIFY_STORE_DOMAIN}}"]
+      }
+    },
+
+    {
+      "id":          "meta-ads",
+      "label":       "Meta Ads",
+      "logo":        "/integrations/meta.svg",
+      "description": "Facebook + Instagram ads, campaigns, audiences, page + IG insights, full Business Portfolio management.",
+      "category":    "marketing",
+      "fields": [
+        {
+          "name":        "META_ACCESS_TOKEN",
+          "label":       "System User token",
+          "type":        "secret",
+          "placeholder": "EAA...",
+          "helper":      "Non-expiring token from Business Manager → System Users → Generate New Token."
+        },
+        {
+          "name":        "META_AD_ACCOUNT_ID",
+          "label":       "Ad account ID",
+          "type":        "text",
+          "placeholder": "act_123456789",
+          "helper":      "Must include the \"act_\" prefix."
+        },
+        {
+          "name":        "META_PAGE_ID",
+          "label":       "Facebook Page ID (optional)",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "10123456789",
+          "helper":      "Only needed for page insights / posting tools."
+        },
+        {
+          "name":        "META_INSTAGRAM_ACCOUNT_ID",
+          "label":       "Instagram account ID (optional)",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "17841400000000000",
+          "helper":      "Only needed for Instagram insights and media tools."
+        },
+        {
+          "name":        "META_BUSINESS_ID",
+          "label":       "Business Manager ID (optional)",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "123456789012345",
+          "helper":      "Only needed for Business Portfolio tools (users, pixels, catalogs)."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create a Meta App (one-time)",
+          "body":  "Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps** → **Create App** → **Business** type.\n\nLeave it in Development mode — fine for accounts you own. You can reuse this same app for every client."
+        },
+        {
+          "title": "Add a System User",
+          "body":  "Open [business.facebook.com](https://business.facebook.com) → the client's Business Manager → **Business Settings** → **Users** → **System Users** → **Add**.\n\n- Name: e.g. `{{botName}}-ide-bot`\n- Role: **Admin**\n\nClick **Add Assets** → grant **Full Control** on the Ad Account, Facebook Page, and Instagram account."
+        },
+        {
+          "title": "Generate the access token",
+          "body":  "Same screen — click the system user → **Generate New Token**. Select your Meta App.\n\nPermissions to tick:\n\n- `ads_management`\n- `ads_read`\n- `read_insights`\n- `business_management`\n- `catalog_management`\n- `pages_read_engagement`\n- `instagram_basic`\n- `instagram_manage_insights`\n\nClick **Generate** and copy immediately — this token never expires."
+        },
+        {
+          "title": "Find the IDs",
+          "body":  "All under **Business Settings**:\n\n- **Ad account ID** → Ad Accounts → click the account → copy with `act_` prefix\n- **Page ID** → Facebook Page → **About** → scroll to bottom\n- **Instagram ID** → Instagram Accounts → click → ID\n- **Business ID** → Business Info"
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/meta-mcp/index.js"],
+        "envMap":  {
+          "META_ACCESS_TOKEN":          "META_ACCESS_TOKEN",
+          "META_AD_ACCOUNT_ID":         "META_AD_ACCOUNT_ID",
+          "META_PAGE_ID":               "META_PAGE_ID",
+          "META_INSTAGRAM_ACCOUNT_ID":  "META_INSTAGRAM_ACCOUNT_ID",
+          "META_BUSINESS_ID":           "META_BUSINESS_ID"
+        },
+        "name": "meta",
+        "allowedHosts": ["graph.facebook.com"]
+      }
+    },
+
+    {
+      "id":          "google-ads",
+      "label":       "Google Ads",
+      "logo":        "/integrations/google-ads.svg",
+      "description": "Campaigns, ad groups, keywords, RSAs, Keyword Planner, performance reports.",
+      "category":    "marketing",
+      "fields": [
+        {
+          "name":        "GOOGLE_ADS_DEVELOPER_TOKEN",
+          "label":       "Developer token",
+          "type":        "secret",
+          "placeholder": "22 alphanumeric chars",
+          "helper":      "From ads.google.com/aw/apicenter — requires a Manager (MCC) account."
+        },
+        {
+          "name":        "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
+          "label":       "Customer ID",
+          "type":        "text",
+          "placeholder": "1234567890",
+          "helper":      "Account number without dashes."
+        },
+        {
+          "name":        "GOOGLE_ADS_REFRESH_TOKEN",
+          "label":       "OAuth refresh token (optional, for write tools)",
+          "type":        "secret",
+          "optional":    true,
+          "placeholder": "1//...",
+          "helper":      "Generated once via OAuth consent flow. Skip for read-only access. Uses the platform OAuth client."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Get a Developer Token",
+          "body":  "Open [ads.google.com/aw/apicenter](https://ads.google.com/aw/apicenter) and copy the **Developer Token** (22 alphanumeric chars).\n\nYou need a **Manager (MCC) account** for this — without it the token won't work. New tokens start in Test status; apply for **Basic Access** on the same page if you need live data."
+        },
+        {
+          "title": "Enable the Google Ads API",
+          "body":  "Open [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Enable APIs** → search **Google Ads API** → **Enable**.\n\nUse the same Cloud project that powers your platform OAuth so Client ID/Secret are reused."
+        },
+        {
+          "title": "Find your Customer ID",
+          "body":  "[ads.google.com](https://ads.google.com) → top-right of the dashboard shows it.\n\nStrip the dashes — `123-456-7890` becomes `1234567890`."
+        },
+        {
+          "title": "Refresh token (only for write tools)",
+          "body":  "Reads and Keyword Planner work without it.\n\nFor writes (creating campaigns, keywords, ads), run a one-time Node script with `google-auth-library` — full snippet in **docs/INTEGRATIONS.md → Google Ads → Step 3**. Output is a `1//...` token; paste it."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/google-ads-mcp/index.js"],
+        "envMap":  {
+          "GOOGLE_ADS_DEVELOPER_TOKEN":   "GOOGLE_ADS_DEVELOPER_TOKEN",
+          "GOOGLE_ADS_LOGIN_CUSTOMER_ID": "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
+          "GOOGLE_ADS_REFRESH_TOKEN":     "GOOGLE_ADS_REFRESH_TOKEN"
+        },
+        "inheritEnv": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        "name": "google-ads",
+        "allowedHosts": [
+          "googleads.googleapis.com",
+          "oauth2.googleapis.com"
+        ]
+      }
+    },
+
+    {
+      "id":          "email-imap",
+      "label":       "Email (IMAP)",
+      "logo":        "/integrations/email.svg",
+      "description": "Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by exposure.",
+      "category":    "messaging",
+      "multi":       true,
+      "itemLabel":   "Account",
+      "minItems":    1,
+      "fields": [
+        {
+          "name":    "EMAIL_PROVIDER",
+          "label":   "Provider",
+          "type":    "select",
+          "default": "gmail",
+          "options": [
+            { "value": "gmail",  "label": "Gmail" },
+            { "value": "zoho",   "label": "Zoho (EU)" },
+            { "value": "zoho_us","label": "Zoho (US)" },
+            { "value": "custom", "label": "Custom IMAP" }
+          ],
+          "helper": "Pick a preset to auto-fill server settings, or Custom for a different IMAP host."
+        },
+        {
+          "name":    "EMAIL_HOST",
+          "label":   "IMAP host",
+          "type":    "text",
+          "optional": true,
+          "showIf":  { "EMAIL_PROVIDER": "custom" },
+          "placeholder": "imap.example.com",
+          "helper":  "Your provider's IMAP server hostname."
+        },
+        {
+          "name":    "EMAIL_PORT",
+          "label":   "Port",
+          "type":    "text",
+          "optional": true,
+          "default": "993",
+          "showIf":  { "EMAIL_PROVIDER": "custom" },
+          "helper":  "Usually 993 for IMAPS (encrypted)."
+        },
+        {
+          "name":    "EMAIL_USER",
+          "label":   "Email address",
+          "type":    "text",
+          "placeholder": "you@example.com"
+        },
+        {
+          "name":    "EMAIL_PASS",
+          "label":   "Password",
+          "type":    "secret",
+          "placeholder": "App password (16 chars for Gmail)",
+          "helper":  "For Gmail / Workspace use an App Password (NOT your normal password). For Zoho / custom IMAP use your IMAP password."
+        },
+        {
+          "name":    "EMAIL_ID",
+          "label":   "Account label (optional)",
+          "type":    "text",
+          "optional": true,
+          "default":  "primary",
+          "helper":  "Short id used to refer to this account in chat (e.g. work, personal). Defaults to \"primary\"."
+        },
+        {
+          "name":    "EMAIL_ALLOW_SEND",
+          "label":   "Allow bot to send email on your behalf",
+          "type":    "select",
+          "globalForMulti": true,
+          "default": "no",
+          "options": [
+            { "value": "no",  "label": "No — drafts only (recommended)" },
+            { "value": "yes", "label": "Yes — bot can send" }
+          ],
+          "helper": "Workspace-level setting that applies to every email account you add. When \"no\", the bot prepares drafts in your Drafts folder for you to review and send manually. Drafts always work; only outbound send is gated."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Gmail only — App Password",
+          "body":  "Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (requires 2-Step Verification on).\n\n- Name it `{{botDisplayName}} IDE` → **Generate**\n- Copy the **16-char password**, strip the spaces (they're visual only)\n\nSkip this step for non-Gmail providers — just use your normal IMAP password."
+        },
+        {
+          "title": "Pick the provider",
+          "body":  "Gmail and Zoho auto-fill server settings.\n\nFor anything else, pick **Custom IMAP** — you'll get fields for IMAP host + port (check your provider's IMAP help page)."
+        },
+        {
+          "title": "Fill the form",
+          "body":  "- **Email address** — the inbox you want to read\n- **Password** — App Password from step 1 (Gmail), or your normal IMAP password\n- **Account label** — optional, only useful if you'll add more accounts later"
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/email-mcp/index.js"],
+        "extraEnv": {
+          "EMAIL_ACCOUNTS_FILE": "{secureFiles}/email/accounts.json"
+        },
+        "writeFiles": [
+          {
+            "format": "email-accounts",
+            "path":   "{secureFiles}/email/accounts.json",
+            "mode":   416
+          }
+        ],
+        "name": "email",
+        "allowedHosts": ["{{EMAIL_HOSTS_RESOLVED}}"]
+      }
+    },
+
+    {
+      "id":          "ga4",
+      "label":       "Google Analytics 4",
+      "logo":        "/integrations/ga4.svg",
+      "description": "Traffic, events, conversions, user behaviour — query GA4 metrics from chat.",
+      "category":    "marketing",
+      "fields": [
+        {
+          "name":        "GA4_PROPERTY_ID",
+          "label":       "Property ID",
+          "type":        "text",
+          "placeholder": "123456789",
+          "helper":      "Plain number from Admin → Property Settings. NOT the Measurement ID (G-XXXX)."
+        },
+        {
+          "name":        "GA4_CREDENTIALS_JSON_CONTENT",
+          "label":       "Service account JSON",
+          "type":        "json",
+          "placeholder": "{\n  \"type\": \"service_account\",\n  \"project_id\": \"...\",\n  \"private_key\": \"-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n\",\n  \"client_email\": \"...@....iam.gserviceaccount.com\",\n  ...\n}",
+          "helper":      "Paste the full contents of the JSON key downloaded from Google Cloud."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Find your Property ID",
+          "body":  "[analytics.google.com](https://analytics.google.com) → **Admin** → **Property Settings** → copy **Property ID**.\n\nIt's a plain number like `123456789`. **Not** the Measurement ID `G-XXXXXXXX`."
+        },
+        {
+          "title": "Create a service account",
+          "body":  "[console.cloud.google.com](https://console.cloud.google.com) → **IAM & Admin** → **Service Accounts** → **Create Service Account**.\n\nName it e.g. `mcp-{{botName}}`. No roles needed yet."
+        },
+        {
+          "title": "Download the JSON key",
+          "body":  "Click the service account → **Keys** tab → **Add Key** → **Create new key** → **JSON** → **Create**.\n\nA `.json` file downloads. Open it in a text editor and copy **the entire contents** — that's what goes in the field above."
+        },
+        {
+          "title": "Grant the service account access in GA4",
+          "body":  "[analytics.google.com](https://analytics.google.com) → **Admin** → **Account Access Management** → **+** → **Add**.\n\n- Email: copy `client_email` from the JSON (looks like `mcp-…@project.iam.gserviceaccount.com`)\n- Role: **Viewer**"
+        }
+      ],
+      "mcp": {
+        "command": "ga4-mcp-server",
+        "args":    [],
+        "envMap": {
+          "GA4_PROPERTY_ID": "GA4_PROPERTY_ID"
+        },
+        "extraEnv": {
+          "GOOGLE_APPLICATION_CREDENTIALS": "{dataDir}/google/ga4-credentials.json"
+        },
+        "writeFiles": [
+          {
+            "fromField": "GA4_CREDENTIALS_JSON_CONTENT",
+            "path":      "{dataDir}/google/ga4-credentials.json",
+            "mode":      384
+          }
+        ],
+        "name": "analytics",
+        "allowedHosts": [
+          "analyticsdata.googleapis.com",
+          "oauth2.googleapis.com"
+        ]
+      }
+    },
+
+    {
+      "id":          "signwell",
+      "label":       "E-Signature (SignWell)",
+      "logo":        "/integrations/signwell.jpg.png",
+      "description": "Send documents for e-signature directly from chat. Upload a PDF to the bot and tell it who should sign — it creates the document in SignWell and sends signing requests by email. Track status, send reminders, and download the signed PDF when done.",
+      "category":    "productivity",
+      "fields": [
+        {
+          "name":        "SIGNWELL_API_KEY",
+          "label":       "API Key",
+          "type":        "secret",
+          "placeholder": "...",
+          "helper":      "From your SignWell account → Settings → API."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Sign up for SignWell",
+          "body":  "Go to [signwell.com](https://signwell.com) and create an account. **API access requires a paid plan.**"
+        },
+        {
+          "title": "Copy your API key",
+          "body":  "In SignWell: **Settings** → **API** → copy the key and paste it above."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/signwell-mcp/index.js"],
+        "envMap":  {
+          "SIGNWELL_API_KEY": "SIGNWELL_API_KEY"
+        },
+        "name": "signwell",
+        "allowedHosts": ["www.signwell.com"]
+      }
+    },
+
+    {
+      "id":          "github",
+      "label":       "GitHub",
+      "logo":        "/integrations/github.svg",
+      "description": "Read repos, issues, and pull requests via the official GitHub MCP server. Read-only by default; flip the toggle to let the bot commit, open PRs, and comment.",
+      "category":    "dev",
+      "fields": [
+        {
+          "name":        "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "label":       "Fine-grained PAT",
+          "type":        "secret",
+          "placeholder": "github_pat_...",
+          "helper":      "Generate at github.com/settings/personal-access-tokens/new. Pick the repos this bot should see, then grant the permissions you need (Contents: Read or Read & write, Issues, Pull requests, Metadata). Token-level permissions are the outer security limit — the toggles below can only narrow them further."
+        },
+        {
+          "name":    "GITHUB_TOOLSETS",
+          "label":   "Capabilities",
+          "type":    "select",
+          "default": "repos,issues,pull_requests",
+          "options": [
+            { "value": "repos",                                            "label": "Code only" },
+            { "value": "repos,issues",                                     "label": "Code + Issues" },
+            { "value": "repos,issues,pull_requests",                       "label": "Code + Issues + PRs (recommended)" },
+            { "value": "repos,issues,pull_requests,actions",               "label": "+ Actions / CI" },
+            { "value": "repos,issues,pull_requests,actions,code_security", "label": "Everything (incl. code-security alerts)" }
+          ],
+          "helper":  "Picks which groups of GitHub tools the bot exposes. Narrower = smaller attack surface and less context noise."
+        },
+        {
+          "name":    "GITHUB_ALLOW_WRITE",
+          "label":   "Allow bot to modify repos",
+          "type":    "select",
+          "default": "no",
+          "options": [
+            { "value": "no",  "label": "No — read-only (recommended)" },
+            { "value": "yes", "label": "Yes — bot can commit, open PRs, comment" }
+          ],
+          "helper":  "When \"no\", the MCP runs with --read-only and write tools are stripped before they reach the bot — it physically cannot modify anything even if it tried. Flip to \"yes\" only after you trust the bot's behaviour on a given repo. PAT-level scopes still apply on top: a read-only PAT will block writes regardless."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Generate a fine-grained PAT",
+          "body":  "Open [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new).\n\n- **Token name**: `{{botDisplayName}} IDE`\n- **Expiration**: 90 days (or custom)\n- **Repository access**: pick the specific repos the bot should see — don't grant access to all repos\n- **Repository permissions** (only what you need):\n  - **Contents**: Read (or Read and write if you'll flip the write toggle)\n  - **Issues**: Read / Read and write\n  - **Pull requests**: Read / Read and write\n  - **Metadata**: Read (auto-required)\n\nClick **Generate token**, copy the `github_pat_…` string."
+        },
+        {
+          "title": "Paste + pick the capabilities",
+          "body":  "Paste the PAT above. Leave **Capabilities** on the recommended preset unless you need Actions / code security. Keep **Allow write = No** for the first few sessions — flip it later if you want the bot to push commits."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/github-mcp/index.js"],
+        "envMap":  {
+          "GITHUB_PERSONAL_ACCESS_TOKEN": "GITHUB_PERSONAL_ACCESS_TOKEN",
+          "GITHUB_TOOLSETS":               "GITHUB_TOOLSETS",
+          "GITHUB_ALLOW_WRITE":            "GITHUB_ALLOW_WRITE"
+        },
+        "name": "github",
+        "allowedHosts": [
+          "api.github.com",
+          "uploads.github.com",
+          "raw.githubusercontent.com",
+          "objects.githubusercontent.com",
+          "codeload.github.com"
+        ]
+      }
+    },
+
+    {
+      "id":          "trello",
+      "label":       "Trello",
+      "logo":        "/integrations/trello.svg",
+      "description": "Read tasks, post, edit and delete comments, manage labels, move cards between columns, and attach or download files. The bot can pull a board's current state, comment on or tag a card, shift it to Done, drop a screenshot straight onto a card, or pull down files your team attached — all from chat.",
+      "category":    "productivity",
+      "fields": [
+        {
+          "name":        "TRELLO_API_KEY",
+          "label":       "API key",
+          "type":        "secret",
+          "placeholder": "32-character hex string",
+          "helper":      "From your Trello Power-Up's API key page."
+        },
+        {
+          "name":        "TRELLO_TOKEN",
+          "label":       "Token",
+          "type":        "secret",
+          "placeholder": "ATTAxxxxxxxx...",
+          "helper":      "Click the \"Token\" link under the API key (in the small paragraph that says \"manually generate a Token\"), authorise read + write, then paste the long string here. NOT the \"Secret\" field — that's for OAuth 1 and we don't use it."
+        },
+        {
+          "name":        "TRELLO_BOARDS",
+          "label":       "Default boards",
+          "type":        "text",
+          "optional":    true,
+          "placeholder": "acme:https://trello.com/b/BFqnhhsY/acme-board,personal:https://trello.com/b/...",
+          "helper":      "Optional. Easiest: paste the full board URL from your browser. For multiple boards, give each a friendly name: name:url,name:url. For a single board you can paste just the URL (or just the ID). The bot then accepts those names anywhere a board is asked for."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create a Power-Up + copy the API key",
+          "body":  "Open [trello.com/power-ups/admin](https://trello.com/power-ups/admin) → **New** → fill any name + workspace.\n\nOpen the new Power-Up → **API key** tab → **Generate**. Copy the **API key** (top field).\n\nIgnore the **Secret** below it — that's for OAuth 1, we don't use it."
+        },
+        {
+          "title": "Generate the Token",
+          "body":  "Same page, look for: *\"…you can manually generate a Token.\"*\n\nClick the word **Token** at the end. Authorise **read + write** → **Allow**. Copy the long string.\n\nDo **not** paste the Secret from step 1."
+        },
+        {
+          "title": "Optional — default boards",
+          "body":  "Paste a board URL from your browser, or for multiple, name them:\n\n```\nacme:https://trello.com/b/BFqnhhsY/acme,personal:https://trello.com/b/Other/me\n```\n\nThen the bot accepts \"what's on acme?\" instead of pasting URLs."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/trello-mcp/index.js"],
+        "envMap":  {
+          "TRELLO_API_KEY": "TRELLO_API_KEY",
+          "TRELLO_TOKEN":   "TRELLO_TOKEN",
+          "TRELLO_BOARDS":  "TRELLO_BOARDS"
+        },
+        "name": "trello",
+        "allowedHosts": ["api.trello.com", "trello-attachments.s3.amazonaws.com"]
+      }
+    },
+
+    {
+      "id":          "google-workspace",
+      "label":       "Google Workspace",
+      "logo":        "/integrations/gworkspace.svg",
+      "description": "Docs, Sheets, Calendar, Drive, Slides, and Tasks — one OAuth refresh token unlocks all six. Writes are enabled by default and can be flipped off from the Settings cog.",
+      "category":    "productivity",
+      "fields": [
+        {
+          "name":        "GDOCS_CLIENT_ID",
+          "label":       "OAuth Client ID",
+          "type":        "secret",
+          "placeholder": "...apps.googleusercontent.com",
+          "helper":      "From your own Google Cloud OAuth client (Web application type)."
+        },
+        {
+          "name":        "GDOCS_CLIENT_SECRET",
+          "label":       "OAuth Client Secret",
+          "type":        "secret",
+          "placeholder": "GOCSPX-...",
+          "helper":      "Same OAuth client. Pair with the Client ID above."
+        },
+        {
+          "name":        "GDOCS_REFRESH_TOKEN",
+          "label":       "Refresh token",
+          "type":        "secret",
+          "placeholder": "1//0...",
+          "helper":      "Generate via OAuth Playground (instructions in step 3)."
+        },
+        {
+          "name":    "GWORKSPACE_ALLOW_WRITE",
+          "label":   "Allow bot to modify your Google Workspace data",
+          "type":    "select",
+          "globalForMulti": true,
+          "default": "yes",
+          "options": [
+            { "value": "yes", "label": "Yes — bot can create / edit / delete (default)" },
+            { "value": "no",  "label": "No — read only" }
+          ],
+          "helper":  "Adds write permissions on top of read — bot can create, edit, and delete on your behalf."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create an OAuth client",
+          "body":  "[console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials** → **Create OAuth client ID** → **Web application**.\n\nAuthorised redirect URI: `https://developers.google.com/oauthplayground`\n\nSave, then copy **Client ID** + **Client Secret** into the fields above."
+        },
+        {
+          "title": "Enable the Workspace APIs",
+          "body":  "Same project → **APIs & Services** → **Library**. Enable every API in the bundle:\n\n- **Google Docs API**\n- **Google Drive API**\n- **Google Sheets API**\n- **Google Calendar API**\n- **Google Slides API**\n- **Google Tasks API**\n\nMissing any of these → 403 from the corresponding tool."
+        },
+        {
+          "title": "Generate the refresh token",
+          "body":  "Open [developers.google.com/oauthplayground](https://developers.google.com/oauthplayground) → **⚙ gear** (top right) → tick **Use your own OAuth credentials** → paste Client ID + Secret.\n\nIn **Step 1** (left side), paste **all** these scopes (one per line):\n\n```\nhttps://www.googleapis.com/auth/documents\nhttps://www.googleapis.com/auth/drive\nhttps://www.googleapis.com/auth/spreadsheets\nhttps://www.googleapis.com/auth/calendar\nhttps://www.googleapis.com/auth/presentations\nhttps://www.googleapis.com/auth/tasks\n```\n\nClick **Authorize APIs** → sign in with the Google account whose data the bot should see → **Allow**.\n\nThen **Exchange authorization code for tokens** → copy the `refresh_token` (starts with `1//`)."
+        }
+      ],
+      "mcp": {
+        "envMap":  {
+          "GDOCS_CLIENT_ID":         "GDOCS_CLIENT_ID",
+          "GDOCS_CLIENT_SECRET":     "GDOCS_CLIENT_SECRET",
+          "GDOCS_REFRESH_TOKEN":     "GDOCS_REFRESH_TOKEN",
+          "GWORKSPACE_ALLOW_WRITE":  "GWORKSPACE_ALLOW_WRITE"
+        },
+        "services": [
+          { "name": "gdocs",     "command": "node", "args": ["{appsDir}/gdocs-mcp/index.js"] },
+          { "name": "gsheets",   "command": "node", "args": ["{appsDir}/gsheets-mcp/index.js"] },
+          { "name": "gcalendar", "command": "node", "args": ["{appsDir}/gcalendar-mcp/index.js"] },
+          { "name": "gdrive",    "command": "node", "args": ["{appsDir}/gdrive-mcp/index.js"] },
+          { "name": "gslides",   "command": "node", "args": ["{appsDir}/gslides-mcp/index.js"] },
+          { "name": "gtasks",    "command": "node", "args": ["{appsDir}/gtasks-mcp/index.js"] }
+        ],
+        "allowedHosts": [
+          "docs.googleapis.com",
+          "sheets.googleapis.com",
+          "slides.googleapis.com",
+          "tasks.googleapis.com",
+          "gmail.googleapis.com",
+          "www.googleapis.com",
+          "oauth2.googleapis.com",
+          "*.googleusercontent.com"
+        ]
+      }
+    },
+
+    {
+      "id":          "docs-comments",
+      "label":       "Docs Comments",
+      "logo":        "/integrations/docs-comments.svg",
+      "description": "Lets your coworker drop inline comments anchored to a specific text range in a Google Doc — the one thing the Docs/Drive API can't do, so it drives a real logged-in Chromium session. You log in once through an embedded browser window; the session lives in a persistent container-side profile so later comment calls just work. Replying to, resolving, and deleting comments is handled separately by the Google Workspace integration over the Drive API (no browser needed).",
+      "category":    "productivity",
+      "fields": [
+        {
+          "name":        "PROFILE_OK",
+          "label":       "Google session",
+          "type":        "docs-comments-browser-login",
+          "optional":    true,
+          "helper":      "Click Connect to open an embedded Chromium window and sign in to Google. The session lives in a persistent profile under /var/wsapi-store/docs-comments-profile and is reused across container restarts."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Click Connect to Google",
+          "body":  "An embedded browser window opens in a modal. It's a real Chromium running inside the container — your normal Google login screen will appear (2FA, security key, whatever you have on)."
+        },
+        {
+          "title": "Sign in",
+          "body":  "Use the account whose docs you want {{botDisplayName}} to comment on. The session — cookies, device-bound credentials, the lot — is saved to the container's persistent volume. Nothing leaves the server."
+        },
+        {
+          "title": "Done",
+          "body":  "Click Done in this dialog. The login Chromium is killed cleanly (so the profile flushes to disk), and the integration goes active. Subsequent add_comment tool calls reuse the saved session — no re-login until Google decides to rotate."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/docs-comments-mcp/index.js"],
+        "extraEnv": {
+          "DOCS_COMMENTS_CDP_URL": "http://127.0.0.1:9333"
+        },
+        "name":   "docs-comments",
+        "allowedHosts": [
+          "docs.google.com",
+          "drive.google.com",
+          "accounts.google.com",
+          "accounts.youtube.com",
+          "apis.google.com",
+          "play.google.com",
+          "www.google.com",
+          "ogs.google.com",
+          "myaccount.google.com",
+          "ssl.gstatic.com",
+          "www.gstatic.com",
+          "fonts.googleapis.com",
+          "fonts.gstatic.com",
+          "lh3.googleusercontent.com",
+          "lh4.googleusercontent.com",
+          "lh5.googleusercontent.com",
+          "lh6.googleusercontent.com",
+          "clients4.google.com",
+          "clients6.google.com",
+          "content.googleapis.com",
+          "recaptcha.google.com",
+          "www.recaptcha.net",
+          "*.google.de",
+          "*.google.pl",
+          "*.google.co.uk",
+          "*.google.fr",
+          "*.google.com.au"
+        ]
+      }
+    },
+
+    {
+      "id":          "x",
+      "label":       "X (twitterapi.io)",
+      "logo":        "/integrations/x.svg",
+      "description": "Read tweets, profiles, replies, followers, mentions — full X data via twitterapi.io. Read-only by design; no X account credentials required, no developer approval, just a twitterapi.io API key.",
+      "category":    "marketing",
+      "fields": [
+        {
+          "name":        "X_API_KEY",
+          "label":       "twitterapi.io API key",
+          "type":        "secret",
+          "placeholder": "long alphanumeric string",
+          "helper":      "From your twitterapi.io account → Dashboard. Pay-as-you-go: ~$0.15 per 1,000 tweets read."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Sign up for twitterapi.io",
+          "body":  "Open [twitterapi.io](https://twitterapi.io) and create an account.\n\nNo X developer approval needed. You get **$0.10 free credit** to start (enough for ~600 tweets, plenty for testing)."
+        },
+        {
+          "title": "Copy the API key",
+          "body":  "Dashboard → **API Keys** → copy the long alphanumeric string and paste it above.\n\nThis key only works against twitterapi.io — it has nothing to do with your actual X account."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/x-mcp/index.js"],
+        "envMap":  { "X_API_KEY": "X_API_KEY" },
+        "name":    "x",
+        "allowedHosts": ["api.twitterapi.io"]
+      }
+    },
+
+    {
+      "id":          "substack",
+      "label":       "Substack",
+      "logo":        "/integrations/substack.svg",
+      "description": "Read posts, look up authors, follow Notes — works with no credentials. Toggle write access on to also publish posts, comment, restack, and read paid subscriptions.",
+      "category":    "content",
+      "fields": [
+        {
+          "name":           "SUBSTACK_WRITE",
+          "label":          "Allow publishing & write actions",
+          "type":           "select",
+          "globalForMulti": true,
+          "default":        "no",
+          "options": [
+            { "value": "no",  "label": "No — read-only (default)" },
+            { "value": "yes", "label": "Yes — publish, Notes, comments, paid posts" }
+          ],
+          "helper":         "Reading public posts always works. Turn this on to also let the bot publish on your behalf — requires a session cookie below."
+        },
+        {
+          "name":        "SUBSTACK_SID",
+          "label":       "Session cookie (substack.sid)",
+          "type":        "secret",
+          "showIf":      { "SUBSTACK_WRITE": "yes" },
+          "placeholder": "s%3A... (long URL-encoded string)",
+          "helper":      "DevTools → Application → Cookies → substack.com → copy the `substack.sid` value."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Read-only? Just hit Activate",
+          "body":  "Leave the toggle off and click Activate — that's it. The bot can immediately read any public Substack post, list a publication's archive, look up authors, and follow Notes."
+        },
+        {
+          "title": "Want to publish too? Get a session cookie",
+          "body":  "1. Log in to [substack.com](https://substack.com) in your browser (Substack uses magic-link email — no password).\n\n2. Open **DevTools** (F12 or Cmd+Opt+I) → **Application** tab → **Cookies** → `https://substack.com`.\n\n3. Find the row named `substack.sid` and copy its **Value** (long string starting with `s%3A`).\n\n4. Toggle write access on, paste the cookie, hit Activate. It stays valid for months — only expires if you change your password or sign out everywhere."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args":    ["{appsDir}/substack-mcp/index.js"],
+        "envMap":  { "SUBSTACK_SID": "SUBSTACK_SID" },
+        "name":    "substack",
+        "allowedHosts": ["substack.com"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "meta-mcp",
+  "version": "1.0.0",
+  "description": "Meta Marketing API MCP server — campaigns, insights, Instagram, Facebook Pages",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

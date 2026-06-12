@@ -1,0 +1,16 @@
+{
+  "name": "workspace-api-mcp",
+  "version": "1.0.0",
+  "description": "Thin MCP wrapper around workspace-api HTTP routes (memory_grep + future tools). Lets the model invoke workspace-api tools as first-class MCP tools instead of curling through Bash.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

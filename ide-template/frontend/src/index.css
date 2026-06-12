@@ -1,0 +1,726 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Warm palette — "Warm. Precise. Calm."
+ *   bg     #f7f6f2  warm off-white (slight yellow tint, never cold)
+ *   text   #1c1b18  deep warm charcoal
+ *   muted  #6b6963  / #9e9b96  warm grays
+ *   border #e8e7e2  warm hairline
+ *   hover  #f0efea  one shade darker than bg
+ *   accent #d97706  amber (premium, distinctive)
+ *
+ * Cards stay pure white (#ffffff) so they pop one step off the warm body.
+ * Legacy tokens (--bg-color, --text-main, --text-muted) remap onto the new
+ * palette so the older class-based styles below keep working.
+ */
+:root {
+  /* Legacy tokens — used by the iframe/login top bar styles below. Untouched. */
+  --bg-color: #f5f5f5;
+  --topbar-bg: #ffffff;
+  --topbar-border: rgba(0, 0, 0, 0.08);
+  --text-main: #111827;
+  --text-muted: #6b7280;
+  --primary-color: #111827;
+  --primary-hover: #374151;
+  --danger-color: #ef4444;
+  --danger-hover: #dc2626;
+  --topbar-height: 54px;
+
+  /* shadcn surface tokens — drive the new workspace UI (warm palette). */
+  --background: #f7f6f2;
+  --foreground: #1c1b18;
+  --card: #ffffff;
+  --card-foreground: #1c1b18;
+  --popover: #ffffff;
+  --popover-foreground: #1c1b18;
+  --primary: #1c1b18;
+  --primary-foreground: #f7f6f2;
+  --secondary: #f0efea;
+  --secondary-foreground: #1c1b18;
+  --muted: #f0efea;
+  --muted-foreground: #6b6963;
+  /* --accent drives shadcn dropdown/menu/select highlighted-item state +
+   * any other Tailwind `bg-accent` consumer. Used to be amber-600
+   * (#d97706) which read as a brand-orange stripe across every dropdown
+   * (BlockNote toolbar, integration menus). Swapped for a neutral
+   * border-tone so highlighted items look like a soft hover, not a
+   * brand accent. */
+  --accent: #e8e7e2;
+  --accent-foreground: #1c1b18;
+  --destructive: #dc2626;
+  --border: #e8e7e2;
+  --input: #e8e7e2;
+  --ring: #d97706;
+
+  --chart-1: #d97706;
+  --chart-2: #92400e;
+  --chart-3: #6b6963;
+  --chart-4: #9e9b96;
+  --chart-5: #1c1b18;
+
+  /* 12 px / 0.75 rem — primary card radius. Tailwind scale derives from this. */
+  --radius: 0.75rem;
+
+  /* Sidebar — slightly distinct warm tone vs body */
+  --sidebar: #f3f2ed;
+  --sidebar-foreground: #1c1b18;
+  --sidebar-primary: #1c1b18;
+  --sidebar-primary-foreground: #f7f6f2;
+  --sidebar-accent: #ebe9e3;
+  --sidebar-accent-foreground: #1c1b18;
+  --sidebar-border: #e8e7e2;
+  --sidebar-ring: #d97706;
+}
+
+/*
+ * Warm dark palette — inverted, but graphite (not pure black). Same warm
+ * temperature as the light palette (slight amber tint, never cold blue).
+ *   bg     #1a1816  warm graphite (matches "deep warm charcoal" inverted)
+ *   text   #f0eee8  warm cream (mirrors light's bg)
+ *   muted  #2a2825  / #9c9a96  warm dark grays
+ *   border #34322f  warm hairline
+ *   card   #232120  one shade up from bg, so cards still pop
+ *   accent #f59e0b  amber, slightly brighter (more vivid against dark bg)
+ *
+ * Sidebar is one notch DARKER than body in dark mode (opposite of light, where
+ * sidebar is slightly different but still light) — clearer visual hierarchy.
+ */
+.dark {
+  --background: #1b1b1a;
+  --foreground: #ebebea;
+  --card: #252524;
+  --card-foreground: #ebebea;
+  --popover: #252524;
+  --popover-foreground: #ebebea;
+  --primary: #ebebea;
+  --primary-foreground: #1b1b1a;
+  --secondary: #252524;
+  --secondary-foreground: #ebebea;
+  --muted: #252524;
+  --muted-foreground: #a8a8a7;
+  /* Dark counterpart of --accent — see :root for rationale. */
+  --accent: #303030;
+  --accent-foreground: #ebebea;
+  --destructive: #ef4444;
+  --border: #303030;
+  --input: #303030;
+  --ring: #f59e0b;
+
+  --chart-1: #f59e0b;
+  --chart-2: #fbbf24;
+  --chart-3: #a8a8a7;
+  --chart-4: #797978;
+  --chart-5: #ebebea;
+
+  --sidebar: #1d1d1c;
+  --sidebar-foreground: #ebebea;
+  --sidebar-primary: #ebebea;
+  --sidebar-primary-foreground: #1b1b1a;
+  --sidebar-accent: #252524;
+  --sidebar-accent-foreground: #ebebea;
+  --sidebar-border: #303030;
+  --sidebar-ring: #f59e0b;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes text-shimmer {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: -200% 50%; }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.35) 0%,
+    rgba(0, 0, 0, 0.35) 40%,
+    rgba(0, 0, 0, 0.95) 50%,
+    rgba(0, 0, 0, 0.35) 60%,
+    rgba(0, 0, 0, 0.35) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: text-shimmer 3.6s linear infinite;
+}
+
+.dark .shimmer-text {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.35) 40%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0.35) 60%,
+    rgba(255, 255, 255, 0.35) 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  overflow: hidden;
+  /* Prevent body scroll */
+}
+
+/* App Layout */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Top Bar - Premium Glassmorphism */
+.top-bar {
+  height: var(--topbar-height);
+  background: var(--topbar-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  z-index: 1000;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.logo {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #111827 0%, #4b5563 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.logo:hover {
+  opacity: 0.8;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Napis FLOW obok logo */
+.ide-text {
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
+  color: #6b7280;
+  opacity: 0.65;
+  /* Mniejsze krycie - bardziej spłowiały szary */
+  display: block;
+}
+
+/* User Avatar & Dropdown Container */
+.user-menu-container {
+  position: relative;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #111827;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0.02em;
+  transition: opacity 0.15s ease;
+  border: none;
+  overflow: hidden;
+}
+
+.user-avatar:hover {
+  opacity: 0.85;
+}
+
+.user-avatar.active {
+  opacity: 0.9;
+}
+
+/* Small User Dropdown */
+.user-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  width: 200px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.user-dropdown.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.dropdown-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  background: #f8f8f8;
+}
+
+.dropdown-header h3 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dropdown-actions {
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 8px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.dropdown-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-main);
+}
+
+.dropdown-btn.danger-btn {
+  color: var(--text-muted);
+  margin-top: 0;
+  border-top: none;
+  border-radius: 3px;
+}
+
+.dropdown-btn.danger-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-main);
+}
+
+/* IDE Wrapper & Iframe */
+.ide-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: #ffffff;
+}
+
+.ide-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* Loader */
+.loader-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+.loader-overlay p {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(107, 114, 128, 0.2);
+  border-radius: 50%;
+  border-top-color: #6b7280;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: .5;
+  }
+}
+
+/* Login + AccessDenied pages now use Tailwind directly — see
+   src/components/LoginPage.jsx and src/components/AccessDenied.jsx. */
+
+/* Dropdown email */
+
+.dropdown-email {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 172px;
+}
+
+.dropdown-header h3 {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 172px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ─── Mobile ─── */
+
+@media (max-width: 768px) {
+  :root {
+    --topbar-height: 40px;
+  }
+
+  .top-bar {
+    padding: 0 12px;
+  }
+
+  .top-bar-left img {
+    height: 18px;
+  }
+
+  .ide-text {
+    font-size: 0.9rem;
+  }
+
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.65rem;
+  }
+
+  .user-dropdown {
+    width: 180px;
+  }
+
+
+  /* Main content needs to account for bottom tab bar */
+  .main-content {
+    height: calc(100vh - var(--topbar-height) - 56px);
+    flex: none;
+  }
+}
+
+/* ─── Mobile Tab Bar ─── */
+
+.mobile-tab-bar {
+  display: flex;
+  height: 56px;
+  background: #ffffff;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  z-index: 1000;
+  flex-shrink: 0;
+}
+
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-tab.active {
+  color: #111827;
+}
+
+.mobile-tab svg {
+  stroke-width: 1.5;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Chat message text wrapping */
+.chat-bubble {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* Markdown table wrapping */
+.chat-bubble table {
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+.chat-bubble table thead,
+.chat-bubble table tbody {
+  display: block;
+}
+
+.chat-bubble table tr {
+  display: block;
+}
+
+.chat-bubble table td,
+.chat-bubble table th {
+  word-break: break-word;
+}
+
+/* Code block wrapping */
+.chat-bubble pre {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.chat-bubble code {
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+
+/* ── Personality slider (SetupWizard step 2) ──────────────────────────────
+ * Custom range input that picks up the warm palette. The fill width is
+ * driven by --pct (set inline from React) and applied via a linear-gradient
+ * background so we don't need a separate ::-webkit-slider-runnable-track
+ * pseudo-element shim.
+ */
+.personality-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  background:
+    linear-gradient(
+      to right,
+      var(--ring) 0%,
+      var(--ring) var(--pct, 50%),
+      rgba(28, 27, 24, 0.10) var(--pct, 50%),
+      rgba(28, 27, 24, 0.10) 100%
+    );
+  outline: none;
+  cursor: pointer;
+  transition: background 80ms linear;
+}
+
+.personality-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--ring);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 0 0 0 rgba(217, 119, 6, 0);
+  cursor: grab;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+.personality-slider::-webkit-slider-thumb:hover {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 0 0 6px rgba(217, 119, 6, 0.10);
+  transform: scale(1.05);
+}
+.personality-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.10);
+}
+
+.personality-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--ring);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+  cursor: grab;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+.personality-slider::-moz-range-thumb:hover {
+  box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.10);
+  transform: scale(1.05);
+}
+.personality-slider:focus-visible {
+  background:
+    linear-gradient(
+      to right,
+      var(--ring) 0%,
+      var(--ring) var(--pct, 50%),
+      rgba(28, 27, 24, 0.16) var(--pct, 50%),
+      rgba(28, 27, 24, 0.16) 100%
+    );
+}
+
+/* `.scrollbar-hidden` — opt-in utility for panes where the system scrollbar
+ * looks heavy (chat list, task list). Scroll still works via wheel/touch;
+ * the bar just doesn't render. macOS overlay scrollbars insist on appearing
+ * on hover unless we hammer both `scrollbar-width: none` AND zero out the
+ * webkit pseudo-element with `width: 0` + `display: none`. !important
+ * because Tailwind's `overflow-y-auto` ships an opinionated default that
+ * otherwise wins on specificity. */
+.scrollbar-hidden {
+  scrollbar-width: none !important;     /* Firefox */
+  -ms-overflow-style: none !important;  /* legacy Edge */
+}
+.scrollbar-hidden::-webkit-scrollbar,
+.scrollbar-hidden::-webkit-scrollbar-thumb,
+.scrollbar-hidden::-webkit-scrollbar-track {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}

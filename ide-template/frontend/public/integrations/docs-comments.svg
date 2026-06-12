@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Google Docs–blue document with a folded corner -->
+  <path d="M14 6h20l12 12v32a6 6 0 0 1-6 6H14a6 6 0 0 1-6-6V12a6 6 0 0 1 6-6z" fill="#1a73e8"/>
+  <path d="M34 6l12 12H38a4 4 0 0 1-4-4V6z" fill="#a8c7fa"/>
+  <!-- text lines -->
+  <rect x="16" y="23" width="22" height="3" rx="1.5" fill="#ffffff"/>
+  <rect x="16" y="30" width="22" height="3" rx="1.5" fill="#ffffff"/>
+  <rect x="16" y="37" width="13" height="3" rx="1.5" fill="#ffffff"/>
+  <!-- comment bubble overlapping the bottom-right -->
+  <path d="M40 58l-1.5-7H37a5 5 0 0 1-5-5v-9a5 5 0 0 1 5-5h17a5 5 0 0 1 5 5v9a5 5 0 0 1-5 5h-8z" fill="#fbbc04" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="40" cy="41.5" r="2" fill="#ffffff"/>
+  <circle cx="46" cy="41.5" r="2" fill="#ffffff"/>
+  <circle cx="52" cy="41.5" r="2" fill="#ffffff"/>
+</svg>

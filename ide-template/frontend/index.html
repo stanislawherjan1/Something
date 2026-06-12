@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f6f2" id="theme-color-meta" />
+  <title>%VITE_APP_TITLE%</title>
+  <script>
+    // Apply persisted theme BEFORE React renders to avoid flash-of-wrong-theme.
+    // Choices: 'light' | 'dark' | 'system' (default). Mirrored in ThemeContext.
+    (function () {
+      try {
+        var pref = localStorage.getItem('theme') || 'system';
+        var mql  = window.matchMedia('(prefers-color-scheme: dark)');
+        var dark = pref === 'dark' || (pref === 'system' && mql.matches);
+        if (dark) document.documentElement.classList.add('dark');
+        var meta = document.getElementById('theme-color-meta');
+        if (meta) meta.setAttribute('content', dark ? '#1b1b1a' : '#f7f6f2');
+      } catch (e) { /* localStorage blocked → fall through to light */ }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
+</html>

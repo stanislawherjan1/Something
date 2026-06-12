@@ -1,0 +1,22 @@
+{
+  "name": "workspace-api",
+  "version": "0.1.0",
+  "description": "Workspace API — wraps claude -p with SSE streaming for the custom React workspace",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "chokidar": "^5.0.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "signwell-mcp",
+  "version": "1.0.0",
+  "description": "SignWell E-Signature MCP server — send documents for signing, track status, download signed PDFs",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,29 @@
+FROM node:20-slim AS build
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_APP_TITLE=IDE
+ARG VITE_HIDE_IDE_TEXT=false
+ARG VITE_LOGO_SIZE_LOGIN=24px
+ARG VITE_LOGO_SIZE_TOPBAR=22px
+ARG VITE_BOT_NAME=bot
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+ENV VITE_APP_TITLE=$VITE_APP_TITLE
+ENV VITE_HIDE_IDE_TEXT=$VITE_HIDE_IDE_TEXT
+ENV VITE_LOGO_SIZE_LOGIN=$VITE_LOGO_SIZE_LOGIN
+ENV VITE_LOGO_SIZE_TOPBAR=$VITE_LOGO_SIZE_TOPBAR
+ENV VITE_BOT_NAME=$VITE_BOT_NAME
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 3000
+CMD sed -i "s|__SUPABASE_URL__|${VITE_SUPABASE_URL}|g" /etc/nginx/conf.d/default.conf && \
+    sed -i "s|__SUPABASE_ANON_KEY__|${VITE_SUPABASE_ANON_KEY}|g" /etc/nginx/conf.d/default.conf && \
+    sed -i "s|__CODE_SERVER_PASSWORD__|${CODE_SERVER_PASSWORD}|g" /etc/nginx/conf.d/default.conf && \
+    nginx -g 'daemon off;'
