@@ -67,7 +67,7 @@ reliable, fast). Any Ubuntu server works, but the steps below are for Hetzner.
    and the installer expects key-based login.)*
 7. **Create & Buy**.
 
-After ~30 seconds the server shows an **IP address** (e.g. `65.21.10.4`).
+After ~30 seconds the server shows an **IP address** (e.g. `203.0.113.4`).
 Write it down — you'll need it twice.
 
 **Check you can log in** (from your computer):

@@ -215,7 +215,7 @@ fi
 say ""; hr
 say "${BOLD}Step 1/4 — Your server${NC}"
 say "Your workspace runs on a Linux server. Paste its address from your provider."
-say "${DIM}Example: root@65.21.10.4${NC}"
+say "${DIM}Example: root@203.0.113.4${NC}"
 say ""
 
 HETZNER_HOST=""
@@ -224,7 +224,7 @@ while :; do
     if printf '%s' "$HETZNER_HOST" | grep -qE '^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+$'; then
         break
     fi
-    warn "Expected the form user@host, e.g. root@65.21.10.4"
+    warn "Expected the form user@host, e.g. root@203.0.113.4"
 done
 SERVER_HOST="${HETZNER_HOST#*@}"
 
