@@ -255,8 +255,11 @@ done
 SERVER_HOST="${HETZNER_HOST#*@}"
 SERVER_USER="${HETZNER_HOST%@*}"
 
+# NOTE: every ssh below uses -n (stdin from /dev/null). Without it, when this
+# script is run via `curl ... | bash`, ssh would read and consume the rest of
+# the piped script from stdin, ending the installer early.
 ssh_works() {
-    ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+    ssh -n -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
         "$HETZNER_HOST" 'echo ok' >/dev/null 2>&1
 }
 
@@ -276,7 +279,7 @@ else
         1)
             keypath="$(ask "Path to the SSH private key for this server:")"
             keypath="${keypath/#\~/$HOME}"
-            if [ -n "$keypath" ] && [ -f "$keypath" ] && ssh -i "$keypath" -o BatchMode=yes \
+            if [ -n "$keypath" ] && [ -f "$keypath" ] && ssh -n -i "$keypath" -o BatchMode=yes \
                    -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" 'echo ok' >/dev/null 2>&1; then
                 ok "That key works."
                 # Persist it for this host so plain ssh/scp (installer + deploy.sh) use it.
@@ -302,7 +305,7 @@ else
             say "${BOLD}Enter the server's root password when prompted${NC} ${DIM}(Hetzner emails it when${NC}"
             say "${DIM}you create a server without an SSH key).${NC}"
             if command -v ssh-copy-id >/dev/null 2>&1; then
-                ssh-copy-id -i "$HOME/.ssh/id_ed25519.pub" -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" || true
+                ssh-copy-id -i "$HOME/.ssh/id_ed25519.pub" -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" </dev/null || true
             else
                 ssh -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" \
                     'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys' \
@@ -465,14 +468,14 @@ fi
 # --- Ensure Docker is present on the server ---------------------------------
 # deploy.sh runs `docker compose` on the server but doesn't install Docker.
 if [ "${SSH_OK:-0}" -eq 1 ]; then
-    if ssh -o BatchMode=yes -o ConnectTimeout=10 "$HETZNER_HOST" 'command -v docker >/dev/null 2>&1'; then
+    if ssh -n -o BatchMode=yes -o ConnectTimeout=10 "$HETZNER_HOST" 'command -v docker >/dev/null 2>&1'; then
         ok "Docker is installed on the server."
     else
         warn "Docker isn't installed on the server yet."
         if confirm "Install Docker + firewall rules on $SERVER_HOST now?" yes; then
             info "Installing Docker (this can take a minute) ..."
-            if ssh -o BatchMode=yes "$HETZNER_HOST" 'curl -fsSL https://get.docker.com | sh'; then
-                ssh -o BatchMode=yes "$HETZNER_HOST" \
+            if ssh -n -o BatchMode=yes "$HETZNER_HOST" 'curl -fsSL https://get.docker.com | sh'; then
+                ssh -n -o BatchMode=yes "$HETZNER_HOST" \
                     'ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw deny 8080 && ufw deny 3002 && ufw --force enable' \
                     >/dev/null 2>&1 || warn "Docker installed, but firewall (ufw) setup was skipped/failed — review it manually."
                 ok "Docker installed on the server."
@@ -494,7 +497,9 @@ info "Deploying — building on the server and swapping in the new containers."
 say "${DIM}This usually takes a few minutes on the first run.${NC}"
 say ""
 
-"./$CLIENT_DIR/deploy.sh"
+# </dev/null so deploy.sh's own ssh/scp calls don't read this (possibly piped)
+# script's stdin.
+"./$CLIENT_DIR/deploy.sh" </dev/null
 DEPLOY_RC=$?
 
 if [ "$DEPLOY_RC" -ne 0 ]; then
