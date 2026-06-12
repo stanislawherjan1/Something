@@ -65,6 +65,12 @@ reliable, fast). Any Ubuntu server works, but the steps below are for Hetzner.
    Copy the printed line and paste it into Hetzner's **Add SSH key** box.
    *(Skipping this and using a root password also works, but a key is easier
    and the installer expects key-based login.)*
+
+   > **Using a custom-named key?** If you created a key with a name other than
+   > `id_ed25519`/`id_rsa` (e.g. `~/.ssh/myproject`), plain `ssh` won't try it
+   > automatically. The installer detects this and offers to wire it up — just
+   > give it the key's path when asked. (It writes a `~/.ssh/config` entry so
+   > the deploy uses the right key.)
 7. **Create & Buy**.
 
 After ~30 seconds the server shows an **IP address** (e.g. `203.0.113.4`).
@@ -233,7 +239,8 @@ That's it. Your assistant is live.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Browser: **connection refused** / page won't load | DNS not pointing at the server, or the firewall is blocking 80/443 | Re-check `dig +short <domain>` returns your server IP. Open ports: `ssh root@<IP> "ufw allow 80/tcp && ufw allow 443/tcp"`. Give TLS a minute to issue on first load. |
-| `ssh: Permission denied (publickey)` | Your SSH key isn't on the server | Add it: `ssh-copy-id root@<IP>` — then retry. (Or in Hetzner: Server → Rescue/Console to add the key, or recreate the server with the key attached.) |
+| `ssh: Permission denied (publickey)` | Your public key isn't on the server | Add it: `ssh-copy-id root@<IP>` — then retry. (Or in Hetzner: Server → Rescue/Console to add the key, or recreate the server with the key attached.) |
+| SSH works with `ssh -i ~/.ssh/<key>` but **not** plain `ssh` | Your key has a non-default name, so `ssh` doesn't try it | The installer offers to fix this; or add to `~/.ssh/config`: `Host <IP>` / `IdentityFile ~/.ssh/<key>` / `IdentitiesOnly yes`. Then `ssh root@<IP> 'echo ok'` works without `-i`. |
 | Google: **`redirect_uri_mismatch`** at login | The callback URL isn't registered on your OAuth client | In Google Console → **Credentials** → your OAuth client → **Authorized redirect URIs**, add exactly `https://<your-domain>/auth/callback` (no trailing slash) and save. See [Google OAuth setup](#google-oauth). |
 | Signed in, but **the bot doesn't reply on Telegram** | No Telegram token set | Open **Integrations → Telegram** in the workspace and paste a bot token from [@BotFather](https://t.me/BotFather). |
 | Deploy **times out or fails partway** | Transient network/build hiccup, or DNS/Docker wasn't ready | Just run it again — the deploy is idempotent: `./clients/<your-domain>/deploy.sh`. Confirm Docker is installed (`ssh root@<IP> 'docker --version'`) and DNS resolves first. |
