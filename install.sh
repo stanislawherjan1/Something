@@ -171,8 +171,9 @@ say "${DIM}New to any of this? The full step-by-step is at:${NC}"
 say "${DIM}  ${QUICK_START_URL}${NC}"
 say ""
 say "${BOLD}Tip — you don't have to do this alone.${NC} Open this folder in an AI coding"
-say "tool (Claude Code, Cursor, Codex) and let it drive the install, read any"
-say "errors back to itself, and make changes for you."
+say "tool and ask ${BOLD}Claude Code${NC}, ${BOLD}Codex${NC}, or ${BOLD}Cursor${NC} to walk you through it: it can"
+say "run each step with you, explain what's happening, fix errors as they come"
+say "up, and adjust the project to what you need."
 say ""
 printf '%b' "${BOLD}Ready? Press Enter to begin${NC} ${DIM}(or Ctrl-C to prepare first)${NC} " >&2
 IFS= read -r _ <"$TTY" || true
