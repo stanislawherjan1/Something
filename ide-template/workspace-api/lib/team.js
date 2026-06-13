@@ -12,7 +12,9 @@
  * Lockout protection: refuse any operation that would leave the file with
  * zero admins, and refuse self-delete (user removing themselves).
  *
- * File mode 0600 (owner read/write only). Atomic writes via tempfile + rename.
+ * File mode 0660 (owner + `workspace` group read/write). Atomic writes via
+ * tempfile + rename. Group-rw because the entrypoint may seed it as coder
+ * while workspace-api reads/writes it as wsapi — both share the workspace group.
  */
 
 import {
@@ -62,10 +64,13 @@ function readRaw() {
 
 function writeRaw(entries) {
   ensureProjectDir();
-  writeFileSync(TMP, JSON.stringify(entries, null, 2), { mode: 0o600 });
-  try { chmodSync(TMP, 0o600); } catch {}
+  // 0o660, not 0o600: PROJECT_DIR is shared (setgid) by the `workspace` group
+  // (coder, wsapi, bot, mcp). The entrypoint may bootstrap this file as coder
+  // while workspace-api runs as wsapi — group-rw keeps it readable across both.
+  writeFileSync(TMP, JSON.stringify(entries, null, 2), { mode: 0o660 });
+  try { chmodSync(TMP, 0o660); } catch {}
   renameSync(TMP, FILE);
-  try { chmodSync(FILE, 0o600); } catch {}
+  try { chmodSync(FILE, 0o660); } catch {}
 }
 
 function appendAudit(action, email, extra) {
@@ -77,8 +82,8 @@ function appendAudit(action, email, extra) {
     ...(extra || {}),
   }) + '\n';
   try {
-    appendFileSync(AUDIT, line, { mode: 0o600 });
-    chmodSync(AUDIT, 0o600);
+    appendFileSync(AUDIT, line, { mode: 0o660 });
+    chmodSync(AUDIT, 0o660);
   } catch (err) {
     process.stderr.write(`[team] audit append failed: ${err.message}\n`);
   }

@@ -780,7 +780,12 @@ print(json.dumps(entries, indent=2))
 PYEOF
     then
         mv "${ALLOWED_EMAILS_FILE}.tmp" "$ALLOWED_EMAILS_FILE"
-        chmod 600 "$ALLOWED_EMAILS_FILE"
+        # 660 (not 600): workspace-api runs as uid 1001 (wsapi), but this file
+        # is created here owned by coder (1000). Both are in the shared
+        # `workspace` group (1100, setgid on PROJECT_DIR), so group-rw lets
+        # wsapi read it. With 600 wsapi gets EACCES → admin checks fail → the
+        # first-login wizard's "save token" button silently 403s.
+        chmod 660 "$ALLOWED_EMAILS_FILE"
         COUNT=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$ALLOWED_EMAILS_FILE" 2>/dev/null || echo "?")
         echo "[entrypoint] Team whitelist bootstrapped: $COUNT user(s) (first = admin)."
     else
