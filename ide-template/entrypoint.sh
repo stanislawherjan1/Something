@@ -1691,21 +1691,25 @@ PYEOF
 #                (file is now renamed to .migrated.bak after H4 migration,
 #                so this is here purely for the very first deploy where
 #                migration hasn't run yet).
-HAS_LEGACY_CREDS=0
-HAS_WIZARD_TOKEN=0
-[ -f /home/bot/.claude/.credentials.json ]                     && HAS_LEGACY_CREDS=1
-[ -f /home/coder/.claude/.credentials.json ]                   && HAS_LEGACY_CREDS=1
-[ -f /var/wsapi-store/.platform.token.enc ]                    && HAS_WIZARD_TOKEN=1
-[ -f /home/coder/project/.platform.token.enc ]                 && HAS_WIZARD_TOKEN=1
+# True if Claude credentials exist by any path (legacy creds or wizard token).
+has_claude_creds() {
+    for f in /home/bot/.claude/.credentials.json \
+             /home/coder/.claude/.credentials.json \
+             /var/wsapi-store/.platform.token.enc \
+             /home/coder/project/.platform.token.enc; do
+        [ -f "$f" ] && return 0
+    done
+    return 1
+}
 
-if [ "$HAS_LEGACY_CREDS" = "1" ] || [ "$HAS_WIZARD_TOKEN" = "1" ]; then
-    echo "[entrypoint] Claude credentials present (legacy=$HAS_LEGACY_CREDS wizard=$HAS_WIZARD_TOKEN) — starting ${BOT_NAME} + reminders."
-
-    # First-run bootstrap: scaffold default folder structure + system
-    # reminders + Tasks/Pending templates if this is a fresh project AND
-    # the user hasn't already set up their own CLAUDE.md. Idempotent —
-    # gated by ~/project/.bootstrapped flag and skipped entirely when
-    # ~/project/.claude/CLAUDE.md exists (legacy clients keep their setup).
+# Start the bot process group (+ idempotent first-run project bootstrap).
+# Used both when creds are present at container start AND by the deferred-token
+# watcher below — so a token pasted into the wizard AFTER startup brings the
+# bot up on its own, without a manual container restart.
+start_bot_stack() {
+    # First-run bootstrap: scaffold default folder structure + system reminders
+    # + Tasks/Pending templates on a fresh project. Idempotent (gated by
+    # ~/project/.bootstrapped) and skipped when ~/project/.claude/CLAUDE.md exists.
     if [ -x /opt/ide/bootstrap/bootstrap-project.sh ]; then
         BOT_NAME="$BOT_NAME" PROJECT_DIR="$PROJECT_DIR" BOOTSTRAP_SRC=/opt/ide/bootstrap \
             su coder -c '/opt/ide/bootstrap/bootstrap-project.sh' \
@@ -1716,13 +1720,28 @@ if [ "$HAS_LEGACY_CREDS" = "1" ] || [ "$HAS_WIZARD_TOKEN" = "1" ]; then
     pm2 start /home/coder/ecosystem.config.js --only "${BOT_NAME},${BOT_NAME}-reminders,${BOT_NAME}-snapshot,${BOT_NAME}-browser-watchdog" \
         2>&1 || echo "[entrypoint] WARNING: ${BOT_NAME} failed to start"
     pm2 save 2>/dev/null || true
+}
+
+if has_claude_creds; then
+    echo "[entrypoint] Claude credentials present — starting ${BOT_NAME} + reminders."
+    start_bot_stack
 else
-    echo "[entrypoint] Claude not logged in — ${BOT_NAME} bot deferred. Open the workspace and paste a token in the wizard (Step 4)."
+    echo "[entrypoint] Claude not logged in — ${BOT_NAME} bot deferred. Paste a token in the wizard (Step 4); the bot starts automatically within seconds — no restart needed."
     pm2 save 2>/dev/null || true
-    # Alert via Telegram only if creds were ever expected (production + token configured but missing now)
+    # Alert via Telegram only if creds were ever expected (token configured but missing now)
     if [ -x /home/coder/bot-notify.sh ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
         /home/coder/bot-notify.sh "Claude credentials missing on ${IDE_NAME:-workspace} — bot deferred until token is supplied via wizard." 2>/dev/null &
     fi
+    # Watch for the wizard to write a token, then start the bot. Closes the
+    # bootstrapping gap: restartBot() only signals an ALREADY-running bot.sh, so
+    # a token supplied after container start would otherwise never launch the
+    # deferred bot. This watcher runs for the container's lifetime until a token
+    # appears, then starts the stack once and exits.
+    (
+        while ! has_claude_creds; do sleep 5; done
+        echo "[entrypoint] Claude token detected — starting deferred ${BOT_NAME} bot."
+        start_bot_stack
+    ) &
 fi
 
 # Wait for code-server (main process)
