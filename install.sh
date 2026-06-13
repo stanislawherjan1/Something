@@ -240,17 +240,23 @@ fi
 # =============================================================================
 say ""; hr
 say "${BOLD}Step 1/4 — Your server${NC}"
-say "Your workspace runs on a Linux server. Paste its address from your provider."
-say "${DIM}Example: root@203.0.113.4${NC}"
+say "Paste your server's IP address (copy it straight from your provider)."
+say "${DIM}Example: 203.0.113.4   — we log in as root. Use user@host only if you${NC}"
+say "${DIM}created a different user.${NC}"
 say ""
 
 HETZNER_HOST=""
 while :; do
-    HETZNER_HOST="$(ask "Server address (user@host):")"
-    if printf '%s' "$HETZNER_HOST" | grep -qE '^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+$'; then
+    raw="$(ask "Server IP:")"
+    raw="$(printf '%s' "$raw" | tr -d '[:space:]')"   # tolerate stray spaces
+    if printf '%s' "$raw" | grep -qE '^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+$'; then
+        HETZNER_HOST="$raw"                    # already user@host
+        break
+    elif printf '%s' "$raw" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+        HETZNER_HOST="root@$raw"               # bare IP/host → default to root
         break
     fi
-    warn "Expected the form user@host, e.g. root@203.0.113.4"
+    warn "Paste just the IP (e.g. 203.0.113.4), or user@host for a custom user."
 done
 SERVER_HOST="${HETZNER_HOST#*@}"
 SERVER_USER="${HETZNER_HOST%@*}"

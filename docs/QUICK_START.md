@@ -203,7 +203,7 @@ curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/ins
 It walks you through four short steps:
 
 - **Step 0 — Google sign-in:** paste the Client ID and Secret from step 4e.
-- **Step 1 — Server:** paste `root@<YOUR_SERVER_IP>`. It checks it can connect.
+- **Step 1 — Server:** paste your server's **IP** (copied straight from Hetzner — `root@` is assumed). It checks it can connect.
 - **Step 2 — Domain:** paste `workspace.yourcompany.com`. It checks DNS.
 - **Step 3 — Admin email:** the Google account you'll sign in with.
 - **Step 4 — Deploy:** it builds everything on the server and waits for the
