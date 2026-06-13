@@ -543,3 +543,6 @@ say "    4. Open ${BOLD}Integrations${NC} to add your Telegram bot token and too
 say ""
 say "  ${DIM}Full walkthrough: ${QUICK_START_URL}${NC}"
 say ""
+say "  ${BOLD}To update later${NC} (pull new code + redeploy):"
+say "    ${DIM}cd \"$REPO_ROOT\" && ./update.sh${NC}"
+say ""

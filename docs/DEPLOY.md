@@ -399,11 +399,22 @@ ufw enable
 
 ## Updating an existing deployment
 
-Deployments don't auto-update. To pull the latest code, re-run the deploy from the client dir — it rebuilds the images on the server and swaps containers with no data loss:
+Deployments don't auto-update. Updating is two steps: **get the latest code, then redeploy.** Your config (`clients/<name>/`, `clients/admin.env`) is gitignored, so a pull never touches it.
+
+**Easiest — one command** (from your checkout; pulls + redeploys every client):
 
 ```bash
-cd clients/<your-client> && ./deploy.sh
+./update.sh
 ```
+
+**Manual equivalent:**
+
+```bash
+git pull                              # get the latest code
+cd clients/<your-client> && ./deploy.sh   # rebuild on the server, swap containers
+```
+
+> Installed via the one-liner? The repo was cloned into a `Something/` folder — `cd` into it first. If `git pull` won't fast-forward (rare), `git stash` your local edits or re-clone.
 
 - New env vars from the template are auto-filled by `bootstrap-client-env.sh`; existing values and generated secrets are preserved.
 - Activated integrations stay active — their credentials live in the encrypted store, not in the image.
