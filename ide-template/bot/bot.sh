@@ -931,6 +931,19 @@ if [ "$(date +%s)" -ge "$WSAPI_DEADLINE" ]; then
     log "WARN: workspace-api /api/health did not respond in 180s — claude may start with stale mcpServers (recover with: pm2 restart $SESSION)"
 fi
 
+# Force a fresh broker re-mint before claude reads .claude.json. wsapi only
+# auto-syncs at its OWN boot; on a bot-only restart (Telegram /restart, PM2
+# cycle) the BROKER_NONCE values already in .claude.json may be stale or
+# expired (24h TTL), and the broker rejects every brokered MCP grant
+# (Trello, GitHub, …) — web chat keeps working, integrations silently don't.
+# This loopback-only call re-issues fresh nonces into the live broker Map and
+# rewrites .claude.json so THIS claude session starts with valid grants.
+if curl -sf --max-time 5 -X POST http://localhost:3001/api/internal/sync-mcp >/dev/null 2>&1; then
+    log "Broker MCP grants re-minted (fresh nonces for this session)"
+else
+    log "WARN: broker re-mint call failed — claude may start with stale grants (recover: /restart)"
+fi
+
 # Re-source integrations.env now that wsapi has finished booting. wsapi's
 # startup re-hydrates this file from the encrypted store (see
 # rehydrateRuntimeFiles in workspace-api/lib/setup.js) — the initial source

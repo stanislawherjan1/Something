@@ -636,6 +636,15 @@ export async function restartBot() {
   const botName = (process.env.BOT_NAME || 'bot').trim();
   const signalFile = `/home/bot/.${botName}/restart-signal`;
 
+  // Re-mint fresh broker grants before cycling the bot. The restarted bot.sh
+  // re-reads .claude.json; without a fresh sync it would reuse stale/expired
+  // (24h TTL) nonces and the broker would reject every brokered MCP grant.
+  // (bot.sh also calls /api/internal/sync-mcp on startup as belt-and-braces
+  // for restarts that don't go through here — e.g. the Telegram /restart
+  // self-exit + PM2 cycle.)
+  try { syncMcpServers(); }
+  catch (err) { process.stderr.write(`[integrations-runtime] restartBot: pre-restart sync failed: ${err.message}\n`); }
+
   try {
     const { existsSync, writeFileSync } = await import('node:fs');
     if (!existsSync(signalFile)) {
