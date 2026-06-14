@@ -61,7 +61,11 @@ reminders = reminders.map(r => {
     toSend.push(wire.replace(/\n/g, ' '));
     changed = true;
 
-    if (r.repeat === 'none') {
+    // One-shot reminders are deleted after firing. Treat any value other
+    // than the known recurring tokens ('daily', 'weekly') as one-shot —
+    // otherwise a missing/unknown `repeat` field silently re-schedules the
+    // reminder by +1 day and the user gets it back tomorrow.
+    if (r.repeat !== 'daily' && r.repeat !== 'weekly') {
         return { ...r, status: 'sent' };
     }
 
