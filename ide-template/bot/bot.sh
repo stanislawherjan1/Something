@@ -548,6 +548,58 @@ if tg_outbound_marker not in content:
 else:
     print('[bot] telegram-log outbound: already patched')
 
+# ── Patch 4d: pid-lock sibling guard ───────────────────────────────────
+# Upstream's "replace stale poller" logic SIGTERMs whatever PID is in
+# bot.pid before writing its own, without checking whether that PID is a
+# recently-started sibling (e.g. duplicate MCP spawn during claude boot)
+# or a true orphan from a crashed previous session. Observed 2026-06-14:
+# the second plugin instance to start killed the first, the first held
+# claude's MCP connection, so the connection closed and claude lost the
+# telegram tool. Inbound messages queued silently on Telegram for hours
+# (no typing indicator, no reply).
+#
+# Fix: gate the SIGTERM on the PID file's mtime. If it was written less
+# than 30s ago, the owner is almost certainly a healthy sibling — bow out
+# cleanly (process.exit(0)) instead of taking it down. Past 30s the
+# original takeover kicks in, which still handles the real "orphan from
+# a crashed previous session" case.
+pid_lock_marker = '// CC-BOT-PATCH: pid-lock sibling guard'
+if pid_lock_marker not in content:
+    old_block = (
+        "try {\n"
+        "  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)\n"
+        "  if (stale > 1 && stale !== process.pid) {\n"
+        "    process.kill(stale, 0)\n"
+        "    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\\n`)\n"
+        "    process.kill(stale, 'SIGTERM')\n"
+        "  }\n"
+        "} catch {}\n"
+    )
+    new_block = (
+        pid_lock_marker + "\n"
+        "try {\n"
+        "  const stale = parseInt(readFileSync(PID_FILE, 'utf8'), 10)\n"
+        "  if (stale > 1 && stale !== process.pid) {\n"
+        "    process.kill(stale, 0)\n"
+        "    const ageMs = Date.now() - statSync(PID_FILE).mtimeMs\n"
+        "    if (ageMs < 30_000) {\n"
+        "      process.stderr.write(`telegram channel: sibling poller already running pid=${stale} (age=${ageMs}ms) — exiting cleanly\\n`)\n"
+        "      process.exit(0)\n"
+        "    }\n"
+        "    process.stderr.write(`telegram channel: replacing stale poller pid=${stale}\\n`)\n"
+        "    process.kill(stale, 'SIGTERM')\n"
+        "  }\n"
+        "} catch {}\n"
+    )
+    if old_block in content:
+        content = content.replace(old_block, new_block)
+        changed = True
+        print('[bot] pid-lock guard: patched')
+    else:
+        print('[bot] WARNING: pid-lock guard pattern not found (upstream server.ts may have changed)')
+else:
+    print('[bot] pid-lock guard: already patched')
+
 # ── Patch 5: /restart slash command + Telegram slash menu ──────────────
 # Operator-only command that exits the bot cleanly. PM2 sees the exit and
 # restarts the process (max_restarts: 50, restart_delay: 10s). On restart,
