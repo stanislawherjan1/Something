@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
+import { publish as publishNotification } from '../lib/notify.js';
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -34,6 +35,24 @@ export default function internalRouter() {
       return res.json({ ok: true, changed: !!changed });
     } catch (err) {
       process.stderr.write(`[internal] sync-mcp failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Server-pushed notification into the browser session. Loopback callers
+  // are reminder-monitor.sh (via web-notify.sh) and future skill hooks /
+  // telegram-inbound mirror. notify.publish() fans out to every connected
+  // /api/notifications/stream subscriber.
+  router.post('/internal/notify', loopbackOnly, (req, res) => {
+    const { kind, title, body, meta, id } = req.body || {};
+    if (typeof title !== 'string' && typeof body !== 'string') {
+      return res.status(400).json({ ok: false, error: 'title or body required (strings)' });
+    }
+    try {
+      const n = publishNotification({ kind, title, body, meta, id });
+      return res.json({ ok: true, id: n.id });
+    } catch (err) {
+      process.stderr.write(`[internal] notify failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

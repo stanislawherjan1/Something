@@ -36,6 +36,7 @@ import setupRouter         from './routes/setup.js';
 import memoryRouter        from './routes/memory.js';
 import botRouter           from './routes/bot.js';
 import internalRouter      from './routes/internal.js';
+import notificationsRouter from './routes/notifications.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler } from './routes/docs-comments-login.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
@@ -83,6 +84,7 @@ app.use('/api', setupRouter());
 app.use('/api', memoryRouter());
 app.use('/api', botRouter());
 app.use('/api', internalRouter());
+app.use('/api', notificationsRouter());
 app.use('/api/integrations/docs-comments', docsCommentsLoginRouter());
 
 // On startup: seed WORKSPACE.md into .claude/ if it doesn't exist yet.
