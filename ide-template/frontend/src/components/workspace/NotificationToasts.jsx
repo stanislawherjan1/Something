@@ -55,7 +55,7 @@ export default function NotificationToasts() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2"
+      className="pointer-events-none fixed bottom-6 right-6 z-50 flex w-[22rem] max-w-[calc(100vw-3rem)] flex-col gap-3"
       aria-live="polite"
       aria-atomic="false"
     >
@@ -69,19 +69,19 @@ export default function NotificationToasts() {
             exit={{ opacity: 0, x: 40, transition: { duration: 0.18 } }}
             transition={{ type: 'spring', stiffness: 320, damping: 28 }}
             className={cn(
-              'pointer-events-auto rounded-lg border border-border bg-card shadow-lg',
-              'flex gap-3 px-3 py-2.5 text-sm',
+              'pointer-events-auto rounded-md border border-border bg-card shadow-lg',
+              'flex gap-4 px-5 py-4 text-sm',
             )}
           >
-            <Bell className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <Bell className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div className="min-w-0 flex-1">
               {n.title ? (
-                <div className="truncate font-medium text-foreground">{n.title}</div>
+                <div className="truncate font-medium leading-snug text-foreground">{n.title}</div>
               ) : null}
               {n.body ? (
-                <div className="mt-0.5 line-clamp-3 text-muted-foreground">{n.body}</div>
+                <div className="mt-1.5 line-clamp-3 leading-relaxed text-muted-foreground">{n.body}</div>
               ) : null}
-              <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+              <div className="mt-3 text-[11px] uppercase tracking-wide text-muted-foreground/70">
                 {n.kind || 'system'} · {formatTs(n.ts)}
               </div>
             </div>
@@ -94,7 +94,7 @@ export default function NotificationToasts() {
                   return next;
                 })
               }
-              className="-mr-1 -mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="-mr-1 shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               aria-label="Dismiss"
             >
               <X className="size-3.5" aria-hidden />
