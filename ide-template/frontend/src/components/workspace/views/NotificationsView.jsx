@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Bell, BellOff, Inbox, Send, Globe } from 'lucide-react';
+import { Bell, BellOff, Check, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import useNotifications from '../useNotifications.js';
@@ -24,7 +24,7 @@ import { SkeletonLine, SkeletonCircle } from '../SkeletonLoader.jsx';
 export default function NotificationsView({ sidebarOpen }) {
   const { notifications, connecting } = useNotifications();
   const desktop = useDesktopNotifications(notifications);
-  const { isRead, markRead } = useNotificationReadState();
+  const { isRead, markRead, markAllRead } = useNotificationReadState();
 
   const items = useMemo(
     () =>
@@ -51,10 +51,28 @@ export default function NotificationsView({ sidebarOpen }) {
         icon={Inbox}
         title="Notifications"
         sidebarOpen={sidebarOpen}
-        meta={<DesktopToggle desktop={desktop} />}
+        meta={(
+          <div className="inline-flex items-center gap-2">
+            <DesktopToggle desktop={desktop} />
+            {items.length > 0 && (
+              <button
+                type="button"
+                onClick={() => markAllRead(items.map((n) => n.id))}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-2.5 py-1',
+                  'text-[11.5px] text-muted-foreground/80 transition-colors',
+                  'hover:bg-muted/40 hover:text-foreground',
+                )}
+              >
+                <Check className="size-3.5" strokeWidth={2} aria-hidden />
+                Mark all as read
+              </button>
+            )}
+          </div>
+        )}
       />
-      <div className="flex-1 overflow-auto">
-        <div className="flex flex-col gap-7 px-6 pb-12 pt-2">
+      <div className="flex flex-1 flex-col overflow-auto">
+        <div className="flex min-h-full flex-1 flex-col gap-7 px-6 pb-12 pt-2">
           {connecting && items.length === 0 ? (
             <div className="flex flex-col overflow-hidden rounded-lg border border-border/60 bg-card divide-y divide-border/50">
               <SkeletonRow />
@@ -64,7 +82,7 @@ export default function NotificationsView({ sidebarOpen }) {
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="flex flex-col overflow-hidden rounded-lg border border-border/60 bg-card divide-y divide-border/50">
+            <div className="flex flex-col gap-2">
               {items.map((n) => (
                 <Row key={n.id} n={n} onOpen={() => onOpen(n)} />
               ))}
@@ -77,44 +95,27 @@ export default function NotificationsView({ sidebarOpen }) {
 }
 
 function Row({ n, onOpen }) {
-  const tone = toneFor(n.kind);
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={cn(
-        'group flex w-full items-start gap-3.5 px-4 py-3.5 text-left transition-colors',
-        'hover:bg-muted/20',
-      )}
+      className="group flex w-full items-start gap-3 rounded-md border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/20"
     >
-      <div
-        className={cn(
-          'mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ring-1 ring-foreground/10',
-          tone.bg,
-          tone.fg,
-        )}
-      >
-        <tone.Icon className="size-4" strokeWidth={1.75} aria-hidden />
-      </div>
       <div className="min-w-0 flex-1">
         {n.title ? (
-          <div className="truncate text-sm font-medium leading-snug text-foreground">{n.title}</div>
+          <div className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">
+            {n.title}
+          </div>
         ) : null}
         {n.body ? (
-          <div className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">{n.body}</div>
+          <div className="mt-0.5 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">
+            {n.body}
+          </div>
         ) : null}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
-          <span>{(n.kind || 'system').toUpperCase()}</span>
-          <span className="text-muted-foreground/55">·</span>
-          <span>{formatAbsolute(n.ts)}</span>
-          {n.meta?.channel ? (
-            <>
-              <span className="text-muted-foreground/55">·</span>
-              <ChannelInline channel={n.meta.channel} />
-            </>
-          ) : null}
-        </div>
       </div>
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/55">
+        {formatAbsolute(n.ts)}
+      </span>
     </button>
   );
 }
@@ -164,39 +165,36 @@ function DesktopToggle({ desktop }) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={enabled}
       onClick={() => setEnabled(!enabled)}
+      title={enabled ? 'Click to disable desktop notifications' : 'Click to allow desktop notifications'}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] transition-colors',
         enabled
-          ? 'border-border bg-card text-foreground hover:bg-accent/40'
-          : 'border-dashed border-border bg-background text-muted-foreground hover:text-foreground',
+          ? 'border-border/70 bg-card text-foreground/85 hover:bg-muted/40'
+          : 'border-dashed border-border/60 bg-background text-muted-foreground/75 hover:text-foreground/85',
       )}
-      aria-pressed={enabled}
     >
-      {enabled ? <Bell className="size-3.5" aria-hidden /> : <BellOff className="size-3.5" aria-hidden />}
-      Desktop popups {enabled ? 'on' : 'off'}
+      {enabled
+        ? <Bell    className="size-3.5" strokeWidth={2} aria-hidden />
+        : <BellOff className="size-3.5" strokeWidth={2} aria-hidden />}
+      Desktop notifications
     </button>
   );
 }
 
-function ChannelInline({ channel }) {
-  const c = (channel || 'all').toLowerCase();
-  if (c === 'telegram') return <span className="inline-flex items-center gap-1.5"><Send  className="size-3" strokeWidth={1.75} /> Telegram</span>;
-  if (c === 'web')      return <span className="inline-flex items-center gap-1.5"><Globe className="size-3" strokeWidth={1.75} /> Web</span>;
-  return null;
-}
-
 function EmptyState() {
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center justify-center pt-10 text-center text-muted-foreground">
-      <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-muted">
-        <Inbox className="size-5" aria-hidden />
-      </div>
-      <div className="text-sm font-medium text-foreground">Nothing here yet.</div>
-      <div className="mt-2 max-w-xs text-sm leading-relaxed">
-        When the bot fires a reminder, finishes a skill, or processes a
-        Telegram message, an entry lands here. Click one to open the
-        conversation.
+    <div className="flex h-full items-center justify-center px-6 py-16">
+      <div className="flex max-w-[320px] flex-col items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground/50">
+          <Inbox className="size-6" strokeWidth={1.75} />
+        </div>
+        <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">Nothing here yet</h2>
+        <p className="text-[13px] leading-relaxed text-muted-foreground/75">
+          Reminders, skill results and messages from your bot land here.
+        </p>
       </div>
     </div>
   );

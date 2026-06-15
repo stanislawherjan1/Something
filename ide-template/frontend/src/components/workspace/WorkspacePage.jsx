@@ -11,6 +11,9 @@ import NotificationToasts from './NotificationToasts.jsx';
 import useFileWatcher from './useFileWatcher.js';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
+import useNotifications from './useNotifications.js';
+import useNotificationReadState from './useNotificationReadState.js';
+import useDesktopNotifications from './useDesktopNotifications.js';
 import { useMobile } from '@/lib/useMobile';
 import { useApi } from '@/lib/useApi';
 
@@ -92,6 +95,21 @@ export default function WorkspacePage() {
   const hasStarted = location.pathname !== '/' || sentFromWelcome;
   const [pendingMsg,  setPendingMsg]  = useState(null);
 
+  // Unread-notification signal: shared with NotificationToasts + Sidebar
+  // + ChatHeader via useNotificationReadState's localStorage backing.
+  // Declared up here because the useEffect below depends on it.
+  const { notifications } = useNotifications();
+  const { isRead, markAllRead } = useNotificationReadState();
+  const hasUnreadNotifications = notifications.some((n) => !isRead(n.id));
+  // Native browser popups need to fire whenever a new SSE event arrives,
+  // not just when the user is currently looking at the Notifications
+  // view. Wiring the hook at the workspace shell level keeps it alive
+  // across every view switch; the toggle inside NotificationsView still
+  // controls the same localStorage flag so user preference stays in
+  // sync. sessionStorage dedupe inside the hook stops the two instances
+  // from double-firing on the same id.
+  useDesktopNotifications(notifications);
+
   // Listen for `ide:chat-prefill` window events. Any modal / panel can fire
   // this to drop a draft message into the chat composer (NOT auto-send) and
   // open the chat pane. Used by the Integrations modal's "Ask <bot>" button
@@ -106,6 +124,23 @@ export default function WorkspacePage() {
     window.addEventListener('ide:chat-prefill', onPrefill);
     return () => window.removeEventListener('ide:chat-prefill', onPrefill);
   }, []);
+
+  // Notification bubble click → expand the chat pane AND mark any
+  // notifications targeting this session as read, so the red dots on
+  // the avatar, History button and that session row all clear in one
+  // gesture. ChatPane listens to the same event independently to flip
+  // activeSessionId.
+  useEffect(() => {
+    const onSelect = (e) => {
+      setChatOpen(true);
+      const sid = e?.detail?.sessionId;
+      if (!sid) return;
+      const matching = notifications.filter((n) => n.meta?.session_id === sid).map((n) => n.id);
+      if (matching.length) markAllRead(matching);
+    };
+    window.addEventListener('ide:chat-select-session', onSelect);
+    return () => window.removeEventListener('ide:chat-select-session', onSelect);
+  }, [notifications, markAllRead]);
 
   // Backwards-compat: old ?view=foo links from before path-based routing.
   // Translate once on mount, replace history so the URL doesn't flicker.
@@ -196,7 +231,7 @@ export default function WorkspacePage() {
           once to /api/notifications/stream for the whole workspace shell, so
           reminders + future skill-completion pings reach the user regardless
           of which view is active. Phase 1 of WEB_CHAT_PUSH. */}
-      <NotificationToasts />
+      <NotificationToasts chatOpen={chatOpen} />
       {/* Top promo banner — Telegram CTA. Visible on desktop only; on mobile the
           chat already takes the full viewport so the banner has nowhere to live.
           The floating bot avatar (rendered below as `motion.button`) is offset
@@ -243,22 +278,7 @@ export default function WorkspacePage() {
         )}
       </AnimatePresence>
 
-      <div
-        className={cn(
-          'relative flex flex-1 min-h-0 overflow-hidden md:grid',
-          !hasStarted
-            ? (sidebarOpen ? 'md:grid-cols-[280px_minmax(0,1fr)]' : 'md:grid-cols-[minmax(0,1fr)]')
-            : cn(
-                sidebarOpen && chatOpen  && 'md:grid-cols-[280px_minmax(0,1fr)_460px]',
-                sidebarOpen && !chatOpen && 'md:grid-cols-[280px_minmax(0,1fr)]',
-                !sidebarOpen && chatOpen  && 'md:grid-cols-[minmax(0,1fr)_460px]',
-                !sidebarOpen && !chatOpen && 'md:grid-cols-[minmax(0,1fr)]',
-              ),
-        )}
-        style={{
-          transition: 'grid-template-columns 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
-        }}
-      >
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Mobile Sidebar Backdrop */}
       <AnimatePresence>
         {isMobile && sidebarOpen && (
@@ -272,18 +292,39 @@ export default function WorkspacePage() {
         )}
       </AnimatePresence>
 
-      {(sidebarOpen || (!isMobile && sidebarOpen)) && (
-        <Sidebar
-          selected={selected}
-          onSelect={handleSelect}
-          onHome={handleHome}
-          showHidden={showHidden}
-          onToggleHidden={() => setShowHidden(s => !s)}
-          onCollapseSidebar={() => setSidebarOpen(false)}
-          fileEventNonce={fileEventNonce}
-          className={cn(isMobile && "fixed inset-y-0 left-0 w-[280px] z-50 shadow-2xl")}
-        />
-      )}
+      {/* Sidebar — push layer. Always mounted so file-tree
+          subscription, expanded-folder state and scroll position
+          survive a toggle. The wrapper's width animates 280 ↔ 0;
+          content next to it grows naturally. Dashboards use fixed-
+          width tiles (minmax(260px,260px)) so the grids reflow column
+          count without resizing individual cards, which is what
+          matters visually. */}
+      <div
+        className={cn(
+          'shrink-0 overflow-hidden',
+          isMobile
+            ? sidebarOpen
+              ? 'fixed inset-y-0 left-0 z-50 w-[280px] shadow-2xl'
+              : 'hidden'
+            : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+        )}
+        style={!isMobile ? { width: sidebarOpen ? 280 : 0 } : undefined}
+        aria-hidden={!sidebarOpen}
+      >
+        <div className="h-full w-[280px]">
+          <Sidebar
+            selected={selected}
+            onSelect={handleSelect}
+            onHome={handleHome}
+            showHidden={showHidden}
+            onToggleHidden={() => setShowHidden(s => !s)}
+            onCollapseSidebar={() => setSidebarOpen(false)}
+            fileEventNonce={fileEventNonce}
+            className="h-full"
+          />
+        </div>
+      </div>
+
       {!hasStarted ? (
         <WelcomeScreen onSend={handleWelcomeSend} sidebarOpen={sidebarOpen} onExpandSidebar={() => setSidebarOpen(true)} />
       ) : (
@@ -293,20 +334,37 @@ export default function WorkspacePage() {
           fileEventNonce={fileEventNonce}
           sidebarOpen={sidebarOpen}
           onExpandSidebar={() => setSidebarOpen(true)}
-          className="flex-1"
+          className="flex-1 min-w-0"
         />
       )}
+
+      {/* Chat lives on the right with the same width-animation discipline
+          as the sidebar so collapse / expand feels symmetric. ChatPane
+          stays mounted across toggle — session list, scroll position,
+          input draft all survive a collapse. */}
       {hasStarted && (
-        <ChatPane
-          onCollapse={() => setChatOpen(false)}
-          onFileSelect={handleSelect}
-          initialMessage={pendingMsg}
-          onInitialMessageConsumed={() => setPendingMsg(null)}
+        <div
           className={cn(
-            isMobile && "fixed inset-0 z-50 w-full",
-            !chatOpen && "hidden"
+            'shrink-0 overflow-hidden',
+            isMobile
+              ? chatOpen
+                ? 'fixed inset-0 z-50 w-full'
+                : 'hidden'
+              : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
           )}
-        />
+          style={!isMobile ? { width: chatOpen ? 460 : 0 } : undefined}
+          aria-hidden={!chatOpen}
+        >
+          <div className="h-full w-[460px]">
+            <ChatPane
+              onCollapse={() => setChatOpen(false)}
+              onFileSelect={handleSelect}
+              initialMessage={pendingMsg}
+              onInitialMessageConsumed={() => setPendingMsg(null)}
+              className="h-full"
+            />
+          </div>
+        </div>
       )}
 
       {/* Floating bot avatar — animated in/out when chat collapses (top-right) */}
@@ -317,9 +375,18 @@ export default function WorkspacePage() {
             onClick={() => setChatOpen(true)}
             title={`Open chat with ${botDisplayName}`}
             initial={{ opacity: 0, scale: 0.6, y: -12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{    opacity: 0, scale: 0.6, y: -12 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            // Wait for the chat panel's width-collapse to finish before
+            // fading the avatar in (delay = panel duration). On exit the
+            // avatar leaves immediately so re-opening the chat feels
+            // snappy. Per-variant transitions diverge the two paths.
+            animate={{
+              opacity: 1, scale: 1, y: 0,
+              transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1], delay: 0.22 },
+            }}
+            exit={{
+              opacity: 0, scale: 0.6, y: -12,
+              transition: { duration: 0.18, ease: [0.22, 1, 0.36, 1] },
+            }}
             whileHover={{ scale: 1.07 }}
             whileTap={{ scale: 0.93 }}
             className={cn(
@@ -329,6 +396,12 @@ export default function WorkspacePage() {
             )}
           >
             <SpinningAvatar className="max-md:size-[60px] md:size-12" />
+            {hasUnreadNotifications && (
+              <span
+                aria-hidden
+                className="absolute right-0.5 top-0.5 size-3 rounded-full bg-red-500 ring-2 ring-background"
+              />
+            )}
           </motion.button>
         )}
       </AnimatePresence>

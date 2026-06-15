@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock } from 'lucide-react';
+import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
@@ -37,7 +37,7 @@ export default function TeamDashboard({ sidebarOpen }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <EditorHeader icon={Users} title="Team" sidebarOpen={sidebarOpen} />
+      <EditorHeader icon={UsersRound} title="Team" sidebarOpen={sidebarOpen} />
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">

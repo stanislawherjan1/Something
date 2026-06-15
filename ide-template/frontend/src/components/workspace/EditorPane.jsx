@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { Menu, Folder, FileText } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { SkeletonEditorHeader, SkeletonText, SkeletonFolderGrid } from './SkeletonLoader.jsx';
 import FileViewer         from './FileViewer.jsx';
@@ -47,17 +48,33 @@ export default function EditorPane({ selected, fileEventNonce, sidebarOpen, onEx
   const viewKey = selected ? `${selected.type}:${selected.path}` : '__empty__';
   return (
     <main className={cn("relative flex flex-1 min-w-0 min-h-0 flex-col bg-background w-full", className)}>
-      {!sidebarOpen && (
-        <button
-          type="button"
-          onClick={onExpandSidebar}
-          title="Show sidebar"
-          className="absolute top-3 z-10 flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground/70 shadow-xs transition-colors hover:bg-sidebar-accent/40 hover:text-foreground/85"
-          style={{ left: '12px' }}
-        >
-          <Menu className="size-4" strokeWidth={1.75} />
-        </button>
-      )}
+      {/* Hamburger button — appears only when the sidebar is collapsed.
+          Fades + scales rather than snapping in, and waits one beat on
+          enter so the sidebar's width-collapse finishes first (otherwise
+          the button overlaps the still-shrinking sidebar visually). On
+          exit it leaves immediately so re-expanding feels snappy. */}
+      <AnimatePresence>
+        {!sidebarOpen && (
+          <motion.button
+            type="button"
+            onClick={onExpandSidebar}
+            title="Show sidebar"
+            initial={{ opacity: 0, scale: 0.7 }}
+            animate={{
+              opacity: 1, scale: 1,
+              transition: { duration: 0.18, ease: [0.22, 1, 0.36, 1], delay: 0.18 },
+            }}
+            exit={{
+              opacity: 0, scale: 0.7,
+              transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
+            }}
+            className="absolute top-3 z-10 flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground/70 shadow-xs transition-colors hover:bg-sidebar-accent/40 hover:text-foreground/85"
+            style={{ left: '12px' }}
+          >
+            <Menu className="size-4" strokeWidth={1.75} />
+          </motion.button>
+        )}
+      </AnimatePresence>
       <ActiveView
         key={viewKey}
         selected={selected}

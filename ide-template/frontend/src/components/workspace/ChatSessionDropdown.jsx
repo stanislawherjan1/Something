@@ -20,6 +20,7 @@ export default function ChatSessionDropdown({
   open, onClose, activeSessionId, onSelect, anchorRef,
   onRequestDelete,
   refreshNonce = 0,
+  unreadSessionIds,
 }) {
   const [sessions, setSessions] = useState([]);
   const [search,   setSearch]   = useState('');
@@ -226,6 +227,13 @@ export default function ChatSessionDropdown({
                 </div>
               )}
             </div>
+
+            {unreadSessionIds?.has(s.id) ? (
+              <span
+                aria-label="Unread"
+                className="size-1.5 shrink-0 rounded-full bg-red-500"
+              />
+            ) : null}
 
             <span className="shrink-0 text-[11px] text-muted-foreground/70">
               {relTime(s.lastMessageAt)}

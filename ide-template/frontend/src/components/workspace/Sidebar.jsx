@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   Eye, EyeOff, Hexagon, KanbanSquare, Images,
-  FilePlus, FolderPlus, Wrench, Plug, Bell, Users, Inbox,
+  FilePlus, FolderPlus, Wrench, Plug, Clock, UsersRound, Inbox,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
@@ -181,6 +181,29 @@ export default function Sidebar({
         </button>
         <button
           type="button"
+          onClick={() => onSelect({ path: '.claude/reminders', type: 'reminders' })}
+          className={cn(
+            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
+            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
+            selected?.type === 'reminders'
+              ? 'bg-sidebar-accent font-medium text-foreground'
+              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
+          )}
+        >
+          {selected?.type === 'reminders' && (
+            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
+          )}
+          <Clock
+            className={cn(
+              'size-[15px] shrink-0 transition-colors',
+              selected?.type === 'reminders' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+            )}
+            strokeWidth={1.75}
+          />
+          <span>Reminders</span>
+        </button>
+        <button
+          type="button"
           onClick={() => onSelect({ path: '.claude/skills', type: 'skills' })}
           className={cn(
             'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
@@ -225,29 +248,6 @@ export default function Sidebar({
           />
           <span>Integrations</span>
         </button>
-        <button
-          type="button"
-          onClick={() => onSelect({ path: '.claude/team', type: 'team' })}
-          className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
-            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'team'
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
-          )}
-        >
-          {selected?.type === 'team' && (
-            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
-          )}
-          <Users
-            className={cn(
-              'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'team' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
-            )}
-            strokeWidth={1.75}
-          />
-          <span>Team</span>
-        </button>
       </div>
       <div className="p-2">
         <UserMenu />
@@ -266,13 +266,6 @@ export default function Sidebar({
 
 const SHORTCUTS = [
   {
-    key: 'tasks',
-    label: 'Tasks',
-    icon: KanbanSquare,
-    target: { path: 'Tasks.md', type: 'file' },
-    match: (sel) => sel?.path === 'Tasks.md',
-  },
-  {
     key: 'notifications',
     label: 'Notifications',
     icon: Inbox,
@@ -280,11 +273,19 @@ const SHORTCUTS = [
     match: (sel) => sel?.type === 'notifications',
   },
   {
-    key: 'reminders',
-    label: 'Reminders',
-    icon: Bell,
-    target: { path: '.claude/reminders', type: 'reminders' },
-    match: (sel) => sel?.type === 'reminders',
+    key: 'team',
+    label: 'Team',
+    icon: UsersRound,
+    target: { path: '.claude/team', type: 'team' },
+    match: (sel) => sel?.type === 'team',
+  },
+  {
+    key: 'tasks',
+    label: 'Tasks',
+    icon: KanbanSquare,
+    target: { path: 'Tasks.md', type: 'file' },
+    match: (sel) => sel?.path === 'Tasks.md',
+    groupBreak: true,  // visual separator above — splits comms (Notifications/Team) from workspace content (Tasks/Gallery)
   },
   {
     key: 'gallery',
@@ -301,7 +302,7 @@ function Shortcuts({ selected, onSelect }) {
   const hasUnread = notifications.some((n) => !isRead(n.id));
 
   return (
-    <div className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+    <div className="flex flex-col gap-0.5 px-2 pt-3 pb-1">
       {SHORTCUTS.map(item => {
         const active = item.match(selected);
         const Icon = item.icon;
@@ -314,6 +315,7 @@ function Shortcuts({ selected, onSelect }) {
             className={cn(
               'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
               'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
+              item.groupBreak && 'mt-3',
               active
                 ? 'bg-sidebar-accent font-medium text-foreground'
                 : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
@@ -350,7 +352,7 @@ function Shortcuts({ selected, onSelect }) {
 function SidebarToolbar({ showHidden, onToggleHidden, onNewFile, onNewFolder }) {
   const EyeIcon = showHidden ? EyeOff : Eye;
   return (
-    <div className="flex items-center justify-between px-3 pt-3 max-md:pt-4 h-9 max-md:h-12">
+    <div className="mt-3 flex items-center justify-between px-3 pt-3 max-md:pt-4 h-9 max-md:h-12">
       <span className="select-none text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/65">
         Files
       </span>

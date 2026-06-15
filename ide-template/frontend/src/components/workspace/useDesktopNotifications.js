@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'notifications.desktop.enabled';
+const PREF_CHANGED_EVENT = 'notifications.desktop.changed';
 
 /**
  * Hook that escalates server-pushed notifications to native browser
@@ -26,6 +27,21 @@ export default function useDesktopNotifications(notifications) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(STORAGE_KEY) === '1';
   });
+
+  // Multiple hook instances (workspace shell + NotificationsView's
+  // toggle UI) need to stay in sync — toggling in one place should
+  // update both. Listen for the custom event the setEnabled emits AND
+  // the native storage event so cross-tab changes also propagate.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const refresh = () => setEnabled(window.localStorage.getItem(STORAGE_KEY) === '1');
+    window.addEventListener(PREF_CHANGED_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(PREF_CHANGED_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, []);
 
   // Fire a desktop popup for each new server-pushed notification while
   // the tab is not focused. Filter by id so we never double-fire on
@@ -77,6 +93,7 @@ export default function useDesktopNotifications(notifications) {
     if (result === 'granted') {
       window.localStorage.setItem(STORAGE_KEY, '1');
       setEnabled(true);
+      window.dispatchEvent(new CustomEvent(PREF_CHANGED_EVENT));
     }
     return result;
   };
@@ -85,6 +102,7 @@ export default function useDesktopNotifications(notifications) {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(STORAGE_KEY, flag ? '1' : '0');
     setEnabled(!!flag);
+    window.dispatchEvent(new CustomEvent(PREF_CHANGED_EVENT));
   };
 
   return { permission, enabled, requestPermission, setEnabled: setEnabledFlag };

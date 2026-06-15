@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
 import ChatSessionDropdown from './ChatSessionDropdown.jsx';
+import useNotifications from './useNotifications.js';
+import useNotificationReadState from './useNotificationReadState.js';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
   AlertDialogTitle, AlertDialogDescription,
@@ -30,6 +32,18 @@ export default function ChatHeader({
   const [pendingDelete,  setPendingDelete]  = useState(null);
   const [refreshNonce,   setRefreshNonce]   = useState(0);
   const historyBtnRef = useRef(null);
+
+  // Unread bot-originated notifications carry their target chat session
+  // in meta.session_id. We surface them as a red dot on the history
+  // button (so the user knows there are unread sessions even when the
+  // dropdown is closed) plus pass the unread-id set into the dropdown
+  // so each unread row gets its own dot.
+  const { notifications } = useNotifications();
+  const { isRead } = useNotificationReadState();
+  const unreadSessionIds = new Set(
+    notifications.filter((n) => !isRead(n.id) && n.meta?.session_id).map((n) => n.meta.session_id),
+  );
+  const hasUnreadSessions = unreadSessionIds.size > 0;
 
   const createNew = async () => {
     try {
@@ -98,12 +112,18 @@ export default function ChatHeader({
           title="Chat history"
           aria-expanded={dropdownOpen}
           className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-md',
+            'relative flex size-7 shrink-0 items-center justify-center rounded-md',
             'text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground/85',
             dropdownOpen && 'bg-muted/40 text-foreground/85',
           )}
         >
           <History className="size-4" strokeWidth={1.85} />
+          {hasUnreadSessions && (
+            <span
+              aria-label="Unread sessions"
+              className="absolute right-1 top-1 size-1.5 rounded-full bg-red-500 ring-2 ring-background"
+            />
+          )}
         </button>
 
         <button
@@ -129,6 +149,7 @@ export default function ChatHeader({
         onSelect={(id) => onSelectSession?.(id)}
         onRequestDelete={onRequestDelete}
         refreshNonce={refreshNonce}
+        unreadSessionIds={unreadSessionIds}
       />
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(v) => { if (!v) setPendingDelete(null); }}>

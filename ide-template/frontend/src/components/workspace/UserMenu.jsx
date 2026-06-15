@@ -20,14 +20,14 @@ export default function UserMenu() {
   // Dev mode: show placeholder if user is null
   const displayUser = user || (import.meta.env.DEV ? {
     email: 'dev@localhost',
-    user_metadata: { full_name: 'Dev User' }
+    name: 'Dev User',
   } : null);
 
   if (!displayUser) return null;
 
   const [open, setOpen] = useState(false);
-  const name    = displayUser.user_metadata?.full_name || displayUser.email;
-  const avatar  = displayUser.user_metadata?.avatar_url;
+  const name    = displayUser.name || displayUser.email;
+  const avatar  = displayUser.picture;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
   return (

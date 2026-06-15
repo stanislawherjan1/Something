@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -272,16 +273,17 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
 
               <div className={cn(tab !== 'active' && 'hidden')}>
                 {active.length > 0 ? (
-                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
                     {active.map((integration) => (
-                      <IntegrationTile
-                        key={integration.id}
-                        integration={integration}
-                        ready={ready}
-                        onActivate={() => openActivate(integration)}
-                        onRemove={() => setRemoving(integration)}
-                        onSettings={() => setSettingsFor(integration)}
-                      />
+                      <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                        <IntegrationTile
+                          integration={integration}
+                          ready={ready}
+                          onActivate={() => openActivate(integration)}
+                          onRemove={() => setRemoving(integration)}
+                          onSettings={() => setSettingsFor(integration)}
+                        />
+                      </motion.div>
                     ))}
                   </div>
                 ) : (
@@ -468,16 +470,17 @@ function Marketplace({
 
       {/* Result grid OR empty state */}
       {filtered > 0 ? (
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
           {items.map((integration) => (
-            <IntegrationTile
-              key={integration.id}
-              integration={integration}
-              ready={ready}
-              onActivate={() => onActivate(integration)}
-              onRemove={() => onRemove(integration)}
-              onSettings={() => onSettings(integration)}
-            />
+            <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+              <IntegrationTile
+                integration={integration}
+                ready={ready}
+                onActivate={() => onActivate(integration)}
+                onRemove={() => onRemove(integration)}
+                onSettings={() => onSettings(integration)}
+              />
+            </motion.div>
           ))}
         </div>
       ) : (

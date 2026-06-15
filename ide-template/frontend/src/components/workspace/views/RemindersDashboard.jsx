@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Bell, Calendar, Repeat, Loader2, Trash2, X, Send, Globe } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
-import { useApi, invalidate } from '@/lib/useApi';
+import { useApi } from '@/lib/useApi';
 import { SkeletonRow } from '@/components/ui/Skeleton';
 
 const REMINDERS_FILE = '.reminders.json';
@@ -82,19 +82,21 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
   const [deleting, setDeleting] = useState(null);
 
   // Refresh on file watcher event (bot wrote .reminders.json) or every 30 s.
+  // We DON'T invalidate the cache here — that would flip loading=true and
+  // make the dashboard skeleton-flash every revalidation. reload() runs a
+  // silent background fetch instead; useApi merges fresh data on completion
+  // without clearing the previously-rendered list. Diagnosed 2026-06-15
+  // when the inbox started flickering once the periodic poll fired.
   useEffect(() => {
-    if (fileEventNonce) { invalidate(REMINDERS_URL); reloadApi(); }
+    if (fileEventNonce) reloadApi();
   }, [fileEventNonce, reloadApi]);
 
   useEffect(() => {
-    const t = setInterval(() => { invalidate(REMINDERS_URL); reloadApi(); }, 30_000);
+    const t = setInterval(() => { reloadApi(); }, 30_000);
     return () => clearInterval(t);
   }, [reloadApi]);
 
-  const load = useCallback(() => {
-    invalidate(REMINDERS_URL);
-    return reloadApi();
-  }, [reloadApi]);
+  const load = useCallback(() => reloadApi(), [reloadApi]);
 
   const isInitialLoad = loading && !data && !(error && error.includes('404'));
 
@@ -124,7 +126,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <EditorHeader icon={Bell} title="Reminders" sidebarOpen={sidebarOpen} />
+      <EditorHeader icon={Clock} title="Reminders" sidebarOpen={sidebarOpen} />
 
       <div className="flex-1 overflow-auto">
         {!isInitialLoad && !realError && all.length === 0 ? (
@@ -213,7 +215,7 @@ function RemindersEmptyState() {
     <div className="flex h-full items-center justify-center px-6 py-16">
       <div className="flex max-w-[320px] flex-col items-center gap-3 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground/50">
-          <Bell className="size-6" strokeWidth={1.75} />
+          <Clock className="size-6" strokeWidth={1.75} />
         </div>
         <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">No reminders yet</h2>
         <p className="text-[13px] leading-relaxed text-muted-foreground/75">

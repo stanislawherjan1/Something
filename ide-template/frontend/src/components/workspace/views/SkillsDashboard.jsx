@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Children, useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Save, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -368,8 +369,18 @@ function Section({ label, count, hint, empty, belowHeader, children }) {
           {empty}
         </div>
       ) : (
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
-          {children}
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+          {Children.map(children, (child) =>
+            child ? (
+              <motion.div
+                key={child.key ?? undefined}
+                layout
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {child}
+              </motion.div>
+            ) : null,
+          )}
         </div>
       )}
     </div>

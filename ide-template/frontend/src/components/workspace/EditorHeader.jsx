@@ -22,7 +22,17 @@ export default function EditorHeader({ icon: Icon, title, subtitle, meta, sideba
   const hasSubtitle = !!subtitle;
 
   return (
-    <div className={cn('flex shrink-0', hasSubtitle ? 'flex-col py-3.5' : 'items-center py-3.5')} style={{ paddingLeft: sidebarOpen ? '24px' : '56px', minHeight: '60px' }}>
+    <div
+      className={cn('flex shrink-0', hasSubtitle ? 'flex-col py-3.5' : 'items-center py-3.5')}
+      style={{
+        paddingLeft: sidebarOpen ? '24px' : '56px',
+        minHeight: '60px',
+        // Match the sidebar wrapper's width-animation curve so the title
+        // slides over with the same rhythm instead of snapping when the
+        // hamburger needs to appear / disappear.
+        transition: 'padding-left 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+      }}
+    >
       <div className="flex w-full items-center justify-between gap-2.5 pr-6">
         <div className="flex min-w-0 items-center gap-2.5">
           {Icon && (

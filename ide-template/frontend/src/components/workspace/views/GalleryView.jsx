@@ -128,7 +128,7 @@ function GalleryEmptyState() {
         </div>
         <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">No images yet</h2>
         <p className="text-[13px] leading-relaxed text-muted-foreground/75">
-          If you ask <span className="font-medium text-foreground/85">{botName}</span> to generate or save an image for you, it will appear here. To enable this, connect an image service (like Seedream or Gemini Image) in the Integrations tab.
+          Ask <span className="font-medium text-foreground/85">{botName}</span> to generate or save an image — connect an image integration first.
         </p>
       </div>
     </div>

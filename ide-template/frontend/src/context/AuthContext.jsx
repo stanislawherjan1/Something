@@ -10,14 +10,16 @@ export function AuthProvider({ children }) {
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data?.email) {
+                    // Flat shape matching auth-service's JWT payload —
+                    // we used to wrap into a Supabase-style user_metadata
+                    // block, but Supabase is gone, so the wrapping was
+                    // dead surface area making consumers harder to read.
                     setUser({
-                        email: data.email,
-                        role: data.role || null,
+                        email:   data.email,
+                        name:    data.name    || null,
+                        picture: data.picture || null,
+                        role:    data.role    || null,
                         isAdmin: Boolean(data.isAdmin),
-                        user_metadata: {
-                            full_name: data.name,
-                            avatar_url: data.picture,
-                        },
                     });
                 } else {
                     setUser(null);

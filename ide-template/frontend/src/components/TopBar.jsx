@@ -14,7 +14,7 @@ const TopBar = () => {
     // Derive initials from user's name or email
     const initials = (() => {
         if (!user) return '?';
-        const name = user.user_metadata?.full_name || user.user_metadata?.name || '';
+        const name = user.name || '';
         if (name) {
             const parts = name.trim().split(' ');
             return parts.length >= 2
@@ -24,7 +24,7 @@ const TopBar = () => {
         return user.email ? user.email.slice(0, 2).toUpperCase() : '?';
     })();
 
-    const avatarUrl = user?.user_metadata?.avatar_url;
+    const avatarUrl = user?.picture;
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -76,7 +76,7 @@ const TopBar = () => {
                     >
                         {/* User info header */}
                         <div className="dropdown-header">
-                            <h3>{user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'}</h3>
+                            <h3>{user?.name || 'User'}</h3>
                             <p className="dropdown-email">{user?.email}</p>
                         </div>
                         <div className="dropdown-actions">

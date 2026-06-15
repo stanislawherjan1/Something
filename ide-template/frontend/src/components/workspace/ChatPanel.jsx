@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import { ToolChipRow } from './ToolChip.jsx';
 import SpinningAvatar from './SpinningAvatar.jsx';
+import useNotifications from './useNotifications.js';
+import useNotificationReadState from './useNotificationReadState.js';
 
 /**
  * useVisualViewport — tracks the iOS/Android virtual keyboard height.
@@ -627,6 +629,8 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         </div>
       )}
 
+      <UnreadOtherSessionsBanner currentSessionId={sessionId} />
+
       <Composer
         value={input}
         onChange={setInput}
@@ -1202,6 +1206,51 @@ function EmptyState() {
       </div>
       
       <SpinningAvatar className="size-[72px] opacity-90 z-0 mb-8 ml-2" />
+    </div>
+  );
+}
+
+/**
+ * UnreadOtherSessionsBanner — slim notice that sits above the input area
+ * when there's an unread notification in a session that ISN'T the one
+ * currently open. Click jumps to the most recent unread session and marks
+ * its notifications as read. Echoes the "you have an unread thread"
+ * affordance Claude Code surfaces at the bottom of its CLI.
+ */
+function UnreadOtherSessionsBanner({ currentSessionId }) {
+  const { notifications } = useNotifications();
+  const { isRead } = useNotificationReadState();
+  const otherUnread = notifications.filter(
+    (n) => !isRead(n.id) && n.meta?.session_id && n.meta.session_id !== currentSessionId,
+  );
+  if (!otherUnread.length) return null;
+
+  // Newest-first so the click jumps to the freshest pending session.
+  const sorted = [...otherUnread].sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  const head = sorted[0];
+  const count = sorted.length;
+  const label = count === 1
+    ? `New message in another thread${head.title ? ` — ${head.title}` : ''}`
+    : `${count} new messages in other threads`;
+
+  return (
+    <div className="px-4 pt-0 pb-2">
+      <button
+        type="button"
+        onClick={() => {
+          window.dispatchEvent(new CustomEvent('ide:chat-select-session', {
+            detail: { sessionId: head.meta.session_id },
+          }));
+        }}
+        className={cn(
+          'flex w-full items-center gap-2.5 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-left',
+          'text-[12.5px] text-foreground/85 transition-colors hover:bg-muted',
+        )}
+      >
+        <span className="size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden />
+        <span className="truncate flex-1">{label}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground/70">Open ▸</span>
+      </button>
     </div>
   );
 }
