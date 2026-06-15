@@ -179,6 +179,13 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   useEffect(() => {
     if (resetNonce === 0) return;
     let cancelled = false;
+    // Abort any in-flight turn before replacing the list — otherwise its
+    // deltas keep arriving and appendToLastAssistant() mutates whatever is now
+    // last (a restored history entry). Bumping genRef makes the aborted turn's
+    // dispatch/finally no-op (see send()).
+    genRef.current++;
+    abortRef.current?.abort();
+    setBusy(false);
     fetch(historyUrl)
       .then(r => r.ok ? r.json() : { messages: [], hasMore: false })
       .then(data => {
@@ -813,6 +820,24 @@ function ChatBubble({ message, chips, hasActiveChips, onRetry, onFileSelect }) {
 // that section so it can be rendered separately as styled pills.
 const SOURCES_HEADER = /\n\s*(?:sources?|źródła?|źródla?|references?)\s*:\s*\n([\s\S]*?)\s*$/i;
 
+// Turn `/home/coder/project/...` paths into clickable file chips — but ONLY
+// outside code. Splitting on fenced (```…```) + inline (`…`) code with a
+// capturing group keeps the code segments at odd indices; we linkify only the
+// even (non-code) ones, so a path inside a code sample stays verbatim instead
+// of being rewritten into a broken markdown link.
+const FILE_PATH_RE = /\/home\/coder\/project\/([a-zA-Z0-9._\-/]+[a-zA-Z0-9_\-/])/g;
+function linkifyFilePaths(text) {
+  return text
+    .split(/(```[\s\S]*?```|`[^`]*`)/g)
+    .map((seg, i) =>
+      i % 2 === 1
+        ? seg
+        : seg.replace(FILE_PATH_RE, (match, relPath) =>
+            `[${relPath.split('/').filter(Boolean).pop()}](file:${match})`),
+    )
+    .join('');
+}
+
 // Each source is parsed into { label, href }. Recognises:
 //   [Title](https://...)         — markdown link
 //   Title - https://...          — title separated from URL
@@ -920,10 +945,7 @@ function FileChip({ path, onSelect }) {
 
 function TextBlock({ text, onFileSelect, withSources = false }) {
   const { body, sources } = withSources ? splitSources(text) : { body: text, sources: [] };
-  const processedBody = body.replace(
-    /\/home\/coder\/project\/([a-zA-Z0-9._\-\/]+[a-zA-Z0-9_\-\/])/g,
-    (match, relPath) => `[${relPath.split('/').filter(Boolean).pop()}](file:${match})`
-  );
+  const processedBody = linkifyFilePaths(body);
   const components = {
     ...MD_COMPONENTS,
     a: ({ href, children }) => {
@@ -1004,10 +1026,7 @@ function AssistantBody({ text, images, content, onFileSelect }) {
 
   // Legacy fallback: text first, then all images at the bottom.
   const { body, sources } = splitSources(text);
-  const processedBody = body.replace(
-    /\/home\/coder\/project\/([a-zA-Z0-9._\-\/]+[a-zA-Z0-9_\-\/])/g,
-    (match, relPath) => `[${relPath.split('/').filter(Boolean).pop()}](file:${match})`
-  );
+  const processedBody = linkifyFilePaths(body);
   const components = {
     ...MD_COMPONENTS,
     a: ({ href, children }) => {
@@ -1339,6 +1358,10 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
             'text-[16px] md:text-[14px]',
             'placeholder:text-muted-foreground/45',
             'outline-none',
+            // field-sizing-content auto-grows; once it hits maxHeight the
+            // textarea must scroll, otherwise a long draft clips with no way
+            // to reach the clipped lines.
+            'overflow-y-auto',
           )}
           style={{ maxHeight: '140px' }}
         />
@@ -1385,7 +1408,9 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
             type="button"
             onClick={canSend ? onSend : busy ? onStop : undefined}
             disabled={!canSend && !busy}
-            aria-label={canSend ? 'Send' : 'Stop'}
+            // Match the click action, not just emptiness: an empty idle
+            // composer was mislabelled "Stop" for screen readers.
+            aria-label={canSend ? 'Send' : busy ? 'Stop' : 'Send'}
             className={cn(
               'ml-auto flex shrink-0 size-7 items-center justify-center rounded-md',
               'transition-all duration-150',
