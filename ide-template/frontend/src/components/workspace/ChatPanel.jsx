@@ -81,6 +81,16 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   const abortRef = useRef(null);
   const fileInputRef = useRef(null);
   const chipFadeTimers = useRef(new Map());
+  // Monotonic id source for live (optimistic) messages. Date.now()-based ids
+  // collide on a double-tap within the same millisecond → duplicate React
+  // keys → dropped/merged bubbles. A counter is collision-free per mount.
+  const msgSeqRef = useRef(0);
+  const nextMsgId = (suffix) => `m${++msgSeqRef.current}-${suffix}`;
+  // Turn generation. Each send() bumps it; a turn only mutates shared state
+  // (busy, abortRef, the SSE reader loop) while it's still the current
+  // generation. Stops a just-interrupted turn's late events + its finally
+  // block from clobbering the turn that replaced it.
+  const genRef = useRef(0);
   // Tracks the oldest message ts in `messages` so the "load older" call
   // can ask for the next page strictly older than that.
   const oldestTsRef = useRef(null);
@@ -231,6 +241,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     // server gracefully terminates the in-flight claude process, persists
     // the partial to history with the same 'interrupted' state, and spawns
     // a fresh turn with full context.
+    const myGen = ++genRef.current;
     const wasInterrupting = busy;
     if (busy) {
       interruptOrDropLastAssistant();
@@ -256,8 +267,8 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
 
     setMessages(prev => [
       ...prev,
-      { role: 'user',      text: message, attachments: attachmentsMeta, id: Date.now() + '-u' },
-      { role: 'assistant', text: '', images: [], content: [], id: Date.now() + '-a', state: 'streaming' },
+      { role: 'user',      text: message, attachments: attachmentsMeta, id: nextMsgId('u') },
+      { role: 'assistant', text: '', images: [], content: [], id: nextMsgId('a'), state: 'streaming' },
     ]);
 
     const abort = new AbortController();
@@ -307,22 +318,40 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       const decoder = new TextDecoder();
       let buf = '';
 
+      const dispatch = (event, data) => {
+        if (data == null) return;
+        // A turn that's been superseded (interrupt-and-relay) must not keep
+        // writing into the bubble the new turn now owns.
+        if (genRef.current !== myGen) return;
+        if (event === 'message')         appendToLastAssistant(data);
+        else if (event === 'image')      appendImageToLastAssistant(data);
+        else if (event === 'tool_start') addChip(data);
+        else if (event === 'tool_end')   completeChip(data);
+        else if (event === 'done')       markLastAssistant({ state: 'done' });
+        else if (event === 'error')      markLastAssistant({ state: 'error', errorKind: 'stream', errorDetail: data.error });
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        if (genRef.current !== myGen) break; // superseded — stop processing
         buf += decoder.decode(value, { stream: true });
-        const chunks = buf.split('\n\n');
+        // Split on the SSE record separator, tolerant of CRLF — a proxy that
+        // rewrites \n→\r\n would otherwise make `\n\n` never match and every
+        // event would pile up unparsed in buf.
+        const chunks = buf.split(/\r?\n\r?\n/);
         buf = chunks.pop();
         for (const chunk of chunks) {
           const { event, data } = parseSseChunk(chunk);
-          if (data == null) continue;
-          if (event === 'message')         appendToLastAssistant(data);
-          else if (event === 'image')      appendImageToLastAssistant(data);
-          else if (event === 'tool_start') addChip(data);
-          else if (event === 'tool_end')   completeChip(data);
-          else if (event === 'done')       markLastAssistant({ state: 'done' });
-          else if (event === 'error')      markLastAssistant({ state: 'error', errorKind: 'stream', errorDetail: data.error });
+          dispatch(event, data);
         }
+      }
+      // Flush a trailing event that wasn't terminated by a blank line (e.g. a
+      // final `event: done` with no following \n\n) so the bubble reliably
+      // leaves the 'streaming' state instead of hanging with a blinking dot.
+      if (buf.trim()) {
+        const { event, data } = parseSseChunk(buf);
+        dispatch(event, data);
       }
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -334,14 +363,24 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         markLastAssistant({ state: 'error', errorKind: 'network', errorDetail: err.message });
       }
     } finally {
-      setBusy(false);
-      abortRef.current = null;
+      // Only clear shared state if we're still the current turn. A turn that
+      // got interrupted-and-replaced must NOT setBusy(false) (the new turn is
+      // busy) or null abortRef (it now points at the new turn's controller).
+      if (genRef.current === myGen) {
+        setBusy(false);
+        abortRef.current = null;
+      }
     }
   }, [input, attachments, busy, sessionId]);
 
   // Always-current ref so auto-send can call the latest send() without stale closure.
   const sendRef = useRef(send);
   useEffect(() => { sendRef.current = send; });
+
+  // Abort any in-flight turn on unmount. ChatPane remounts ChatPanel via
+  // key={sessionId} on session switch; without this the fetch + reader leak
+  // and the server keeps streaming into a dead component.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   // Auto-send initialMessage once (from WelcomeScreen).
   //
@@ -1379,7 +1418,9 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
 // Parse one SSE chunk (`event: …\n` followed by `data: …` lines).
 // Returns { event, data } where data is JSON-decoded if possible, else string.
 function parseSseChunk(chunk) {
-  const lines = chunk.split('\n');
+  // Strip CR so CRLF line endings (from a proxy) don't leave a trailing \r on
+  // the event name or break JSON.parse of the data payload.
+  const lines = chunk.replace(/\r/g, '').split('\n');
   let event = 'message';
   const dataLines = [];
   for (const line of lines) {
