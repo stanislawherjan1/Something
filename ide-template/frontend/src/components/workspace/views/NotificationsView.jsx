@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, Inbox } from 'lucide-react';
+import { Bell, Inbox, BellOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import useNotifications from '../useNotifications.js';
+import useDesktopNotifications from '../useDesktopNotifications.js';
 
 /**
  * NotificationsView — compact list of every server-pushed event the user
@@ -21,6 +22,7 @@ import useNotifications from '../useNotifications.js';
  */
 export default function NotificationsView({ sidebarOpen }) {
   const notifications = useNotifications();
+  const desktop = useDesktopNotifications(notifications);
   const navigate = useNavigate();
 
   // Newest first.
@@ -41,6 +43,7 @@ export default function NotificationsView({ sidebarOpen }) {
             {items.length} event{items.length === 1 ? '' : 's'} · click to open the conversation
           </div>
         </div>
+        <DesktopToggle desktop={desktop} />
       </header>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -90,6 +93,57 @@ function Row({ n, onOpen }) {
           <span>{formatAbsoluteTs(n.ts)}</span>
         </div>
       </div>
+    </button>
+  );
+}
+
+function DesktopToggle({ desktop }) {
+  const { permission, enabled, requestPermission, setEnabled } = desktop;
+
+  if (permission === 'unsupported') {
+    return null;
+  }
+  if (permission === 'denied') {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
+        title="The browser is blocking desktop notifications for this site. Unblock in browser settings to enable."
+      >
+        <BellOff className="size-3.5" aria-hidden />
+        Blocked
+      </span>
+    );
+  }
+  if (permission === 'default') {
+    return (
+      <button
+        type="button"
+        onClick={requestPermission}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground',
+          'transition-colors hover:bg-accent/40',
+        )}
+      >
+        <Bell className="size-3.5" aria-hidden />
+        Enable desktop popups
+      </button>
+    );
+  }
+  // granted
+  return (
+    <button
+      type="button"
+      onClick={() => setEnabled(!enabled)}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+        enabled
+          ? 'border-border bg-card text-foreground hover:bg-accent/40'
+          : 'border-dashed border-border bg-background text-muted-foreground hover:text-foreground',
+      )}
+      aria-pressed={enabled}
+    >
+      {enabled ? <Bell className="size-3.5" aria-hidden /> : <BellOff className="size-3.5" aria-hidden />}
+      Desktop popups {enabled ? 'on' : 'off'}
     </button>
   );
 }
