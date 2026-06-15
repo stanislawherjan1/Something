@@ -26,14 +26,54 @@
  *                writes memory/RECENT_TELEGRAM.md
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
 
 const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
-const WEB_LOG_PATH = join(PROJECT_DIR, '.chat', 'conversation.jsonl');
 const MEMORY_DIR = join(PROJECT_DIR, 'memory');
+
+// Web chat history moved to per-session files when multi-session landed:
+// `<workspace>/.team/users/<actor>/chats/<sessionId>.jsonl`. The old single
+// `.chat/conversation.jsonl` is no longer written, so reading it left
+// RECENT_WEB.md frozen at the migration date. Aggregate the per-session
+// files instead. Single-actor ('default') for now; per-user in team mode.
+const WEB_CHATS_DIR = join(PROJECT_DIR, '.team', 'users', 'default', 'chats');
+
+function listWebSessionFiles() {
+  try {
+    // *.jsonl session transcripts only — skips _index.json and the archive/ dir.
+    return readdirSync(WEB_CHATS_DIR)
+      .filter((f) => f.endsWith('.jsonl'))
+      .map((f) => join(WEB_CHATS_DIR, f));
+  } catch {
+    return [];
+  }
+}
+
+// Merge every per-session web transcript into one timestamp-ordered tail.
+// Interleaving distinct conversations is intentional here: RECENT_WEB is a
+// cross-conversation "what happened on web recently" snapshot, consumed by
+// the bot tmux (Telegram) for cross-surface awareness and on-demand lookups.
+// It is NOT injected into the web chat prefix (excluded in lib/claude.js), so
+// it can't bleed one web chat into another.
+function readWebMessages() {
+  const all = [];
+  for (const f of listWebSessionFiles()) {
+    for (const m of readJsonl(f)) all.push(m);
+  }
+  all.sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
+  return all;
+}
+
+function webSourceMtimeMs() {
+  let newest = 0;
+  for (const f of listWebSessionFiles()) {
+    try { newest = Math.max(newest, statSync(f).mtimeMs); } catch { /* skip */ }
+  }
+  return newest;
+}
 
 // Default caps. 50 messages is enough for ~3-5 typical exchanges; 4000
 // tokens (approximated at 3.5 chars/token) is the safety bound so a
@@ -43,11 +83,12 @@ const DEFAULT_MAX_CHARS = 4000 * 3.5; // ~14000 chars ≈ 4000 tokens
 
 const CHANNELS = {
   web: {
-    sourcePath: WEB_LOG_PATH,
+    readMessages: readWebMessages,
+    sourceMtimeMs: webSourceMtimeMs,
     snapshotPath: join(MEMORY_DIR, 'RECENT_WEB.md'),
     headerName: 'RECENT_WEB',
     title: 'Recent web-chat conversation',
-    sourceDescription: 'web chat (`<workspace>/.chat/conversation.jsonl`)',
+    sourceDescription: 'web chat (per-session files under `<workspace>/.team/users/<actor>/chats/`)',
     formatEntry: formatWebEntry,
   },
   telegram: {
@@ -137,7 +178,7 @@ export function writeRecentSnapshot({
 } = {}) {
   const cfg = CHANNELS[channel];
   if (!cfg) throw new Error(`unknown channel: ${channel}`);
-  const messages = readJsonl(cfg.sourcePath);
+  const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
   const updatedAt = new Date().toISOString();
   const head = buildHeader(cfg, messages.length, updatedAt);
   let body;
@@ -173,18 +214,20 @@ export function writeRecentSnapshot({
 export function isSnapshotStale({ channel = 'web', idleSeconds = 600 } = {}) {
   const cfg = CHANNELS[channel];
   if (!cfg) return false;
-  if (!existsSync(cfg.sourcePath)) return false;
-  let srcStat;
-  try { srcStat = statSync(cfg.sourcePath); } catch { return false; }
+  // Newest source mtime — aggregated across per-session files for web, the
+  // single log file for telegram.
+  const srcMtimeMs = cfg.sourceMtimeMs
+    ? cfg.sourceMtimeMs()
+    : (existsSync(cfg.sourcePath) ? (() => { try { return statSync(cfg.sourcePath).mtimeMs; } catch { return 0; } })() : 0);
+  if (!srcMtimeMs) return false; // no source activity at all
   // If source is too new (within idleSeconds), we are mid-turn — skip.
-  const ageMs = Date.now() - srcStat.mtimeMs;
-  if (ageMs < idleSeconds * 1000) return false;
+  if (Date.now() - srcMtimeMs < idleSeconds * 1000) return false;
   // If snapshot doesn't exist yet, definitely stale.
   if (!existsSync(cfg.snapshotPath)) return true;
   let snapStat;
   try { snapStat = statSync(cfg.snapshotPath); } catch { return true; }
   // Snapshot exists; stale only if source has newer changes than it.
-  return srcStat.mtimeMs > snapStat.mtimeMs;
+  return srcMtimeMs > snapStat.mtimeMs;
 }
 
 export const SUPPORTED_CHANNELS = Object.keys(CHANNELS);
