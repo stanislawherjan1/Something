@@ -61,7 +61,15 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
   // turn pays full input tokens). Failures here are non-fatal: we log and
   // continue without the prefix, claude still works just without cache hit.
   try {
-    const prefix = buildCachedPrefix({ memoryDir: join(PROJECT_DIR, 'memory') });
+    // Exclude RECENT_WEB on the web path: each session resumes its own
+    // Claude session (per-session --resume in routes/chat.js), so the
+    // rolling cross-conversation web tail is redundant here and actively
+    // bleeds unrelated threads into the prompt. RECENT_TELEGRAM stays —
+    // it's cross-surface awareness from a different channel.
+    const prefix = buildCachedPrefix({
+      memoryDir: join(PROJECT_DIR, 'memory'),
+      excludeIds: ['RECENT_WEB'],
+    });
     if (prefix && prefix.block) {
       args.push('--append-system-prompt', prefix.block);
     }
@@ -112,6 +120,12 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
+  // tool_use id → tool name, captured at content_block_start. Lets us skip
+  // forwarding images from `Read` tool results: those are the user's own
+  // pasted/attached image being read back, and echoing it into the assistant
+  // bubble is noise. Genuine tool images (Playwright screenshots) still show.
+  const toolNamesById = new Map();
+  const shouldForwardImage = (toolUseId) => toolNamesById.get(toolUseId) !== 'Read';
 
   // Set CLAUDE_DEBUG_STREAM=1 in env to log every parsed event to PM2 stderr.
   // Useful to discover SDK event types we may be ignoring (permission prompts,
@@ -155,8 +169,10 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
               ok:    !block.is_error,
               error: block.is_error ? extractText(block.content) : null,
             });
-            for (const img of extractImages(block.content)) {
-              onImage?.(img);
+            if (shouldForwardImage(block.tool_use_id)) {
+              for (const img of extractImages(block.content)) {
+                onImage?.(img);
+              }
             }
           }
         }
@@ -202,6 +218,7 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
 
       // Tool invocation — surface as a chip in the UI.
       if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
+        toolNamesById.set(ev.content_block.id, ev.content_block.name);
         onToolStart?.({
           id:   ev.content_block.id,
           name: ev.content_block.name,
@@ -216,8 +233,10 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
           ok:    !ev.content_block.is_error,
           error: ev.content_block.is_error ? extractText(ev.content_block.content) : null,
         });
-        for (const img of extractImages(ev.content_block.content)) {
-          onImage?.(img);
+        if (shouldForwardImage(ev.content_block.tool_use_id)) {
+          for (const img of extractImages(ev.content_block.content)) {
+            onImage?.(img);
+          }
         }
         continue;
       }

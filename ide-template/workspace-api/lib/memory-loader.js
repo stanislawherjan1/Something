@@ -411,11 +411,20 @@ export function buildCachedPrefix(opts = {}) {
   const memoryPaths = opts.scope && Array.isArray(opts.scope.memory_paths) && opts.scope.memory_paths.length > 0
     ? opts.scope.memory_paths
     : null; // null → no filtering, load everything
+  // Cards to omit entirely. Used by the web chat to drop RECENT_WEB: that
+  // card is a cross-conversation rolling tail, and once each web session
+  // resumes its own Claude session (per-session --resume) it's both
+  // redundant AND a bleed vector — the model treats it as "this
+  // conversation's memory" and pulls in unrelated prior threads. Cards in
+  // LOAD_ORDER after the excluded one still cache cleanly because RECENT_*
+  // sit at the tail of the order.
+  const excludeIds = Array.isArray(opts.excludeIds) ? new Set(opts.excludeIds) : null;
 
   const parts = [PREAMBLE];
   const sources = [];
 
   for (const { id, path } of LOAD_ORDER) {
+    if (excludeIds && excludeIds.has(id)) continue;
     const relPath = `memory/${path}`;
     const inScope = memoryPaths === null || pathMatchesMemoryPaths(relPath, memoryPaths);
     const abs = join(memoryDir, path);

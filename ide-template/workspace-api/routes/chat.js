@@ -33,7 +33,6 @@ import { hasClaudeToken, readClaudeToken } from '../lib/setup.js';
 import {
   listSessions, getSession, createSession, updateSession,
   deleteSession, setClaudeSessionId,
-  getSessionId, setSessionId, clearSession,
 } from '../lib/sessions.js';
 import {
   appendToSession, readSessionPage, archiveSessionFile,
@@ -376,11 +375,16 @@ export default function chatRouter() {
     // the frontend without an extra roundtrip.
     sendEvent('session', { sessionId: sid });
 
-    // claudeSessionId for --resume comes from this session's manifest entry;
-    // fall back to the legacy global pointer if the manifest hasn't been
-    // populated yet (very first turn post-migration).
+    // claudeSessionId for --resume comes from THIS session's manifest entry,
+    // and ONLY this session's. A new conversation has none yet → claudeSid is
+    // null → claude.js skips --resume → a fresh Claude session is created
+    // (onDone persists its id back here). The old `|| getSessionId()` fallback
+    // was catastrophic: getSessionId() returns the most-recently-touched OTHER
+    // session's Claude id, so opening a new chat would --resume an unrelated
+    // prior conversation's full context — "a completely different thread, and
+    // something old broke through". Never borrow another session's brain.
     const sessionEntry = getSession(ACTOR, sid);
-    const claudeSid = sessionEntry?.claudeSessionId || getSessionId();
+    const claudeSid = sessionEntry?.claudeSessionId || null;
 
     appendToSession(ACTOR, sid, { role: 'user', text: message, attachments: savedAttachments });
 
