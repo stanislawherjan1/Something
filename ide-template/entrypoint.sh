@@ -253,9 +253,24 @@ d['mcpServers']['playwright'] = {
         '--executable-path', '/opt/playwright-browsers/chromium-1223/chrome-linux64/chrome',
     ],
 }
+# Web Channel MCP — always-on reply tool that pushes into the
+# workspace UI's notification stream. Force-written here for the
+# same reason as playwright above: wsapi (running as coder uid)
+# writes /home/coder/.claude.json's mcpServers, but the bot's
+# Claude (uid 1003, HOME=/home/bot) reads /home/bot/.claude.json.
+# Without this block the MCP only registers on the coder side and
+# the bot never gains the web_send_message tool — caught on canary
+# 2026-06-15.
+d['mcpServers']['web-channel'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/web-channel-mcp/index.js'],
+    'env': {
+        'WORKSPACE_API_PORT': os.environ.get('WORKSPACE_API_PORT', '3001'),
+    },
+}
 with open(p, 'w') as f:
     json.dump(d, f, indent=2)
-print('[entrypoint] Forced playwright mcpServers entry in /home/bot/.claude.json')
+print('[entrypoint] Forced playwright + web-channel mcpServers entries in /home/bot/.claude.json')
 PY
         chown bot:botshare /home/bot/.claude.json 2>/dev/null || true
         chmod 0660         /home/bot/.claude.json 2>/dev/null || true
