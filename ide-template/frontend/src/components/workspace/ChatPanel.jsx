@@ -678,37 +678,14 @@ function ChatBubble({ message, chips, hasActiveChips, onRetry, onFileSelect }) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              p: ({ children }) => <div className="mb-2 last:mb-0">{children}</div>,
-              br: () => <br />,
-              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-              em: ({ children }) => <em className="italic">{children}</em>,
-              pre: ({ children }) => (
-                <pre className="bg-background border border-border/30 rounded p-3 my-2 overflow-x-auto text-[12px] font-mono text-foreground whitespace-pre-wrap break-words">
-                  {children}
-                </pre>
-              ),
-              code: ({ inline, children }) =>
-                inline ? (
-                  <code className="bg-secondary/60 px-1 py-0.5 rounded text-[12px] font-mono text-foreground">{children}</code>
-                ) : (
-                  <code className="text-foreground">{children}</code>
-                ),
-              a: ({ href, children }) => {
-                if (href?.startsWith('file:')) {
-                  return <FileChip path={href.slice(5)} onSelect={onFileSelect} />;
-                }
-                return (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-baseline gap-0.5 rounded bg-foreground/[0.04] px-1 py-px font-mono text-[12px] text-foreground/75 hover:bg-foreground/[0.08] hover:text-foreground transition-colors"
-                  >
-                    <span>{children}</span>
-                    <ArrowUpRight className="self-center size-3 shrink-0 opacity-60" strokeWidth={1.75} />
-                  </a>
-                );
-              },
+              ...MD_COMPONENTS,
+              // User-pasted text can reference workspace files too — keep the
+              // file: → FileChip behaviour; everything else (paragraphs,
+              // lists, code, external links) comes from the shared set.
+              a: ({ href, children }) =>
+                href?.startsWith('file:')
+                  ? <FileChip path={href.slice(5)} onSelect={onFileSelect} />
+                  : MD_COMPONENTS.a({ href, children }),
             }}
           >
             {message.text}
@@ -824,10 +801,22 @@ function splitSources(text) {
 }
 
 const MD_COMPONENTS = {
-  p: ({ children }) => <div className="mb-2 last:mb-0">{children}</div>,
+  // Paragraph gap (mb-3 ≈ 12px) must EXCEED the intra-paragraph line height
+  // (leading-[1.65] × 14px ≈ 23px feels denser, but the gap reads as a real
+  // break only above ~12px). With the old mb-2 (8px) paragraph breaks looked
+  // tighter than line breaks, so multi-paragraph replies "ran together" /
+  // appeared to overlap. last:mb-0 keeps the bubble bottom flush.
+  p: ({ children }) => <div className="mb-3 last:mb-0">{children}</div>,
   br: () => <br />,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
+  // Lists had no overrides → UA defaults (oversized indent, no spacing). Give
+  // them controlled indent + per-item breathing room. [&>div]:m-0 neutralises
+  // the paragraph-div margin inside loose-list items so list spacing stays
+  // even instead of inheriting the mb-3 above.
+  ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="leading-[1.6] [&>div]:mb-0">{children}</li>,
   pre: ({ children }) => (
     <pre className="bg-background border border-border/30 rounded p-3 my-2 overflow-x-auto text-[12px] font-mono text-foreground whitespace-pre-wrap break-words">
       {children}
