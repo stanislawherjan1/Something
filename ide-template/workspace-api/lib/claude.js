@@ -61,11 +61,19 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
   // turn pays full input tokens). Failures here are non-fatal: we log and
   // continue without the prefix, claude still works just without cache hit.
   try {
-    // Exclude RECENT_WEB on the web path: each session resumes its own
-    // Claude session (per-session --resume in routes/chat.js), so the
-    // rolling cross-conversation web tail is redundant here and actively
-    // bleeds unrelated threads into the prompt. RECENT_TELEGRAM stays —
-    // it's cross-surface awareness from a different channel.
+    // Exclude RECENT_WEB on the web path. Each web session resumes its own
+    // Claude session (per-session --resume in routes/chat.js), so a rolling
+    // tail of OTHER web conversations is pure same-surface bleed with no
+    // upside — the model treats it as "your conversation memory" and pulls
+    // unrelated web threads into a fresh chat.
+    //
+    // RECENT_TELEGRAM STAYS — cross-surface awareness (one bot across
+    // surfaces) is a feature, not a bug. The fix for the bleed it caused
+    // ("a fresh web chat answered an ambiguous question from the Telegram
+    // Trello thread") is in the memory-loader guidance: RECENT_TELEGRAM is
+    // framed as a DIFFERENT conversation on another surface — draw context
+    // from it, but don't treat it as a direct continuation, and when a
+    // question is ambiguous, ask rather than assume it's about that thread.
     const prefix = buildCachedPrefix({
       memoryDir: join(PROJECT_DIR, 'memory'),
       excludeIds: ['RECENT_WEB'],

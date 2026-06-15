@@ -103,15 +103,21 @@ character.
   available in this workspace.
 - \`INDEX.md\` — the wiki entry point. One-line summaries per topic page,
   with links.
-- \`RECENT_WEB.md\` and \`RECENT_TELEGRAM.md\` — **your conversation memory.**
-  The last ~50 messages on each channel, kept verbatim. These are NOT
-  meta-data or status notes; they are the actual transcript tail, loaded
-  fresh after every idle window. **When the user references something
-  said earlier ("o czym mówiłem?", "wczoraj na Telegramie…", "tamta
-  rozmowa") — consult the matching \`RECENT_*\` block before claiming no
-  context.** If the relevant card is empty, say so plainly ("no Telegram
-  history in my prefix yet"), but don't say you can't see Telegram at
-  all — the surface exists, the snapshot may just not have populated yet.
+- \`RECENT_WEB.md\` and \`RECENT_TELEGRAM.md\` — recent transcript tails,
+  the last ~50 messages per channel, kept verbatim and refreshed after each
+  idle window. **Treat these as a DIFFERENT conversation on ANOTHER
+  surface — NOT a direct continuation of the chat you're in right now.**
+  They are real context to draw on, not just status notes: when the user
+  clearly refers back ("o czym mówiłem?", "wczoraj na Telegramie…", "tamta
+  rozmowa"), consult the matching block before claiming no context.
+  **But do not assume an ambiguous, context-free message in THIS
+  conversation is about whatever happened to be last in another channel's
+  tail.** If "to jaki wynik?" arrives in a fresh chat that has nothing in
+  it yet, **ask what they mean** — don't silently answer from the last
+  Telegram thread. When you do pull cross-surface context, **say where it
+  came from** ("na Telegramie wcześniej wspominałeś…") so it's never
+  mistaken for something said here. If the relevant card is empty, say so
+  plainly, but don't claim you can't see the surface at all.
 
   > **Stale-prefix awareness (Telegram channel specifically).** The
   > \`RECENT_*\` blocks above are a **snapshot from when your tmux
