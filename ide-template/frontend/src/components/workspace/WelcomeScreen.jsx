@@ -35,7 +35,7 @@ export default function WelcomeScreen({ onSend, sidebarOpen, onExpandSidebar }) 
   const canSend = input.trim().length > 0;
 
   return (
-    <main className="relative flex h-full flex-col items-center justify-center bg-background px-6">
+    <main className="relative flex h-full flex-1 min-w-0 flex-col items-center justify-center bg-background px-6">
       {!sidebarOpen && (
         <button
           type="button"
