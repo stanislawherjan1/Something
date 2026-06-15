@@ -63,6 +63,12 @@ static const char *ALLOWED_SCRIPTS[] = {
     "/opt/ide/reminder-monitor.sh",
     "/opt/ide/recent-snapshot-monitor.sh",
     "/opt/ide/browser-watchdog.sh",
+    /* bot-relay.sh: short-lived helper invoked by workspace-api (uid 1000)
+     * to inject a [WEB_USER] message into the bot's tmux session, which is
+     * owned by bot uid 1003 (different /tmp/tmux-<uid>/ socket). Stdin /
+     * env-var carries the user's text; the script does tmux send-keys -l
+     * (literal) so no shell metacharacter interpretation. */
+    "/opt/ide/bot-relay.sh",
     NULL,
 };
 
