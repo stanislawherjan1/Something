@@ -59,7 +59,12 @@ reminders = reminders.map(r => {
     const wire  = title
         ? (desc ? `${title} — ${desc}` : title)
         : (typeof r.message === 'string' ? r.message : '');
-    toSend.push(wire.replace(/\n/g, ' '));
+    // Channel hint travels with the wire message via a tab separator —
+    // bash splits on it below. Default 'all' covers legacy reminders that
+    // pre-date the field.
+    const channel = (typeof r.channel === 'string' && ['telegram','web','all'].includes(r.channel))
+        ? r.channel : 'all';
+    toSend.push(`${channel}\t${wire.replace(/\n/g, ' ')}`);
     changed = true;
 
     // One-shot reminders are deleted after firing. Treat any value other
@@ -95,33 +100,71 @@ toSend.forEach(m => process.stdout.write(m + '\n'));
 NODEEOF
     )
 
-    # Fire each due reminder. Prefer the bot's tmux session (so Claude
-    # can elaborate, schedule a follow-up, etc.); fall back to direct
-    # Telegram Bot API via bot-notify.sh when the session is missing.
-    # SECURITY: -l (literal) flag sends the string as literal keystrokes,
-    # preventing shell metacharacters in reminder messages from being interpreted.
+    # Fire each due reminder. Format on the wire: "channel\tmessage" — see
+    # the node block above. Routing per channel:
     #
-    # Additionally, ALWAYS push a notification onto the web chat SSE
-    # channel via web-notify.sh — independent of Telegram, so a user
-    # sitting in the workspace browser tab sees the reminder bubble even
-    # when no messenger is wired up. Non-fatal if wsapi is down.
-    while IFS= read -r message; do
-        [ -z "$message" ] && continue
+    #   - tmux session alive → send-keys with [REMINDER channel=X | msg]
+    #     prefix so the bot reads the channel hint and replies through the
+    #     matching tool (telegram_send_message vs web_send_message). This
+    #     is the primary path; the bot's web-mirror.sh PostToolUse hook
+    #     handles the TG → web copy automatically when channel=all/telegram
+    #     and the bot replies on TG.
+    #
+    #   - tmux session DEAD (bot crashed, deferred at start, fresh install
+    #     pre-token) → fallback. For channel=telegram or channel=all, try
+    #     bot-notify.sh (raw direct TG API). For channel=web (or when
+    #     bot-notify isn't usable), POST a raw bubble via web-notify.sh
+    #     so the user at least sees the trigger landed.
+    #
+    # SECURITY: -l (literal) sends the prefix string as literal keystrokes,
+    # preventing shell or tmux metacharacters in the reminder body from
+    # being interpreted.
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        # Split channel\tmessage. Legacy payloads (no tab) default to 'all'.
+        case "$line" in
+            *$'\t'*)
+                channel="${line%%$'\t'*}"
+                message="${line#*$'\t'}"
+                ;;
+            *)
+                channel="all"
+                message="$line"
+                ;;
+        esac
         if tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
-            log "Firing via tmux: ${message}"
+            log "Firing via tmux (channel=${channel}): ${message}"
             tmux -L "$TMUX_SOCKET" send-keys -l -t "$TMUX_SESSION" \
-                "[REMINDER] chat_id=${CHAT_ID} | ${message}"
+                "[REMINDER channel=${channel} chat_id=${CHAT_ID} | ${message}]"
             tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" Enter
-        elif [ -x "$NOTIFY_SCRIPT" ]; then
-            log "Bot session offline — direct fallback: ${message}"
-            "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || \
-                log "Direct fallback failed for: ${message}"
         else
-            log "Cannot deliver — no tmux session and no $NOTIFY_SCRIPT: ${message}"
-        fi
-        if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
-            "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || \
-                log "Web notify failed for: ${message}"
+            log "Bot session offline (channel=${channel}) — using fallback"
+            # Prefer the channel-matching fallback; fall through to the
+            # other one if the preferred path is missing.
+            case "$channel" in
+                web)
+                    if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
+                        "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || \
+                            log "Web fallback failed for: ${message}"
+                    elif [ -x "$NOTIFY_SCRIPT" ]; then
+                        "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || \
+                            log "Telegram fallback failed for: ${message}"
+                    else
+                        log "Cannot deliver — no fallback available: ${message}"
+                    fi
+                    ;;
+                *)
+                    if [ -x "$NOTIFY_SCRIPT" ]; then
+                        "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || \
+                            log "Telegram fallback failed for: ${message}"
+                    elif [ -x "$WEB_NOTIFY_SCRIPT" ]; then
+                        "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || \
+                            log "Web fallback failed for: ${message}"
+                    else
+                        log "Cannot deliver — no fallback available: ${message}"
+                    fi
+                    ;;
+            esac
         fi
         sleep 3  # small gap between multiple reminders
     done <<< "$MESSAGES"

@@ -138,6 +138,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ['none', 'daily', 'weekly'],
             description: 'Repeat schedule. Default: none',
           },
+          channel: {
+            type: 'string',
+            enum: ['telegram', 'web', 'all'],
+            description:
+              'Which surface the user wants this reminder delivered on. ' +
+              '"telegram" — bot replies via Telegram only (mirror covers web ' +
+              'if the user has it open). "web" — bot replies via ' +
+              'web_send_message; nothing goes to Telegram. "all" — bot picks ' +
+              'whichever channels are wired and replies through them. ' +
+              'Default: read from REMINDER_DEFAULT_CHANNEL env var (set at ' +
+              'bot startup based on the channel the prompt came in on); ' +
+              'falls back to "all" if not set. Override explicitly when the ' +
+              "user's intent disagrees with the default — e.g. they're " +
+              'chatting via web but say "ping me on Telegram tomorrow".',
+          },
         },
         required: ['due'],
       },
@@ -212,6 +227,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : messageIn,
       due: dueDate.toISOString(),
       repeat: args.repeat || 'none',
+      // Channel routing: explicit tool arg wins, then the per-process default
+      // env var (set by bot.sh based on the inbound prompt channel), then 'all'
+      // as the safe both-ways fallback. reminder-monitor.sh reads this field
+      // when it fires.
+      channel: (typeof args.channel === 'string' && ['telegram', 'web', 'all'].includes(args.channel))
+        ? args.channel
+        : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
       created: new Date().toISOString(),
       status: 'pending',
     };

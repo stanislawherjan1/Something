@@ -1056,9 +1056,19 @@ fi
 CHANNELS_ARG=""
 if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
     CHANNELS_ARG="--channels plugin:telegram@claude-plugins-official"
-    log "Launching claude with Telegram channel plugin."
+    # When the bot has Telegram available, default new reminders to
+    # 'all' — the bot replies on TG (its primary surface here) and the
+    # web-mirror.sh PostToolUse hook copies the outbound onto the web
+    # bubble surface in parallel. Explicit channel=web/telegram tool args
+    # still win.
+    export REMINDER_DEFAULT_CHANNEL=all
+    log "Launching claude with Telegram channel plugin. REMINDER_DEFAULT_CHANNEL=all."
 else
-    log "TELEGRAM_BOT_TOKEN not set — launching claude without channel plugin (web/tmux I/O only)."
+    # No Telegram: the bot's only outbound surface is web_send_message.
+    # Default new reminders to 'web' so reminder-monitor routes the
+    # trigger with channel=web and the bot picks the web reply tool.
+    export REMINDER_DEFAULT_CHANNEL=web
+    log "TELEGRAM_BOT_TOKEN not set — launching claude without channel plugin (web/tmux I/O only). REMINDER_DEFAULT_CHANNEL=web."
 fi
 tmux -L "$SESSION" new-session -d -s "$SESSION" \
     "cd $PROJECT_DIR && claude --dangerously-skip-permissions --add-dir '$CLAUDE_CONFIG_DIR' $CHANNELS_ARG $CLAUDE_EXTRA_ARGS"
