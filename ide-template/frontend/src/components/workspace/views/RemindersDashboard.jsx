@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Bell, Calendar, Repeat, Loader2, Trash2, X } from 'lucide-react';
+import { Bell, Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
@@ -261,6 +261,8 @@ function ReminderRow({ reminder, onDelete }) {
               </span>
             </>
           )}
+          <span className="text-muted-foreground/55">·</span>
+          <ChannelBadge channel={reminder.channel} />
           {reminder.id && (
             <>
               <span className="text-muted-foreground/55">·</span>
@@ -348,6 +350,8 @@ function SystemReminderRow({ reminder }) {
               </span>
             </>
           )}
+          <span className="text-muted-foreground/55">·</span>
+          <ChannelBadge channel={reminder.channel} />
           {reminder.id && (
             <>
               <span className="text-muted-foreground/55">·</span>
@@ -504,4 +508,22 @@ function formatRepeat(repeat, due) {
     return `every ${wd} at ${time}`;
   }
   return r;
+}
+
+// Per-reminder delivery channel badge. The channel field was added in the
+// Phase 3 reminder routing work — legacy reminders without it default to
+// 'all' (both Telegram and web) which is the safe both-ways behaviour.
+function ChannelBadge({ channel }) {
+  const c = (channel || 'all').toLowerCase();
+  const meta = c === 'telegram'
+    ? { Icon: Send,   label: 'Telegram' }
+    : c === 'web'
+    ? { Icon: Globe,  label: 'Web' }
+    : { Icon: Layers, label: 'Both' };
+  return (
+    <span className="inline-flex items-center gap-1.5 text-foreground/70">
+      <meta.Icon className="size-3" strokeWidth={1.75} />
+      {meta.label}
+    </span>
+  );
 }

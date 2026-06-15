@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   Eye, EyeOff, Hexagon, KanbanSquare, Images,
-  FilePlus, FolderPlus, Wrench, Plug, Bell, Users, MessageSquare,
+  FilePlus, FolderPlus, Wrench, Plug, Bell, Users, MessageSquare, Inbox,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
@@ -276,6 +276,13 @@ const SHORTCUTS = [
     icon: MessageSquare,
     target: { path: '.bot', type: 'bot' },
     match: (sel) => sel?.type === 'bot',
+  },
+  {
+    key: 'notifications',
+    label: 'Notifications',
+    icon: Inbox,
+    target: { path: '.notifications', type: 'notifications' },
+    match: (sel) => sel?.type === 'notifications',
   },
   {
     key: 'reminders',

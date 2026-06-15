@@ -31,6 +31,7 @@ const VIEW_ROUTES = [
   { path: '/ai',           selected: { path: '.claude',            type: 'dashboard' } },
   { path: '/memory',       selected: { path: 'memory',             type: 'memory' } },
   { path: '/bot',          selected: { path: '.bot',               type: 'bot' } },
+  { path: '/notifications',selected: { path: '.notifications',     type: 'notifications' } },
 ];
 
 function pathnameToSelected(pathname) {
