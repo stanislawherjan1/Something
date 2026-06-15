@@ -7,6 +7,7 @@ import Sidebar from './Sidebar.jsx';
 import EditorPane from './EditorPane.jsx';
 import ChatPane from './ChatPane.jsx';
 import WelcomeScreen from './WelcomeScreen.jsx';
+import NotificationToasts from './NotificationToasts.jsx';
 import useFileWatcher from './useFileWatcher.js';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
@@ -190,6 +191,11 @@ export default function WorkspacePage() {
         fontFeatureSettings: '"cv11", "ss01", "ss03", "calt"',
       }}
     >
+      {/* Server-pushed notification toasts (bottom-right overlay). Subscribes
+          once to /api/notifications/stream for the whole workspace shell, so
+          reminders + future skill-completion pings reach the user regardless
+          of which view is active. Phase 1 of WEB_CHAT_PUSH. */}
+      <NotificationToasts />
       {/* Top promo banner — Telegram CTA. Visible on desktop only; on mobile the
           chat already takes the full viewport so the banner has nowhere to live.
           The floating bot avatar (rendered below as `motion.button`) is offset
