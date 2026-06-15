@@ -13,6 +13,15 @@
             "command": "/opt/ide/hooks/post-write-memory.sh"
           }
         ]
+      },
+      {
+        "matcher": "mcp__plugin_telegram_telegram__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/opt/ide/hooks/web-mirror.sh"
+          }
+        ]
       }
     ],
     "Stop": [
