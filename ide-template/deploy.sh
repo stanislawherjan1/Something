@@ -219,6 +219,7 @@ scp -r extensions/branding "$HETZNER_HOST:$REMOTE_PATH/extensions/" || exit 1
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/bot'"
 scp bot/bot.sh                "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 scp bot/bot-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+scp bot/web-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 scp bot/reminder-monitor.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 scp bot/recent-snapshot-monitor.sh "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 scp bot/browser-watchdog.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1

@@ -15,6 +15,7 @@ TMUX_SOCKET="$BOT_NAME"
 TMUX_SESSION="$BOT_NAME"
 CHAT_ID="${TELEGRAM_ADMIN_CHAT_ID:-}"
 NOTIFY_SCRIPT="$HOME/bot-notify.sh"
+WEB_NOTIFY_SCRIPT="/opt/ide/web-notify.sh"
 
 log() { echo "[reminder-monitor] $*"; }
 
@@ -99,6 +100,11 @@ NODEEOF
     # Telegram Bot API via bot-notify.sh when the session is missing.
     # SECURITY: -l (literal) flag sends the string as literal keystrokes,
     # preventing shell metacharacters in reminder messages from being interpreted.
+    #
+    # Additionally, ALWAYS push a notification onto the web chat SSE
+    # channel via web-notify.sh — independent of Telegram, so a user
+    # sitting in the workspace browser tab sees the reminder bubble even
+    # when no messenger is wired up. Non-fatal if wsapi is down.
     while IFS= read -r message; do
         [ -z "$message" ] && continue
         if tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
@@ -112,6 +118,10 @@ NODEEOF
                 log "Direct fallback failed for: ${message}"
         else
             log "Cannot deliver — no tmux session and no $NOTIFY_SCRIPT: ${message}"
+        fi
+        if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
+            "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || \
+                log "Web notify failed for: ${message}"
         fi
         sleep 3  # small gap between multiple reminders
     done <<< "$MESSAGES"
