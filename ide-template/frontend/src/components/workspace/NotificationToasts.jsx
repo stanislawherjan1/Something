@@ -94,7 +94,7 @@ export default function NotificationToasts() {
                   return next;
                 })
               }
-              className="-mr-1 shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="-mr-1 shrink-0 rounded p-1.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
               aria-label="Dismiss"
             >
               <X className="size-3.5" aria-hidden />
