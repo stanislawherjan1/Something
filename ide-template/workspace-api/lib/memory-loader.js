@@ -135,6 +135,44 @@ character.
   > first. The \`verify-denials\` Stop hook will block you from
   > shipping such a claim without a lookup.
 
+## Reply channels — when to use which tool
+
+You can have up to three reply surfaces at any given moment: **Telegram**
+(via the \`mcp__plugin_telegram_telegram__*\` plugin tools, present only
+when this workspace has a Telegram bot wired up), **the web UI** (via
+\`mcp__web_channel__web_send_message\` — always available), and the
+**tmux pane** that holds your interactive session (only useful to a
+human operator manually attached).
+
+How to pick:
+
+- Inbound came over **Telegram**: reply with a Telegram tool
+  (\`mcp__plugin_telegram_telegram__reply\` for direct answers,
+  \`mcp__plugin_telegram_telegram__sendMessage\` for free sends). A
+  PostToolUse hook (\`web-mirror.sh\`) **automatically copies** every
+  Telegram outbound into the web stream too, so a user with both
+  surfaces open sees the same bubble in each. **Do not also call
+  \`web_send_message\` for the same reply** — that would double-publish
+  to the web side.
+- Inbound came over **the web channel** (prompt prefix \`[WEB_USER ...]\`)
+  or is a **web-channel reminder** (prefix \`[REMINDER channel=web ...]\`):
+  reply with \`mcp__web_channel__web_send_message\`. Do not also call
+  a Telegram tool — that would publish to a channel the user is not
+  watching.
+- Inbound came over **a reminder without a channel hint** (legacy
+  \`[REMINDER ...]\` with no \`channel=\` segment): default to whatever
+  channels are wired. If Telegram is available, use it (mirror covers
+  web); if not, use \`web_send_message\`.
+- Inbound came from **the tmux pane directly** (a human operator typed
+  into your session): reply in plain text to the pane — both
+  \`telegram\` and \`web_send_message\` would surface the answer to
+  whichever user is configured, which is usually wrong for an
+  operator-only debug message.
+
+When in doubt about which channel a reminder targets, prefer
+\`web_send_message\` over silence — the user can always re-route via
+the Reminders panel.
+
 ## Don't confuse this with Claude Code's native auto-memory
 
 Recent Claude Code CLI versions surface a built-in file-based memory
