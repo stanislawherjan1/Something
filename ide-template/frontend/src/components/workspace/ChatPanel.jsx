@@ -150,9 +150,16 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     }
   }, [hasMore, loadingMore, sessionId]);
 
+  // Track whether the user is pinned to the bottom of the thread. Updated on
+  // every scroll; read by the autoscroll effect so streaming follows the
+  // bottom when the user is there, but never yanks them when they've scrolled
+  // up to read history.
+  const atBottomRef = useRef(true);
   // Trigger loadOlder when the user scrolls within ~80px of the top.
   const onListScroll = useCallback((e) => {
-    if (e.currentTarget.scrollTop <= 80) loadOlder();
+    const el = e.currentTarget;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (el.scrollTop <= 80) loadOlder();
   }, [loadOlder]);
 
   // After a successful "Reset chat" (resetNonce bumped from ChatPane), the
@@ -175,17 +182,27 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     return () => { cancelled = true; };
   }, [resetNonce, historyUrl]);
 
-  // Auto-scroll to bottom when the list grows from a *new* turn (not when
-  // older messages are prepended). We detect "grew at the bottom" by
-  // checking if the last message id changed.
+  // Auto-scroll behaviour:
+  //   - The user just sent a message (new user turn) → always jump to bottom.
+  //   - Otherwise (assistant streaming growth, a new assistant bubble, older
+  //     pages prepended) → follow the bottom ONLY if the user was already
+  //     pinned there. If they scrolled up to read history, leave them put.
+  // The old version keyed solely on "last id changed", which (a) yanked a
+  // history reader to the bottom on every new turn and (b) did NOT follow a
+  // long streaming reply (the assistant bubble's id is stable as text
+  // appends), so long replies scrolled off-screen.
   const lastIdRef = useRef(null);
   useEffect(() => {
+    const el = listRef.current;
     const last = messages[messages.length - 1];
     if (!last) { lastIdRef.current = null; return; }
-    if (last.id !== lastIdRef.current) {
-      lastIdRef.current = last.id;
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+    const isNewTurn = last.id !== lastIdRef.current;
+    lastIdRef.current = last.id;
+    if (!el) return;
+    const userJustSent = isNewTurn && last.role === 'user';
+    if (userJustSent) atBottomRef.current = true;
+    if (userJustSent || atBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
 
