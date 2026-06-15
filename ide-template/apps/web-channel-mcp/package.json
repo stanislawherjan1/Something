@@ -1,0 +1,16 @@
+{
+  "name": "web-channel-mcp",
+  "version": "1.0.0",
+  "description": "Web channel for the bot — send a message into the workspace UI's notification stream",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

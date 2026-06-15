@@ -242,6 +242,9 @@ scp apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-m
 scp apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
+ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/web-channel-mcp'"
+scp apps/web-channel-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
+scp apps/web-channel-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/email-mcp'"
 scp apps/email-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1
 scp apps/email-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1

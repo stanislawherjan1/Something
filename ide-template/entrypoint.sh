@@ -1501,6 +1501,20 @@ managed['workspace-api'] = {
     }
 }
 
+# Web Channel MCP — push messages from the bot into the workspace UI's
+# notification stream (the SSE channel NotificationToasts consumes).
+# Always on: no credentials required, loopback call to workspace-api.
+# The bot uses web_send_message when the inbound prompt came over the
+# web channel (e.g. [WEB_USER] or [REMINDER channel=web]) — see
+# bootstrap/memory/AGENT_TOOLS.md for the routing rules.
+managed['web-channel'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/web-channel-mcp/index.js'],
+    'env': {
+        'WORKSPACE_API_PORT': os.environ.get('WORKSPACE_API_PORT', '3001'),
+    }
+}
+
 # Nano Banana — Google Gemini image generation (Imagen 3 + Gemini 2.0 Flash editing).
 # Only if GEMINI_API_KEY is set. Output directory shared with Seedream by default.
 gemini_key = os.environ.get('GEMINI_API_KEY', '')

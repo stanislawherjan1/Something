@@ -232,6 +232,9 @@ RUN cd /opt/ide/apps/reminder-mcp && npm install --production
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
 RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
 
+COPY apps/web-channel-mcp /opt/ide/apps/web-channel-mcp
+RUN cd /opt/ide/apps/web-channel-mcp && npm install --production
+
 COPY apps/email-mcp /opt/ide/apps/email-mcp
 RUN cd /opt/ide/apps/email-mcp && npm install --production
 
