@@ -1008,6 +1008,21 @@ if [ -f "$INTEGRATIONS_ENV" ]; then
     set -a; . "$INTEGRATIONS_ENV"; set +a
 fi
 
+# Clear the Telegram plugin's PID file before claude starts. /home/bot is
+# a named volume, so the file persists across container recreations — old
+# PIDs from a defunct container can collide with reused PIDs in the new
+# one. The pid-lock guard's mtime check then triggers in the wrong mode
+# (ageMs > 30_000 from the file's old mtime → "replacing stale poller"
+# kills an UNRELATED process that happened to inherit the same PID).
+# Wiping the file at startup forces a clean re-claim; the in-session
+# mtime guard still handles the sibling-race case for plugin re-spawns
+# within the same claude session. Diagnosed 2026-06-15 on canary.
+PLUGIN_PID_FILE="$BOT_HOME/.claude/channels/telegram/bot.pid"
+if [ -f "$PLUGIN_PID_FILE" ]; then
+    rm -f "$PLUGIN_PID_FILE"
+    log "Cleared stale plugin PID file at $PLUGIN_PID_FILE"
+fi
+
 log "Starting Claude Code channel in tmux..."
 # tmux spawns its pane via the user's login shell — bot uid (Phase-3) has
 # /usr/sbin/nologin set in /etc/passwd, so without an explicit SHELL the

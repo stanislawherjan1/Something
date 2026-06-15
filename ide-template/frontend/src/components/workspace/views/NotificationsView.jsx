@@ -154,10 +154,11 @@ function EmptyState() {
       <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-muted">
         <Inbox className="size-5" aria-hidden />
       </div>
-      <div className="text-sm font-medium text-foreground">Nic się jeszcze nie wydarzyło.</div>
+      <div className="text-sm font-medium text-foreground">Nothing here yet.</div>
       <div className="mt-2 max-w-xs text-sm leading-relaxed">
-        Gdy bot odbije się o reminder, wykona skill, albo dostanie wiadomość
-        z Telegrama — pojawi się tu wpis. Klik otworzy rozmowę.
+        When the bot fires a reminder, finishes a skill, or processes a
+        Telegram message — an entry lands here. Click one to open the
+        conversation.
       </div>
     </div>
   );
