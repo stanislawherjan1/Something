@@ -23,7 +23,11 @@ allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp
 
 ## Delivery model
 
-Reminders fire via a PM2 background process that polls `.reminders.json` every 60s — even when the bot session is dead. Details + the two delivery paths (live session vs offline fallback) + how to handle `[REMINDER]` triggers in your terminal → `references/delivery.md`.
+Reminders fire via a PM2 background process that polls `.reminders.json` every 60s — even when the bot session is dead.
+
+**When a reminder fires, it's a trigger for YOU, not a message to forward.** If the reminder text describes an action ("check email and summarize", "run the audit and report"), *perform it with your tools and deliver the result* — do not just re-send the title. If it's a plain nudge ("call John at 3"), relay it in your voice. Reply on the reminder's `channel=` (telegram / web / all).
+
+Full trigger format, the action-vs-nudge test, channel routing, and the two delivery paths (live session vs offline fallback) → `references/delivery.md`. **Read it before handling a `[REMINDER ...]` trigger.**
 
 ## After setting — confirm clearly
 

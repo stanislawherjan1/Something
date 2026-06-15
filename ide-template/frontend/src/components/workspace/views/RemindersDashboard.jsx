@@ -151,7 +151,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                 {/* User-created reminders — what the bot has been asked to schedule */}
                 <Section
                   title="Your reminders"
-                  subtitle={`Timed nudges ${botDisplayName} has set for itself. Fires on Telegram even when no chat session is active. Ask ${botDisplayName} to schedule new ones; clear out anything stale from here.`}
+                  subtitle={`Timed nudges ${botDisplayName} has scheduled. Each fires on its own channel — Telegram, the web UI, or both — even when no chat session is active. Ask ${botDisplayName} to schedule new ones; clear out anything stale from here.`}
                 >
                   {userReminders.length === 0 ? (
                     <EmptyHint>
@@ -178,7 +178,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                   <div className="opacity-65 transition-opacity hover:opacity-100">
                     <Section
                       title="System rituals"
-                      subtitle={`Built-in weekly self-maintenance — ${botDisplayName} runs these to keep the workspace clean and the memory index fresh. Platform-managed; not deletable.`}
+                      subtitle={`Built-in self-maintenance — ${botDisplayName} runs these to keep the workspace clean and the memory index fresh, then reports to Telegram. Platform-managed; not deletable.`}
                     >
                       <div className="flex flex-col rounded-lg border border-border/60 bg-card divide-y divide-border/50 overflow-hidden">
                         {systemReminders.map(r => (
