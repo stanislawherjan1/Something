@@ -26,7 +26,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const WSAPI_PORT = process.env.WORKSPACE_API_PORT || '3001';
-const NOTIFY_URL = `http://127.0.0.1:${WSAPI_PORT}/api/internal/notify`;
+const NOTIFY_URL        = `http://127.0.0.1:${WSAPI_PORT}/api/internal/notify`;
+const CHAT_SESSION_URL  = `http://127.0.0.1:${WSAPI_PORT}/api/internal/chat-session`;
 
 const server = new Server(
   { name: 'web-channel-mcp', version: '1.0.0' },
@@ -77,17 +78,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
     try {
-      const res = await fetch(NOTIFY_URL, {
+      // First create the chat-history session so the bubble click target
+      // resolves to a real conversation. Failure here is non-fatal — the
+      // toast still fires; the user can find the message but the click
+      // → open conversation wiring goes inert.
+      let sessionId = null;
+      try {
+        const sRes = await fetch(CHAT_SESSION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, body }),
+        });
+        const sJson = await sRes.json().catch(() => ({}));
+        if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
+      } catch (_) { /* swallow — fall through to notify */ }
+
+      const nRes = await fetch(NOTIFY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'bot', title, body }),
+        body: JSON.stringify({
+          kind: 'bot',
+          title,
+          body,
+          meta: sessionId ? { session_id: sessionId } : {},
+        }),
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) {
+      const nJson = await nRes.json().catch(() => ({}));
+      if (!nRes.ok || !nJson?.ok) {
         return {
           content: [{
             type: 'text',
-            text: `web_send_message: wsapi responded ${res.status}: ${JSON.stringify(json)}`,
+            text: `web_send_message: wsapi /notify responded ${nRes.status}: ${JSON.stringify(nJson)}`,
           }],
           isError: true,
         };
@@ -95,7 +116,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{
           type: 'text',
-          text: `Sent (id=${json.id}).`,
+          text: sessionId
+            ? `Sent (notification=${nJson.id}, session=${sessionId}).`
+            : `Sent (notification=${nJson.id}, session-create failed — toast only).`,
         }],
       };
     } catch (err) {

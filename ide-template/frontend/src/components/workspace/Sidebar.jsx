@@ -9,6 +9,8 @@ import FileTree from './FileTree.jsx';
 import UserMenu from './UserMenu.jsx';
 import DeleteConfirm from './dialogs/DeleteConfirm.jsx';
 import InlineCreateRow from './InlineCreateRow.jsx';
+import useNotifications from './useNotifications.js';
+import useNotificationReadState from './useNotificationReadState.js';
 
 /**
  * Sidebar — left column.
@@ -294,11 +296,16 @@ const SHORTCUTS = [
 ];
 
 function Shortcuts({ selected, onSelect }) {
+  const { notifications } = useNotifications();
+  const { isRead } = useNotificationReadState();
+  const hasUnread = notifications.some((n) => !isRead(n.id));
+
   return (
     <div className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
       {SHORTCUTS.map(item => {
         const active = item.match(selected);
         const Icon = item.icon;
+        const showDot = item.key === 'notifications' && hasUnread && !active;
         return (
           <button
             key={item.key}
@@ -315,13 +322,21 @@ function Shortcuts({ selected, onSelect }) {
             {active && (
               <span className="absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
             )}
-            <Icon
-              className={cn(
-                'size-[15px] shrink-0 transition-colors',
-                active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+            <span className="relative shrink-0">
+              <Icon
+                className={cn(
+                  'size-[15px] transition-colors',
+                  active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+                )}
+                strokeWidth={1.75}
+              />
+              {showDot && (
+                <span
+                  className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-sidebar"
+                  aria-label="Unread notifications"
+                />
               )}
-              strokeWidth={1.75}
-            />
+            </span>
             <span>{item.label}</span>
           </button>
         );

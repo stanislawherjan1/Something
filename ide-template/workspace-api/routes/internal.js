@@ -13,6 +13,13 @@
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
+import { createSession } from '../lib/sessions.js';
+import { appendToSession } from '../lib/chatHistory.js';
+
+// Single-user actor — matches routes/chat.js until multi-user team mode
+// lands. The internal endpoint creates the session as if the workspace
+// owner authored it; that surfaces it in their chat-history dropdown.
+const ACTOR = 'default';
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -53,6 +60,37 @@ export default function internalRouter() {
       return res.json({ ok: true, id: n.id });
     } catch (err) {
       process.stderr.write(`[internal] notify failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Bot-originated chat session — creates a fresh session in the
+  // workspace owner's chat history, pre-populated with an assistant
+  // message. Returns the new session id. web-channel-mcp's
+  // web_send_message tool calls this so every spontaneous bot reply
+  // becomes a clickable, named entry in the Assistant chat dropdown
+  // alongside the user's normal conversations. The companion
+  // /internal/notify call (also fired by the MCP) gets the session_id
+  // back via its meta so the UI can wire click → switch session.
+  router.post('/internal/chat-session', loopbackOnly, (req, res) => {
+    const { title, body } = req.body || {};
+    const cleanTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'Bot message';
+    const text = typeof body === 'string' && body.trim()
+      ? (title ? `${title}\n\n${body}` : body)
+      : (title || '');
+    if (!text) {
+      return res.status(400).json({ ok: false, error: 'title or body required' });
+    }
+    try {
+      const session = createSession(ACTOR, { title: cleanTitle });
+      appendToSession(ACTOR, session.id, {
+        role: 'assistant',
+        text,
+        kind: 'bot',
+      });
+      return res.json({ ok: true, id: session.id });
+    } catch (err) {
+      process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

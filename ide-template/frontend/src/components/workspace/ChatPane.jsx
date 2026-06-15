@@ -54,6 +54,20 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
     return () => { cancelled = true; };
   }, []);
 
+  // External callers (NotificationsView row clicks, NotificationToasts
+  // click) dispatch `ide:chat-select-session` with { sessionId } in
+  // detail to deep-link straight into a bot-originated session that
+  // web_send_message just created. Listening here keeps the wiring out
+  // of every consumer.
+  useEffect(() => {
+    const onExternal = (e) => {
+      const sid = e.detail?.sessionId;
+      if (typeof sid === 'string' && sid) setActiveSessionId(sid);
+    };
+    window.addEventListener('ide:chat-select-session', onExternal);
+    return () => window.removeEventListener('ide:chat-select-session', onExternal);
+  }, []);
+
   const onSelectSession = useCallback((id) => {
     if (id === null) {
       // The active session was deleted — find the next one to land on.

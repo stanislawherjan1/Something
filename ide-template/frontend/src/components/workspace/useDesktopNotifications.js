@@ -38,17 +38,27 @@ export default function useDesktopNotifications(notifications) {
     let nextSeen = [...seen];
     for (const n of notifications) {
       if (seenSet.has(n.id)) continue;
-      if (document.visibilityState !== 'visible') {
-        try {
-          new Notification(n.title || 'Bot', {
-            body: n.body || '',
-            tag: n.id,
-          });
-        } catch {
-          // Some browsers throw if called outside a user gesture or for
-          // service-worker-only contexts — swallow, the bubble still
-          // shows in-app via NotificationToasts.
-        }
+      // Skip replays from the server-side ring buffer — they're not new.
+      // Without this guard, every page refresh would pop a desktop popup
+      // for every buffered event (toast already has the same guard).
+      if (n.replay) {
+        nextSeen.push(n.id);
+        continue;
+      }
+      try {
+        // Fire regardless of document visibility — modern browsers
+        // surface desktop popups even when the tab is focused (with a
+        // brief banner), and that matches the in-app toast behaviour
+        // 1:1. The previous "only when hidden" gate confused users who
+        // expected the popup to appear immediately.
+        new Notification(n.title || 'Bot', {
+          body: n.body || '',
+          tag: n.id,
+        });
+      } catch {
+        // Some browsers throw if called outside a user gesture or for
+        // service-worker-only contexts — swallow, the bubble still
+        // shows in-app via NotificationToasts.
       }
       nextSeen.push(n.id);
     }

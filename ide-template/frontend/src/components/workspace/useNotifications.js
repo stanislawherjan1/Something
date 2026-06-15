@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react';
  */
 export default function useNotifications() {
   const [notifications, setNotifications] = useState([]);
+  const [connecting, setConnecting] = useState(true);
 
   useEffect(() => {
     const es = new EventSource('/api/notifications/stream');
@@ -37,8 +38,9 @@ export default function useNotifications() {
     });
 
     es.addEventListener('hello', () => {
-      // Greeting event — nothing to render, just confirms the stream is
-      // live. Could expose a "connected" indicator to the UI later.
+      // Greeting confirms the stream is live → the SkeletonRow placeholders
+      // on the inbox can come down.
+      setConnecting(false);
     });
 
     es.onerror = () => {
@@ -48,5 +50,5 @@ export default function useNotifications() {
     return () => es.close();
   }, []);
 
-  return notifications;
+  return { notifications, connecting };
 }

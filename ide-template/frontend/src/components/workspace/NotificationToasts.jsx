@@ -24,7 +24,7 @@ const STACK_LIMIT = 4;
  * once dismissed in-session it stays dismissed until a new id arrives.
  */
 export default function NotificationToasts() {
-  const notifications = useNotifications();
+  const { notifications } = useNotifications();
   const [dismissed, setDismissed] = useState(() => new Set());
 
   // Drop any auto-dismissals after VISIBLE_MS by adding their id into the
@@ -72,7 +72,19 @@ export default function NotificationToasts() {
             className={cn(
               'pointer-events-auto rounded-md border border-border bg-card shadow-lg',
               'flex gap-4 px-5 py-4 text-sm',
+              n.meta?.session_id ? 'cursor-pointer hover:bg-accent/30' : '',
             )}
+            onClick={() => {
+              if (!n.meta?.session_id) return;
+              window.dispatchEvent(new CustomEvent('ide:chat-select-session', {
+                detail: { sessionId: n.meta.session_id },
+              }));
+              setDismissed((prev) => {
+                const next = new Set(prev);
+                next.add(n.id);
+                return next;
+              });
+            }}
           >
             <Bell className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div className="min-w-0 flex-1">
@@ -88,13 +100,14 @@ export default function NotificationToasts() {
             </div>
             <button
               type="button"
-              onClick={() =>
+              onClick={(e) => {
+                e.stopPropagation();
                 setDismissed((prev) => {
                   const next = new Set(prev);
                   next.add(n.id);
                   return next;
-                })
-              }
+                });
+              }}
               className="-mr-1 shrink-0 rounded p-1.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
               aria-label="Dismiss"
             >

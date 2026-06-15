@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Bell, Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Layers } from 'lucide-react';
+import { Bell, Calendar, Repeat, Loader2, Trash2, X, Send, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
@@ -245,7 +245,7 @@ function ReminderRow({ reminder, onDelete }) {
       <div className="min-w-0 flex-1">
         <ReminderHeading reminder={reminder} />
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/70">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
           <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
             <Calendar className="size-3" strokeWidth={1.75} />
             {formatDue(due)}
@@ -261,15 +261,8 @@ function ReminderRow({ reminder, onDelete }) {
               </span>
             </>
           )}
-          {reminder.id && (
-            <>
-              <span className="text-muted-foreground/55">·</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground/55">{reminder.id}</span>
-            </>
-          )}
-        </div>
-        <div className="mt-2">
-          <ChannelPill channel={reminder.channel} />
+          <span className="text-muted-foreground/55">·</span>
+          <ChannelInline channel={reminder.channel} />
         </div>
       </div>
 
@@ -335,7 +328,7 @@ function SystemReminderRow({ reminder }) {
       <div className="min-w-0 flex-1">
         <ReminderHeading reminder={reminder} />
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/70">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
           <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
             <Calendar className="size-3" strokeWidth={1.75} />
             {formatDue(due)}
@@ -351,15 +344,8 @@ function SystemReminderRow({ reminder }) {
               </span>
             </>
           )}
-          {reminder.id && (
-            <>
-              <span className="text-muted-foreground/55">·</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground/55">{reminder.id}</span>
-            </>
-          )}
-        </div>
-        <div className="mt-2">
-          <ChannelPill channel={reminder.channel} />
+          <span className="text-muted-foreground/55">·</span>
+          <ChannelInline channel={reminder.channel} />
         </div>
       </div>
     </div>
@@ -512,26 +498,31 @@ function formatRepeat(repeat, due) {
   return r;
 }
 
-// Per-reminder delivery surface. Shown as a small pill below the date
-// metadata so it's immediately obvious where a reminder will fire. The
-// channel field was added in the Phase 3 reminder routing work — legacy
-// reminders without it default to 'all' (both Telegram and web).
-function ChannelPill({ channel }) {
+// Per-reminder delivery surface. Compact inline label that sits in the
+// same metadata row as the due-date / repeat info: "Channel: <icon>".
+// Telegram uses a paper-plane glyph (closest mark-recognisable lucide
+// shape — the upstream brand mark would need an SVG import). Web uses a
+// globe. "Both" stacks the two side by side.
+function ChannelInline({ channel }) {
   const c = (channel || 'all').toLowerCase();
-  const meta = c === 'telegram'
-    ? { Icon: Send,   label: 'Fires on Telegram',  tone: 'bg-sky-50 text-sky-700 ring-sky-200/60 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/60' }
-    : c === 'web'
-    ? { Icon: Globe,  label: 'Fires in the web UI', tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60' }
-    : { Icon: Layers, label: 'Fires on both surfaces', tone: 'bg-muted text-foreground/75 ring-border' };
   return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
-        meta.tone,
+    <span className="inline-flex items-center gap-1.5 text-foreground/70" title={channelTitle(c)}>
+      <span className="text-muted-foreground/70">Channel:</span>
+      {c === 'telegram' && <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />}
+      {c === 'web' && <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />}
+      {(c === 'all' || (c !== 'telegram' && c !== 'web')) && (
+        <span className="inline-flex items-center gap-0.5">
+          <Send  className="size-3" strokeWidth={1.75} aria-label="Telegram" />
+          <span className="text-muted-foreground/55">+</span>
+          <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />
+        </span>
       )}
-    >
-      <meta.Icon className="size-3" strokeWidth={2} />
-      {meta.label}
     </span>
   );
+}
+
+function channelTitle(c) {
+  if (c === 'telegram') return 'Fires on Telegram';
+  if (c === 'web')      return 'Fires in the web UI';
+  return 'Fires on both surfaces';
 }
