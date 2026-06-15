@@ -32,7 +32,7 @@ export default function NotificationToasts() {
   // we just stop including them in the visible list.
   useEffect(() => {
     const fresh = notifications.filter(
-      (n) => !dismissed.has(n.id),
+      (n) => !n.replay && !dismissed.has(n.id),
     );
     if (!fresh.length) return;
     const timers = fresh.slice(-STACK_LIMIT).map((n) =>
@@ -48,6 +48,7 @@ export default function NotificationToasts() {
   }, [notifications, dismissed]);
 
   const visible = notifications
+    .filter((n) => !n.replay)             // live arrivals only — never pop a toast for a ring-buffer replay
     .filter((n) => !dismissed.has(n.id))
     .slice(-STACK_LIMIT);
 

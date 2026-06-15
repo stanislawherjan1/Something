@@ -13,7 +13,6 @@ import IntegrationsDashboard from './views/IntegrationsDashboard.jsx';
 import RemindersDashboard from './views/RemindersDashboard.jsx';
 import TeamDashboard      from './views/TeamDashboard.jsx';
 import MemoryDashboard    from './views/MemoryDashboard.jsx';
-import BotChatView        from './views/BotChatView.jsx';
 import NotificationsView  from './views/NotificationsView.jsx';
 
 // BlockNote is heavy (~500 KB gzip) — lazy-load so the initial bundle stays
@@ -80,7 +79,6 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'reminders')                              return <RemindersDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'team')                                   return <TeamDashboard sidebarOpen={sidebarOpen} />;
   if (type === 'memory')                                 return <MemoryDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
-  if (type === 'bot')                                    return <BotChatView sidebarOpen={sidebarOpen} />;
   if (type === 'notifications')                          return <NotificationsView sidebarOpen={sidebarOpen} />;
   if (path === 'Tasks.md')                               return <KanbanView     path={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'dir' && basename(path) === 'generated')  return <GalleryView    path={path} fileEventNonce={fileEventNonce} onSelect={onSelect} sidebarOpen={sidebarOpen} />;

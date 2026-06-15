@@ -173,6 +173,27 @@ When in doubt about which channel a reminder targets, prefer
 \`web_send_message\` over silence — the user can always re-route via
 the Reminders panel.
 
+## Reminders — defaulting the \`channel\` field
+
+When you call \`mcp__reminder__set_reminder\` (or however your local
+binding names it), **pass the \`channel\` arg explicitly based on where
+the request came from**, unless the user said otherwise:
+
+- Inbound prefix \`[WEB_USER ...]\` → \`channel: "web"\`. The user is
+  sitting in the workspace UI; their reminder result should land in
+  the same surface.
+- Inbound from the Telegram channel plugin (no special prefix) →
+  \`channel: "telegram"\`. The user is on Telegram; ping them there.
+- Inbound prefix \`[REMINDER channel=X ...]\` (you're processing a
+  fired reminder) → propagate \`channel: "X"\` if the user asks for a
+  follow-up reminder.
+- User explicitly overrides — "remind me on Telegram tomorrow" while
+  chatting in the web UI — honour the override.
+
+Only fall back to the env default (\`channel: "all"\`) when no surface
+is implied by context. "All" doubles the noise (TG ping + web bubble);
+use it intentionally.
+
 ## Don't confuse this with Claude Code's native auto-memory
 
 Recent Claude Code CLI versions surface a built-in file-based memory

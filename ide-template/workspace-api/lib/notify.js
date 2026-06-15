@@ -41,7 +41,11 @@ export function subscribe(res) {
   subscribers.add(sub);
 
   writeEvent(res, 'hello', { ok: true, replay: recent.length });
-  for (const n of recent) writeEvent(res, 'notification', n);
+  // Buffered events are flagged so the client distinguishes them from
+  // live arrivals — keeps the toast surface from re-popping the same
+  // reminder on every page refresh, while NotificationsView still
+  // renders the full backlog.
+  for (const n of recent) writeEvent(res, 'notification', { ...n, replay: true });
 
   const heartbeat = setInterval(() => {
     try { res.write(': keep-alive\n\n'); } catch {}

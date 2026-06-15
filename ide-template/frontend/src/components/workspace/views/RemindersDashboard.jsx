@@ -245,7 +245,7 @@ function ReminderRow({ reminder, onDelete }) {
       <div className="min-w-0 flex-1">
         <ReminderHeading reminder={reminder} />
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/70">
           <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
             <Calendar className="size-3" strokeWidth={1.75} />
             {formatDue(due)}
@@ -261,14 +261,15 @@ function ReminderRow({ reminder, onDelete }) {
               </span>
             </>
           )}
-          <span className="text-muted-foreground/55">·</span>
-          <ChannelBadge channel={reminder.channel} />
           {reminder.id && (
             <>
               <span className="text-muted-foreground/55">·</span>
               <span className="font-mono text-[10.5px] text-muted-foreground/55">{reminder.id}</span>
             </>
           )}
+        </div>
+        <div className="mt-2">
+          <ChannelPill channel={reminder.channel} />
         </div>
       </div>
 
@@ -334,7 +335,7 @@ function SystemReminderRow({ reminder }) {
       <div className="min-w-0 flex-1">
         <ReminderHeading reminder={reminder} />
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/70">
           <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
             <Calendar className="size-3" strokeWidth={1.75} />
             {formatDue(due)}
@@ -350,14 +351,15 @@ function SystemReminderRow({ reminder }) {
               </span>
             </>
           )}
-          <span className="text-muted-foreground/55">·</span>
-          <ChannelBadge channel={reminder.channel} />
           {reminder.id && (
             <>
               <span className="text-muted-foreground/55">·</span>
               <span className="font-mono text-[10.5px] text-muted-foreground/55">{reminder.id}</span>
             </>
           )}
+        </div>
+        <div className="mt-2">
+          <ChannelPill channel={reminder.channel} />
         </div>
       </div>
     </div>
@@ -510,19 +512,25 @@ function formatRepeat(repeat, due) {
   return r;
 }
 
-// Per-reminder delivery channel badge. The channel field was added in the
-// Phase 3 reminder routing work — legacy reminders without it default to
-// 'all' (both Telegram and web) which is the safe both-ways behaviour.
-function ChannelBadge({ channel }) {
+// Per-reminder delivery surface. Shown as a small pill below the date
+// metadata so it's immediately obvious where a reminder will fire. The
+// channel field was added in the Phase 3 reminder routing work — legacy
+// reminders without it default to 'all' (both Telegram and web).
+function ChannelPill({ channel }) {
   const c = (channel || 'all').toLowerCase();
   const meta = c === 'telegram'
-    ? { Icon: Send,   label: 'Telegram' }
+    ? { Icon: Send,   label: 'Fires on Telegram',  tone: 'bg-sky-50 text-sky-700 ring-sky-200/60 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/60' }
     : c === 'web'
-    ? { Icon: Globe,  label: 'Web' }
-    : { Icon: Layers, label: 'Both' };
+    ? { Icon: Globe,  label: 'Fires in the web UI', tone: 'bg-emerald-50 text-emerald-700 ring-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60' }
+    : { Icon: Layers, label: 'Fires on both surfaces', tone: 'bg-muted text-foreground/75 ring-border' };
   return (
-    <span className="inline-flex items-center gap-1.5 text-foreground/70">
-      <meta.Icon className="size-3" strokeWidth={1.75} />
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+        meta.tone,
+      )}
+    >
+      <meta.Icon className="size-3" strokeWidth={2} />
       {meta.label}
     </span>
   );
