@@ -1047,8 +1047,21 @@ if command -v curl >/dev/null 2>&1; then
     fi
 fi
 
+# Only load the Telegram channel plugin when we actually have a token —
+# without one the plugin process exits on startup with "TELEGRAM_BOT_TOKEN
+# required" and claude loses the MCP connection (diagnosed 2026-06-15 on
+# canary). For TG-less clients, claude still runs in the tmux session
+# (web-channel-mcp + reminder-monitor's tmux send-keys give it I/O), it
+# just doesn't have the Telegram listener loop.
+CHANNELS_ARG=""
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+    CHANNELS_ARG="--channels plugin:telegram@claude-plugins-official"
+    log "Launching claude with Telegram channel plugin."
+else
+    log "TELEGRAM_BOT_TOKEN not set — launching claude without channel plugin (web/tmux I/O only)."
+fi
 tmux -L "$SESSION" new-session -d -s "$SESSION" \
-    "cd $PROJECT_DIR && claude --dangerously-skip-permissions --add-dir '$CLAUDE_CONFIG_DIR' --channels plugin:telegram@claude-plugins-official $CLAUDE_EXTRA_ARGS"
+    "cd $PROJECT_DIR && claude --dangerously-skip-permissions --add-dir '$CLAUDE_CONFIG_DIR' $CHANNELS_ARG $CLAUDE_EXTRA_ARGS"
 
 # ── Post-tmux-start settings re-merge ────────────────────────────────────
 # `claude --dangerously-skip-permissions` writes skipDangerousModePermission
