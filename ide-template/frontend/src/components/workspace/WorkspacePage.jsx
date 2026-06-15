@@ -30,6 +30,7 @@ const VIEW_ROUTES = [
   { path: '/team',         selected: { path: '.claude/team',       type: 'team' } },
   { path: '/ai',           selected: { path: '.claude',            type: 'dashboard' } },
   { path: '/memory',       selected: { path: 'memory',             type: 'memory' } },
+  { path: '/bot',          selected: { path: '.bot',               type: 'bot' } },
 ];
 
 function pathnameToSelected(pathname) {
