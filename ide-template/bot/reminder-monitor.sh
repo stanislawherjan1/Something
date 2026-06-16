@@ -56,6 +56,17 @@ function parseAt(at) {
   const h = +m[1], mm = +m[2];
   return (h <= 23 && mm <= 59) ? { h, m: mm } : null;
 }
+function isSkipped(timeMs, rec) {
+  if (!rec) return false;
+  const d = new Date(timeMs);
+  const h = d.getUTCHours();
+  const dow = d.getUTCDay();
+  const skipHours = Array.isArray(rec.skip_hours) ? rec.skip_hours : [];
+  const skipDays = Array.isArray(rec.skip_days) ? rec.skip_days.map(function (x) { return DOW[String(x).slice(0, 3).toLowerCase()]; }).filter(function (x) { return x != null; }) : [];
+  if (skipHours.includes(h)) return true;
+  if (skipDays.includes(dow)) return true;
+  return false;
+}
 function resolveRecur(r) {
   if (r && r.recur && typeof r.recur === 'object' && r.recur.type) return r.recur;
   const rep = r && typeof r.repeat === 'string' ? r.repeat : '';
@@ -71,7 +82,11 @@ function nextOccurrence(rec, anchorMs, afterMs) {
     let t = Number(anchorMs);
     if (!Number.isFinite(t)) return null;
     if (t <= afterMs) t += (Math.floor((afterMs - t) / step) + 1) * step;
-    return t;
+    for (let i = 0; i < 1000; i++) {
+      if (!isSkipped(t, rec)) return t;
+      t += step;
+    }
+    return null;
   }
   if (rec.type === 'weekly') {
     const at = parseAt(rec.at);
@@ -81,9 +96,9 @@ function nextOccurrence(rec, anchorMs, afterMs) {
       .filter(function (x) { return x != null; }));
     if (!want.size) return null;
     const b = new Date(afterMs);
-    for (let off = 0; off <= 7; off++) {
+    for (let off = 0; off <= 365; off++) {
       const d = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate() + off, at.h, at.m, 0, 0));
-      if (d.getTime() > afterMs && want.has(d.getUTCDay())) return d.getTime();
+      if (d.getTime() > afterMs && want.has(d.getUTCDay()) && !isSkipped(d.getTime(), rec)) return d.getTime();
     }
     return null;
   }
@@ -96,7 +111,7 @@ function nextOccurrence(rec, anchorMs, afterMs) {
       const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
       const dom = rec.day === 'last' ? lastDay : Math.min(Number(rec.day) || 1, lastDay);
       const d = new Date(Date.UTC(y, mo, dom, at.h, at.m, 0, 0));
-      if (d.getTime() > afterMs) return d.getTime();
+      if (d.getTime() > afterMs && !isSkipped(d.getTime(), rec)) return d.getTime();
     }
     return null;
   }

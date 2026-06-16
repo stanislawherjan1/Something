@@ -32,6 +32,17 @@ function parseAt(at) {
   const h = +m[1], mm = +m[2];
   return (h <= 23 && mm <= 59) ? { h, m: mm } : null;
 }
+function isSkipped(timeMs, rec) {
+  if (!rec) return false;
+  const d = new Date(timeMs);
+  const h = d.getUTCHours();
+  const dow = d.getUTCDay();
+  const skipHours = Array.isArray(rec.skip_hours) ? rec.skip_hours : [];
+  const skipDays = Array.isArray(rec.skip_days) ? rec.skip_days.map(function (x) { return DOW[String(x).slice(0, 3).toLowerCase()]; }).filter(function (x) { return x != null; }) : [];
+  if (skipHours.includes(h)) return true;
+  if (skipDays.includes(dow)) return true;
+  return false;
+}
 function resolveRecur(r) {
   if (r && r.recur && typeof r.recur === 'object' && r.recur.type) return r.recur;
   const rep = r && typeof r.repeat === 'string' ? r.repeat : '';
@@ -47,7 +58,11 @@ function nextOccurrence(rec, anchorMs, afterMs) {
     let t = Number(anchorMs);
     if (!Number.isFinite(t)) return null;
     if (t <= afterMs) t += (Math.floor((afterMs - t) / step) + 1) * step;
-    return t;
+    for (let i = 0; i < 1000; i++) {
+      if (!isSkipped(t, rec)) return t;
+      t += step;
+    }
+    return null;
   }
   if (rec.type === 'weekly') {
     const at = parseAt(rec.at);
@@ -57,9 +72,9 @@ function nextOccurrence(rec, anchorMs, afterMs) {
       .filter(function (x) { return x != null; }));
     if (!want.size) return null;
     const b = new Date(afterMs);
-    for (let off = 0; off <= 7; off++) {
+    for (let off = 0; off <= 365; off++) {
       const d = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate() + off, at.h, at.m, 0, 0));
-      if (d.getTime() > afterMs && want.has(d.getUTCDay())) return d.getTime();
+      if (d.getTime() > afterMs && want.has(d.getUTCDay()) && !isSkipped(d.getTime(), rec)) return d.getTime();
     }
     return null;
   }
@@ -72,7 +87,7 @@ function nextOccurrence(rec, anchorMs, afterMs) {
       const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
       const dom = rec.day === 'last' ? lastDay : Math.min(Number(rec.day) || 1, lastDay);
       const d = new Date(Date.UTC(y, mo, dom, at.h, at.m, 0, 0));
-      if (d.getTime() > afterMs) return d.getTime();
+      if (d.getTime() > afterMs && !isSkipped(d.getTime(), rec)) return d.getTime();
     }
     return null;
   }
@@ -122,13 +137,35 @@ function applyBounds(src, out) {
 /** Validate + normalize a caller-supplied recur object. → {ok,recur} | {ok:false,error}. */
 function validateRecur(rec) {
   if (!rec || typeof rec !== 'object') return { ok: false, error: '`recur` must be an object' };
+  function validSkips(rec, out) {
+    if (rec.skip_hours != null) {
+      const h = Array.isArray(rec.skip_hours) ? rec.skip_hours : [];
+      if (!h.every(function (x) { return Number.isInteger(x) && x >= 0 && x <= 23; })) {
+        return { ok: false, error: '`skip_hours` must be an array of integers 0..23' };
+      }
+      out.skip_hours = h;
+    }
+    if (rec.skip_days != null) {
+      const d = (Array.isArray(rec.skip_days) ? rec.skip_days : [])
+        .map(function (x) { return String(x).slice(0, 3).toLowerCase(); })
+        .filter(function (x) { return x in DOW; });
+      if (d.length !== (Array.isArray(rec.skip_days) ? rec.skip_days.length : 0)) {
+        return { ok: false, error: '`skip_days` must list valid weekdays, e.g. ["sat","sun"]' };
+      }
+      out.skip_days = d;
+    }
+    return { ok: true };
+  }
   if (rec.type === 'interval') {
     const every = Number(rec.every);
     if (!Number.isInteger(every) || every < 1) return { ok: false, error: '`recur.every` must be an integer ≥ 1' };
     if (!['minutes', 'hours', 'days', 'weeks'].includes(rec.unit)) {
       return { ok: false, error: '`recur.unit` must be one of minutes|hours|days|weeks' };
     }
-    return applyBounds(rec, { type: 'interval', every, unit: rec.unit });
+    const out = { type: 'interval', every, unit: rec.unit };
+    const skipResult = validSkips(rec, out);
+    if (!skipResult.ok) return skipResult;
+    return applyBounds(rec, out);
   }
   if (rec.type === 'weekly') {
     const days = [...new Set((Array.isArray(rec.days) ? rec.days : [])
@@ -137,7 +174,10 @@ function validateRecur(rec) {
     if (!days.length) return { ok: false, error: '`recur.days` must list weekdays, e.g. ["mon","wed","fri"]' };
     const at = parseAt(rec.at);
     if (!at) return { ok: false, error: 'weekly recurrence needs `recur.at` as "HH:MM" (UTC)' };
-    return applyBounds(rec, { type: 'weekly', days, at: hhmm(at) });
+    const out = { type: 'weekly', days, at: hhmm(at) };
+    const skipResult = validSkips(rec, out);
+    if (!skipResult.ok) return skipResult;
+    return applyBounds(rec, out);
   }
   if (rec.type === 'monthly') {
     let day = rec.day;
@@ -149,7 +189,10 @@ function validateRecur(rec) {
     }
     const at = parseAt(rec.at);
     if (!at) return { ok: false, error: 'monthly recurrence needs `recur.at` as "HH:MM" (UTC)' };
-    return applyBounds(rec, { type: 'monthly', day, at: hhmm(at) });
+    const out = { type: 'monthly', day, at: hhmm(at) };
+    const skipResult = validSkips(rec, out);
+    if (!skipResult.ok) return skipResult;
+    return applyBounds(rec, out);
   }
   return { ok: false, error: '`recur.type` must be interval | weekly | monthly' };
 }
@@ -204,12 +247,18 @@ function humanizeRecur(rec) {
   } else {
     s = 'recurring';
   }
+  if (rec.skip_hours && rec.skip_hours.length) {
+    s += `, skip hours ${rec.skip_hours.join(',')}`;
+  }
+  if (rec.skip_days && rec.skip_days.length) {
+    s += `, skip ${rec.skip_days.map(cap).join('/')}`;
+  }
   if (rec.until) s += `, until ${rec.until.slice(0, 16).replace('T', ' ')} UTC`;
   if (rec.count) s += ` (${rec.count}×)`;
   return s;
 }
 
 module.exports = {
-  DOW, unitMs, parseAt, resolveRecur, nextOccurrence, advanceReminder,
+  DOW, unitMs, parseAt, isSkipped, resolveRecur, nextOccurrence, advanceReminder,
   validateRecur, buildRecur, computeFirstDue, legacyRepeatToken, humanizeRecur,
 };

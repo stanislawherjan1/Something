@@ -67,6 +67,12 @@ Time-of-day and day-of-month come from `due`. E.g. daily at 9am → `{ "due": "t
 - every hour until 6pm today → `{ "type":"interval", "every":1, "unit":"hours", "until":"2026-06-15T18:00:00Z" }`
 - ping me 3×, every 10 min → `{ "type":"interval", "every":10, "unit":"minutes", "count":3 }`
 
+**Skip certain hours / days** (optional — add to any `recur`): `"skip_hours":[...]` and/or `"skip_days":[...]`.
+When a reminder fires in a skipped hour/day, it advances to the next non-skipped slot instead.
+- skip nights (10pm–8am): `"skip_hours":[22,23,0,1,2,3,4,5,6,7]`
+- skip weekends: `"skip_days":["sat","sun"]`
+- combined: `{ "type":"interval", "every":2, "unit":"hours", "skip_hours":[22,23,0,1,2,3,4,5,6,7], "skip_days":["sat","sun"] }` → fires every 2 hours, Mon–Fri 8am–10pm only.
+
 **How `due` interacts with recurrence:**
 - **interval** → `due` is the FIRST fire, and sets the time-of-day for day/week intervals. "every 2 hours starting now" → `"due":"in 2 hours"`. "every day at 9am" → `"due":"tomorrow at 9am"` + `repeat:"daily"`.
 - **weekly / monthly** → the first fire **snaps automatically** to the next matching slot. Just pass a near-future `due` (e.g. `"in 1 minute"`) plus the `recur` — don't hand-compute the first occurrence.
