@@ -56,6 +56,49 @@ const upload = multer({
 const ATTACHMENT_BUCKET = 'main';
 const ACTOR = 'default';   // Single-user until MULTI_USER_TEAM_MODE; req.actor will populate this later
 
+// ─── Replay in-session context when there's no Claude session to --resume ────
+//
+// A session can hold prior messages with NO claudeSessionId attached — most
+// importantly one seeded by a proactive bot message (POST /internal/chat-session
+// ← web_send_message MCP). The seed text was authored by the bot's tmux brain,
+// not by any web `claude -p` turn, so there's no Claude session to resume. On
+// the user's first reply claudeSid is null and the fresh process can't see the
+// seed — it will deny having sent it ("I have no context for what this refers
+// to"). Replay the tail of THIS session (since the last reset marker) into the
+// prompt so the assistant recognises its own prior / proactive messages.
+//
+// Only this session's own file is read — never another session's — so this does
+// NOT reintroduce the cross-conversation bleed that `|| null` (below) fixed.
+const REPLAY_MAX_MESSAGES = 30;
+const REPLAY_MAX_CHARS    = 6000;
+
+function buildResumeContext(actor, sessionId) {
+  let page;
+  try { page = readSessionPage(actor, sessionId, { limit: REPLAY_MAX_MESSAGES }); }
+  catch { return null; }
+  let msgs = page.messages || [];
+  // Drop everything up to and including the last reset marker — a reset means
+  // "new topic", so pre-reset context stays out.
+  let lastReset = -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].kind === 'reset') { lastReset = i; break; }
+  }
+  if (lastReset >= 0) msgs = msgs.slice(lastReset + 1);
+  // Keep only real dialogue turns that carry text.
+  msgs = msgs.filter(m =>
+    (m.role === 'user' || m.role === 'assistant') && String(m.text || '').trim());
+  if (msgs.length === 0) return null;
+  const lines = msgs.map(m =>
+    `${m.role === 'assistant' ? 'assistant (you)' : 'user'}: ${String(m.text).trim()}`);
+  let body = lines.join('\n\n');
+  // Trim from the front to fit the budget (keep the most recent context).
+  while (body.length > REPLAY_MAX_CHARS && lines.length > 1) {
+    lines.shift();
+    body = lines.join('\n\n');
+  }
+  return body;
+}
+
 // ─── Helper — pick a working session id for a request ────────────────────────
 
 /**
@@ -386,13 +429,26 @@ export default function chatRouter() {
     const sessionEntry = getSession(ACTOR, sid);
     const claudeSid = sessionEntry?.claudeSessionId || null;
 
+    // No Claude session to --resume? Replay this session's own prior messages
+    // (e.g. a proactive bot seed) so the assistant knows what it already said
+    // here. Computed BEFORE appending the new user message so it's excluded.
+    const resumeContext = claudeSid ? null : buildResumeContext(ACTOR, sid);
+
     appendToSession(ACTOR, sid, { role: 'user', text: message, attachments: savedAttachments });
 
-    const promptForClaude = savedAttachments.length === 0
+    const baseMessage = savedAttachments.length === 0
       ? message
       : `${message}\n\n[Attachments — read these files to answer]\n${
           savedAttachments.map(a => `- ${a.path}`).join('\n')
         }`;
+
+    const promptForClaude = resumeContext
+      ? `[Earlier in THIS web chat — you are continuing this conversation, not starting it. `
+        + `Lines marked "assistant (you)" are messages you already sent in this chat; some may `
+        + `have been sent proactively by you and delivered here. Treat them as your own prior `
+        + `turns — don't deny sending them — and stay consistent.]\n\n${resumeContext}\n\n`
+        + `---\n\n[The user's new message — reply to it:]\n\n${baseMessage}`
+      : baseMessage;
 
     let finished = false;
     let proc;

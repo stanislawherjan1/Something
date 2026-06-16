@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell } from 'lucide-react';
+import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
@@ -125,6 +126,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
   const realError = error && !error.includes('404') ? error : null;
 
   return (
+    <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Clock} title="Reminders" sidebarOpen={sidebarOpen} />
 
@@ -134,7 +136,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
         ) : (
           <div className="flex flex-col gap-7 px-6 pb-12 pt-2">
             {isInitialLoad && (
-              <div className="flex flex-col rounded-lg border border-border/60 bg-card divide-y divide-border/50 overflow-hidden">
+              <div className="flex flex-col gap-2">
                 <SkeletonRow />
                 <SkeletonRow />
               </div>
@@ -158,7 +160,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                       No personal reminders yet. Try "remind me about X tomorrow at 9".
                     </EmptyHint>
                   ) : (
-                    <div className="flex flex-col rounded-lg border border-border/60 bg-card divide-y divide-border/50 overflow-hidden">
+                    <div className="flex flex-col gap-2">
                       {userReminders.map(r => (
                         <ReminderRow
                           key={r.id}
@@ -180,7 +182,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                       title="System rituals"
                       subtitle={`Built-in self-maintenance — ${botDisplayName} runs these to keep the workspace clean and the memory index fresh, then reports to Telegram. Platform-managed; not deletable.`}
                     >
-                      <div className="flex flex-col rounded-lg border border-border/60 bg-card divide-y divide-border/50 overflow-hidden">
+                      <div className="flex flex-col gap-2">
                         {systemReminders.map(r => (
                           <SystemReminderRow key={r.id} reminder={r} />
                         ))}
@@ -203,6 +205,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
         />
       )}
     </div>
+    </TooltipPrimitive.Provider>
   );
 }
 
@@ -228,55 +231,107 @@ function RemindersEmptyState() {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
+// Small per-element hover tooltip (Radix, portaled so the list's overflow
+// doesn't clip it). Wrap a SINGLE element; `label` is THAT element's detail.
+function InfoTip({ label, side = 'top', children }) {
+  if (label == null || label === '') return children;
+  return (
+    <TooltipPrimitive.Root>
+      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content
+          side={side}
+          sideOffset={6}
+          collisionPadding={10}
+          className="z-50 max-w-[18rem] rounded-md border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] leading-snug text-popover-foreground shadow-md"
+        >
+          {label}
+          <TooltipPrimitive.Arrow className="fill-popover" />
+        </TooltipPrimitive.Content>
+      </TooltipPrimitive.Portal>
+    </TooltipPrimitive.Root>
+  );
+}
+
 function ReminderRow({ reminder, onDelete }) {
-  const { botAvatarUrl } = useBranding();
+  const [open, setOpen] = useState(false);
   const due = new Date(reminder.due);
   const overdue = due < new Date();
+  const { title, description } = displayParts(reminder);
+  const recurLabel = formatRecurrence(reminder);
+  const channel = (reminder.channel || 'all').toLowerCase();
+  const toggle = () => setOpen((o) => !o);
 
   return (
-    <div className="group flex items-start gap-3.5 px-4 py-3.5 transition-colors hover:bg-muted/20">
-      {/* Bot avatar — every reminder is something the bot scheduled for
-          itself, so the avatar makes the ownership obvious at a glance. */}
-      <BrandedImage
-        src={botAvatarUrl}
-        fallback={BOT_FALLBACK}
-        alt=""
-        className="mt-0.5 size-9 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
-      />
-
-      <div className="min-w-0 flex-1">
-        <ReminderHeading reminder={reminder} />
-
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
-          <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
-            <Calendar className="size-3" strokeWidth={1.75} />
-            {formatDue(due)}
+    <div className="group overflow-hidden rounded-md border border-border/60 bg-card">
+      <div className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/20">
+        {/* Click the task (avatar + title + repeat badge) to reveal the description. */}
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={open}
+          onClick={toggle}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground/70">
+            <Bell className="size-3.5" strokeWidth={1.75} />
           </span>
-          <span className="text-muted-foreground/55">·</span>
-          <span className="text-muted-foreground/70">{formatAbsolute(due)}</span>
-          {reminder.repeat && reminder.repeat !== 'none' && (
-            <>
-              <span className="text-muted-foreground/55">·</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground/70">
-                <Repeat className="size-3" strokeWidth={1.75} />
-                {formatRepeat(reminder.repeat, due)}
-              </span>
-            </>
-          )}
-          <span className="text-muted-foreground/55">·</span>
-          <ChannelInline channel={reminder.channel} />
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="min-w-0 truncate text-[13.5px] font-medium leading-snug text-foreground">
+              {title}
+            </span>
+            {/* Repeat badge right after the title. */}
+            {recurLabel && (
+              <InfoTip label={recurLabel}>
+                <span className="inline-flex shrink-0 text-foreground/45">
+                  <Repeat className="size-3" strokeWidth={1.75} />
+                </span>
+              </InfoTip>
+            )}
+          </div>
         </div>
+
+        {/* Right meta — time then channel. */}
+        <span className="flex shrink-0 items-center gap-5 text-[11.5px] text-muted-foreground/70">
+          <InfoTip label={formatAbsolute(due)}>
+            <span className={cn('inline-flex cursor-default items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
+              <Calendar className="size-3" strokeWidth={1.75} />
+              {formatDue(due)}
+            </span>
+          </InfoTip>
+          <InfoTip label={channelTitle(channel)}>
+            <span className="inline-flex cursor-default">
+              <ChannelIcon channel={reminder.channel} />
+            </span>
+          </InfoTip>
+        </span>
+
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="ml-2 shrink-0 rounded-md p-1.5 text-muted-foreground/40 transition-colors duration-150 hover:bg-destructive/[0.08] hover:text-destructive"
+            aria-label="Delete reminder"
+            title="Delete reminder"
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </button>
+        )}
       </div>
 
-      <button
-        type="button"
-        onClick={onDelete}
-        className="mt-0.5 rounded-md p-1.5 text-muted-foreground/60 opacity-0 transition-all duration-150 hover:bg-destructive/[0.08] hover:text-destructive group-hover:opacity-100 focus:opacity-100"
-        aria-label="Delete reminder"
-        title="Delete reminder"
-      >
-        <Trash2 className="size-3.5" strokeWidth={1.75} />
-      </button>
+      {/* Click-to-reveal description, aligned under the title. */}
+      {open && (
+        <div className="-mt-0.5 pb-3 pl-[3.5rem] pr-4">
+          {description ? (
+            <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-muted-foreground/85">
+              {description}
+            </p>
+          ) : (
+            <p className="text-[12.5px] italic text-muted-foreground/45">No description.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -314,44 +369,9 @@ function EmptyHint({ children }) {
 // "system" tag (the section heading + dimmed opacity already convey that).
 
 function SystemReminderRow({ reminder }) {
-  const { botAvatarUrl } = useBranding();
-  const due = new Date(reminder.due);
-  const overdue = due < new Date();
-
-  return (
-    <div className="flex items-start gap-3.5 px-4 py-3.5 transition-colors hover:bg-muted/15">
-      <BrandedImage
-        src={botAvatarUrl}
-        fallback={BOT_FALLBACK}
-        alt=""
-        className="mt-0.5 size-9 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
-      />
-
-      <div className="min-w-0 flex-1">
-        <ReminderHeading reminder={reminder} />
-
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground/70">
-          <span className={cn('inline-flex items-center gap-1.5 font-medium', overdue ? 'text-destructive' : 'text-foreground/75')}>
-            <Calendar className="size-3" strokeWidth={1.75} />
-            {formatDue(due)}
-          </span>
-          <span className="text-muted-foreground/55">·</span>
-          <span className="text-muted-foreground/70">{formatAbsolute(due)}</span>
-          {reminder.repeat && reminder.repeat !== 'none' && (
-            <>
-              <span className="text-muted-foreground/55">·</span>
-              <span className="inline-flex items-center gap-1.5 text-foreground/70">
-                <Repeat className="size-3" strokeWidth={1.75} />
-                {formatRepeat(reminder.repeat, due)}
-              </span>
-            </>
-          )}
-          <span className="text-muted-foreground/55">·</span>
-          <ChannelInline channel={reminder.channel} />
-        </div>
-      </div>
-    </div>
-  );
+  // System rituals are platform-managed — same compact, expandable row, just
+  // no delete affordance (omitting onDelete hides the trash button).
+  return <ReminderRow reminder={reminder} />;
 }
 
 // ─── Delete modal ──────────────────────────────────────────────────────────
@@ -500,11 +520,58 @@ function formatRepeat(repeat, due) {
   return r;
 }
 
+// Human label for a reminder's recurrence. Prefers the structured `recur`
+// object (interval / weekly / monthly + until/count); falls back to the legacy
+// `repeat` string. Returns '' for one-shot reminders so the caller hides the
+// badge. recur times are stored UTC — labelled as such to avoid ambiguity.
+function formatRecurrence(reminder) {
+  const rec = reminder?.recur;
+  if (rec && typeof rec === 'object' && rec.type) {
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    let s;
+    if (rec.type === 'interval') {
+      const n = rec.every || 1;
+      s = n === 1 ? `every ${String(rec.unit || '').replace(/s$/, '')}` : `every ${n} ${rec.unit}`;
+    } else if (rec.type === 'weekly') {
+      s = `${(rec.days || []).map(cap).join('/')} at ${rec.at} UTC`;
+    } else if (rec.type === 'monthly') {
+      s = `monthly · day ${rec.day} at ${rec.at} UTC`;
+    } else {
+      s = 'recurring';
+    }
+    if (rec.until) {
+      const u = new Date(rec.until);
+      if (!Number.isNaN(u.getTime())) s += ` · until ${u.toLocaleDateString()}`;
+    }
+    if (rec.count) s += ` · ${rec.count}×`;
+    return s;
+  }
+  return formatRepeat(reminder?.repeat, new Date(reminder?.due));
+}
+
 // Per-reminder delivery surface. Compact inline label that sits in the
 // same metadata row as the due-date / repeat info: "Channel: <icon>".
 // Telegram uses a paper-plane glyph (closest mark-recognisable lucide
 // shape — the upstream brand mark would need an SVG import). Web uses a
 // globe. "Both" stacks the two side by side.
+// Compact channel glyph(s) only — used inline on the slim title row. The
+// labelled "Channel: …" variant (ChannelInline) lives in the expanded detail.
+function ChannelIcon({ channel }) {
+  const c = (channel || 'all').toLowerCase();
+  return (
+    <span className="inline-flex items-center text-muted-foreground/65">
+      {c === 'telegram' && <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />}
+      {c === 'web' && <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />}
+      {(c === 'all' || (c !== 'telegram' && c !== 'web')) && (
+        <span className="inline-flex items-center gap-1.5">
+          <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />
+          <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />
+        </span>
+      )}
+    </span>
+  );
+}
+
 function ChannelInline({ channel }) {
   const c = (channel || 'all').toLowerCase();
   return (

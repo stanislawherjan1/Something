@@ -6,6 +6,7 @@ import useNotifications from '../useNotifications.js';
 import useDesktopNotifications from '../useDesktopNotifications.js';
 import useNotificationReadState from '../useNotificationReadState.js';
 import { SkeletonLine, SkeletonCircle } from '../SkeletonLoader.jsx';
+import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity.jsx';
 
 /**
  * NotificationsView — inbox of server-pushed events from the bot.
@@ -95,12 +96,19 @@ export default function NotificationsView({ sidebarOpen }) {
 }
 
 function Row({ n, onOpen }) {
+  const { botAvatarUrl } = useBranding();
   return (
     <button
       type="button"
       onClick={onOpen}
       className="group flex w-full items-start gap-3 rounded-md border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/20"
     >
+      <BrandedImage
+        src={botAvatarUrl}
+        fallback={BOT_FALLBACK}
+        alt=""
+        className="size-8 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
+      />
       <div className="min-w-0 flex-1">
         {n.title ? (
           <div className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">
@@ -122,8 +130,8 @@ function Row({ n, onOpen }) {
 
 function SkeletonRow() {
   return (
-    <div className="flex items-start gap-3.5 px-4 py-3.5">
-      <SkeletonCircle size="36px" />
+    <div className="flex items-start gap-3 px-4 py-3">
+      <SkeletonCircle size="32px" />
       <div className="min-w-0 flex-1 space-y-2">
         <SkeletonLine width="60%" height="14px" />
         <SkeletonLine width="95%" height="13px" />

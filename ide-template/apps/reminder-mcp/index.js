@@ -14,6 +14,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import fs from 'fs/promises';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import recur from './recur.cjs';
 
 const REMINDERS_FILE =
   process.env.REMINDERS_FILE ||
@@ -135,8 +136,34 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           repeat: {
             type: 'string',
-            enum: ['none', 'daily', 'weekly'],
-            description: 'Repeat schedule. Default: none',
+            enum: ['none', 'hourly', 'daily', 'weekly', 'monthly'],
+            description:
+              'Simple recurrence shortcut. none (default) / hourly / daily / ' +
+              'weekly / monthly. Time-of-day and day-of-month come from `due`. ' +
+              'For anything more specific (every N units, certain weekdays, ' +
+              'bounded repeats) use `recur` instead — it overrides this.',
+          },
+          recur: {
+            type: 'object',
+            description:
+              'Advanced recurrence (overrides `repeat`). All times UTC. Shapes:\n' +
+              '• Interval: {"type":"interval","every":N,"unit":"minutes|hours|days|weeks"} ' +
+              '— e.g. every 2 hours. The time-of-day comes from `due`.\n' +
+              '• Weekly:  {"type":"weekly","days":["mon","wed","fri"],"at":"09:00"}.\n' +
+              '• Monthly: {"type":"monthly","day":1,"at":"08:00"} (day 1..31 or "last").\n' +
+              'Optional bounds on any shape: "until":"<ISO>" and/or "count":N (max fires). ' +
+              'For weekly/monthly just pass a near-future `due` (e.g. "in 1 minute") — ' +
+              'the first fire snaps to the next matching slot automatically.',
+            properties: {
+              type:  { type: 'string', enum: ['interval', 'weekly', 'monthly'] },
+              every: { type: 'integer', description: 'interval: repeat every N units (≥ 1)' },
+              unit:  { type: 'string', enum: ['minutes', 'hours', 'days', 'weeks'], description: 'interval unit' },
+              days:  { type: 'array', items: { type: 'string', enum: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }, description: 'weekly: weekdays to fire on' },
+              day:   { description: 'monthly: day of month 1..31, or the string "last"' },
+              at:    { type: 'string', description: 'weekly/monthly: time of day as "HH:MM" (UTC)' },
+              until: { type: 'string', description: 'optional bound: stop after this ISO date/time' },
+              count: { type: 'integer', description: 'optional bound: stop after N total fires' },
+            },
           },
           channel: {
             type: 'string',
@@ -208,6 +235,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    // Resolve recurrence: an explicit `recur` object wins, else the `repeat`
+    // shortcut is mapped to one. Validation failures come back as a tool error
+    // so the agent can correct the call instead of writing a broken reminder.
+    const rr = recur.buildRecur(args, dueDate.getTime());
+    if (!rr.ok) {
+      return { content: [{ type: 'text', text: `Reminder NOT set — ${rr.error}.` }], isError: true };
+    }
+    const recurrence = rr.recur; // canonical recur object, or null for one-shot
+    // First fire: interval honors the explicit `due`; weekly/monthly snap to
+    // the next matching slot so the first ping lands on a real occurrence.
+    const firstDueMs = recur.computeFirstDue(recurrence, dueDate.getTime(), Date.now());
+
     const reminders = await readReminders();
     const reminder = {
       id: `r_${randomUUID().slice(0, 8)}`,
@@ -225,8 +264,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       message: titleIn
         ? (descriptionIn ? `${titleIn} — ${descriptionIn}` : titleIn)
         : messageIn,
-      due: dueDate.toISOString(),
-      repeat: args.repeat || 'none',
+      due: new Date(firstDueMs).toISOString(),
+      // Canonical recurrence object (omitted entirely for one-shot). `repeat`
+      // stays as a coarse legacy mirror ('daily'/'weekly'/'custom'/'none') so
+      // pre-recur readers still show a badge; reminder-monitor.sh and the new
+      // dashboard read `recur`.
+      repeat: recur.legacyRepeatToken(recurrence),
+      ...(recurrence ? { recur: recurrence } : {}),
       // Channel routing: explicit tool arg wins, then the per-process default
       // env var (set by bot.sh based on the inbound prompt channel), then 'all'
       // as the safe both-ways fallback. reminder-monitor.sh reads this field
@@ -241,13 +285,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     reminders.push(reminder);
     await writeReminders(reminders);
 
-    const dueStr = dueDate.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    const dueStr = reminder.due.slice(0, 16).replace('T', ' ') + ' UTC';
     return {
       content: [{
         type: 'text',
         text: `Reminder set.\nID: ${reminder.id}\nTitle: ${reminder.title}` +
               (reminder.description ? `\nDescription: ${reminder.description}` : '') +
-              `\nDue: ${dueStr}\nRepeat: ${reminder.repeat}`,
+              `\nNext fire: ${dueStr}\nRepeat: ${recur.humanizeRecur(recurrence)}`,
       }],
     };
   }
@@ -273,7 +317,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         abs < 86_400_000 ? `${Math.round(abs / 3_600_000)}h` :
         `${Math.round(abs / 86_400_000)}d`;
       const sign = diff < 0 ? '-' : '+';
-      const repeatStr = r.repeat !== 'none' ? ` [${r.repeat}]` : '';
+      const rec = recur.resolveRecur(r);
+      const repeatStr = rec ? ` [${recur.humanizeRecur(rec)}]` : '';
       return `${r.id} | ${due.toISOString().slice(0, 16).replace('T', ' ')} UTC${overdue} (${sign}${diffStr}) | ${r.message}${repeatStr}`;
     };
 

@@ -1,6 +1,6 @@
 ---
 name: reminders
-description: Use this when the user wants to set a timed reminder, list pending reminders, or cancel one. Reminders fire via Telegram even when the user isn't in a session.
+description: Use this when the user wants to set a timed reminder, list pending reminders, or cancel one. Reminders fire on Telegram, the web UI, or both — even when no session is active — and can repeat on a schedule (hourly/daily/weekly/monthly or a custom interval, with an optional end date or fire count).
 allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
 ---
 
@@ -17,7 +17,7 @@ allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp
 
 ## Tool usage
 
-- `set_reminder` — params, title/description guidance, `due` formats, timezone handling → `references/set-params.md`
+- `set_reminder` — params, title/description guidance, `due` formats, **recurrence** (hourly / every-N interval / specific weekdays / monthly, + `until`/`count` bounds), timezone handling → `references/set-params.md`
 - `list_reminders` — no params, returns pending sorted by due time with relative offsets
 - `cancel_reminder` — needs `{ "id": "r_..." }`, get id from `list_reminders` first
 
@@ -34,4 +34,4 @@ Full trigger format, the action-vs-nudge test, channel routing, and the two deli
 > "Reminder set for 15:00 UTC (17:00 Warsaw): 'Check Meta ads'.
 > ID: r_a1b2c3 — use this to cancel if needed."
 
-Always echo both UTC and the user's local time when their timezone is known.
+Always echo both UTC and the user's local time when their timezone is known. For a **recurring** reminder, also state the cadence and the next fire — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday. ID: r_a1b2c3."

@@ -72,6 +72,19 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 
 <br/>
 
+## Talk to them anywhere
+
+Your coworker is one mind with two front doors — a **Telegram** DM and the **web workspace chat**. Same name, same memory, same context, whichever you reach for.
+
+- **Telegram** — message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
+- **Web chat** — a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
+
+It's all connected. What you told them in Telegram is there when you open the web chat later, and what you worked through on the web is there back in Telegram. Each thread stays its own conversation, but your coworker keeps cross-surface awareness — it sees what recently happened on the other channel and draws on it when relevant, instead of mistaking a separate conversation for a direct continuation of this one.
+
+Proactive messages travel the same paths. When a scheduled job wraps or a reminder comes due, your coworker reaches you on Telegram, in the web app, or both — and a web ping arrives as a notification you can click straight into the thread it came from.
+
+<br/>
+
 ## Skills
 
 A *Skill* is a markdown file that tells your coworker how to handle one recurring task — like a job description for a single responsibility.
@@ -98,7 +111,7 @@ Create, edit, and delete skills from the dashboard. Integration-specific skills 
 
 <br/>
 
-Tell your coworker when to ping you, and they will — once, daily, or weekly. Reminders survive container restarts, deliver on Telegram, and live in a tidy dashboard you can edit by hand.
+Tell your coworker when to ping you, and they will — once, daily, or weekly. Reminders survive container restarts, reach you on Telegram, in the web app, or both, and live in a tidy dashboard you can edit by hand.
 
 > **You** — Remind me to chase Maison Lou about the linesheet tomorrow at 4pm.<br/>
 > **Coworker** — Set. I'll ping you tomorrow at 16:00.

@@ -240,6 +240,7 @@ ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/nano-banana-mcp'"
 scp apps/nano-banana-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/"  || exit 1
 scp apps/nano-banana-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/" || exit 1
 scp apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
+scp apps/reminder-mcp/recur.cjs      "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 scp apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1

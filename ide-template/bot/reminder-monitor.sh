@@ -37,6 +37,90 @@ const fs = require('fs');
 const [,, file, chatId] = process.argv;
 const now = Date.now();
 
+// Recurrence engine — byte-identical with apps/reminder-mcp/recur.cjs (the
+// block between the RECUR-SHARED sentinels). Inlined rather than require()'d so
+// a misdeploy of that module can never silently stop reminders from firing.
+// Drift-guarded by apps/reminder-mcp/recur.test.mjs.
+// <<<RECUR-SHARED-START>>>
+const DOW = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+function unitMs(u) {
+  return u === 'minutes' ? 60000
+       : u === 'hours'   ? 3600000
+       : u === 'days'    ? 86400000
+       : u === 'weeks'   ? 604800000
+       : 0;
+}
+function parseAt(at) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(typeof at === 'string' ? at.trim() : '');
+  if (!m) return null;
+  const h = +m[1], mm = +m[2];
+  return (h <= 23 && mm <= 59) ? { h, m: mm } : null;
+}
+function resolveRecur(r) {
+  if (r && r.recur && typeof r.recur === 'object' && r.recur.type) return r.recur;
+  const rep = r && typeof r.repeat === 'string' ? r.repeat : '';
+  if (rep === 'daily')  return { type: 'interval', every: 1, unit: 'days' };
+  if (rep === 'weekly') return { type: 'interval', every: 1, unit: 'weeks' };
+  return null;
+}
+function nextOccurrence(rec, anchorMs, afterMs) {
+  if (!rec) return null;
+  if (rec.type === 'interval') {
+    const step = (Number(rec.every) || 0) * unitMs(rec.unit);
+    if (!(step > 0)) return null;
+    let t = Number(anchorMs);
+    if (!Number.isFinite(t)) return null;
+    if (t <= afterMs) t += (Math.floor((afterMs - t) / step) + 1) * step;
+    return t;
+  }
+  if (rec.type === 'weekly') {
+    const at = parseAt(rec.at);
+    if (!at) return null;
+    const want = new Set((Array.isArray(rec.days) ? rec.days : [])
+      .map(function (d) { return DOW[String(d).slice(0, 3).toLowerCase()]; })
+      .filter(function (x) { return x != null; }));
+    if (!want.size) return null;
+    const b = new Date(afterMs);
+    for (let off = 0; off <= 7; off++) {
+      const d = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate() + off, at.h, at.m, 0, 0));
+      if (d.getTime() > afterMs && want.has(d.getUTCDay())) return d.getTime();
+    }
+    return null;
+  }
+  if (rec.type === 'monthly') {
+    const at = parseAt(rec.at);
+    if (!at) return null;
+    const b = new Date(afterMs);
+    for (let add = 0; add <= 12; add++) {
+      const y = b.getUTCFullYear(), mo = b.getUTCMonth() + add;
+      const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+      const dom = rec.day === 'last' ? lastDay : Math.min(Number(rec.day) || 1, lastDay);
+      const d = new Date(Date.UTC(y, mo, dom, at.h, at.m, 0, 0));
+      if (d.getTime() > afterMs) return d.getTime();
+    }
+    return null;
+  }
+  return null;
+}
+function advanceReminder(r, nowMs) {
+  const rec = resolveRecur(r);
+  if (!rec) return null;
+  const next = nextOccurrence(rec, new Date(r.due).getTime(), nowMs);
+  if (next == null) return null;
+  if (rec.until) {
+    const u = new Date(rec.until).getTime();
+    if (Number.isFinite(u) && next > u) return null;
+  }
+  let outRec = rec;
+  if (rec.count != null) {
+    const left = (Number(rec.count) || 0) - 1;
+    if (left <= 0) return null;
+    outRec = Object.assign({}, rec, { count: left });
+  }
+  return { due: new Date(next).toISOString(), recur: outRec };
+}
+// <<<RECUR-SHARED-END>>>
+
 let reminders;
 try { reminders = JSON.parse(fs.readFileSync(file, 'utf8')); }
 catch { process.exit(0); }
@@ -67,26 +151,17 @@ reminders = reminders.map(r => {
     toSend.push(`${channel}\t${wire.replace(/\n/g, ' ')}`);
     changed = true;
 
-    // One-shot reminders are deleted after firing. Treat any value other
-    // than the known recurring tokens ('daily', 'weekly') as one-shot —
-    // otherwise a missing/unknown `repeat` field silently re-schedules the
-    // reminder by +1 day and the user gets it back tomorrow.
-    if (r.repeat !== 'daily' && r.repeat !== 'weekly') {
+    // Advance to the next occurrence — interval / weekly / monthly, honoring
+    // until/count bounds. Returns null for a one-shot or an exhausted bounded
+    // repeat → mark 'sent' (filtered out below). advanceReminder loops past a
+    // long downtime gap internally so the user gets one ping, not N. All math
+    // is in the RECUR-SHARED block above (shared with the set_reminder MCP).
+    const adv = advanceReminder(r, now);
+    if (!adv) {
         return { ...r, status: 'sent' };
     }
-
-    // Advance to next FUTURE occurrence. After a long downtime (deploy
-    // gap, bot crash loop) the simple `+1 day` step would leave `due`
-    // still in the past, so the next tick would fire again and advance
-    // again — the user gets N pings 60s apart instead of one. Loop until
-    // we land past `now`.
-    const d = new Date(r.due);
-    const stepDays = r.repeat === 'weekly' ? 7 : 1;
-    while (d.getTime() <= now) {
-        d.setDate(d.getDate() + stepDays);
-    }
-    process.stderr.write(`[reminder-monitor] Repeating ${r.id} → next: ${d.toISOString()}\n`);
-    return { ...r, due: d.toISOString() };
+    process.stderr.write(`[reminder-monitor] Repeating ${r.id} → next: ${adv.due}\n`);
+    return { ...r, due: adv.due, recur: adv.recur };
 });
 
 if (changed) {
