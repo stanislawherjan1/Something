@@ -94,6 +94,12 @@ function spawnQuiet(cmd, args, opts = {}) {
   });
   child.stdout.on('data', (b) => process.stderr.write(`[docs-comments-login:${cmd}] ${b}`));
   child.stderr.on('data', (b) => process.stderr.write(`[docs-comments-login:${cmd}] ${b}`));
+  // An unhandled 'error' event on a spawned child (e.g. ENOENT when the chromium
+  // binary path is stale) throws and crashes the WHOLE wsapi process. Handle it
+  // so a spawn failure degrades to a logged error instead of a boot crash-loop.
+  child.on('error', (err) => {
+    process.stderr.write(`[docs-comments-login:${cmd}] spawn error: ${err.message}\n`);
+  });
   child.on('exit', (code, sig) => {
     process.stderr.write(`[docs-comments-login:${cmd}] exit code=${code} sig=${sig}\n`);
   });
@@ -206,7 +212,9 @@ function ensureBrowser() {
     }
   };
   chromium.on('exit', onDeath('chromium'));
+  chromium.on('error', onDeath('chromium'));   // spawn ENOENT → drop handle, don't crash
   xvfb.on('exit', onDeath('xvfb'));
+  xvfb.on('error', onDeath('xvfb'));
 
   return browser;
 }

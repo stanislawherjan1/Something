@@ -322,10 +322,18 @@ RUN cd /opt/ide/workspace-api && npm install --production
 # silently tries to download via `npx` — which hits the 403 egress wall
 # and bubbles up as "browser not available" in chat.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+# Stable alias for the chromium version the codebase hardcodes. `playwright
+# install` pulls whatever version it currently pins (e.g. chromium-1228), so the
+# literal /opt/playwright-browsers/chromium-1223/... paths in docs-comments and
+# entrypoint.sh go stale and spawn() ENOENTs after a rebuild. If the pinned dir
+# is absent, symlink chromium-1223 → the version that actually landed so every
+# hardcoded path keeps resolving across playwright bumps.
 RUN npm install -g @playwright/mcp playwright --prefix /home/coder/.npm-global && \
     mkdir -p /opt/playwright-browsers && \
     /home/coder/.npm-global/bin/playwright install --with-deps chromium && \
-    chmod -R a+rX /opt/playwright-browsers
+    chmod -R a+rX /opt/playwright-browsers && \
+    { [ -e /opt/playwright-browsers/chromium-1223/chrome-linux64/chrome ] || \
+      ln -sfn "$(ls -d /opt/playwright-browsers/chromium-[0-9]*/ | sort -V | tail -1 | sed 's#/$##')" /opt/playwright-browsers/chromium-1223 ; }
 
 # === LAYER 3: VS Code Extensions ===
 RUN code-server --install-extension Anthropic.claude-code@2.1.85 \
