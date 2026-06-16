@@ -47,6 +47,10 @@ import { createHash } from 'node:crypto';
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const CDP_URL   = process.env.DOCS_COMMENTS_CDP_URL || 'http://127.0.0.1:9333';
+// wsapi loopback — the MCP asks it to relaunch the persistent browser ONCE on a
+// NOT_CONNECTED (chromium died mid-session) before giving up. Same container,
+// so 127.0.0.1:3001 is direct (NO_PROXY covers loopback).
+const WSAPI_INTERNAL_URL = process.env.WSAPI_INTERNAL_URL || 'http://127.0.0.1:3001';
 const AUDIT_LOG = process.env.DOCS_COMMENTS_AUDIT_LOG
   || join(process.env.PROJECT_DIR || '/home/coder/project', '.docs-comments-audit.jsonl');
 
@@ -115,16 +119,37 @@ async function addComment({ doc_id, find_text, comment_text, occurrence, find_co
     throw new Error('refused to navigate outside docs.google.com');
   }
 
-  // Attach to the persistent login browser over CDP. If it isn't running, the
-  // operator hasn't connected (or wsapi restarted) → clean NOT_CONNECTED.
+  // Attach to the persistent login browser over CDP. If it isn't running, ask
+  // wsapi to relaunch it from the saved profile ONCE, then retry the connect
+  // exactly once. No loop — `triedEnsure` makes a third attempt structurally
+  // impossible. If ensure can't bring a browser up (inactive / no session /
+  // wsapi unreachable), surface a clean NOT_CONNECTED. SESSION_EXPIRED is
+  // produced later (after a successful attach + a bounce to accounts.google.com)
+  // and is never retried — relaunch can't refresh dead cookies.
+  const notConnected = () => Object.assign(
+    new Error('Docs Comments is not connected — log in via the workspace UI (Integrations → Docs Comments → Connect to Google).'),
+    { code: 'NOT_CONNECTED' },
+  );
   let browser;
-  try {
-    browser = await chromium.connectOverCDP(CDP_URL, { timeout: 8000 });
-  } catch {
-    throw Object.assign(
-      new Error('Docs Comments is not connected — log in via the workspace UI (Integrations → Docs Comments → Connect to Google).'),
-      { code: 'NOT_CONNECTED' },
-    );
+  let triedEnsure = false;
+  for (;;) {
+    try {
+      browser = await chromium.connectOverCDP(CDP_URL, { timeout: 8000 });
+      break;
+    } catch {
+      if (triedEnsure) throw notConnected();
+      triedEnsure = true;
+      try {
+        const r = await fetch(`${WSAPI_INTERNAL_URL}/api/internal/docs-comments/ensure`, { method: 'POST' });
+        const body = await r.json().catch(() => ({}));
+        if (!body.ok) throw notConnected();   // inactive / no session → don't retry
+      } catch (e) {
+        if (e.code === 'NOT_CONNECTED') throw e;
+        // ensure call itself failed (wsapi unreachable) → fall through to one retry
+      }
+      // Bounded wait for chromium to bind CDP before the single retry.
+      await new Promise((res) => setTimeout(res, 1500));
+    }
   }
 
   const docHash = shortHash([doc_id]);

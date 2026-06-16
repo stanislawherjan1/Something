@@ -65,6 +65,22 @@ let viewer  = null;   // { x11vnc, websockify }
 function isAlive(child) { return !!child && child.exitCode === null && child.signalCode === null; }
 function browserAlive() { return !!browser && isAlive(browser.chromium) && isAlive(browser.xvfb); }
 
+// A profile counts as "session-bearing" only if Chromium wrote a cookies DB.
+// readdirSync(...).length > 0 is NOT enough — a half-written/empty profile
+// would relaunch into accounts.google.com and emit a false SESSION_EXPIRED.
+function profileHasSession() {
+  return existsSync(join(PROFILE_DIR, 'Default', 'Cookies'))
+      || existsSync(join(PROFILE_DIR, 'Default', 'Network', 'Cookies'));
+}
+
+// Shared precondition for every silent (viewer-less) relaunch (boot + MCP heal).
+// Only relaunch when the operator actually activated docs-comments AND the saved
+// profile still carries a Google session — never spin up chromium on an empty
+// profile (would falsely report SESSION_EXPIRED to a client who never connected).
+function canAutoHeal() {
+  return isActive('docs-comments') && profileHasSession();
+}
+
 function killPid(pid, signal = 'SIGTERM') {
   if (!pid) return;
   try { process.kill(pid, signal); } catch { /* already gone */ }
@@ -193,6 +209,30 @@ function ensureBrowser() {
   xvfb.on('exit', onDeath('xvfb'));
 
   return browser;
+}
+
+// Boot-time auto-heal entry point (called from index.js after listen).
+// Relaunches the persistent browser from the saved profile WITHOUT a viewer
+// if the integration is active AND the profile has a Google session. This
+// automates the operator's manual remove+add after a container recreate: the
+// Chromium profile lives on the persistent wsapi-store volume, so the session
+// survives a deploy — only the chromium PROCESS is lost. Idempotent
+// (ensureBrowser no-ops if the browser is already alive).
+export function ensureBrowserOnBoot() {
+  if (!canAutoHeal()) return { skipped: true };
+  ensureBrowser();          // NO startViewer() — viewer-less by design
+  return { browserAlive: browserAlive() };
+}
+
+// Loopback /ensure entry point (called by the docs-comments MCP after a
+// NOT_CONNECTED). Same guard + relaunch as boot; returns whether the browser
+// is now alive so the MCP knows whether a single retry is worthwhile. Never
+// re-logins and never clears the profile — so a relaunch on a truly-expired
+// session honestly re-produces SESSION_EXPIRED instead of masking it.
+export function ensureBrowserForMcp() {
+  if (!canAutoHeal()) return { ok: false, reason: 'inactive_or_no_session', browserAlive: browserAlive() };
+  ensureBrowser();
+  return { ok: true, browserAlive: browserAlive() };
 }
 
 function startViewer() {

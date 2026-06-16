@@ -15,6 +15,7 @@ import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
+import { ensureBrowserForMcp } from './docs-comments-login.js';
 
 // Single-user actor — matches routes/chat.js until multi-user team mode
 // lands. The internal endpoint creates the session as if the workspace
@@ -42,6 +43,22 @@ export default function internalRouter() {
       return res.json({ ok: true, changed: !!changed });
     } catch (err) {
       process.stderr.write(`[internal] sync-mcp failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // docs-comments auto-heal: relaunch the persistent browser (no viewer) from
+  // the saved profile after the MCP hit a NOT_CONNECTED mid-session (chromium
+  // crashed but the profile/session is intact). Loopback-only — same trust
+  // boundary as the CDP port the MCP already attaches to. Idempotent; never
+  // re-logins or clears the profile, so a truly-expired session still surfaces
+  // SESSION_EXPIRED honestly. The boot hook covers the deploy case; this covers
+  // a browser that died between deploys.
+  router.post('/internal/docs-comments/ensure', loopbackOnly, (_req, res) => {
+    try {
+      return res.json(ensureBrowserForMcp());
+    } catch (err) {
+      process.stderr.write(`[internal] docs-comments ensure failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
