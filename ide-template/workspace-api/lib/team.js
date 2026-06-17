@@ -28,7 +28,10 @@ const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
 const AUDIT     = join(PROJECT_DIR, '.allowed-emails.audit.log');
 
-const VALID_ROLES = new Set(['admin', 'member']);
+// admin — full management; member — uses AI, owns their files; observer —
+// read-only (zero actions). Observer enforcement lands in a later phase; it's
+// accepted as data now so the registry shape is final.
+const VALID_ROLES = new Set(['admin', 'member', 'observer']);
 // Loose RFC-5322-ish — strict enough to catch typos, lax enough to allow the
 // common shapes (subdomains, plus-addressing, etc.).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -40,6 +43,58 @@ function normalize(email) {
 export function isValidEmail(email) {
   const e = normalize(email);
   return e.length > 0 && e.length <= 254 && EMAIL_RE.test(e);
+}
+
+// ─── Identity: slug + displayName (team mode) ────────────────────────────────
+// Each user gets a filesystem slug (path-safe, e.g. project/users/<slug>/) and
+// a human displayName. Derived from the email local-part; slugs are unique and,
+// once assigned, PERSISTED — a user's personal directory must never move
+// because another user joined. Single registry (this file) — no parallel
+// users.json — so the two stores can't drift.
+
+function slugify(localPart) {
+  const base = String(localPart || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')   // non-alnum → hyphen
+    .replace(/^-+|-+$/g, '')       // trim hyphens
+    .slice(0, 32);
+  return base || 'user';
+}
+
+function uniqueSlug(base, taken) {
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`.slice(0, 40);
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+function deriveDisplayName(localPart) {
+  const words = String(localPart || '')
+    .replace(/[.+_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.join(' ') || 'User';
+}
+
+// Return entries enriched with a stable slug + displayName, assigning any that
+// are missing. Pure (no write) — dedup walks entries in insertion order so the
+// result is deterministic and matches what ensureProfiles() persists.
+function withProfiles(entries) {
+  const taken = new Set(entries.map(e => e.slug).filter(Boolean));
+  return entries.map(e => {
+    const email = normalize(e.email);
+    const localPart = email.split('@')[0] || 'user';
+    let slug = e.slug;
+    if (!slug) {
+      slug = uniqueSlug(slugify(localPart), taken);
+      taken.add(slug);
+    }
+    const displayName = e.displayName || deriveDisplayName(localPart);
+    return { ...e, email, slug, displayName };
+  });
 }
 
 function ensureProjectDir() {
@@ -90,17 +145,48 @@ function appendAudit(action, email, extra) {
 }
 
 export function list() {
-  return readRaw().map(e => ({
-    email:   normalize(e.email),
-    role:    VALID_ROLES.has(e.role) ? e.role : 'member',
-    addedAt: e.addedAt || null,
-    addedBy: e.addedBy || null,
+  const valid = readRaw().map(e => ({
+    email:       normalize(e.email),
+    role:        VALID_ROLES.has(e.role) ? e.role : 'member',
+    addedAt:     e.addedAt || null,
+    addedBy:     e.addedBy || null,
+    slug:        e.slug || null,
+    displayName: e.displayName || null,
   })).filter(e => isValidEmail(e.email));
+  return withProfiles(valid);   // fills slug/displayName if absent (deterministic)
 }
 
 export function find(email) {
   const e = normalize(email);
   return list().find(x => x.email === e) || null;
+}
+
+/** Enriched identity for an email: { email, slug, role, displayName, ... } or null. */
+export function getUser(email) {
+  return find(email);
+}
+
+/** Path-safe slug for an email, or null if not on the team. */
+export function slugFor(email) {
+  return find(email)?.slug || null;
+}
+
+/**
+ * Persist slug + displayName for any legacy entries that lack them. Idempotent;
+ * call once at startup so the on-disk store matches what list() derives, and a
+ * user's personal directory slug is stable across restarts. Returns true if it
+ * wrote anything.
+ */
+export function ensureProfiles() {
+  const raw = readRaw();
+  if (!raw.length) return false;
+  const enriched = withProfiles(raw.map(e => ({ ...e, email: normalize(e.email) })));
+  const changed = enriched.some((e, i) => e.slug !== raw[i].slug || e.displayName !== raw[i].displayName);
+  if (changed) {
+    writeRaw(enriched);
+    appendAudit('profiles_backfill', '', { count: enriched.length });
+  }
+  return changed;
 }
 
 export function isAllowed(email) {
@@ -173,7 +259,7 @@ export function ensureFirstAdmin(email, addedBy = 'auto-bootstrap') {
   return true;
 }
 
-export function add({ email, role = 'member', addedBy }) {
+export function add({ email, role = 'member', addedBy, displayName }) {
   if (!isValidEmail(email)) throw new Error(`Invalid email format.`);
   if (!VALID_ROLES.has(role)) throw new Error(`Invalid role "${role}".`);
 
@@ -183,15 +269,24 @@ export function add({ email, role = 'member', addedBy }) {
     throw new Error(`${e} is already on the team.`);
   }
 
+  // Assign a unique slug up front (don't wait for the startup backfill) so the
+  // new user's personal directory is addressable immediately. Dedup against the
+  // slugs all current entries hold or would be assigned.
+  const localPart = e.split('@')[0] || 'user';
+  const taken = new Set(withProfiles(entries).map(x => x.slug));
+  const slug = uniqueSlug(slugify(localPart), taken);
+
   const entry = {
-    email:   e,
+    email:       e,
     role,
-    addedAt: new Date().toISOString(),
-    addedBy: normalize(addedBy) || null,
+    slug,
+    displayName: (displayName && String(displayName).trim()) || deriveDisplayName(localPart),
+    addedAt:     new Date().toISOString(),
+    addedBy:     normalize(addedBy) || null,
   };
   entries.push(entry);
   writeRaw(entries);
-  appendAudit('add', e, { role, addedBy: entry.addedBy });
+  appendAudit('add', e, { role, slug, addedBy: entry.addedBy });
   return entry;
 }
 

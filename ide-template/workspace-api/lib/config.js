@@ -79,6 +79,12 @@ const botFolderVariants = (() => {
 export const SOFT_HIDDEN = new Set([
   'node_modules', 'dist', 'build',
   '.git', '.cache', '.DS_Store', '.npm', '.bun', '.pm2',
+  // Team mode: per-user private working dirs live under `users/<slug>/`.
+  // Structural — hidden from the normal (team) file listing; surfaced as the
+  // dedicated "Personal Files" sidebar section, and revealed in the tree only
+  // to admins via the system-files toggle. Actor scoping (lib/file-scope.js)
+  // independently blocks a non-admin from reading another user's subtree.
+  'users',
   // .claude is technical too — it's surfaced via the dedicated Configuration
   // dashboard in the workspace UI, not as a raw folder in the file tree.
   '.claude',

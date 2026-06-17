@@ -24,9 +24,19 @@ import {
 } from '../lib/files.js';
 import { subscribe } from '../lib/watcher.js';
 import { requireActor } from '../lib/auth.js';
+import { actorScope, actorCanAccess } from '../lib/file-scope.js';
 
 export default function filesRouter() {
   const router = Router();
+
+  // Team-mode actor scoping: a non-admin may only touch the shared team space
+  // and their own users/<slug>/ subtree. Call AFTER resolveSafePath. Returns
+  // false (and writes a 403) when the path is outside the actor's scope.
+  const inScope = (abs, req, res) => {
+    if (actorCanAccess(abs, req)) return true;
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  };
 
   // Defense-in-depth — nginx auth_request already gates /api/* upstream, but
   // anything inside the container that talks to 127.0.0.1:3001 bypasses it.
@@ -39,9 +49,14 @@ export default function filesRouter() {
 
   router.get('/files/tree', (req, res) => {
     const relPath = typeof req.query.path === 'string' ? req.query.path : '';
-    const includeHidden = req.query.include_hidden === 'true' || req.query.include_hidden === '1';
+    // include_hidden (the "show system files" toggle) is admin-only — it
+    // surfaces dotfiles + the users/ tree. Forced off for everyone else so a
+    // member can't reveal system paths by passing the flag.
+    const wantsHidden = req.query.include_hidden === 'true' || req.query.include_hidden === '1';
+    const includeHidden = wantsHidden && actorScope(req).isAdmin;
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
 
     let entries;
     try { entries = listDir(abs, { includeHidden }); }
@@ -58,6 +73,7 @@ export default function filesRouter() {
     if (!relPath) return res.status(400).json({ error: 'path is required' });
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
 
     const result = readTextFile(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
@@ -76,6 +92,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
     const result = makeDir(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, '') });
@@ -88,6 +105,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
     const result = createFile(abs, content ?? '');
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, ''), size: result.size, mtime: result.mtime });
@@ -101,6 +119,8 @@ export default function filesRouter() {
     const absTo   = resolveSafePath(to);
     if (!absFrom) return res.status(400).json({ error: 'invalid from' });
     if (!absTo)   return res.status(400).json({ error: 'invalid to' });
+    if (!inScope(absFrom, req, res)) return;
+    if (!inScope(absTo, req, res)) return;
     const result = movePath(absFrom, absTo);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ from: from.replace(/^\/+/, ''), to: to.replace(/^\/+/, '') });
@@ -111,6 +131,7 @@ export default function filesRouter() {
     if (!relPath) return res.status(400).json({ error: 'path is required' });
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
     const result = deletePath(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, '') });
@@ -123,6 +144,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
 
     const result = writeTextFile(abs, content);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
@@ -138,6 +160,7 @@ export default function filesRouter() {
     if (!relPath) return res.status(400).json({ error: 'path is required' });
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
 
     const result = openRawFile(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
@@ -157,6 +180,7 @@ export default function filesRouter() {
     if (!relPath) return res.status(400).json({ error: 'path is required' });
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
+    if (!inScope(abs, req, res)) return;
 
     let st;
     try { st = statSync(abs); }

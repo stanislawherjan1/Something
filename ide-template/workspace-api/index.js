@@ -37,7 +37,9 @@ import memoryRouter        from './routes/memory.js';
 import botRouter           from './routes/bot.js';
 import internalRouter      from './routes/internal.js';
 import notificationsRouter from './routes/notifications.js';
+import meRouter            from './routes/me.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
+import * as team from './lib/team.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -85,6 +87,7 @@ app.use('/api', memoryRouter());
 app.use('/api', botRouter());
 app.use('/api', internalRouter());
 app.use('/api', notificationsRouter());
+app.use('/api', meRouter());
 app.use('/api/integrations/docs-comments', docsCommentsLoginRouter());
 
 // On startup: seed WORKSPACE.md into .claude/ if it doesn't exist yet.
@@ -129,6 +132,17 @@ if (cryptoReady()) {
   } catch (err) {
     process.stderr.write(`[workspace-api] rehydrate failed: ${err.message}\n`);
   }
+}
+
+// Team mode: persist slug + displayName for any legacy team entries so each
+// user's personal directory (project/users/<slug>/) is stable from the first
+// request. Independent of encryption — runs unconditionally.
+try {
+  if (team.ensureProfiles()) {
+    process.stdout.write('[workspace-api] backfilled team user profiles (slug/displayName)\n');
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] team profile backfill failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start
