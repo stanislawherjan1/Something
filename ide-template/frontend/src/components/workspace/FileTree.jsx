@@ -31,11 +31,12 @@ export const FUNCTIONAL_PATHS = new Set(['Tasks.md', 'generated', '.reminders.js
 
 const DRAG_MIME = 'application/x-workspace-path';
 
-export default function FileTree({ selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
+export default function FileTree({ rootPath = '', selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
   return (
     <div className="flex flex-col gap-px py-1">
       <DirNode
-        path=""
+        path={rootPath}
+        rootPath={rootPath}
         depth={0}
         initiallyOpen
         selected={selected}
@@ -55,7 +56,7 @@ export default function FileTree({ selected, onSelect, onRequestDelete, onMove, 
   );
 }
 
-function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
+function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
   const [open, setOpen] = useState(initiallyOpen);
 
   // Auto-open when a create starts inside us so the new InlineCreateRow is
@@ -70,7 +71,13 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
   const [dragOver, setDragOver] = useState(false);
   const branding = useBranding();
 
-  const isRoot = path === '';
+  // Section root = the flat top of THIS tree (team root '' or a personal
+  // users/<slug> root): no folder header row, renders its children directly.
+  // Project root = the actual PROJECT_DIR top ('') — the only place the
+  // team-level functional paths (Tasks.md, generated, …) get filtered out and
+  // the "empty workspace" hero hint shows.
+  const isSectionRoot = path === rootPath;
+  const isProjectRoot = path === '';
 
   // Folders (and the root) are drop targets. We accept only our own
   // drag-data (custom MIME), so external file drops are ignored.
@@ -127,7 +134,7 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
   };
 
   const onRowDoubleClick = () => {
-    if (!isRoot) onSelect({ path, type: 'dir' });
+    if (!isSectionRoot) onSelect({ path, type: 'dir' });
   };
 
   let combinedEntries = entries ? [...entries] : [];
@@ -142,7 +149,7 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
   }
 
   const visibleEntries = combinedEntries.filter(
-    e => !(isRoot && FUNCTIONAL_PATHS.has(e.name))
+    e => !(isProjectRoot && FUNCTIONAL_PATHS.has(e.name))
   );
 
   return (
@@ -151,11 +158,11 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       className={cn(
-        isRoot && 'min-h-full',
+        isSectionRoot && 'min-h-full',
         dragOver && 'rounded-md ring-2 ring-[--color-ring]/45 ring-offset-1 ring-offset-sidebar bg-[--color-ring]/[0.06]',
       )}
     >
-      {!isRoot && (
+      {!isSectionRoot && (
         <RowButton
           depth={depth}
           onClick={onRowClick}
@@ -194,11 +201,14 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
               onCancel={onCreateCancel}
             />
           )}
-          {entries && visibleEntries.length === 0 && isRoot && creating?.parentPath !== path && (
+          {entries && visibleEntries.length === 0 && isProjectRoot && creating?.parentPath !== path && (
             <EmptyWorkspaceHint
               botDisplayName={branding.botDisplayName}
               isCreating={isCreating}
             />
+          )}
+          {entries && visibleEntries.length === 0 && isSectionRoot && !isProjectRoot && creating?.parentPath !== path && (
+            <Hint depth={depth + 1}>No personal files yet</Hint>
           )}
           {visibleEntries.map(e => {
             const fullPath = path ? `${path}/${e.name}` : e.name;
@@ -207,6 +217,7 @@ function DirNode({ path, depth, initiallyOpen = false, selected, onSelect, onReq
                 {e.type === 'dir' ? (
                   <DirNode
                     path={fullPath}
+                    rootPath={rootPath}
                     depth={depth + 1}
                     selected={selected}
                     onSelect={onSelect}

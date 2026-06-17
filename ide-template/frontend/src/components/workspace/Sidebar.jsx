@@ -2,15 +2,16 @@ import { useState, useCallback } from 'react';
 import {
   Eye, EyeOff, Hexagon, KanbanSquare, Images,
   FilePlus, FolderPlus, Wrench, Plug, Clock, UsersRound, Inbox,
+  Globe, UserRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
 import FileTree from './FileTree.jsx';
 import UserMenu from './UserMenu.jsx';
 import DeleteConfirm from './dialogs/DeleteConfirm.jsx';
-import InlineCreateRow from './InlineCreateRow.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
+import useMe from './useMe.js';
 
 /**
  * Sidebar — left column.
@@ -34,11 +35,13 @@ export default function Sidebar({
   className
 }) {
   const [pendingDelete, setPendingDelete] = useState(null);   // { path, type } | null
-  // creating.parentPath = '' for root; or e.g. 'Knowledge base/Docs' to create
-  // inside a subfolder (right-click → New file/folder on that folder).
+  // creating.parentPath = '' for the team root; me.personalRoot for the
+  // personal-section root; or e.g. 'Knowledge base/Docs' for a subfolder
+  // (right-click → New file/folder on that folder).
   const [creating,      setCreating]      = useState(null);   // { kind: 'file'|'folder', parentPath: string } | null
   const [opError,       setOpError]       = useState(null);
   const [optimisticEntry, setOptimisticEntry] = useState(null);
+  const { me } = useMe();   // { email, slug, role, displayName, isAdmin, personalRoot }
 
   const handleDelete = useCallback(async ({ path }) => {
     setPendingDelete(null);
@@ -119,27 +122,26 @@ export default function Sidebar({
       <WorkspaceHeader onCollapseSidebar={onCollapseSidebar} onHome={onHome} />
       <div className="h-px bg-[--color-sidebar-border]/70" />
       <Shortcuts selected={selected} onSelect={onSelect} />
-      <SidebarToolbar
-        showHidden={showHidden}
-        onToggleHidden={onToggleHidden}
-        onNewFile={() => setCreating({ kind: 'file', parentPath: '' })}
-        onNewFolder={() => setCreating({ kind: 'folder', parentPath: '' })}
-      />
       {opError && (
         <div className="mx-3 mb-1 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] leading-relaxed text-destructive">
           {opError}
         </div>
       )}
       <div className="scrollbar-hidden flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
-        {creating && creating.parentPath === '' && (
-          <InlineCreateRow
-            kind={creating.kind}
-            depth={1}
-            onSubmit={({ kind, name }) => handleCreate({ kind, name, parentPath: '' })}
-            onCancel={() => setCreating(null)}
-          />
-        )}
+        {/* Team mode: shared "Workspace" files (the project root) and, when the
+            user is identified, their private "Personal" files (users/<slug>/).
+            The system-files toggle is admin-only — backend forces it off for
+            everyone else (lib/file-scope.js). */}
+        <FilesSectionHeader
+          icon={Globe}
+          label="Workspace Files"
+          onNewFile={() => setCreating({ kind: 'file', parentPath: '' })}
+          onNewFolder={() => setCreating({ kind: 'folder', parentPath: '' })}
+          showHidden={showHidden}
+          onToggleHidden={me?.isAdmin ? onToggleHidden : undefined}
+        />
         <FileTree
+          rootPath=""
           selected={selected}
           onSelect={onSelect}
           onRequestDelete={setPendingDelete}
@@ -153,6 +155,32 @@ export default function Sidebar({
           isCreating={!!creating}
           optimisticEntry={optimisticEntry}
         />
+
+        {me?.personalRoot && (
+          <>
+            <FilesSectionHeader
+              icon={UserRound}
+              label="Personal Files"
+              onNewFile={() => setCreating({ kind: 'file', parentPath: me.personalRoot })}
+              onNewFolder={() => setCreating({ kind: 'folder', parentPath: me.personalRoot })}
+            />
+            <FileTree
+              rootPath={me.personalRoot}
+              selected={selected}
+              onSelect={onSelect}
+              onRequestDelete={setPendingDelete}
+              onMove={handleMove}
+              onCreate={(parentPath, kind) => setCreating({ kind, parentPath })}
+              creating={creating}
+              onCreateSubmit={handleCreate}
+              onCreateCancel={() => setCreating(null)}
+              showHidden={showHidden}
+              fileEventNonce={fileEventNonce}
+              isCreating={!!creating}
+              optimisticEntry={optimisticEntry}
+            />
+          </>
+        )}
       </div>
       <div className="h-px bg-[--color-sidebar-border]/70" />
       <div className="flex flex-col gap-0.5 px-2 py-2">
@@ -349,22 +377,29 @@ function Shortcuts({ selected, onSelect }) {
 
 /* ─── Files toolbar ─────────────────────────────────────────────────────── */
 
-function SidebarToolbar({ showHidden, onToggleHidden, onNewFile, onNewFolder }) {
+// Section header for a file group (Workspace / Personal). New-file/folder
+// buttons target this section's root. The system-files toggle is rendered only
+// when onToggleHidden is supplied — the Sidebar passes it for the Workspace
+// header and only to admins.
+function FilesSectionHeader({ icon: Icon, label, onNewFile, onNewFolder, showHidden, onToggleHidden }) {
   const EyeIcon = showHidden ? EyeOff : Eye;
   return (
-    <div className="mt-3 flex items-center justify-between px-3 pt-3 max-md:pt-4 h-9 max-md:h-12">
-      <span className="select-none text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/65">
-        Files
+    <div className="mt-3 flex items-center justify-between px-1.5 pt-3 max-md:pt-4 h-9 max-md:h-12">
+      <span className="flex items-center gap-1.5 select-none text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/65">
+        <Icon className="size-3.5 text-muted-foreground/50" strokeWidth={1.75} />
+        {label}
       </span>
       <div className="flex items-center gap-0.5">
         <ToolbarButton onClick={onNewFile}   title="New note"   icon={FilePlus} />
         <ToolbarButton onClick={onNewFolder} title="New folder" icon={FolderPlus} />
-        <ToolbarButton
-          onClick={onToggleHidden}
-          title={showHidden ? 'Hide technical files' : 'Show technical files'}
-          icon={EyeIcon}
-          active={showHidden}
-        />
+        {onToggleHidden && (
+          <ToolbarButton
+            onClick={onToggleHidden}
+            title={showHidden ? 'Hide system files' : 'Show system files'}
+            icon={EyeIcon}
+            active={showHidden}
+          />
+        )}
       </div>
     </div>
   );

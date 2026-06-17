@@ -3,6 +3,7 @@ import { LogOut, ChevronUp, Sun, Moon, Monitor, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
+import useMe from './useMe.js';
 
 /**
  * UserMenu — avatar + display name at the bottom of the sidebar. Click opens
@@ -16,6 +17,10 @@ import { useTheme } from '@/context/ThemeContext';
 export default function UserMenu() {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
+  const { me } = useMe();
+  // All hooks must run before any early return — `user` populates async, so a
+  // conditional hook below would change hook order between renders.
+  const [open, setOpen] = useState(false);
 
   // Dev mode: show placeholder if user is null
   const displayUser = user || (import.meta.env.DEV ? {
@@ -24,8 +29,6 @@ export default function UserMenu() {
   } : null);
 
   if (!displayUser) return null;
-
-  const [open, setOpen] = useState(false);
   const name    = displayUser.name || displayUser.email;
   const avatar  = displayUser.picture;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
@@ -43,8 +46,11 @@ export default function UserMenu() {
       >
         <Avatar src={avatar} initial={initial} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13.5px] font-medium leading-tight text-foreground">
-            {name}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[13.5px] font-medium leading-tight text-foreground">
+              {name}
+            </span>
+            <RoleBadge role={me?.role} />
           </div>
           <div className="truncate text-[11.5px] text-muted-foreground/70">
             {displayUser.email}
@@ -82,6 +88,27 @@ export default function UserMenu() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Role chip — team-mode identity at a glance. Admin gets the accent; observer
+ * reads as a muted "read-only" so the restricted role is visible, not hidden.
+ */
+function RoleBadge({ role }) {
+  if (!role) return null;
+  const cfg = {
+    admin:    { label: 'Admin',     cls: 'bg-[--color-ring]/15 text-[--color-ring]' },
+    member:   { label: 'Member',    cls: 'bg-foreground/[0.08] text-foreground/65' },
+    observer: { label: 'Read-only', cls: 'bg-foreground/[0.08] text-muted-foreground/70' },
+  }[role] || { label: role, cls: 'bg-foreground/[0.08] text-foreground/65' };
+  return (
+    <span className={cn(
+      'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide leading-[1.4]',
+      cfg.cls,
+    )}>
+      {cfg.label}
+    </span>
   );
 }
 
