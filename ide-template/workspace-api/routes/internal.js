@@ -54,9 +54,9 @@ export default function internalRouter() {
   // re-logins or clears the profile, so a truly-expired session still surfaces
   // SESSION_EXPIRED honestly. The boot hook covers the deploy case; this covers
   // a browser that died between deploys.
-  router.post('/internal/docs-comments/ensure', loopbackOnly, (_req, res) => {
+  router.post('/internal/docs-comments/ensure', loopbackOnly, async (_req, res) => {
     try {
-      return res.json(ensureBrowserForMcp());
+      return res.json(await ensureBrowserForMcp());
     } catch (err) {
       process.stderr.write(`[internal] docs-comments ensure failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

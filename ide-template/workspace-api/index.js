@@ -180,8 +180,23 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'internal server error' });
 });
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   process.stdout.write(`[workspace-api] listening on :${PORT}, project=${PROJECT_DIR}\n`);
+
+  // Auto-heal the docs-comments persistent browser. ONLY here, in the listen
+  // success callback, so it runs solely on the instance that actually bound the
+  // port — never on a transient instance about to exit(0) for EADDRINUSE (which
+  // would otherwise pkill the surviving instance's healthy browser and orphan a
+  // chromium onto the CDP port). The profile lives on the persistent wsapi-store
+  // volume, so the Google session survives a deploy — only the chromium PROCESS
+  // is lost. Idempotent; adopts an already-running browser (CDP probe) instead
+  // of killing+relaunching it. Never throws into boot.
+  try {
+    const r = await ensureBrowserOnBoot();
+    if (!r.skipped) process.stdout.write(`[workspace-api] docs-comments auto-heal: browserAlive=${r.browserAlive}\n`);
+  } catch (err) {
+    process.stderr.write(`[workspace-api] docs-comments auto-heal failed: ${err.message}\n`);
+  }
 });
 
 // EADDRINUSE handling. Without this, a port collision (e.g. a prior wsapi
@@ -224,21 +239,6 @@ attachVncUpgradeHandler(server, (req) => {
     return false;
   }
 });
-
-// Auto-heal the docs-comments persistent browser after a container recreate.
-// The Chromium profile lives on the persistent wsapi-store volume, so the
-// Google session survives the deploy — only the chromium PROCESS is lost. If
-// the integration is active and the profile has a session, relaunch the
-// headless browser (CDP on 127.0.0.1:9333, NO noVNC viewer) so add_comment
-// works again without an operator re-login. Runs last, after the synchronous
-// startup secret writes, so ensureBrowser's brief umask(0o007) window can't
-// widen perms on freshly-rehydrated files. Idempotent; never throws into boot.
-try {
-  const r = ensureBrowserOnBoot();
-  if (!r.skipped) process.stdout.write(`[workspace-api] docs-comments auto-heal: browserAlive=${r.browserAlive}\n`);
-} catch (err) {
-  process.stderr.write(`[workspace-api] docs-comments auto-heal failed: ${err.message}\n`);
-}
 
 // Graceful shutdown so PM2 restarts cleanly. Without explicit server.close()
 // + broker socket cleanup, the kernel held :3001 + the broker UDS socket file

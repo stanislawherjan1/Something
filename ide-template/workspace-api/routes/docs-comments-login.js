@@ -81,6 +81,21 @@ function canAutoHeal() {
   return isActive('docs-comments') && profileHasSession();
 }
 
+// Quick probe: is a browser already answering CDP on the debug port? It could be
+// one this process spawned, OR an orphan/sibling from a prior wsapi instance.
+// Used to ADOPT a live browser instead of pkill+relaunching it — a relaunch from
+// the saved profile can bounce to confirmidentifier (false SESSION_EXPIRED), and
+// the profile-wide pkill would kill a healthy logged-in session owned elsewhere.
+function cdpAlive(timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const sock = createConnection(CDP_PORT, CDP_ADDR);
+    const done = (ok) => { try { sock.destroy(); } catch { /* ignore */ } resolve(ok); };
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+    sock.setTimeout(timeoutMs, () => done(false));
+  });
+}
+
 function killPid(pid, signal = 'SIGTERM') {
   if (!pid) return;
   try { process.kill(pid, signal); } catch { /* already gone */ }
@@ -156,8 +171,14 @@ function waitForBackend(timeoutMs = 8000) {
 // Bring up the persistent browser (Xvfb + chromium) if it isn't already alive.
 // Idempotent — if the browser is healthy this is a no-op and the existing
 // logged-in session is preserved.
-function ensureBrowser() {
+async function ensureBrowser() {
   if (browserAlive()) return browser;
+  // A browser may already be answering CDP out-of-process — an orphan from a
+  // prior wsapi, or a sibling instance during a restart. Adopt it: do NOT
+  // pkill+relaunch, which would kill a live logged-in session and risk a
+  // confirmidentifier bounce on the relaunch (the exact regression that turns a
+  // working session into a false SESSION_EXPIRED).
+  if (await cdpAlive()) return browser;
 
   mkdirSync(PROFILE_DIR, { recursive: true });
   preflightProfileCleanup();
@@ -226,10 +247,10 @@ function ensureBrowser() {
 // Chromium profile lives on the persistent wsapi-store volume, so the session
 // survives a deploy — only the chromium PROCESS is lost. Idempotent
 // (ensureBrowser no-ops if the browser is already alive).
-export function ensureBrowserOnBoot() {
+export async function ensureBrowserOnBoot() {
   if (!canAutoHeal()) return { skipped: true };
-  ensureBrowser();          // NO startViewer() — viewer-less by design
-  return { browserAlive: browserAlive() };
+  await ensureBrowser();    // NO startViewer() — viewer-less by design
+  return { browserAlive: browserAlive() || await cdpAlive() };
 }
 
 // Loopback /ensure entry point (called by the docs-comments MCP after a
@@ -237,10 +258,11 @@ export function ensureBrowserOnBoot() {
 // is now alive so the MCP knows whether a single retry is worthwhile. Never
 // re-logins and never clears the profile — so a relaunch on a truly-expired
 // session honestly re-produces SESSION_EXPIRED instead of masking it.
-export function ensureBrowserForMcp() {
+export async function ensureBrowserForMcp() {
   if (!canAutoHeal()) return { ok: false, reason: 'inactive_or_no_session', browserAlive: browserAlive() };
-  ensureBrowser();
-  return { ok: true, browserAlive: browserAlive() };
+  await ensureBrowser();
+  const alive = browserAlive() || await cdpAlive();
+  return { ok: alive, browserAlive: alive };
 }
 
 function startViewer() {
@@ -378,8 +400,8 @@ export default function docsCommentsLoginRouter() {
         process.stderr.write(`[docs-comments-login] preflight activate failed (continuing): ${err.message}\n`);
       }
 
-      ensureBrowser();   // launch the persistent browser if it isn't already up
-      startViewer();     // (re)attach the noVNC viewer to it
+      await ensureBrowser();   // launch (or adopt) the persistent browser
+      startViewer();           // (re)attach the noVNC viewer to it
 
       const ready = await waitForBackend(8000);
       if (!ready) {

@@ -333,7 +333,7 @@ RUN npm install -g @playwright/mcp playwright --prefix /home/coder/.npm-global &
     /home/coder/.npm-global/bin/playwright install --with-deps chromium && \
     chmod -R a+rX /opt/playwright-browsers && \
     { [ -e /opt/playwright-browsers/chromium-1223/chrome-linux64/chrome ] || \
-      ln -sfn "$(ls -d /opt/playwright-browsers/chromium-[0-9]*/ | sort -V | tail -1 | sed 's#/$##')" /opt/playwright-browsers/chromium-1223 ; }
+      { t="$(ls -d /opt/playwright-browsers/chromium-[0-9]*/ 2>/dev/null | sort -V | tail -1 | sed 's#/$##')"; [ -z "$t" ] || ln -sfn "$t" /opt/playwright-browsers/chromium-1223 ; } ; }
 
 # === LAYER 3: VS Code Extensions ===
 RUN code-server --install-extension Anthropic.claude-code@2.1.85 \
