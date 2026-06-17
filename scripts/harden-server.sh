@@ -122,6 +122,27 @@ echo -e "${GREEN}fail2ban configured (3 attempts → 24h ban)${NC}"
 echo -e "${GREEN}Automatic security patches enabled (security-only, no auto-reboot)${NC}"
 echo ""
 
+# --- Step 2b: Swap (so docker --no-cache builds don't OOM the 4GB box) ---
+# deploy.sh rebuilds WHILE the full stack runs; on a 4GB VPS with no swap the
+# build's memory spike trips the OOM killer and the build dies mid-way (exit 1,
+# log truncates with no error). A 2GB swapfile gives it headroom. Idempotent.
+echo -e "${CYAN}[2b/4] Ensuring swap for build headroom...${NC}"
+
+ssh "$HETZNER_HOST" bash << 'REMOTE'
+set -e
+if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile >/dev/null
+fi
+swapon /swapfile 2>/dev/null || true
+grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+echo "[harden] swap active: $(swapon --show=NAME,SIZE --noheadings 2>/dev/null | tr '\n' ' ')"
+REMOTE
+
+echo -e "${GREEN}Swap ready (2GB) — --no-cache builds won't OOM the running stack${NC}"
+echo ""
+
 # --- Step 3: SSH login Telegram notifications ---
 echo -e "${CYAN}[3/4] Setting up SSH login notifications...${NC}"
 
