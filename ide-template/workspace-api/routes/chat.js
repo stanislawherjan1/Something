@@ -42,7 +42,7 @@ import { writeRecentSnapshot } from '../lib/recent-snapshot.js';
 import { saveAttachments, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from '../lib/attachments.js';
 import { requireActor } from '../lib/auth.js';
 import { CLAUDE_BIN } from '../lib/config.js';
-import { getUser } from '../lib/team.js';
+import { getUser, list as teamRoster } from '../lib/team.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -206,6 +206,11 @@ export default function chatRouter() {
     req.chatActor     = u?.slug || 'default';
     req.chatActorName = u?.displayName || null;
     req.chatIsAdmin   = u?.role === 'admin';
+    // Names of the OTHER teammates, so the bot recognises when the user refers
+    // to a different person (and knows their stuff is private).
+    req.chatTeammates = u
+      ? teamRoster().filter(x => x.slug && x.slug !== u.slug).map(x => x.displayName).filter(Boolean)
+      : [];
     next();
   });
 
@@ -503,6 +508,7 @@ export default function chatRouter() {
       actor:         req.chatActor,      // PreToolUse scope-guard hook
       actorName:     req.chatActorName,  // per-turn [ACTOR …] context line
       actorIsAdmin:  req.chatIsAdmin,
+      teammates:     req.chatTeammates,  // roster so the bot recognises other people
       onText:      (delta) => { assistantText += delta; sendData(delta); },
       onToolStart: ({ id, name })      => sendEvent('tool_start', { id, name }),
       onToolEnd:   ({ id, ok, error }) => sendEvent('tool_end', { id, ok, error: error || null }),

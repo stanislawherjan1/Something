@@ -33,7 +33,7 @@ import { syncMcpServers } from './integrations/runtime.js';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdmin, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -90,12 +90,18 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
   // person. Skipped in solo ('default') — absence of an [ACTOR] line is the
   // single-user signal the system prompt keys on.
   if (actor && actor !== 'default') {
+    const me = actorName || 'this user';
     const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
-    const adminNote = actorIsAdmin ? ' This user is an admin (may access all files).' : '';
+    const roster = Array.isArray(teammates) && teammates.length
+      ? ` Other teammates are DIFFERENT people: ${teammates.join(', ')}. When the user names one of them, they mean that other person — not themselves.`
+      : '';
+    const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     args.push('--append-system-prompt',
-      `[ACTOR ${who}] You are helping this user right now. Their private "Your Files" = ` +
-      `project/users/${actor}/. Shared Files = the project root. Never read, list, or reveal ` +
-      `another teammate's project/users/<other-slug>/.${adminNote}`);
+      `[ACTOR ${who}] You are talking to ${me} — the person typing right now. "I", "me", "my", "we" from them mean ${me}.${roster} ` +
+      `Each teammate has their OWN private files, conversations, and memory; you can only see ${me}'s. ` +
+      `Their private "Your Files" = project/users/${actor}/; Shared Files = the project root. ` +
+      `If asked what you discussed with — or about the private files/memory of — another teammate, say you don't have access; each person's are private. ` +
+      `Never read, list, reveal, or invent another teammate's content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
   }
 
   if (sessionId) args.push('--resume', sessionId);
