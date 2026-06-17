@@ -19,11 +19,16 @@
 
 import { writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 export function atomicWrite(path, content, options = {}) {
   const { mode = 0o644, ensureDir = true } = options;
   if (ensureDir) mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp.${process.pid}`;
+  // pid + random so two concurrent writers — even two async calls inside the
+  // SAME process (pid alone wouldn't disambiguate those) — never share a
+  // scratch file and interleave into a corrupt rename. Orphans still match a
+  // `*.tmp.*` GC glob.
+  const tmp = `${path}.tmp.${process.pid}.${randomBytes(4).toString('hex')}`;
   writeFileSync(tmp, content, { mode });
   renameSync(tmp, path);
 }

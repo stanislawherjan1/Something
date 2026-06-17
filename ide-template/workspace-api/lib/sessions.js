@@ -22,10 +22,11 @@
  * removed.
  */
 
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PROJECT_DIR } from './config.js';
+import { atomicWrite } from './atomic-write.js';
 
 const INDEX_VERSION = 1;
 
@@ -59,9 +60,13 @@ function readIndex(actor) {
 
 function writeIndex(actor, data) {
   ensureDirs(actor);
-  const tmp = indexFile(actor) + '.tmp';
-  writeFileSync(tmp, JSON.stringify({ ...data, version: INDEX_VERSION }, null, 2));
-  renameSync(tmp, indexFile(actor));
+  // pid+random tmp via atomicWrite so a concurrent manifest write can't
+  // interleave into a shared scratch file (the old fixed `.tmp` could).
+  // Residual: the read-modify-write across callers is still last-writer-wins
+  // under concurrency — the manifest is metadata only (titles, counts,
+  // ordering), so the worst case is a transient stat/title drift, not message
+  // loss; a per-actor write queue would close it fully if it ever matters.
+  atomicWrite(indexFile(actor), JSON.stringify({ ...data, version: INDEX_VERSION }, null, 2));
 }
 
 function sortSessions(sessions) {

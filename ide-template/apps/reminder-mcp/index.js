@@ -32,9 +32,53 @@ async function readReminders() {
 async function writeReminders(reminders) {
   const dir = path.dirname(REMINDERS_FILE);
   await fs.mkdir(dir, { recursive: true });
-  const tmp = REMINDERS_FILE + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(reminders, null, 2));
-  await fs.rename(tmp, REMINDERS_FILE); // atomic swap — prevents corruption on crash
+  // Unique tmp per writer — a fixed `.tmp` lets two concurrent writers (this
+  // MCP + reminder-monitor.sh) interleave into the same scratch file and
+  // corrupt the rename. pid + random keeps each write isolated.
+  const tmp = `${REMINDERS_FILE}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  try {
+    await fs.writeFile(tmp, JSON.stringify(reminders, null, 2));
+    await fs.rename(tmp, REMINDERS_FILE); // atomic swap — prevents corruption on crash
+  } catch (err) {
+    try { await fs.unlink(tmp); } catch {}
+    throw err;
+  }
+}
+
+// Best-effort advisory lock shared with reminder-monitor.sh, which runs the
+// same read-modify-write on a 60s tick. Without it, an add/cancel landing in
+// that window can clobber a fire/advance (or vice-versa) — last rename wins,
+// the other mutation is silently lost. We break a stale lock and, after a
+// short wait, proceed WITHOUT it rather than ever wedge the pipeline: a
+// crashed holder must never stop reminders from being written. Worst case we
+// degrade to the prior last-writer-wins behaviour, never worse.
+const LOCK_FILE     = REMINDERS_FILE + '.lock';
+const LOCK_WAIT_MS  = 4000;
+const LOCK_STALE_MS = 30_000;
+const LOCK_POLL_MS  = 40;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function withRemindersLock(fn) {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let held = false;
+  while (true) {
+    try {
+      const fh = await fs.open(LOCK_FILE, 'wx'); // O_CREAT|O_EXCL
+      await fh.close();
+      held = true;
+      break;
+    } catch (err) {
+      if (err.code !== 'EEXIST') break; // unexpected FS error → proceed unlocked
+      try {
+        const st = await fs.stat(LOCK_FILE);
+        if (Date.now() - st.mtimeMs > LOCK_STALE_MS) { await fs.unlink(LOCK_FILE); continue; }
+      } catch { /* lock vanished between open and stat — retry */ }
+      if (Date.now() >= deadline) break; // give up waiting → fail open
+      await sleep(LOCK_POLL_MS);
+    }
+  }
+  try { return await fn(); }
+  finally { if (held) { try { await fs.unlink(LOCK_FILE); } catch {} } }
 }
 
 /**
@@ -247,7 +291,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // the next matching slot so the first ping lands on a real occurrence.
     const firstDueMs = recur.computeFirstDue(recurrence, dueDate.getTime(), Date.now());
 
-    const reminders = await readReminders();
     const reminder = {
       id: `r_${randomUUID().slice(0, 8)}`,
       // kind is always "user" for reminders set via this tool. System
@@ -282,8 +325,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       status: 'pending',
     };
 
-    reminders.push(reminder);
-    await writeReminders(reminders);
+    await withRemindersLock(async () => {
+      const list = await readReminders();   // fresh read inside the lock
+      list.push(reminder);
+      await writeReminders(list);
+    });
 
     const dueStr = reminder.due.slice(0, 16).replace('T', ' ') + ' UTC';
     return {
@@ -346,7 +392,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── cancel_reminder ────────────────────────────────────────────────────────
   if (name === 'cancel_reminder') {
-    const reminders = await readReminders();
+    return await withRemindersLock(async () => {
+    const reminders = await readReminders();   // fresh read inside the lock
     const idx = reminders.findIndex((r) => r.id === args.id);
 
     if (idx === -1) {
@@ -380,6 +427,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         text: `Cancelled: "${removed.message}" (was due ${removed.due})`,
       }],
     };
+    }); // withRemindersLock
   }
 
   return {
