@@ -42,7 +42,7 @@ import { writeRecentSnapshot } from '../lib/recent-snapshot.js';
 import { saveAttachments, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from '../lib/attachments.js';
 import { requireActor } from '../lib/auth.js';
 import { CLAUDE_BIN } from '../lib/config.js';
-import { slugFor } from '../lib/team.js';
+import { getUser } from '../lib/team.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -56,14 +56,12 @@ const upload = multer({
 
 const ATTACHMENT_BUCKET = 'main';
 
-// Per-user web chat (team mode B1): each user's sessions + history live under
-// their own actor key (their slug) at .team/users/<key>/. An unidentified actor
-// falls back to 'default' (which, on an existing single-user deploy, is migrated
-// to the admin's slug at startup so nothing is orphaned). The key is the slug
-// regardless of solo/team — solo just means one key.
-function actorFor(req) {
-  return slugFor(req?.actor) || 'default';
-}
+// Per-user web chat (team mode): each user's sessions + history live under their
+// own actor key (their slug) at .team/users/<key>/. An unidentified actor falls
+// back to 'default' (migrated to the admin's slug at startup so nothing is
+// orphaned). req.chatActor / chatActorName / chatIsAdmin are set once per
+// request by the middleware below and used throughout — including the per-turn
+// actor context + PreToolUse scope guard fed to runClaudeTurn.
 
 // ─── Replay in-session context when there's no Claude session to --resume ────
 //
@@ -203,7 +201,13 @@ export default function chatRouter() {
   // Auth gate everything under /chat. /branding (in another router) stays open.
   router.use('/chat', requireActor);
   // Resolve the per-user storage key once per request (used everywhere below).
-  router.use('/chat', (req, _res, next) => { req.chatActor = actorFor(req); next(); });
+  router.use('/chat', (req, _res, next) => {
+    const u = getUser(req.actor);
+    req.chatActor     = u?.slug || 'default';
+    req.chatActorName = u?.displayName || null;
+    req.chatIsAdmin   = u?.role === 'admin';
+    next();
+  });
 
   // Per-session active process tracker. Maps sessionId → ChildProcess so an
   // interrupt request can find and SIGTERM the right turn. Today we expect
@@ -494,8 +498,11 @@ export default function chatRouter() {
     });
 
     proc = runClaudeTurn({
-      message:     promptForClaude,
-      sessionId:   claudeSid,
+      message:       promptForClaude,
+      sessionId:     claudeSid,
+      actor:         req.chatActor,      // PreToolUse scope-guard hook
+      actorName:     req.chatActorName,  // per-turn [ACTOR …] context line
+      actorIsAdmin:  req.chatIsAdmin,
       onText:      (delta) => { assistantText += delta; sendData(delta); },
       onToolStart: ({ id, name })      => sendEvent('tool_start', { id, name }),
       onToolEnd:   ({ id, ok, error }) => sendEvent('tool_end', { id, ok, error: error || null }),

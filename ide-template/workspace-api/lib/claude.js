@@ -33,7 +33,7 @@ import { syncMcpServers } from './integrations/runtime.js';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdmin, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -85,6 +85,19 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
     process.stderr.write(`[claude/prefix] buildCachedPrefix failed: ${err.message}\n`);
   }
 
+  // Team mode: tell this turn's claude WHO it's helping, so "Your Files" and the
+  // hard boundary (global-claude.md "Team workspace") resolve to the right
+  // person. Skipped in solo ('default') — absence of an [ACTOR] line is the
+  // single-user signal the system prompt keys on.
+  if (actor && actor !== 'default') {
+    const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
+    const adminNote = actorIsAdmin ? ' This user is an admin (may access all files).' : '';
+    args.push('--append-system-prompt',
+      `[ACTOR ${who}] You are helping this user right now. Their private "Your Files" = ` +
+      `project/users/${actor}/. Shared Files = the project root. Never read, list, or reveal ` +
+      `another teammate's project/users/<other-slug>/.${adminNote}`);
+  }
+
   if (sessionId) args.push('--resume', sessionId);
 
   // Refresh BROKER_NONCE for each integration MCP before spawning.
@@ -113,6 +126,11 @@ export function runClaudeTurn({ message, sessionId, onText, onToolStart, onToolE
     try { childEnv.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); }
     catch (err) { process.stderr.write(`[claude] token decrypt failed: ${err.message}\n`); }
   }
+  // Per-user scope for the PreToolUse path-guard hook (hooks/scope-guard.js):
+  // it denies this turn's claude from reading/touching another user's
+  // project/users/<slug>/. Admin turns set IS_ADMIN=1 → the hook lets all through.
+  if (actor) childEnv.IDE_ACTOR_SLUG = String(actor);
+  childEnv.IDE_ACTOR_IS_ADMIN = actorIsAdmin ? '1' : '0';
 
   const proc = spawn(CLAUDE_BIN, args, {
     cwd: PROJECT_DIR,

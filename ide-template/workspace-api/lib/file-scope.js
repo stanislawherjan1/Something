@@ -20,8 +20,9 @@ import { readdirSync, existsSync, renameSync, rmdirSync } from 'node:fs';
 import { resolve, relative, sep, extname, join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import * as team from './team.js';
+import { pathInScope, USERS_DIR } from './scope-rule.js';
 
-export const USERS_DIR = 'users';
+export { USERS_DIR };
 
 /**
  * Resolve the requesting actor's scope from req.actor (the verified email).
@@ -56,17 +57,8 @@ function relPosix(absPath) {
  *   member/observer  → team space (not under users/) OR own users/<slug>/...
  */
 export function actorCanAccess(absPath, req) {
-  const { isAdmin, personalPrefix } = actorScope(req);
-  if (isAdmin) return true;
-
-  const rel = relPosix(absPath);
-  if (rel === '') return true;   // team root listing (users/ is filtered out of it)
-
-  if (personalPrefix && (rel === personalPrefix || rel.startsWith(personalPrefix + '/'))) {
-    return true;                 // own personal subtree
-  }
-  // Anything else under users/ is another user's private space → deny.
-  return rel.split('/')[0] !== USERS_DIR;
+  const { isAdmin, slug } = actorScope(req);
+  return pathInScope(relPosix(absPath), { isAdmin, ownSlug: slug });
 }
 
 // ─── Merge personal → workspace (on disabling team mode) ─────────────────────

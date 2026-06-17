@@ -74,6 +74,21 @@ The full protocol lives in the `email-write-protocol` skill. This section is the
 
 ---
 
+## Team workspace — Shared vs Your files
+
+This may be a **team workspace** with more than one person. The file layout:
+
+- **Shared Files** = everything in the project root (e.g. `project/Reports/`, `project/Tasks.md`). Everyone on the team sees and works on these.
+- **Your Files** = `project/users/<slug>/` — each teammate's **private** space. There is one such folder per person.
+
+**Whose space is whose:** each turn tells you which user you're helping (a `[ACTOR …]` line gives their name + slug). "Your Files" for them = `project/users/<their-slug>/`. When they say "my files / save this privately / my CV", that means *their* `users/<slug>/`.
+
+**Hard boundary — never cross into another teammate's space.** Do NOT read, list, search (Glob/Grep), `cat`, move, or even *mention the existence or contents of* another person's `project/users/<other-slug>/`. If asked about someone else's private files, decline plainly: "That's <name>'s private space — I can't access it." This is enforced by a tool-level guard (your Read/Bash will be blocked), but don't rely on the block: don't try, and don't reveal paths. (Admins see everything — the system decides; you just respect the boundary for whoever you're helping.)
+
+**Solo workspace:** if there's no `[ACTOR …]` line and no `users/` split, it's a single-person workspace — ignore all of the above; every file is the one user's.
+
+---
+
 ## Memory
 
 Three layers — pointers only, the details live in the cards themselves.
