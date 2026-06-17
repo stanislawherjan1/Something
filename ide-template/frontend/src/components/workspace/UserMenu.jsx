@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { LogOut, ChevronUp, Sun, Moon, Monitor, Check } from 'lucide-react';
+import { LogOut, ChevronUp, Sun, Moon, Monitor, Check, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import useMe from './useMe.js';
+import UserSettingsModal from './UserSettingsModal.jsx';
 
 /**
  * UserMenu — avatar + display name at the bottom of the sidebar. Click opens
@@ -21,6 +22,7 @@ export default function UserMenu() {
   // All hooks must run before any early return — `user` populates async, so a
   // conditional hook below would change hook order between renders.
   const [open, setOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Dev mode: show placeholder if user is null
   const displayUser = user || (import.meta.env.DEV ? {
@@ -29,8 +31,10 @@ export default function UserMenu() {
   } : null);
 
   if (!displayUser) return null;
-  const name    = displayUser.name || displayUser.email;
-  const avatar  = displayUser.picture;
+  // Prefer the user's own team profile (editable in User settings) over the
+  // Google name/picture, falling back to Google, then email/initial.
+  const name    = me?.displayName || displayUser.name || displayUser.email;
+  const avatar  = me?.avatarUrl || displayUser.picture;
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
   return (
@@ -67,6 +71,14 @@ export default function UserMenu() {
             onClick={() => setOpen(false)}
           />
           <div className="absolute bottom-full left-0 mb-2 z-50 w-[calc(100vw-32px)] md:w-full rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <button
+              onClick={() => { setShowSettings(true); setOpen(false); }}
+              className="w-full flex gap-2.5 items-center rounded-md px-3 py-2 text-[13px] text-foreground/85 hover:bg-muted/40 transition-colors text-left"
+            >
+              <Settings className="size-4 shrink-0 text-muted-foreground/65" strokeWidth={1.75} />
+              User settings
+            </button>
+            <div className="my-1 border-t border-border/40" />
             <div className="px-3 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               Theme
             </div>
@@ -87,6 +99,10 @@ export default function UserMenu() {
             </button>
           </div>
         </>
+      )}
+
+      {showSettings && me && (
+        <UserSettingsModal me={me} onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

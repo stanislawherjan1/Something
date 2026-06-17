@@ -351,6 +351,30 @@ export function remove({ email, actor }) {
   return removed;
 }
 
+/**
+ * Self-service profile edit — a user sets their OWN displayName. Preserves
+ * slug/role/addedAt (only displayName changes). Caller (routes/me.js) passes
+ * the actor's own email; not admin-gated. Avatars are stored as files
+ * (lib/user-avatars.js), versioned by mtime — they don't touch this store.
+ */
+export function setProfile(email, { displayName }) {
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) throw new Error(`${e} is not on the team.`);
+
+  if (displayName !== undefined) {
+    const trimmed = String(displayName).trim();
+    if (!trimmed || trimmed.length > 100) {
+      throw new Error('Display name must be 1–100 characters.');
+    }
+    entries[idx] = { ...entries[idx], displayName: trimmed };
+  }
+  writeRaw(entries);
+  appendAudit('profile_update', e, {});
+  return getUser(e);
+}
+
 // ─── Team config: solo vs collaborative ──────────────────────────────────────
 // A solo workspace shouldn't carry team UI (the Workspace/Personal split, role
 // badges, invite flow) — that's overkill for one person. `teamMode` gates all

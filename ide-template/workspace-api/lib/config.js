@@ -60,6 +60,11 @@ export const HARD_HIDDEN = new Set([
   // lib/sessions.js / lib/chatHistory.js; never reachable through the
   // file API (would expose pasted secrets / multi-user transcripts).
   '.chat',
+  // Team-mode private storage: per-user web chat history (.team/users/<slug>/chats)
+  // + per-user avatars (.team/avatars/<slug>.webp). Served only via /api/chat
+  // and /api/me/avatar — never browsable through the file API, even by admin
+  // (same rationale as .chat: multi-user transcripts must not leak).
+  '.team',
 ]);
 
 // Per-bot working directory. Each deploy has a folder at PROJECT_DIR root
