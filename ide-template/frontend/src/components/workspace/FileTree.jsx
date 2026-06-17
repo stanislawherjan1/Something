@@ -208,7 +208,7 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
             />
           )}
           {entries && visibleEntries.length === 0 && isSectionRoot && !isProjectRoot && creating?.parentPath !== path && (
-            <Hint depth={depth + 1}>No personal files yet</Hint>
+            <Hint depth={depth + 1}>No files here yet</Hint>
           )}
           {visibleEntries.map(e => {
             const fullPath = path ? `${path}/${e.name}` : e.name;

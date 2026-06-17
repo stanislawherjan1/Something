@@ -27,6 +27,7 @@ import { PROJECT_DIR } from './config.js';
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
 const AUDIT     = join(PROJECT_DIR, '.allowed-emails.audit.log');
+const CONFIG    = join(PROJECT_DIR, '.team-config.json');
 
 // admin — full management; member — uses AI, owns their files; observer —
 // read-only (zero actions). Observer enforcement lands in a later phase; it's
@@ -335,4 +336,54 @@ export function remove({ email, actor }) {
   writeRaw(entries);
   appendAudit('remove', e, { role: removed.role, actor: actorEmail || null });
   return removed;
+}
+
+// ─── Team config: solo vs collaborative ──────────────────────────────────────
+// A solo workspace shouldn't carry team UI (the Workspace/Personal split, role
+// badges, invite flow) — that's overkill for one person. `teamMode` gates all
+// of it. Stored separately from the member list so toggling it never touches
+// the allowlist.
+
+function readConfig() {
+  if (!existsSync(CONFIG)) return {};
+  try {
+    const raw = readFileSync(CONFIG, 'utf8');
+    if (!raw.trim()) return {};
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (err) {
+    process.stderr.write(`[team] config read failed: ${err.message}\n`);
+    return {};
+  }
+}
+
+function writeConfig(cfg) {
+  ensureProjectDir();
+  const tmp = CONFIG + '.tmp';
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2), { mode: 0o660 });
+  try { chmodSync(tmp, 0o660); } catch {}
+  renameSync(tmp, CONFIG);
+  try { chmodSync(CONFIG, 0o660); } catch {}
+}
+
+/**
+ * Is this a collaborative (team) workspace? An explicit toggle (set via the
+ * Team UI) wins; absent that, default to collaborative only when more than one
+ * person is on the team — so a fresh solo workspace stays clean, while an
+ * existing multi-person deploy lights up team mode automatically.
+ */
+export function getTeamMode() {
+  const cfg = readConfig();
+  if (typeof cfg.teamMode === 'boolean') return cfg.teamMode;
+  return list().length > 1;
+}
+
+export function setTeamMode(enabled, actor) {
+  const cfg = readConfig();
+  cfg.teamMode  = !!enabled;
+  cfg.updatedAt = new Date().toISOString();
+  if (actor) cfg.updatedBy = normalize(actor);
+  writeConfig(cfg);
+  appendAudit('team_mode', actor || '', { enabled: !!enabled });
+  return cfg.teamMode;
 }

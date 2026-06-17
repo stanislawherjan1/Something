@@ -46,6 +46,8 @@ export const HARD_HIDDEN = new Set([
   // Team whitelist + audit log. Managed exclusively through /api/team.
   '.allowed-emails.json',
   '.allowed-emails.audit.log',
+  // Team config (solo vs collaborative). Managed via /api/team.
+  '.team-config.json',
   // Branding metadata + uploaded avatar. Managed via /api/branding.
   '.branding.json',
   '.branding',

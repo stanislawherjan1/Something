@@ -50,7 +50,8 @@ export default function UserMenu() {
             <span className="truncate text-[13.5px] font-medium leading-tight text-foreground">
               {name}
             </span>
-            <RoleBadge role={me?.role} />
+            {/* Role only matters in a collaborative workspace — no badge solo. */}
+            <RoleBadge role={me?.teamMode ? me?.role : null} />
           </div>
           <div className="truncate text-[11.5px] text-muted-foreground/70">
             {displayUser.email}

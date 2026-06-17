@@ -14,14 +14,17 @@ import { resolve } from 'node:path';
 import { PROJECT_DIR } from '../lib/config.js';
 import { requireActor } from '../lib/auth.js';
 import { actorScope, USERS_DIR } from '../lib/file-scope.js';
+import { getTeamMode } from '../lib/team.js';
 
 export default function meRouter() {
   const router = Router();
 
   router.get('/me', requireActor, (req, res) => {
     const scope = actorScope(req);
-    // Materialise the personal dir so the first tree call doesn't 404.
-    if (scope.slug) {
+    const teamMode = getTeamMode();
+    // Only materialise the personal dir in team mode — a solo workspace has no
+    // Workspace/Personal split, so there's no personal section to back.
+    if (teamMode && scope.slug) {
       try { mkdirSync(resolve(PROJECT_DIR, USERS_DIR, scope.slug), { recursive: true }); }
       catch { /* best-effort — a real FS error surfaces on the tree call */ }
     }
@@ -31,7 +34,10 @@ export default function meRouter() {
       role:         scope.role,
       displayName:  scope.displayName,
       isAdmin:      scope.isAdmin,
-      personalRoot: scope.personalPrefix,   // e.g. "users/jan" — Personal section root
+      teamMode,
+      // Personal section root (e.g. "users/jan") — null in solo mode so the
+      // frontend renders the flat file list.
+      personalRoot: teamMode ? scope.personalPrefix : null,
     });
   });
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound } from 'lucide-react';
+import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
@@ -23,6 +23,8 @@ export default function TeamDashboard({ sidebarOpen }) {
   const { data, loading, error, reload: reloadApi } = useApi('/api/team');
   const [adding, setAdding]     = useState(false);
   const [removing, setRemoving] = useState(null);
+  const [switching, setSwitching] = useState(false);
+  const [modeError, setModeError] = useState(null);
 
   const reload = useCallback(() => {
     invalidate('/api/team');
@@ -34,6 +36,36 @@ export default function TeamDashboard({ sidebarOpen }) {
   const myEmail    = (data?.me?.email || user?.email || '').toLowerCase();
   const entries    = data?.entries || [];
   const adminCount = entries.filter(e => e.role === 'admin').length;
+  const teamMode          = data?.teamMode ?? false;
+  const personalFileCount = data?.personalFileCount ?? 0;
+  const [confirmingOff, setConfirmingOff] = useState(false);
+
+  const setMode = useCallback(async (enabled, mergePersonal = false) => {
+    setSwitching(true); setModeError(null);
+    try {
+      const resp = await fetch('/api/team/mode', {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ enabled, mergePersonal }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(d.error || `HTTP ${resp.status}`);
+      invalidate('/api/me');   // sidebar split + role badge react live
+      invalidate('/api/files/tree');   // merged files show up in the workspace tree
+      reload();
+    } catch (err) {
+      setModeError(err.message);
+    } finally {
+      setSwitching(false);
+    }
+  }, [reload]);
+
+  // Turning OFF with personal files present needs a decision (move vs hide);
+  // every other transition is immediate.
+  const handleToggle = useCallback((next) => {
+    if (!next && personalFileCount > 0) setConfirmingOff(true);
+    else setMode(next);
+  }, [personalFileCount, setMode]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -41,6 +73,17 @@ export default function TeamDashboard({ sidebarOpen }) {
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
+          {!isInitialLoad && data && (
+            <ModeCard
+              teamMode={teamMode}
+              isAdmin={isAdmin}
+              busy={switching}
+              error={modeError}
+              onChange={handleToggle}
+            />
+          )}
+
+          {!isInitialLoad && data && teamMode && (
           <div className="flex items-start justify-between gap-4">
             <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
               Anyone on this list can sign in to the workspace with their Google account.
@@ -59,6 +102,7 @@ export default function TeamDashboard({ sidebarOpen }) {
               </button>
             )}
           </div>
+          )}
 
           {isInitialLoad && (
             <div className="overflow-hidden rounded-xl border border-border/60 bg-card divide-y divide-border/60">
@@ -74,13 +118,13 @@ export default function TeamDashboard({ sidebarOpen }) {
             </div>
           )}
 
-          {data && entries.length === 0 && (
+          {data && teamMode && entries.length === 0 && (
             <div className="rounded-xl border border-border/40 bg-muted/20 px-5 py-8 text-center text-[13px] text-muted-foreground">
               No one on the team yet. {isAdmin ? 'Invite the first member to get started.' : 'Ask an admin to invite you.'}
             </div>
           )}
 
-          {data && entries.length > 0 && (
+          {data && teamMode && entries.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
               {entries.map((entry, idx) => (
                 <TeamRow
@@ -126,7 +170,149 @@ export default function TeamDashboard({ sidebarOpen }) {
           onSuccess={() => { setRemoving(null); reload(); }}
         />
       )}
+      {confirmingOff && (
+        <DisablePersonalModal
+          count={personalFileCount}
+          busy={switching}
+          onCancel={() => setConfirmingOff(false)}
+          onMerge={async () => { await setMode(false, true);  setConfirmingOff(false); }}
+          onHide={async ()  => { await setMode(false, false); setConfirmingOff(false); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ─── Solo / Collaborative mode ──────────────────────────────────────────────
+
+// Gates the whole team experience. Solo = clean single-user workspace (no
+// Workspace/Personal split, no roles, no invites). Enabling collaboration is
+// the deliberate step that unlocks inviting teammates.
+function ModeCard({ teamMode, isAdmin, busy, error, onChange }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card px-5 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-foreground/70">
+            {teamMode
+              ? <UsersRound className="size-4" strokeWidth={1.75} />
+              : <UserRound className="size-4" strokeWidth={1.75} />}
+          </div>
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-foreground/90">
+              {teamMode ? 'Collaborative workspace' : 'Solo workspace'}
+            </div>
+            <p className="mt-0.5 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground/80">
+              {teamMode
+                ? 'Teammates can sign in — each gets their own files plus the shared files.'
+                : 'Just you. Turn on collaboration to invite teammates and split Shared vs. Your files.'}
+            </p>
+          </div>
+        </div>
+        {isAdmin ? (
+          <Switch on={teamMode} busy={busy} onClick={() => onChange(!teamMode)} />
+        ) : (
+          <span className="shrink-0 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/85">
+            {teamMode ? 'On' : 'Off'}
+          </span>
+        )}
+      </div>
+      {error && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+          <span>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Switch({ on, busy, onClick }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Enable team collaboration"
+      disabled={busy}
+      onClick={onClick}
+      className={cn(
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+        on ? 'bg-foreground' : 'bg-muted-foreground/30',
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block size-5 transform rounded-full bg-background shadow-sm transition-transform',
+          on ? 'translate-x-[22px]' : 'translate-x-0.5',
+        )}
+      />
+    </button>
+  );
+}
+
+// Turning off collaboration while you have personal files: decide whether to
+// move them into the shared workspace or keep them tucked away. Only ever
+// touches YOUR OWN files — teammates' personal files are never moved.
+function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
+  const noun = count === 1 ? 'file' : 'files';
+  return (
+    <ModalShell onClose={busy ? () => {} : onCancel} ariaLabel="Turn off collaboration">
+      <div
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+          <h2 className="text-[14px] font-semibold text-foreground/90">Turn off collaboration?</h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50"
+          >
+            <X className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 px-5 py-4 text-[13px] text-foreground/85">
+          <p>
+            You have <span className="font-semibold">{count} {noun} in Your Files</span>. What should happen to {count === 1 ? 'it' : 'them'}?
+          </p>
+          <ul className="flex flex-col gap-2 text-[12.5px] text-muted-foreground/85">
+            <li><span className="font-medium text-foreground/85">Move to Shared Files</span> — they join the shared files (renamed if a name clashes). This can't be auto-undone.</li>
+            <li><span className="font-medium text-foreground/85">Keep private</span> — they stay tucked away, hidden from the file list, and come back if you re-enable collaboration.</li>
+          </ul>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onHide}
+            disabled={busy}
+            className="rounded-md border border-border/55 px-3 py-1.5 text-[12.5px] font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-50"
+          >
+            Keep private
+          </button>
+          <button
+            type="button"
+            onClick={onMerge}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            Move to Shared Files
+          </button>
+        </div>
+      </div>
+    </ModalShell>
   );
 }
 

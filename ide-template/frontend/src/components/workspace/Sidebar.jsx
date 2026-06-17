@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   Eye, EyeOff, Hexagon, KanbanSquare, Images,
   FilePlus, FolderPlus, Wrench, Plug, Clock, UsersRound, Inbox,
-  Globe, UserRound,
+  Globe, UserRound, Files,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
@@ -133,8 +133,8 @@ export default function Sidebar({
             The system-files toggle is admin-only — backend forces it off for
             everyone else (lib/file-scope.js). */}
         <FilesSectionHeader
-          icon={Globe}
-          label="Workspace Files"
+          icon={me?.teamMode ? Globe : Files}
+          label={me?.teamMode ? 'Shared Files' : 'Files'}
           onNewFile={() => setCreating({ kind: 'file', parentPath: '' })}
           onNewFolder={() => setCreating({ kind: 'folder', parentPath: '' })}
           showHidden={showHidden}
@@ -160,7 +160,7 @@ export default function Sidebar({
           <>
             <FilesSectionHeader
               icon={UserRound}
-              label="Personal Files"
+              label="Your Files"
               onNewFile={() => setCreating({ kind: 'file', parentPath: me.personalRoot })}
               onNewFolder={() => setCreating({ kind: 'folder', parentPath: me.personalRoot })}
             />

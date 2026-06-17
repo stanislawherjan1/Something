@@ -16,7 +16,8 @@
  * the shell/tmux side stays convention-bound until the v2 per-uid split.
  */
 
-import { resolve, relative, sep } from 'node:path';
+import { readdirSync, existsSync, renameSync, rmdirSync } from 'node:fs';
+import { resolve, relative, sep, extname, join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import * as team from './team.js';
 
@@ -66,4 +67,52 @@ export function actorCanAccess(absPath, req) {
   }
   // Anything else under users/ is another user's private space → deny.
   return rel.split('/')[0] !== USERS_DIR;
+}
+
+// ─── Merge personal → workspace (on disabling team mode) ─────────────────────
+
+/** How many entries sit in a user's personal dir (0 if it doesn't exist). */
+export function countPersonalFiles(slug) {
+  if (!slug) return 0;
+  const dir = join(resolve(PROJECT_DIR), USERS_DIR, slug);
+  try { return readdirSync(dir).length; } catch { return 0; }
+}
+
+// Pick a non-colliding name in `root` for `name`, e.g. "notes.md" →
+// "notes (personal).md" → "notes (personal 2).md". Works for dirs (no ext) too.
+function freeName(root, name) {
+  const ext  = extname(name);
+  const base = name.slice(0, name.length - ext.length);
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? `${base} (personal)${ext}` : `${base} (personal ${n})${ext}`;
+    if (!existsSync(join(root, candidate))) return candidate;
+  }
+}
+
+/**
+ * Move ONE user's personal files (users/<slug>/*) up into the shared workspace
+ * root, renaming on collision so nothing is overwritten. Used when the user
+ * turns team mode off and opts to merge their personal files into public.
+ *
+ * Caller passes the acting user's OWN slug — never another user's — so this
+ * can't be used to exfiltrate someone else's private dir into the shared space.
+ * Renames are within one filesystem (atomic). The emptied personal dir is
+ * removed; if a move failed it's left in place (not force-deleted).
+ */
+export function mergePersonalToWorkspace(slug) {
+  if (!slug) return { moved: 0 };
+  const root = resolve(PROJECT_DIR);
+  const personalDir = join(root, USERS_DIR, slug);
+  let names;
+  try { names = readdirSync(personalDir); } catch { return { moved: 0 }; }
+
+  let moved = 0;
+  for (const name of names) {
+    const src      = join(personalDir, name);
+    const destName = existsSync(join(root, name)) ? freeName(root, name) : name;
+    try { renameSync(src, join(root, destName)); moved++; }
+    catch (err) { process.stderr.write(`[file-scope] merge move failed for ${name}: ${err.message}\n`); }
+  }
+  try { rmdirSync(personalDir); } catch { /* not empty (a move failed) — leave it */ }
+  return { moved };
 }

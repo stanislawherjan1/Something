@@ -19,6 +19,7 @@
 import { Router } from 'express';
 import express from 'express';
 import * as team from '../lib/team.js';
+import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -66,6 +67,10 @@ export default function teamRouter() {
     const me = req.actor ? team.find(req.actor) : null;
     res.json({
       entries,
+      teamMode: team.getTeamMode(),
+      // How many files the caller has in their personal dir — lets the UI
+      // offer "move them to the workspace" when disabling team mode.
+      personalFileCount: me?.slug ? countPersonalFiles(me.slug) : 0,
       me: req.actor ? {
         email:   req.actor,
         role:    me?.role || null,
@@ -74,7 +79,29 @@ export default function teamRouter() {
     });
   });
 
+  // Toggle solo <-> collaborative. Admin-only. Enabling is the deliberate gate
+  // that unlocks inviting teammates and the Workspace/Personal split. When
+  // disabling, `mergePersonal: true` moves the CALLER's own personal files up
+  // into the shared workspace (collision-renamed) — never anyone else's.
+  router.put('/team/mode', requireAdmin, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean.' });
+    }
+    let merged = null;
+    if (!enabled && req.body?.mergePersonal === true) {
+      const slug = team.slugFor(req.actor);
+      if (slug) merged = mergePersonalToWorkspace(slug);
+    }
+    res.json({ ok: true, teamMode: team.setTeamMode(enabled, req.actor), merged });
+  });
+
   router.post('/team', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
+    // Inviting teammates only makes sense once the workspace is collaborative.
+    // Gate it server-side too (the UI hides invite in solo mode).
+    if (!team.getTeamMode()) {
+      return res.status(409).json({ error: 'Enable team collaboration before inviting members.' });
+    }
     const { email, role } = req.body || {};
     try {
       const entry = team.add({ email, role: role || 'member', addedBy: req.actor });
