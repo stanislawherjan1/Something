@@ -391,7 +391,19 @@ function DeleteReminderModal({ reminder, allReminders, onClose, onDeleted }) {
   const remove = async () => {
     setBusy(true); setError(null);
     try {
-      const next = (allReminders || []).filter(r => r.id !== reminder.id);
+      // Re-read the file immediately before writing rather than trusting the
+      // page-load snapshot — the bot (or another tab) may have added/edited a
+      // reminder since load, and writing the stale array back would silently
+      // clobber that. Falls back to the snapshot if the re-read fails.
+      let current = allReminders || [];
+      const rr = await fetch(REMINDERS_URL).catch(() => null);
+      if (rr?.ok) {
+        const parsed = await rr.json()
+          .then(b => JSON.parse(b.content || '[]'))
+          .catch(() => null);
+        if (Array.isArray(parsed)) current = parsed;
+      }
+      const next = current.filter(r => r.id !== reminder.id);
       const resp = await fetch('/api/files/write', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
