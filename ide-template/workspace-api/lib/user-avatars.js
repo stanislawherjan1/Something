@@ -1,14 +1,15 @@
 /**
  * Per-user profile avatars (team mode).
  *
- * Stored as ONE small webp per user at PROJECT_DIR/.team/avatars/<slug>.webp
+ * Stored as one small image per user at PROJECT_DIR/.team/avatars/<slug>.<ext>
  * (`.team` is HARD_HIDDEN — never reachable via the file API). The browser
- * resizes to 512×512 webp BEFORE upload, so the server does no image
- * processing — it just validates a small cap + webp magic and writes the file.
+ * resizes to 512×512 BEFORE upload, so the server does no image processing — it
+ * validates a small cap + the image magic (webp / png / jpeg) and writes the
+ * file. webp is preferred (smallest) but png/jpeg are accepted too, since some
+ * browsers' canvas.toBlob falls back to png.
  *
  * Versioning for cache-busting comes from the file mtime (avatarUpdatedAt) —
- * no coupling to the team store, so there's no "must remember to bump a
- * timestamp" failure mode.
+ * no coupling to the team store.
  */
 
 import {
@@ -19,30 +20,48 @@ import { PROJECT_DIR } from './config.js';
 
 const AVATARS_DIR = join(PROJECT_DIR, '.team', 'avatars');
 const MAX_BYTES   = 512 * 1024;                 // browser pre-resizes; 512 KB is generous
-const WEBP_RIFF   = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF"
+
+// Supported formats — detected by file magic (not by client-claimed type).
+const FORMATS = [
+  { ext: 'webp', mime: 'image/webp', test: (b) => b.length >= 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
+  { ext: 'png',  mime: 'image/png',  test: (b) => b.length >= 8  && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { ext: 'jpg',  mime: 'image/jpeg', test: (b) => b.length >= 3  && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+];
+const KNOWN_EXTS  = ['webp', 'png', 'jpg', 'jpeg'];
+const MIME_BY_EXT = { webp: 'image/webp', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
 
 // Path-safe slug → never let a crafted slug escape the avatars dir.
 function sanitizeSlug(slug) {
   return String(slug || '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 64);
 }
 
-export function avatarPath(slug) {
+function detectFormat(buffer) {
+  for (const f of FORMATS) if (f.test(buffer)) return f;
+  return null;
+}
+
+// The stored avatar file for a slug (any supported extension), or null.
+function findFile(slug) {
   const s = sanitizeSlug(slug);
-  return s ? join(AVATARS_DIR, `${s}.webp`) : null;
+  if (!s) return null;
+  for (const ext of KNOWN_EXTS) {
+    const p = join(AVATARS_DIR, `${s}.${ext}`);
+    if (existsSync(p)) return { path: p, ext };
+  }
+  return null;
 }
 
 export function hasAvatar(slug) {
-  const p = avatarPath(slug);
-  return !!p && existsSync(p);
+  return !!findFile(slug);
 }
 
-/** { slug, path, avatarUpdatedAt(ms) } for an existing avatar, else null. */
+/** { slug, path, ext, size, avatarUpdatedAt(ms) } for an existing avatar, else null. */
 export function getUserAvatar(slug) {
-  const p = avatarPath(slug);
-  if (!p || !existsSync(p)) return null;
+  const f = findFile(slug);
+  if (!f) return null;
   try {
-    const st = statSync(p);
-    return { slug: sanitizeSlug(slug), path: p, size: st.size, avatarUpdatedAt: Math.floor(st.mtimeMs) };
+    const st = statSync(f.path);
+    return { slug: sanitizeSlug(slug), path: f.path, ext: f.ext, size: st.size, avatarUpdatedAt: Math.floor(st.mtimeMs) };
   } catch { return null; }
 }
 
@@ -53,17 +72,19 @@ export function avatarUrl(slug) {
 }
 
 export function saveUserAvatar(slug, buffer) {
-  const p = avatarPath(slug);
-  if (!p) throw new Error('Invalid user.');
+  const s = sanitizeSlug(slug);
+  if (!s) throw new Error('Invalid user.');
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('Empty upload.');
   if (buffer.length > MAX_BYTES) throw new Error('Avatar must be ≤ 512 KB (resize before upload).');
-  // webp magic: "RIFF"...."WEBP"
-  const isWebp = buffer.length >= 12
-    && buffer.subarray(0, 4).equals(WEBP_RIFF)
-    && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
-  if (!isWebp) throw new Error('Avatar must be a webp image.');
+  const fmt = detectFormat(buffer);
+  if (!fmt) throw new Error('Avatar must be a PNG, JPEG, or webp image.');
 
   mkdirSync(AVATARS_DIR, { recursive: true });
+  // Drop any existing avatar in a different format so we don't leave a stale file.
+  const existing = findFile(s);
+  if (existing && existing.ext !== fmt.ext) { try { unlinkSync(existing.path); } catch {} }
+
+  const p = join(AVATARS_DIR, `${s}.${fmt.ext}`);
   const tmp = `${p}.${process.pid}.tmp`;
   try {
     writeFileSync(tmp, buffer, { mode: 0o644 });
@@ -74,13 +95,13 @@ export function saveUserAvatar(slug, buffer) {
     try { unlinkSync(tmp); } catch {}
     throw err;
   }
-  return getUserAvatar(slug);
+  return getUserAvatar(s);
 }
 
 export function deleteUserAvatar(slug) {
-  const p = avatarPath(slug);
-  if (!p || !existsSync(p)) return false;
-  unlinkSync(p);
+  const f = findFile(slug);
+  if (!f) return false;
+  unlinkSync(f.path);
   return true;
 }
 
@@ -88,7 +109,7 @@ export function deleteUserAvatar(slug) {
 export function streamUserAvatar(slug, res) {
   const a = getUserAvatar(slug);
   if (!a) { res.status(404).end(); return; }
-  res.setHeader('Content-Type', 'image/webp');
+  res.setHeader('Content-Type', MIME_BY_EXT[a.ext] || 'application/octet-stream');
   res.setHeader('Content-Length', a.size);
   res.setHeader('Cache-Control', 'private, max-age=300');
   const s = createReadStream(a.path);

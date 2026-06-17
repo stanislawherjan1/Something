@@ -123,7 +123,7 @@ export default function UserSettingsModal({ me, onClose }) {
                   </button>
                 )}
               </div>
-              <span className="text-[11px] text-muted-foreground/65">Resized to 512×512 · stored as a small webp</span>
+              <span className="text-[11px] text-muted-foreground/65">PNG, JPEG, or webp · resized to 512×512</span>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
                 onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
             </div>
