@@ -42,6 +42,7 @@ import { writeRecentSnapshot } from '../lib/recent-snapshot.js';
 import { saveAttachments, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from '../lib/attachments.js';
 import { requireActor } from '../lib/auth.js';
 import { CLAUDE_BIN } from '../lib/config.js';
+import { slugFor } from '../lib/team.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -54,7 +55,15 @@ const upload = multer({
 });
 
 const ATTACHMENT_BUCKET = 'main';
-const ACTOR = 'default';   // Single-user until MULTI_USER_TEAM_MODE; req.actor will populate this later
+
+// Per-user web chat (team mode B1): each user's sessions + history live under
+// their own actor key (their slug) at .team/users/<key>/. An unidentified actor
+// falls back to 'default' (which, on an existing single-user deploy, is migrated
+// to the admin's slug at startup so nothing is orphaned). The key is the slug
+// regardless of solo/team — solo just means one key.
+function actorFor(req) {
+  return slugFor(req?.actor) || 'default';
+}
 
 // ─── Replay in-session context when there's no Claude session to --resume ────
 //
@@ -193,6 +202,8 @@ export default function chatRouter() {
 
   // Auth gate everything under /chat. /branding (in another router) stays open.
   router.use('/chat', requireActor);
+  // Resolve the per-user storage key once per request (used everywhere below).
+  router.use('/chat', (req, _res, next) => { req.chatActor = actorFor(req); next(); });
 
   // Per-session active process tracker. Maps sessionId → ChildProcess so an
   // interrupt request can find and SIGTERM the right turn. Today we expect
@@ -206,7 +217,7 @@ export default function chatRouter() {
   router.get('/chat/sessions', (req, res) => {
     try {
       const includeArchived = req.query.include === 'archived';
-      const sessions = listSessions(ACTOR, { archived: includeArchived });
+      const sessions = listSessions(req.chatActor, { archived: includeArchived });
       // Strip claudeSessionId from the response — internal only, never shown
       // in UI and a small data-minimization win.
       res.json({ sessions: sessions.map(s => {
@@ -221,7 +232,7 @@ export default function chatRouter() {
   router.post('/chat/sessions', (req, res) => {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title.trim() : undefined;
-      const created = createSession(ACTOR, title ? { title } : {});
+      const created = createSession(req.chatActor, title ? { title } : {});
       const { claudeSessionId, ...pub } = created;
       res.status(201).json(pub);
     } catch (err) {
@@ -238,7 +249,7 @@ export default function chatRouter() {
       if (Object.keys(patch).length === 0) {
         return res.status(400).json({ error: 'no patchable fields supplied' });
       }
-      const updated = updateSession(ACTOR, req.params.id, patch);
+      const updated = updateSession(req.chatActor, req.params.id, patch);
       if (!updated) return res.status(404).json({ error: 'session not found' });
       const { claudeSessionId, ...pub } = updated;
       res.json(pub);
@@ -257,9 +268,9 @@ export default function chatRouter() {
         active.proc.kill('SIGTERM');
         activeBySession.delete(req.params.id);
       }
-      const removed = deleteSession(ACTOR, req.params.id);
+      const removed = deleteSession(req.chatActor, req.params.id);
       if (!removed) return res.status(404).json({ error: 'session not found' });
-      archiveSessionFile(ACTOR, req.params.id);
+      archiveSessionFile(req.chatActor, req.params.id);
       res.json({ ok: true, id: req.params.id, archivedAt: new Date().toISOString() });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -271,13 +282,13 @@ export default function chatRouter() {
   router.get('/chat/history', (req, res) => {
     try {
       const explicit = typeof req.query.sessionId === 'string' ? req.query.sessionId : null;
-      const sid = resolveSessionId(ACTOR, explicit);
+      const sid = resolveSessionId(req.chatActor, explicit);
       if (!sid) return res.status(404).json({ error: 'session not found' });
 
       const before = typeof req.query.before === 'string' ? req.query.before : undefined;
       const limit  = req.query.limit ? Number(req.query.limit) : undefined;
-      const page = readSessionPage(ACTOR, sid, { before, limit });
-      const s = getSession(ACTOR, sid);
+      const page = readSessionPage(req.chatActor, sid, { before, limit });
+      const s = getSession(req.chatActor, sid);
       res.json({
         ...page,
         sessionId: sid,
@@ -293,7 +304,7 @@ export default function chatRouter() {
   router.post('/chat/reset', (req, res) => {
     try {
       const explicit = typeof req.body?.sessionId === 'string' ? req.body.sessionId : null;
-      const sid = resolveSessionId(ACTOR, explicit);
+      const sid = resolveSessionId(req.chatActor, explicit);
       if (!sid) return res.status(404).json({ error: 'session not found' });
 
       // Kill any in-flight turn for this session before resetting.
@@ -304,8 +315,8 @@ export default function chatRouter() {
         currentGen++;
       }
 
-      appendToSession(ACTOR, sid, { role: 'system', text: '--- new topic ---', kind: 'reset' });
-      setClaudeSessionId(ACTOR, sid, null);
+      appendToSession(req.chatActor, sid, { role: 'system', text: '--- new topic ---', kind: 'reset' });
+      setClaudeSessionId(req.chatActor, sid, null);
 
       try { writeRecentSnapshot({ channel: 'web' }); }
       catch (err) { process.stderr.write(`[chat/reset] snapshot refresh failed: ${err.message}\n`); }
@@ -327,7 +338,7 @@ export default function chatRouter() {
     // turn — this way the user's history doesn't lose the partial response.
     if (active.assistantText && active.assistantText.length > 0) {
       try {
-        appendToSession(ACTOR, sid, {
+        appendToSession(req.chatActor, sid, {
           role:  'assistant',
           text:  active.assistantText,
           state: 'interrupted',
@@ -365,7 +376,7 @@ export default function chatRouter() {
       return res.status(400).json({ error: 'message is required' });
     }
 
-    const sid = resolveSessionId(ACTOR, explicitSid);
+    const sid = resolveSessionId(req.chatActor, explicitSid);
     if (!sid) return res.status(404).json({ error: 'session not found' });
 
     // Interrupt: SIGTERM the in-flight turn for THIS session, persist its
@@ -377,7 +388,7 @@ export default function chatRouter() {
     if (prevActive) {
       if (interrupt && prevActive.assistantText) {
         try {
-          appendToSession(ACTOR, sid, {
+          appendToSession(req.chatActor, sid, {
             role:  'assistant',
             text:  prevActive.assistantText,
             state: 'interrupted',
@@ -426,15 +437,15 @@ export default function chatRouter() {
     // session's Claude id, so opening a new chat would --resume an unrelated
     // prior conversation's full context — "a completely different thread, and
     // something old broke through". Never borrow another session's brain.
-    const sessionEntry = getSession(ACTOR, sid);
+    const sessionEntry = getSession(req.chatActor, sid);
     const claudeSid = sessionEntry?.claudeSessionId || null;
 
     // No Claude session to --resume? Replay this session's own prior messages
     // (e.g. a proactive bot seed) so the assistant knows what it already said
     // here. Computed BEFORE appending the new user message so it's excluded.
-    const resumeContext = claudeSid ? null : buildResumeContext(ACTOR, sid);
+    const resumeContext = claudeSid ? null : buildResumeContext(req.chatActor, sid);
 
-    appendToSession(ACTOR, sid, { role: 'user', text: message, attachments: savedAttachments });
+    appendToSession(req.chatActor, sid, { role: 'user', text: message, attachments: savedAttachments });
 
     const baseMessage = savedAttachments.length === 0
       ? message
@@ -464,9 +475,9 @@ export default function chatRouter() {
       const cur = activeBySession.get(sid);
       if (cur && cur.gen === myGen) activeBySession.delete(sid);
       if (kind === 'done' && assistantText) {
-        appendToSession(ACTOR, sid, { role: 'assistant', text: assistantText });
+        appendToSession(req.chatActor, sid, { role: 'assistant', text: assistantText });
         // Phase 5: kick off auto-title async if eligible.
-        try { maybeAutoTitle(ACTOR, sid); }
+        try { maybeAutoTitle(req.chatActor, sid); }
         catch (err) { process.stderr.write(`[chat] auto-title scheduling failed: ${err.message}\n`); }
       }
       sendEvent(kind, payload);
@@ -496,7 +507,7 @@ export default function chatRouter() {
         // null forever (the manifest entry's claudeSessionId stays out of sync
         // with what claude actually used).
         if (newClaudeSid) {
-          try { setClaudeSessionId(ACTOR, sid, newClaudeSid); }
+          try { setClaudeSessionId(req.chatActor, sid, newClaudeSid); }
           catch (err) { process.stderr.write(`[chat] setClaudeSessionId: ${err.message}\n`); }
         }
         finish('done', { ok: true, session_id: newClaudeSid, sessionId: sid });

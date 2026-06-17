@@ -18,7 +18,7 @@ The full surface area is documented in [`docs/ARCHITECTURE.md`](../../docs/ARCHI
 
 ### Chat (multi-session)
 
-Web chat is **per-session**: each conversation is its own thread with its own Claude `--resume` id, stored append-only under `PROJECT_DIR/.team/users/{actor}/chats/{sessionId}.jsonl` (with an `_index.json` manifest). `actor` is `'default'` until multi-user team mode lands. Each session resumes its *own* Claude context, so one thread can't bleed into another — see the cross-surface note under `lib/claude.js`.
+Web chat is **per-session**: each conversation is its own thread with its own Claude `--resume` id, stored append-only under `PROJECT_DIR/.team/users/{actor}/chats/{sessionId}.jsonl` (with an `_index.json` manifest). `actor` is the user's team **slug** (resolved from the auth cookie in `routes/chat.js`), so each user gets their own sessions; the legacy single-user `'default'` history is adopted under the primary admin's slug at startup. Each session resumes its *own* Claude context, so one thread can't bleed into another — see the cross-surface note under `lib/claude.js`.
 
 | Endpoint | What it does |
 |---|---|

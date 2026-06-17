@@ -64,6 +64,27 @@ function writeIndex(actor, data) {
   renameSync(tmp, indexFile(actor));
 }
 
+/**
+ * One-time: adopt the legacy single-user 'default' chat history under the
+ * primary admin's slug when team mode switches to per-user keys. Idempotent —
+ * fires only when 'default' exists and the target doesn't. Renames the whole
+ * dir (atomic on one filesystem), so no history is lost.
+ */
+export function migrateDefaultSessions(targetActor) {
+  if (!targetActor || targetActor === 'default') return false;
+  const from = userDir('default');
+  const to   = userDir(targetActor);
+  if (!existsSync(from) || existsSync(to)) return false;
+  try {
+    mkdirSync(dirname(to), { recursive: true });
+    renameSync(from, to);
+    return true;
+  } catch (err) {
+    process.stderr.write(`[sessions] default→${targetActor} session migration failed: ${err.message}\n`);
+    return false;
+  }
+}
+
 function sortSessions(sessions) {
   // Pinned first, then by lastMessageAt desc. Mutates in place; callers rely
   // on sortSessions(idx.sessions) being the canonical UI ordering so we don't

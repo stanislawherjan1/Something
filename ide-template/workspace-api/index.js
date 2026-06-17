@@ -40,6 +40,7 @@ import notificationsRouter from './routes/notifications.js';
 import meRouter            from './routes/me.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
+import { migrateDefaultSessions } from './lib/sessions.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -143,6 +144,18 @@ try {
   }
 } catch (err) {
   process.stderr.write(`[workspace-api] team profile backfill failed: ${err.message}\n`);
+}
+
+// Team mode B1: adopt the legacy single-user 'default' web chat history under
+// the primary admin's slug, so per-user keying doesn't orphan it. After
+// ensureProfiles so the admin's slug is already assigned.
+try {
+  const adminSlug = team.primaryAdminSlug();
+  if (migrateDefaultSessions(adminSlug)) {
+    process.stdout.write(`[workspace-api] adopted default web chat history → ${adminSlug}\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] default session migration failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start

@@ -15,12 +15,13 @@ import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
+import { primaryAdminSlug } from '../lib/team.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
-// Single-user actor — matches routes/chat.js until multi-user team mode
-// lands. The internal endpoint creates the session as if the workspace
-// owner authored it; that surfaces it in their chat-history dropdown.
-const ACTOR = 'default';
+// A proactive bot message has no specific recipient yet (per-user targeting is
+// a later team-mode phase), so it surfaces in the primary admin's chat history
+// — the operator who'd act on it. Resolved per request so it tracks the current
+// admin. (Matches the per-user actor keying in routes/chat.js.)
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -99,8 +100,9 @@ export default function internalRouter() {
       return res.status(400).json({ ok: false, error: 'title or body required' });
     }
     try {
-      const session = createSession(ACTOR, { title: cleanTitle });
-      appendToSession(ACTOR, session.id, {
+      const actor = primaryAdminSlug();
+      const session = createSession(actor, { title: cleanTitle });
+      appendToSession(actor, session.id, {
         role: 'assistant',
         text,
         kind: 'bot',

@@ -34,22 +34,30 @@ import { atomicWrite } from './atomic-write.js';
 const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
 const MEMORY_DIR = join(PROJECT_DIR, 'memory');
 
-// Web chat history moved to per-session files when multi-session landed:
-// `<workspace>/.team/users/<actor>/chats/<sessionId>.jsonl`. The old single
-// `.chat/conversation.jsonl` is no longer written, so reading it left
-// RECENT_WEB.md frozen at the migration date. Aggregate the per-session
-// files instead. Single-actor ('default') for now; per-user in team mode.
-const WEB_CHATS_DIR = join(PROJECT_DIR, '.team', 'users', 'default', 'chats');
+// Web chat history lives in per-session files at
+// `<workspace>/.team/users/<actor>/chats/<sessionId>.jsonl`. Team mode keys
+// these per user, so aggregate across EVERY user dir (not a hardcoded
+// 'default', which the startup migration renames to the admin's slug). The
+// shared Telegram bot reads this combined "recent web" snapshot for
+// cross-surface awareness; per-user RECENT_WEB comes with per-user bots later.
+const WEB_USERS_ROOT = join(PROJECT_DIR, '.team', 'users');
 
 function listWebSessionFiles() {
-  try {
-    // *.jsonl session transcripts only — skips _index.json and the archive/ dir.
-    return readdirSync(WEB_CHATS_DIR)
-      .filter((f) => f.endsWith('.jsonl'))
-      .map((f) => join(WEB_CHATS_DIR, f));
-  } catch {
-    return [];
+  const out = [];
+  let users;
+  try { users = readdirSync(WEB_USERS_ROOT, { withFileTypes: true }); }
+  catch { return []; }
+  for (const u of users) {
+    if (!u.isDirectory()) continue;
+    const chatsDir = join(WEB_USERS_ROOT, u.name, 'chats');
+    try {
+      // *.jsonl session transcripts only — skips _index.json and archive/.
+      for (const f of readdirSync(chatsDir)) {
+        if (f.endsWith('.jsonl')) out.push(join(chatsDir, f));
+      }
+    } catch { /* this user has no chats dir yet — skip */ }
   }
+  return out;
 }
 
 // Merge every per-session web transcript into one timestamp-ordered tail.

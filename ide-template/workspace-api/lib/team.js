@@ -173,6 +173,19 @@ export function slugFor(email) {
 }
 
 /**
+ * Slug of the workspace's primary admin — the original (bootstrap) admin if
+ * present (entries are insertion-ordered, so the first admin is the bootstrap
+ * one), else the first member. Used to target owner-facing things that have no
+ * specific user yet (proactive bot web messages) and to adopt the legacy
+ * single-user 'default' chat history. Falls back to 'default'.
+ */
+export function primaryAdminSlug() {
+  const all = list();
+  const admin = all.find(u => u.role === 'admin') || all[0];
+  return admin?.slug || 'default';
+}
+
+/**
  * Persist slug + displayName for any legacy entries that lack them. Idempotent;
  * call once at startup so the on-disk store matches what list() derives, and a
  * user's personal directory slug is stable across restarts. Returns true if it
