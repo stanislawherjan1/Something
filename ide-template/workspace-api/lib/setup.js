@@ -297,7 +297,11 @@ export function clearClaudeToken(actor) {
   // export doesn't keep authing the bot after the operator clears the token.
   try {
     const botName = String(process.env.BOT_NAME || 'bot').trim() || 'bot';
-    const botEnvFile = join(homedir(), `.${botName}`, 'integrations.env');
+    // Must match hydrateBotIntegrationsEnv's BOT_USER_HOME (= /home/bot in
+    // prod). homedir() resolves to /home/coder under PM2, so clearing through
+    // homedir() edited the wrong (non-existent) file and left the real bot env
+    // still exporting the revoked token until the next container restart.
+    const botEnvFile = join(BOT_USER_HOME, `.${botName}`, 'integrations.env');
     if (existsSync(botEnvFile)) {
       const raw = readFileSync(botEnvFile, 'utf8');
       const lines = raw.split('\n').filter(l => !/^\s*export\s+CLAUDE_CODE_OAUTH_TOKEN=/.test(l) && !/^\s*CLAUDE_CODE_OAUTH_TOKEN=/.test(l));

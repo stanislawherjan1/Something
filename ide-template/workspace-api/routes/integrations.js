@@ -22,6 +22,7 @@ import express from 'express';
 import * as catalog from '../lib/integrations/catalog.js';
 import * as store from '../lib/integrations/store.js';
 import * as runtime from '../lib/integrations/runtime.js';
+import * as team from '../lib/team.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
 import { isReady, readinessError } from '../lib/integrations/crypto.js';
 
@@ -76,6 +77,20 @@ function readyOr503(_req, res, next) {
   });
 }
 
+// Credential writes (activate / rotate / remove) are admin-only — same gate as
+// team/branding/setup. attachActor (lib/auth.js) never rejects on its own, so
+// without this any actor-less request reaching workspace-api on 127.0.0.1:3001
+// (a compromised MCP, a code-server terminal, a prompt-injected bot — all of
+// which bypass nginx auth_request) could store, rotate, or wipe encrypted
+// secrets. Mirrors routes/team.js requireAdmin.
+function requireAdmin(req, res, next) {
+  if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+  if (!team.isAdmin(req.actor)) {
+    return res.status(403).json({ error: 'Only admins can change integrations.' });
+  }
+  next();
+}
+
 export default function integrationsRouter() {
   const router = Router();
 
@@ -109,7 +124,7 @@ export default function integrationsRouter() {
   });
 
   // PUT — activate one integration. Body shape: { fields: { NAME: value, ... } }
-  router.put('/integrations/:id', readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+  router.put('/integrations/:id', requireAdmin, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
@@ -221,7 +236,7 @@ export default function integrationsRouter() {
   // credentials. Body: { fields: {...} } for single, { globalFields: {...} }
   // for multi. Used to flip Permissions toggles (e.g. EMAIL_ALLOW_SEND)
   // without a full Remove → Activate cycle.
-  router.patch('/integrations/:id', readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+  router.patch('/integrations/:id', requireAdmin, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
@@ -274,7 +289,7 @@ export default function integrationsRouter() {
   });
 
   // DELETE — wipe credentials and deactivate.
-  router.delete('/integrations/:id', readyOr503, rateLimit, async (req, res) => {
+  router.delete('/integrations/:id', requireAdmin, readyOr503, rateLimit, async (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
