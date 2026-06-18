@@ -39,6 +39,7 @@ const CANONICAL_CARDS = new Set([
   'RULES',
   'USER_PROFILE', 'USER_PREFERENCES', 'USER_RELATIONSHIPS', 'USER_REFLECTIONS',
   'AGENT_IDENTITY', 'AGENT_TOOLS',
+  'TEAM',   // shared team-directory card (team mode)
 ]);
 
 const MAX_FILE_BYTES = 1 * 1024 * 1024;  // 1 MB per file when scanning

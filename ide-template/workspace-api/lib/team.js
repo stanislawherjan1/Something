@@ -19,7 +19,7 @@
 
 import {
   mkdirSync, readFileSync, writeFileSync, renameSync, existsSync,
-  appendFileSync, chmodSync,
+  appendFileSync, chmodSync, unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
@@ -301,6 +301,7 @@ export function add({ email, role = 'member', addedBy, displayName }) {
   entries.push(entry);
   writeRaw(entries);
   appendAudit('add', e, { role, slug, addedBy: entry.addedBy });
+  writeTeamRoster();
   return entry;
 }
 
@@ -326,6 +327,7 @@ export function setRole({ email, role, actor }) {
   entries[idx] = { ...entries[idx], role };
   writeRaw(entries);
   appendAudit('role_change', e, { from: previous, to: role, actor: normalize(actor) || null });
+  writeTeamRoster();
   return entries[idx];
 }
 
@@ -348,6 +350,7 @@ export function remove({ email, actor }) {
   entries.splice(idx, 1);
   writeRaw(entries);
   appendAudit('remove', e, { role: removed.role, actor: actorEmail || null });
+  writeTeamRoster();
   return removed;
 }
 
@@ -422,5 +425,52 @@ export function setTeamMode(enabled, actor) {
   if (actor) cfg.updatedBy = normalize(actor);
   writeConfig(cfg);
   appendAudit('team_mode', actor || '', { enabled: !!enabled });
+  writeTeamRoster();   // roster card appears/disappears with team mode
   return cfg.teamMode;
+}
+
+const TEAM_ROSTER = join(PROJECT_DIR, 'memory', 'TEAM.md');
+
+/**
+ * Write the shared team-directory card `memory/TEAM.md` from the roster — the
+ * SHARED counterpart to the per-user private profiles. PUBLIC fields only
+ * ({displayName, slug, role}); each person's profile CONTENT stays private in
+ * memory/users/<slug>/, so the slug here is a POINTER, not the content. Gated on
+ * team mode (removed in solo so it's not noise). Idempotent; call at startup and
+ * whenever the roster changes (add/remove/setRole). Returns true if it changed
+ * the file. memory/ is shared, so this card is visible to every teammate + the
+ * memory dashboard — that's intended (knowing who's on the team is not private).
+ */
+export function writeTeamRoster() {
+  try {
+    if (!getTeamMode()) {
+      if (existsSync(TEAM_ROSTER)) { unlinkSync(TEAM_ROSTER); return true; }
+      return false;
+    }
+    const rows = list()
+      .map(m => `| ${m.displayName || m.slug} | \`${m.slug}\` | ${m.role} | \`memory/users/${m.slug}/\` |`)
+      .join('\n');
+    const body =
+`---
+card: TEAM
+purpose: Team roster — who is in this workspace (display name, slug, role). Each person's detailed profile is PRIVATE in memory/users/<slug>/ — you only see the current user's, plus admins see all. The slug is a pointer, not the content.
+---
+
+# Team
+
+The people sharing this workspace. Use it to recognise teammates and for attribution. A person's profile, preferences, and notes are their OWN private memory at \`memory/users/<slug>/\` — never assume this roster reveals their personal facts, and never open another teammate's private memory (it's tool-guard blocked unless it's the current user or you're an admin).
+
+| Name | slug | Role | Private memory |
+|------|------|------|----------------|
+${rows}
+`;
+    mkdirSync(join(PROJECT_DIR, 'memory'), { recursive: true });
+    const tmp = `${TEAM_ROSTER}.tmp`;
+    writeFileSync(tmp, body);
+    renameSync(tmp, TEAM_ROSTER);
+    return true;
+  } catch (err) {
+    process.stderr.write(`[team] writeTeamRoster failed: ${err.message}\n`);
+    return false;
+  }
 }

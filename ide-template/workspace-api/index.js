@@ -143,6 +143,10 @@ try {
   if (team.ensureProfiles()) {
     process.stdout.write('[workspace-api] backfilled team user profiles (slug/displayName)\n');
   }
+  // Shared team-directory card (memory/TEAM.md) — the SHARED counterpart to the
+  // per-user private profiles. Regenerated from the roster on every boot (and on
+  // add/remove/setRole); removed in solo mode.
+  team.writeTeamRoster();
 } catch (err) {
   process.stderr.write(`[workspace-api] team profile backfill failed: ${err.message}\n`);
 }
