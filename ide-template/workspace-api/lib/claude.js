@@ -107,6 +107,7 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     args.push('--append-system-prompt',
       `[ACTOR ${who}] You are talking to ${me} — the person typing right now. "I", "me", "my", "we" from them mean ${me}.${roster} ` +
+      `CRITICAL — do not confuse the workspace OWNER with ${me}: your SHARED context (the project CLAUDE.md, the shared memory cards AGENT_IDENTITY/AGENT_TOOLS/RULES/INDEX/topics, the knowledge graph, any auto-memory) was authored for this workspace's OWNER/operator, who is very likely a DIFFERENT person than ${me}. When that shared context names a person, says "the user/you", or lists clients/projects/preferences, it is the OWNER's context — NOT ${me}'s. Establish who ${me} is ONLY from this line + their own private memory/users/${actor}/ profile. Never tell ${me} they are the owner, never call ${me} by the owner's name, and never attribute the owner's profile/preferences/clients to ${me}. ` +
       `Each teammate has their OWN private files, conversations, and memory; you can only see ${me}'s. ` +
       `Their private "Your Files" = project/users/${actor}/; Shared Files = the project root. ` +
       `If asked what you discussed with — or about the private files/memory of — another teammate, say you don't have access; each person's are private. ` +
