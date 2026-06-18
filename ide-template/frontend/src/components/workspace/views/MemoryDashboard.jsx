@@ -42,6 +42,10 @@ const DARK_PALETTE = {
 
 const NODE_RADIUS = { index: 9, card: 6.5, topic: 4.5 };
 
+// Per-user ('yours') node ids are prefixed `yours:` to stay unique in the
+// graph; strip it for any user-facing label.
+const cleanId = (id) => String(id || '').replace(/^yours:/, '');
+
 export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const { botDisplayName } = useBranding();
   const [graph, setGraph] = useState(null);
@@ -168,7 +172,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       ctx.fillStyle = isDark ? 'rgba(226,232,240,0.92)' : 'rgba(15,23,42,0.92)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const label = node.id;
+      const label = cleanId(node.id);
       ctx.fillText(label, node.x, node.y + radius + 2.5);
     }
   }, [matchSet, isDark]);
@@ -431,7 +435,7 @@ function HoverPreview({ node }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className="size-3.5 shrink-0 text-muted-foreground/65" strokeWidth={1.75} />
-          <span className="truncate text-[13px] font-semibold text-foreground/90">{node.id}</span>
+          <span className="truncate text-[13px] font-semibold text-foreground/90">{cleanId(node.id)}</span>
         </div>
         <span className="shrink-0 rounded-full border border-border/55 bg-background/80 px-1.5 py-[2px] text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/75">
           {KIND_LABEL[node.kind] || node.kind}
