@@ -319,14 +319,14 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
 // ─── Row ──────────────────────────────────────────────────────────────────
 
 function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onChangeRole }) {
-  const { email, role, addedAt, addedBy } = entry;
+  const { email, role, addedAt, addedBy, avatarUrl } = entry;
   return (
     <div className={cn(
       'group flex items-center gap-3 px-4 py-3 transition-colors',
       !isFirst && 'border-t border-border/40',
       'hover:bg-muted/25',
     )}>
-      <Avatar email={email} />
+      <Avatar email={email} avatarUrl={avatarUrl} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 truncate text-[13.5px] font-medium text-foreground/90">
           {email}
@@ -393,7 +393,7 @@ function RolePill({ role, canManage, onChange }) {
   );
 }
 
-function Avatar({ email }) {
+function Avatar({ email, avatarUrl }) {
   const initial = (email || '?').trim().charAt(0).toUpperCase();
   const palette = [
     'from-yellow-200 to-amber-300',
@@ -404,11 +404,13 @@ function Avatar({ email }) {
   const idx = (email || '').charCodeAt(0) % palette.length;
   return (
     <div className={cn(
-      'flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br',
+      'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br',
       'text-[12px] font-semibold text-foreground ring-1 ring-border/60',
       palette[idx],
     )}>
-      {initial}
+      {avatarUrl
+        ? <img src={avatarUrl} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        : initial}
     </div>
   );
 }

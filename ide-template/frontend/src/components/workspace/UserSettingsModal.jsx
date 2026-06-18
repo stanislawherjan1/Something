@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { X, Loader2, Upload, Trash2, AlertTriangle } from 'lucide-react';
-import { invalidate } from '@/lib/useApi';
+import { mutate } from '@/lib/useApi';
 
 /**
  * UserSettingsModal — a user edits their OWN profile: display name + avatar.
@@ -69,8 +69,13 @@ export default function UserSettingsModal({ me, onClose }) {
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Name update failed (${r.status})`);
       }
-      invalidate('/api/me');     // user menu name + avatar
-      invalidate('/api/team');   // team list name + avatar
+      // Refetch + push fresh data so mounted views (UserMenu, Team list) update
+      // immediately — invalidate() alone marks stale but doesn't refetch hooks
+      // that are already mounted.
+      const freshMe = await fetch('/api/me').then(r => r.ok ? r.json() : null).catch(() => null);
+      if (freshMe) mutate('/api/me', freshMe);
+      const freshTeam = await fetch('/api/team').then(r => r.ok ? r.json() : null).catch(() => null);
+      if (freshTeam) mutate('/api/team', freshTeam);
       onClose();
     } catch (err) {
       setError(err.message);

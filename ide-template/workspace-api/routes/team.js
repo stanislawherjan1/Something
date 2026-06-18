@@ -20,6 +20,7 @@ import { Router } from 'express';
 import express from 'express';
 import * as team from '../lib/team.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
+import { avatarUrl } from '../lib/user-avatars.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -63,7 +64,7 @@ export default function teamRouter() {
   const router = Router();
 
   router.get('/team', (req, res) => {
-    const entries = team.list();
+    const entries = team.list().map(e => ({ ...e, avatarUrl: avatarUrl(e.slug) }));
     const me = req.actor ? team.find(req.actor) : null;
     res.json({
       entries,
