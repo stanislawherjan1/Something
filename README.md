@@ -132,7 +132,7 @@ Your coworker doesn't start from zero every conversation. A small markdown wiki 
 
 Open **AI Settings → Memory** to see it as a graph: cards (facts), topic pages (long-form), and the two auto-maintained rolling snapshots, all linked together. Click any node to see the file, search to highlight, and let the bot maintain itself — `reflect-learnings` writes new facts after each session, `reflect-organizer` promotes overgrown card sections to topic pages, `taste-recall` reminds the bot of past mistakes before it repeats them.
 
-Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern. Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
+Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern, and built in collaboration with [@jandziew](https://github.com/jandziew). Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
 
 <br/>
 
