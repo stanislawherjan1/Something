@@ -19,9 +19,20 @@ export const USERS_DIR = 'users';
  */
 export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) {
   if (isAdmin) return true;
-  const rel = String(relPosix || '').replace(/^\/+/, '').replace(/\/+$/, '');
-  if (rel === '' || rel === '.') return true;
-  const personal = ownSlug ? `${USERS_DIR}/${ownSlug}` : null;
-  if (personal && (rel === personal || rel.startsWith(personal + '/'))) return true;
-  return rel.split('/')[0] !== USERS_DIR;
+  // Normalize BEFORE the positional check so it can't be defeated by empty
+  // ('//') or dot ('/./') segments — 'memory//users/bob' and 'memory/./users/bob'
+  // must both classify as the memory tree and get denied. Reject upward
+  // traversal outright: a member never legitimately needs '..' (the real path
+  // has none), so any '..' is treated as out of scope.
+  const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
+  if (parts.some(p => p === '..')) return false;
+  if (parts.length === 0) return true;              // project root / '.' → shared listing
+  // Each user has TWO private trees: their files (users/<slug>/…) and their
+  // memory (memory/users/<slug>/…). Own → allow; another user's → deny;
+  // everything else (the shared team space) → allow.
+  const isUsersTree = parts[0] === USERS_DIR;                            // users/<slug>/…
+  const isMemTree   = parts[0] === 'memory' && parts[1] === USERS_DIR;   // memory/users/<slug>/…
+  if (!isUsersTree && !isMemTree) return true;
+  if (!ownSlug) return false;                       // a private tree, but the actor has no slug
+  return (isMemTree ? parts[2] : parts[1]) === ownSlug;
 }

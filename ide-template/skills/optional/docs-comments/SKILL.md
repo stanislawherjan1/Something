@@ -56,23 +56,23 @@ ONLY when the comment must anchor to a specific text fragment.
 | `occurrence` | Optional. 1-based index when `find_text` appears multiple times. Default: 1. |
 | `find_context` | Optional. A short phrase from the same paragraph as the target match. Audit breadcrumb today. Pass it whenever you have it. |
 
-Flow (auto-approved per Stan's preference — comments are reversible, no external surface burned):
+Flow (auto-approved per the operator's preference — comments are reversible, no external surface burned):
 
 1. **Pre-flight on Telegram** — before the call, one short message:
    > *"Dodaję komentarz przy '<short fragment quote>' — <short comment>"*
-   Not a confirmation request; you proceed immediately. It lets Stan interrupt
+   Not a confirmation request; you proceed immediately. It lets the operator interrupt
    if you misread, and gives a real-time trail.
 2. **Call once per comment, sequential.** Each call spawns a Chromium for ~5s;
-   don't parallelise (browser-per-call + audit log assume serial). If Stan asks
+   don't parallelise (browser-per-call + audit log assume serial). If the operator asks
    for many at once, warn about time upfront (*"30 komentarzy idzie partiami,
    ~2-3 minuty"*).
 3. **On success** `{ ok:true, occurrence_used:N }`: brief TG ack *"✓ dodane"*.
 4. **On failure**, read the error verbatim:
-   - *"is not connected"* / *"session expired"* → tell Stan to reconnect via the
+   - *"is not connected"* / *"session expired"* → tell the operator to reconnect via the
      workspace UI (Integrations → Docs Comments → Connect to Google). Do NOT
      auto-retry.
    - *"unexpected post-goto URL"* → wrong doc id, or the doc isn't shared with
-     the browser-login account. Ask Stan to verify the link.
+     the browser-login account. Ask the operator to verify the link.
 
 ## Working with existing comments (`mcp__gdrive__*`)
 
@@ -89,17 +89,17 @@ These act on a Drive **`file_id`** (same long id as the doc) and a comment **`id
   reply with `action:'resolve'`; optional closing message. The comment becomes
   `resolved:true` and leaves the open set.
 - `delete_comment({ file_id, comment_id })` → removes the thread. Destructive —
-  prefer resolve unless Stan explicitly wants it gone.
+  prefer resolve unless the operator explicitly wants it gone.
 
 The three mutating tools need write access (Google Workspace
 `GWORKSPACE_ALLOW_WRITE=yes`). If it's read-only, they refuse with a clear
 message — relay it; don't retry. A missing file or comment returns
-`{ ok:false, reason:"not_found" }` (not an error) — tell Stan the comment is
+`{ ok:false, reason:"not_found" }` (not an error) — tell the operator the comment is
 already gone / the id was wrong; don't retry blindly.
 
 ### Example — resolve everything that's been addressed
 
-Stan: *"pozamykaj komentarze które już ogarnęliśmy w drafcie mimira"*
+the operator: *"pozamykaj komentarze które już ogarnęliśmy w drafcie acme"*
 
 ```
 mcp__gdrive__list_comments({ file_id: "1A2b3C4d5E6f..." })
@@ -111,7 +111,7 @@ mcp__gdrive__resolve_comment({ file_id: "1A2b3C4d5E6f...", comment_id: "AAAA1" }
 
 ### Example — add an anchored comment
 
-Stan: *"skomentuj w mimirze fragment 'forecast Q4 wzrost 30%' że to optymistyczne"*
+the operator: *"skomentuj w acme fragment 'forecast Q4 wzrost 30%' że to optymistyczne"*
 
 ```
 mcp__docs-comments__add_comment({
@@ -141,4 +141,4 @@ mcp__docs-comments__add_comment({
   can't read it). Re-login is via the workspace UI when Google rotates it.
 - Audit log: every `add_comment` appends one structured line to
   `.docs-comments-audit.jsonl` with hashes of the doc id + fragment + outcome —
-  no bodies. Stan can grep it to see what the bot did.
+  no bodies. the operator can grep it to see what the bot did.

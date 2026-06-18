@@ -32,6 +32,6 @@ Recurring pattern: I keep starting tasks I should delegate, then half-finish
 them and pass off late. Rule for self: if it took >30s to decide whether to
 do it myself, the answer is delegate.
 Trigger: missed deadline on Thursday's report (drafted myself instead of
-asking Maciej).
+asking Jordan).
 -->
 

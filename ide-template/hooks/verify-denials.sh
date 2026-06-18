@@ -192,8 +192,17 @@ if echo "$TOOLS_USED" | grep -qE "$LOOKUP_TOOLS_PATTERN"; then
 fi
 
 # Block. Also append to patterns/verification-failures.md so taste-recall
-# can surface this back to the model in future sessions.
-PATTERNS_FILE="${PROJECT_DIR:-/home/coder/project}/memory/patterns/verification-failures.md"
+# can surface this back to the model in future sessions. Team mode: a member's
+# absence-claim failure is their OWN behavioural pattern, so route it to their
+# private memory/users/<slug>/patterns/ — not the shared file every teammate's
+# taste-recall reads. Validate the slug (path safety); fall back to the shared
+# file for the operator/Telegram surface (no slug), 'default', or solo.
+_slug="${IDE_ACTOR_SLUG:-}"
+case "$_slug" in
+    ""|default|*[!a-z0-9-]*) _pat_dir="memory/patterns" ;;
+    *)                       _pat_dir="memory/users/${_slug}/patterns" ;;
+esac
+PATTERNS_FILE="${PROJECT_DIR:-/home/coder/project}/${_pat_dir}/verification-failures.md"
 if [ -d "$(dirname "$PATTERNS_FILE")" ] || mkdir -p "$(dirname "$PATTERNS_FILE")" 2>/dev/null; then
     {
         echo ""
@@ -221,7 +230,7 @@ Before claiming absence, verify with at least one of:
 
 If after 1-2 lookups you still don't find it, ASK the operator for clarification — don't refuse outright.
 
-This block has been logged to memory/patterns/verification-failures.md so
+This block has been logged to ${_pat_dir}/verification-failures.md so
 taste-recall can show it back to you next session — try not to repeat it.
 
 Retry your response with a verification step first.

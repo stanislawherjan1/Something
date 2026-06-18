@@ -5,6 +5,7 @@ These paths/items are off-limits for silent action. Always classify as 🔴 and 
 ## Hard exclusions
 
 - **`${BOT_NAME}/`** — bot's journal. Historical record, sacred. Never delete, move, or rename anything inside.
+- **`memory/users/` and `users/` (per-user private trees — team mode)** — another teammate's private memory + files. NEVER auto-execute anything on them, never case-merge two slugs (distinct people, not typos), and **never print a path/filename under them into the shared Telegram report or the shared `Audit.md`** — that surfaces one person's private memory to everyone. If a per-user finding must be surfaced at all, do it as a count-only line ("N items in private user spaces") with zero path detail, or route it to that user's own space — never the shared channel. The audit runs as the operator (scope-guard fails open for it), so the skill is the only thing enforcing this.
 - **User-named top-level folders** (e.g. `Marketing/`, `Brand/`, `Products/`, `Inbox/`, `Research/`, anything not in the bootstrap whitelist). Treat as user content. Touch only with per-file approval.
 - **Anything mentioned in `Tasks.md`, `.reminders.json`, or `Pending Reminders.md`** — likely in flight. Cross-reference before flagging.
 

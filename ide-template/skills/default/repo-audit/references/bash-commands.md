@@ -29,21 +29,30 @@ find ~/project -type f -mtime +30 \
   ! -path '*/.git/*' ! -path '*/.playwright-mcp/*' \
   ! -path '*/.chat/*' ! -path '*/.claude/sessions/*' \
   ! -path '*/inbox/*' \
+  ! -path '*/memory/users/*' \
   | head -50
 ```
+
+> `! -path '*/memory/users/*'` keeps per-user **private** memory (team mode) out of the audit entirely — a teammate's stale private note must never be flagged by filename into the shared report.
 
 ## Empty folders (14+ days old, no children)
 
 ```bash
 find ~/project -type d -empty -mtime +14 \
-  ! -path '*/.git*' ! -path '*/.playwright-mcp*'
+  ! -path '*/.git*' ! -path '*/.playwright-mcp*' \
+  ! -path '*/memory/users/*'
 ```
+
+> The exclusion also stops the rmdir step from deleting a freshly-bootstrapped-but-not-yet-written `memory/users/<slug>/` dir.
 
 ## Twin folders (case differences) — common typo source
 
 ```bash
-find ~/project -maxdepth 2 -type d -printf '%f\n' | sort -f | uniq -i -d
+find ~/project -maxdepth 2 -type d -printf '%f\n' | sort -f | uniq -i -d \
+  | grep -vi '^users$'
 ```
+
+> **NEVER case-merge anything under `memory/users/` or `users/`.** Distinct slugs are distinct **people**, not typos — `users/Alex` and `users/alex` would only collide if two real accounts slugged that way, and merging them fuses two teammates' private spaces. Exclude the `users` container from the twin scan and never auto-`git mv` a per-user dir.
 
 ## .playwright-mcp leftover screenshots (always safe to wipe weekly)
 

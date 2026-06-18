@@ -28,7 +28,7 @@ project/memory/
 ├── RECENT_TELEGRAM.md        ← auto: rolling snapshot of recent Telegram exchanges
 ├── topics/
 │   ├── ABOUT.md              ← what kind of content lives here
-│   └── <slug>.md             ← per-topic long-form (e.g. krystian.md, q3-okrs.md)
+│   └── <slug>.md             ← per-topic long-form (e.g. sam.md, q3-okrs.md)
 └── patterns/
     ├── ABOUT.md              ← anti-pattern store description
     └── <slug>.md             ← "the bot got X wrong; here's the rule" cards

@@ -57,7 +57,7 @@ If Step 3 found gaps (configured-but-undocumented or documented-but-deactivated)
 ```
 Heads up — I see <integration> was added today. If you want, I can run a mini-tour or help describe it in CLAUDE.md Context. Or skip it and continue what we were doing.
 ```
-Don't push if user moves on. Track in memory `capability-tour-state` so you don't repeat. Once-per-fortnight cap on proactive surfacing — see [references/gap-handling.md](references/gap-handling.md) for the throttle pattern.
+Don't push if user moves on. Track in memory `capability-tour-state` so you don't repeat — in a team workspace key it **per user** (`capability-tour-state:<actor-slug>`) so one teammate's dismissal doesn't suppress the tour for everyone. Once-per-fortnight cap on proactive surfacing — see [references/gap-handling.md](references/gap-handling.md) for the throttle pattern.
 
 ## Why this exists
 

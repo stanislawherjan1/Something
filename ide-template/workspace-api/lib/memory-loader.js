@@ -37,9 +37,10 @@
  * cache once + read many times.
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, mkdirSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
+import { USERS_DIR } from './scope-rule.js';
 
 // Locked load order. Don't reorder without bumping a version marker in the
 // preamble — anything earlier in the block changing busts everything after.
@@ -58,6 +59,21 @@ const LOAD_ORDER = [
   { id: 'RECENT_WEB',       path: 'RECENT_WEB.md' },
   { id: 'RECENT_TELEGRAM',  path: 'RECENT_TELEGRAM.md' },
 ];
+
+// Cards that are PER-USER in team mode. A person's profile and how they like
+// the bot to work are about THEM — not the team. So when buildCachedPrefix() is
+// given an actor, these load from that user's private memory (memory/users/<slug>/)
+// instead of the shared flat file, and one teammate's profile/preferences never
+// bleed into another's prompt. Solo workspaces (no actor) ignore this and load
+// everything flat, as before. The rest of LOAD_ORDER (agent identity, tools,
+// rules, index, Telegram tail) stays shared across the team.
+//
+// RECENT_WEB is per-user CONCEPTUALLY but stays OUT of this set until the
+// snapshot writer (recent-snapshot.js) writes memory/users/<slug>/RECENT_WEB.md
+// — otherwise an actor-passing caller (the Telegram prefix) would load an empty
+// per-user card instead of the populated flat one. Re-add it together with the
+// per-user writer.
+const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES']);
 
 const MAX_CARD_BYTES = 256 * 1024; // 256 KB ceiling per card — defensive
 
@@ -342,7 +358,7 @@ export function approxTokens(s) {
  *
  *   'memory/**'                   → matches any file under memory/
  *   'memory/INDEX.md'             → exact match
- *   'memory/topics/mimira/**'     → matches files under that subtree
+ *   'memory/topics/acme/**'     → matches files under that subtree
  *   'memory/topics/&#42;.md'           → matches direct .md children
  *
  * Returns true if no patterns supplied (no filtering requested) or if any
@@ -426,14 +442,25 @@ export function buildCachedPrefix(opts = {}) {
   // sit at the tail of the order.
   const excludeIds = Array.isArray(opts.excludeIds) ? new Set(opts.excludeIds) : null;
 
+  // Team mode: the USER_TIER cards load from this actor's private memory
+  // (memory/users/<slug>/) instead of the shared flat file. Solo / no actor /
+  // 'default' → null, so every card loads flat exactly as before. The slug
+  // becomes a path segment, so validate it (upstream already slugifies to
+  // [a-z0-9-]; this keeps the loader's safety contract self-contained — a
+  // malformed actor falls back to flat, never escapes the user dir).
+  const rawActor = opts.actor && opts.actor !== 'default' ? String(opts.actor) : null;
+  const actorSlug = rawActor && /^[a-z0-9-]+$/.test(rawActor) ? rawActor : null;
+  const userMemoryDir = actorSlug ? join(memoryDir, USERS_DIR, actorSlug) : null;
+
   const parts = [PREAMBLE];
   const sources = [];
 
   for (const { id, path } of LOAD_ORDER) {
     if (excludeIds && excludeIds.has(id)) continue;
-    const relPath = `memory/${path}`;
+    const personal = !!(userMemoryDir && USER_TIER.has(id));
+    const relPath = personal ? `memory/${USERS_DIR}/${actorSlug}/${path}` : `memory/${path}`;
     const inScope = memoryPaths === null || pathMatchesMemoryPaths(relPath, memoryPaths);
-    const abs = join(memoryDir, path);
+    const abs = join(personal ? userMemoryDir : memoryDir, path);
     let bytes = 0;
     let present = false;
     let body = '';
@@ -446,7 +473,7 @@ export function buildCachedPrefix(opts = {}) {
       }
     } catch { /* defensive: report as missing */ }
 
-    sources.push({ id, path, bytes, present, in_scope: inScope });
+    sources.push({ id, path, bytes, present, in_scope: inScope, tier: personal ? 'user' : 'shared' });
 
     if (!inScope) continue; // narrowed projects: silently skip
     parts.push(`## ${id}\n\n${body || '(empty — card not yet populated)'}\n\n---\n\n`);
@@ -464,6 +491,41 @@ export function buildCachedPrefix(opts = {}) {
     sources,
     approxTokens: approxTokens(block),
   };
+}
+
+/**
+ * One-time, idempotent adoption of the solo-era personal cards under the
+ * primary admin. Before team mode, memory/USER_PROFILE.md +
+ * memory/USER_PREFERENCES.md ARE the operator's profile/preferences. Once
+ * USER_TIER cards load per-user (above), the admin would otherwise lose that
+ * learned context — so move the flat cards into the admin's private memory
+ * (memory/users/<adminSlug>/). No-op when there's no admin slug, the flat card
+ * is gone, or the admin already has one. Only the USER_TIER cards are adopted.
+ * Mirrors migrateDefaultSessions(). Returns true if it moved anything.
+ *
+ * The caller (index.js) gates this on team mode so memory-loader stays free of
+ * a team.js dependency (no import cycle).
+ */
+export function migrateDefaultMemory(adminSlug) {
+  // Re-validate the slug as a path segment (same self-contained contract as
+  // buildCachedPrefix + the B2b-3 siblings) — a malformed slug is a no-op, never
+  // a renameSync into an escaped path.
+  if (!adminSlug || adminSlug === 'default' || !/^[a-z0-9-]+$/.test(adminSlug)) return false;
+  const memoryDir = memoryDirFor();
+  const destDir = join(memoryDir, USERS_DIR, adminSlug);
+  let moved = false;
+  for (const { id, path } of LOAD_ORDER) {
+    if (!USER_TIER.has(id)) continue;   // only the per-user cards (USER_PROFILE/PREFERENCES)
+    const src = join(memoryDir, path);
+    const dest = join(destDir, path);
+    try {
+      if (!existsSync(src) || existsSync(dest)) continue;
+      mkdirSync(destDir, { recursive: true });
+      renameSync(src, dest);
+      moved = true;
+    } catch { /* best-effort — a real FS error just leaves the flat card dormant */ }
+  }
+  return moved;
 }
 
 /**

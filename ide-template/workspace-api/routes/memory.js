@@ -22,6 +22,7 @@ import { grepMemory } from '../lib/memory-grep.js';
 import { buildCachedPrefix, meetsCacheFloor } from '../lib/memory-loader.js';
 import { listVerdictCards, readVerdictCard } from '../lib/verdict-card-reader.js';
 import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
+import { getTeamMode, primaryAdminSlug } from '../lib/team.js';
 
 export default function memoryRouter() {
   const router = Router();
@@ -68,7 +69,14 @@ export default function memoryRouter() {
   // told the model "you have these in your prefix, don't re-read" (gaslit).
   router.get('/memory/prefix', (req, res) => {
     try {
-      const result = buildCachedPrefix();
+      // This endpoint has no per-user identity (it's the bot/Telegram surface
+      // + the pre-warm script). In team mode the personal cards (USER_PROFILE /
+      // USER_PREFERENCES) live under memory/users/<slug>/, and migrateDefaultMemory
+      // relocated the operator's solo cards to the PRIMARY ADMIN's private dir —
+      // so resolve the actor to that admin, or the bot would read the now-empty
+      // flat cards. Solo → undefined → flat load, unchanged.
+      const actor = getTeamMode() ? primaryAdminSlug() : undefined;
+      const result = buildCachedPrefix({ actor });
       if (req.query.raw === '1') {
         res.type('text/plain').send(result.block || '');
         return;

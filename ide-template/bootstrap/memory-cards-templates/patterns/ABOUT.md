@@ -10,6 +10,14 @@ conflict: When two patterns disagree, the newer one wins. Older ones get a `supe
 
 This directory holds **anti-patterns** — things the workspace got wrong once and shouldn't get wrong again. It's the structured "taste memory" that complements the trial-and-error layer most LLM systems lack.
 
+## Team workspace — shared vs private patterns
+
+Most patterns are **personal taste** (one person's "warmer, less corporate Polish") — and personal taste is private. So in a team workspace:
+
+- **Shared `memory/patterns/`** holds only genuinely **team-wide** anti-patterns (a shared tooling/process failure everyone should avoid).
+- **Private `memory/users/<slug>/patterns/`** holds one person's taste/rejection patterns. `taste-recall` loads the current user's private patterns + the shared ones, never another teammate's.
+- Apply the **"would this help a DIFFERENT teammate?"** test (same as `memory-router`) when deciding where a new pattern lands. Solo workspace → only `memory/patterns/`.
+
 ## Why this exists
 
 Without negative-example memory, every prompt change is a vibes-based experiment. the user's framing: *"every feedback, every broken thing that doesn't work, gets remembered and works the next time."*
@@ -33,7 +41,7 @@ examples_avoided:
     excerpt: "I am writing to inquire about..."
 superseded_by: <newer-file-name>?   # optional, only if a later pattern overrules this
 ---
-- Use direct address ("Cześć Maciej") not "Szanowny Panie"
+- Use direct address ("Cześć Jordan") not "Szanowny Panie"
 - Keep under 5 sentences
 - One ask, not three
 ```

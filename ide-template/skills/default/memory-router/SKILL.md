@@ -1,6 +1,6 @@
 ---
 name: memory-router
-description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS) or to documents/ / session/ / skills/. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
+description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS) or to documents/ / session/ / skills/. In a team workspace it also decides Shared vs Private — personal cards (profile, preferences, relationships, reflections) route to the CURRENT user's private memory at memory/users/<slug>/, shared facts to the flat memory/ root. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
 allowed-tools: Read, Edit, Write
 ---
 
@@ -8,36 +8,49 @@ allowed-tools: Read, Edit, Write
 
 When the user shares something worth keeping, this skill picks the destination. The structure of memory is fixed (`memory-cards` skill describes the seven cards); this skill applies the routing rules.
 
+## Step 0 — Shared or private? (team workspace)
+
+Check this turn's context for an `[ACTOR name (slug: <slug>)]` line:
+
+- **No `[ACTOR]` line → solo workspace.** There is only `memory/` and `documents/`. Ignore this step; use the bare paths in the tree below exactly as written.
+- **`[ACTOR]` line present → team mode.** Every destination is **Shared** or **Private**. Apply the test:
+  > **"Would this fact be useful to a DIFFERENT teammate?"**
+  - **No** — it's about *this* person, their taste, their contacts, or their introspection → **Private**: prefix the destination with `memory/users/<their-slug>/` (cards) or `users/<their-slug>/` (documents). Personal preferences and individual working style are **ALWAYS** private.
+  - **Yes** — a company fact, a shared project, a team-wide rule or convention → **Shared**: use the flat `memory/` / `documents/` path.
+- **Hard boundary:** only ever write the CURRENT actor's private space or the shared space — never another teammate's `memory/users/<other-slug>/` or `users/<other-slug>/`.
+
+Each card in the tree is tagged **[private]** (per-user in team mode) or **[shared]** (always flat). In solo mode every entry is flat.
+
 ## Routing decision tree
 
 Walk these in order. **Stop at the first match.**
 
 1. **Hard rule** — phrases like "from now on never", "always", "never", "must", "don't ever", or a correction the user explicitly wants to stick.
-   → `memory/RULES.md`. Add one short bullet under `## Never` or `## Always`. Max ~10 words. No preamble.
+   → `memory/RULES.md` **[shared]**. Add one short bullet under `## Never` or `## Always`. Max ~10 words. No preamble. *(A rule the user wants only for THEMSELVES — "always greet me in Polish" — is a preference: route to card 3 instead.)*
 
 2. **Stable fact about the user** — role, location, language, tools they use professionally, dates that don't change weekly.
-   → `memory/USER_PROFILE.md`. Place under the matching subsection (Identity / Background / Currently focused on / Schedule). Tighten existing entries — don't accrete duplicates.
+   → `memory/USER_PROFILE.md` **[private]** — in team mode `memory/users/<their-slug>/USER_PROFILE.md`. Place under the matching subsection (Identity / Background / Currently focused on / Schedule). Tighten existing entries — don't accrete duplicates.
 
 3. **Soft preference** — how the user likes to be communicated with, formatting, tone, what to surface vs silence, channel preference, working style.
-   → `memory/USER_PREFERENCES.md`. One line per preference. Replace when a preference is updated.
+   → `memory/USER_PREFERENCES.md` **[private — ALWAYS]** — in team mode `memory/users/<their-slug>/USER_PREFERENCES.md`. One line per preference. Replace when a preference is updated. Never put one person's preference in the shared root — it would steer every teammate's turns.
 
 4. **Person** — anyone whose context will recur (colleague, family, client, friend). Includes the person's role, communication preference, things to avoid, recurring themes.
-   → `memory/USER_RELATIONSHIPS.md`. Append a new `## Name (Role)` section if the person is new; tighten within their section if they exist. Long-form dossiers go in `documents/relationships/<slug>/` — link from the card when relevant.
+   → `memory/USER_RELATIONSHIPS.md` **[private]** — in team mode `memory/users/<their-slug>/USER_RELATIONSHIPS.md`. Append a new `## Name (Role)` section if the person is new; tighten within their section if they exist. Long-form dossiers go in `users/<their-slug>/documents/relationships/<person-slug>/` (note: `<their-slug>` = the actor, `<person-slug>` = the person described) — link from the card when relevant. **Carve-out:** a genuinely shared team contact (a client the whole team deals with) may go Shared — gate on the "useful to a DIFFERENT teammate?" test.
 
 5. **Self-introspection** — the user noting a pattern about themselves (energy, mood, productivity, tendency).
-   → `memory/USER_REFLECTIONS.md`. Append dated entry. Newer on top.
+   → `memory/USER_REFLECTIONS.md` **[private — strictly]** — in team mode `memory/users/<their-slug>/USER_REFLECTIONS.md`. Append dated entry. Newer on top. This is the most personal card; never shared.
 
 6. **Tool / integration / account context** — auth method, gotcha, "use this not that", caveat learned the hard way.
-   → `memory/AGENT_TOOLS.md`. One section per tool. Replace within a section when superseded.
+   → `memory/AGENT_TOOLS.md` **[shared]**. One section per tool. Replace within a section when superseded.
 
 7. **Agent character** — voice, default disposition, what to lean into, what to flag back to the user.
-   → `memory/AGENT_IDENTITY.md`. Tighten — the agent picks one self.
+   → `memory/AGENT_IDENTITY.md` **[shared]**. Tighten — the agent picks one self.
 
 8. **Workflow recipe** — how to do X end-to-end, repeatable procedure, multi-step playbook.
    → `project/.claude/skills/<name>/SKILL.md`. Skills, not memory cards.
 
 9. **Persistent document** — research, brief, decision rationale, anything the user might re-open later.
-   → `project/documents/<topic>/YYYY-MM-DD_Brief_Description.md`. Free-form file. Cross-link from the relevant memory card if there's a connection worth surfacing.
+   → `project/documents/<topic>/YYYY-MM-DD_Brief_Description.md` **[shared by default]**. In team mode, if it's personal to one teammate ("my CV", "save this privately", a personal note) → `project/users/<their-slug>/documents/<topic>/…` instead. Free-form file. Cross-link from the relevant memory card if there's a connection worth surfacing. *(`file-placement` skill owns the full save-location logic — defer to it for documents.)*
 
 10. **Ephemeral / scratch** — mid-task reasoning, a one-off computation, draft that won't survive past this conversation.
     → `project/session/<filename>.md`. Session has TTL ~14 days; the bot may purge stale entries.
@@ -61,12 +74,13 @@ Load when applying a routing decision. Skip when the decision tree above resolve
 
 ## Output shape
 
-The skill doesn't write the file directly — it returns the routing decision so the agent uses normal `Edit` / `Write` tools to apply it. Skill output to the agent looks like:
+The skill doesn't write the file directly — it returns the routing decision so the agent uses normal `Edit` / `Write` tools to apply it. The `ROUTE` is the **fully-resolved path** (with the `memory/users/<slug>/` prefix already applied in team mode), and `SCOPE` records the Shared/Private call. Skill output to the agent looks like:
 
 ```
-ROUTE → memory/USER_RELATIONSHIPS.md → Maciej section
-ACTION → tighten (existing line "Maciej dislikes early meetings" → replace with new line "Maciej dislikes morning meetings")
+SCOPE → private (actor: alex) — relationship is about this user
+ROUTE → memory/users/alex/USER_RELATIONSHIPS.md → Jordan section
+ACTION → tighten (existing line "Jordan dislikes early meetings" → replace with new line "Jordan dislikes morning meetings")
 SOURCE → [Source: the user, voice note, 2026-05-10]
 ```
 
-The agent then opens the target file with Edit and applies the change verbatim, preserving YAML frontmatter at the top.
+In solo mode the same write resolves to the flat `memory/USER_RELATIONSHIPS.md` and `SCOPE → solo`. The agent then opens the target file with Edit and applies the change verbatim, preserving YAML frontmatter at the top.

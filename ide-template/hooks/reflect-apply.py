@@ -121,6 +121,11 @@ def parse_proposal_blocks(draft_text: str) -> list[dict]:
             "field": meta.get("field", ""),
             "confidence": float(meta.get("confidence", "0") or "0"),
             "rationale": meta.get("rationale", ""),
+            # Team mode: a private proposal carries scope=private + the owner
+            # slug, so it applies to memory/users/<owner>/<card>.md. Absent /
+            # scope=shared → flat memory/<card>.md (solo, or a shared card).
+            "scope": meta.get("scope", ""),
+            "owner": meta.get("owner", ""),
             "content": content,
             "status": status,
         })
@@ -137,6 +142,10 @@ def render_proposal(pid: str, p: dict) -> str:
     ]
     if p.get("field"):
         lines.append(f"**field:** {p['field']}")
+    if p.get("scope"):
+        lines.append(f"**scope:** {p['scope']}")
+    if p.get("owner"):
+        lines.append(f"**owner:** {p['owner']}")
     lines.extend([
         f"**confidence:** {p.get('confidence', 0)}",
         f"**rationale:** {p.get('rationale', '')}",
@@ -210,13 +219,37 @@ def cmd_list(args) -> int:
         for p in parse_proposal_blocks(draft.read_text()):
             if p["status"] == "pending":
                 summary = (p["rationale"][:60] + "…") if len(p["rationale"]) > 60 else p["rationale"]
-                pending.append(f"{p['id']} | {p['card']} | {p['confidence']:.2f} | {summary}")
+                # Show whose private card a proposal targets, so the operator
+                # reviewing on Telegram knows it's <owner>'s private memory.
+                card_label = f"{p['card']} (→{p['owner']})" if p.get("scope") == "private" and p.get("owner") else p["card"]
+                pending.append(f"{p['id']} | {card_label} | {p['confidence']:.2f} | {summary}")
     if not pending:
         print("(No pending proposals.)")
         return 0
     for line in pending:
         print(line)
     return 0
+
+
+SLUG_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def resolve_target(proposal: dict) -> tuple[Path, str | None]:
+    """Resolve a proposal to its canonical card path.
+
+    Team mode: a private proposal (scope=private + a valid owner slug) targets
+    memory/users/<owner>/<card>.md — that teammate's private card. Anything else
+    (scope=shared, or no scope = solo/legacy) targets the flat memory/<card>.md.
+    Returns (path, error) — error is a string if the owner slug is malformed
+    (refuse rather than risk a path escape).
+    """
+    card = proposal["card"]
+    if proposal.get("scope") == "private":
+        owner = proposal.get("owner", "")
+        if not SLUG_RE.match(owner):
+            return MEMORY_DIR / f"{card}.md", f"private proposal has invalid owner slug {owner!r}"
+        return MEMORY_DIR / "users" / owner / f"{card}.md", None
+    return MEMORY_DIR / f"{card}.md", None
 
 
 def cmd_apply(args) -> int:
@@ -235,12 +268,22 @@ def cmd_apply(args) -> int:
         print(f"ERROR: confidence {proposal['confidence']} below {floor} floor for action {proposal['action']}.", file=sys.stderr)
         return 1
 
-    target = MEMORY_DIR / f"{proposal['card']}.md"
-    if not target.exists():
-        print(f"ERROR: target card {target} doesn't exist.", file=sys.stderr)
+    target, err = resolve_target(proposal)
+    if err:
+        print(f"ERROR: {err}.", file=sys.stderr)
         return 1
 
-    before = target.read_text()
+    is_private = proposal.get("scope") == "private"
+    if target.exists():
+        before = target.read_text()
+    elif is_private:
+        # First write to a teammate's private card — seed it (append actions
+        # create the section from empty; the dir may not be bootstrapped yet).
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = ""
+    else:
+        print(f"ERROR: target card {target} doesn't exist.", file=sys.stderr)
+        return 1
     after = apply_action(before, proposal)
     if after is None:
         print(f"ERROR: action {proposal['action']} could not be applied unambiguously.", file=sys.stderr)
@@ -257,6 +300,8 @@ def cmd_apply(args) -> int:
         "action": "apply",
         "proposal_id": pid,
         "card": proposal["card"],
+        "scope": proposal.get("scope", ""),
+        "owner": proposal.get("owner", ""),
         "section": proposal["section"],
         "before_sha256": hashlib.sha256(before.encode()).hexdigest(),
     })

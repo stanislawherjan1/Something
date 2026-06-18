@@ -32,6 +32,6 @@ conflict: hard rules don't conflict with each other often. If they do, the newer
 - reply in the user's language (PL if user writes PL, EN if EN)
 
 ## Retired
-- ~~always cc maciej@ on customer emails~~ (retired 2026-04-10 — Maciej asked off the cc list)
+- ~~always cc jordan@ on customer emails~~ (retired 2026-04-10 — Jordan asked off the cc list)
 -->
 

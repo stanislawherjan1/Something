@@ -16,10 +16,12 @@ Reply with **one JSON object and nothing else**. No preamble, no commentary, no 
 {
   "title":      "5–10 word noun phrase",
   "summary":    "2–3 sentences describing what the conversation was about and what was decided or produced.",
-  "entities":   ["krystian", "mimira-pricing"],
-  "decisions":  ["Decided to defer Q4 pricing change", "Will follow up with Krystian next week"],
+  "entities":   ["sam", "acme-pricing"],
+  "decisions":  ["Decided to defer Q4 pricing change", "Will follow up with Sam next week"],
   "open_items": ["Confirm the new rate with finance"],
-  "confidence": 0.85
+  "confidence": 0.85,
+  "scope":      "private",
+  "owner":      "alex"
 }
 ```
 
@@ -29,6 +31,7 @@ Reply with **one JSON object and nothing else**. No preamble, no commentary, no 
 - `decisions`: `[]` — short imperative bullets; one per decision actually made in the thread. No filler.
 - `open_items`: `[]` — same shape; one per follow-up that's NOT yet done.
 - `confidence`: `0.5` if you genuinely can't tell. Calibrated: `≥ 0.85` means "the title + summary capture this thread accurately." Lower if the transcript is ambiguous or you had to infer heavily.
+- `scope` / `owner`: **team-mode only.** By default a thread card is **shared** (`memory/threads/`) and read by all teammates + the overseer — omit both. If the thread is clearly **personal/sensitive to one teammate** (their private 1:1 — personal context, their preferences, sensitive client talk), set `"scope": "private"` + `"owner": "<their-slug>"` so the card is written to `memory/users/<slug>/threads/` instead, out of the shared surface. Solo workspace → omit both.
 
 ## Rules for the title
 
@@ -49,7 +52,7 @@ Reply with **one JSON object and nothing else**. No preamble, no commentary, no 
 ## Avoid
 
 - Apologising for an unfinished thread ("the conversation was cut short…").
-- Naming the user by name in the summary — he reads this on his own dashboard.
+- **Solo:** naming the user by name in the summary — he reads this on his own dashboard. **Team mode:** the opposite — a *shared* thread card is read by other teammates + the overseer, so attribute the thread's owner by first name or slug ("Alex's thread on…") so it's interpretable; without it nobody knows whose decisions/open-items these are. (A clearly-personal thread should instead be marked `scope: private` + `owner`, which routes it out of the shared surface entirely.)
 - Mentioning the assistant or any model names.
 - Markdown formatting (no `**bold**`, no `- bullets`).
 

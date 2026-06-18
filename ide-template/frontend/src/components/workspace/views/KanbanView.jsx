@@ -420,7 +420,7 @@ const KEY_TO_FIELD = {
 
 /**
  * Parse a metadata line like
- *   **Owner:** Stan · **Priority:** High · **Deadline:** 2026-05-02
+ *   **Owner:** Alex · **Priority:** High · **Deadline:** 2026-05-02
  * Returns an object with keys from KEY_TO_FIELD, or null if the line doesn't
  * look like metadata.
  */

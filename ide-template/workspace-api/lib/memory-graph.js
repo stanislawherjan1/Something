@@ -256,7 +256,7 @@ export function buildMemoryGraph() {
     }
 
     // [[wiki-link]] — strong edges. The payload can be a bare name
-    // (`[[krystian]]`), a path (`[[topics/krystian]]`), or include `.md`.
+    // (`[[sam]]`), a path (`[[topics/sam]]`), or include `.md`.
     for (const m of body.matchAll(/\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g)) {
       const targetId = stem(basename(m[1].trim()));
       addEdge(src.id, targetId, 'wiki');

@@ -10,15 +10,17 @@ Three example outputs showing what good, better-than-good, and wrong proposals l
     {
       "card": "USER_RELATIONSHIPS",
       "section": "",
-      "content": "## Krystian (cofounder) — works with the user on the SaaS\n- Communication preference: direct, Polish\n- Recurring themes: pricing strategy, customer churn\n- Notes: based in Warsaw, runs the commercial side.",
-      "rationale": "the user mentioned Krystian three times as his cofounder at messages #4, #11, #18.",
-      "confidence": 0.85
+      "content": "## Sam (cofounder) — works with the user on the SaaS\n- Communication preference: direct, Polish\n- Recurring themes: pricing strategy, customer churn\n- Notes: based in Warsaw, runs the commercial side.",
+      "rationale": "the user mentioned Sam three times as his cofounder at messages #4, #11, #18.",
+      "confidence": 0.85,
+      "scope": "private",
+      "owner": "alex"
     }
   ]
 }
 ```
 
-What makes this good: real person mentioned multiple times, content matches USER_RELATIONSHIPS shape (`## Name (Role)` header + bullet lines), rationale cites specific transcript references, confidence honest (not 0.99 — could be a one-conversation acquaintance).
+What makes this good: real person mentioned multiple times, content matches USER_RELATIONSHIPS shape (`## Name (Role)` header + bullet lines), rationale cites specific transcript references, confidence honest (not 0.99 — could be a one-conversation acquaintance). **In team mode it carries `scope: private` + `owner: <slug>` (here `alex`, the current actor)** so the applier writes it to that teammate's `memory/users/alex/USER_RELATIONSHIPS.md` — omitting them on a USER_* card would route it to the shared root, leaking one person's relationships to the whole team. (Solo workspace → omit both.)
 
 ## Better — empty proposals
 
@@ -54,10 +56,12 @@ The operator would have to clean it up. Don't propose this.
       "section": "<section_header_or_empty>",
       "content": "<markdown_ready_content>",
       "rationale": "<transcript citation: message # or quote>",
-      "confidence": 0.85
+      "confidence": 0.85,
+      "scope": "private",
+      "owner": "<actor-slug>"
     }
   ]
 }
 ```
 
-If `proposals` is empty, return `{"proposals": []}` and stop.
+`scope` + `owner` are **team-mode only**: include them (`"scope":"private"`, `"owner":"<slug>"`) for a USER_* card so it lands in that teammate's `memory/users/<slug>/`. Omit both in solo, or set `"scope":"shared"` for a shared card. If `proposals` is empty, return `{"proposals": []}` and stop.

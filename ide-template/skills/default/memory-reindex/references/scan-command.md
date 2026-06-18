@@ -12,6 +12,7 @@ find ~/project -type f -newer <(date -d "$LAST_INDEXED" '+%Y-%m-%d %H:%M:%S' 2>/
   ! -path '*/.claude/sessions/*' \
   ! -path '*/.claude/cache/*' \
   ! -path '*/.integrations/*' \
+  ! -path '*/memory/users/*' \
   ! -name '.DS_Store' \
   ! -name '*.tmp' ! -name '*.bak' \
   | head -200
@@ -30,4 +31,5 @@ find ~/project -type f -newer <(date -d "$LAST_INDEXED" '+%Y-%m-%d %H:%M:%S' 2>/
 | `.playwright-mcp/` | Ephemeral screenshots, wiped weekly by repo-audit |
 | `.chat/`, `.claude/sessions/`, `.claude/cache/` | Per-session conversation state, not durable knowledge |
 | `.integrations/` | Encrypted credential store (Phase-2 broker), never indexable |
+| `memory/users/` | **Per-user private memory (team mode).** Indexing a teammate's private cards/notes into the SHARED knowledge graph would leak their profile/preferences/notes (path + mined topic keywords) to everyone — the graph is team-wide and searchable. The shared reindex must never touch any user's private tree. |
 | `.DS_Store`, `*.tmp`, `*.bak` | OS/editor artifacts |

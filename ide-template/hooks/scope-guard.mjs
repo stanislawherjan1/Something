@@ -3,9 +3,10 @@
  * PreToolUse path-guard hook (team mode B2a).
  *
  * Denies the web claude from reading/listing/touching ANOTHER teammate's
- * project/users/<slug>/ when the current turn belongs to a non-admin. This is
- * what stops "a member asks the bot about someone else's files and the bot —
- * which has full FS access — reveals them."
+ * private space when the current turn belongs to a non-admin: their files
+ * (project/users/<slug>/) AND their private memory (memory/users/<slug>/). This
+ * is what stops "a member asks the bot about someone else's files/profile and
+ * the bot — which has full FS access — reveals them."
  *
  * Reuses the SAME scope rule as the web file API
  * (workspace-api/lib/scope-rule.js) so enforcement can't drift.
@@ -36,24 +37,59 @@ function relInProject(p) {
   return s.replace(/^[./]+/, '');              // strip leading ./ or /
 }
 
+// The literal directory prefix of a glob/pattern, up to the first wildcard
+// segment: 'memory/users/bob/**' → 'memory/users/bob'; 'users/bob/*.md' →
+// 'users/bob'; '**/*.md' → ''. Lets us catch a search whose PATTERN (not just
+// its --path root) targets another user's private tree.
+function literalPrefix(glob) {
+  if (typeof glob !== 'string' || !glob) return '';
+  const out = [];
+  for (const seg of glob.split('/')) {
+    if (/[*?[\]{}]/.test(seg)) break;
+    out.push(seg);
+  }
+  return out.join('/');
+}
+
 // Candidate paths referenced by a tool call.
 function pathsFromTool(toolName, input) {
   const out = [];
   if (!input || typeof input !== 'object') return out;
   const push = (v) => { if (typeof v === 'string' && v) out.push(v); };
+  // Join a search root with a pattern's literal prefix into one candidate path.
+  const joinRoot = (root, pref) => (root && pref ? `${root}/${pref}` : (pref || root));
   switch (toolName) {
     case 'Read': case 'Edit': case 'MultiEdit': case 'Write': case 'NotebookEdit':
       push(input.file_path); push(input.path); push(input.notebook_path);
       break;
-    case 'Glob': case 'Grep': case 'LS': case 'List':
+    case 'Glob': {
+      // The pattern itself is path-like and can name another user's tree
+      // ('memory/users/bob/**'). Validate the root AND the pattern's literal
+      // prefix resolved under it — not input.path alone.
+      const root = typeof input.path === 'string' ? input.path : '';
+      push(input.path);
+      push(joinRoot(root, literalPrefix(input.pattern)));
+      break;
+    }
+    case 'Grep': {
+      // Grep recurses from --path, optionally filtered by --glob; either can
+      // point into a private tree.
+      const root = typeof input.path === 'string' ? input.path : '';
+      push(input.path);
+      push(joinRoot(root, literalPrefix(input.glob)));
+      break;
+    }
+    case 'LS': case 'List':
       push(input.path);
       break;
     case 'Bash': {
-      // Best-effort: pull users/<slug> references that look like a path
-      // argument (at a word boundary — not embedded in a URL like
-      // example.com/users/1). Misses are acceptable; v2 per-uid closes Bash.
+      // Best-effort ONLY — this does NOT make Bash isolation a hard guarantee
+      // (tilde, $VAR, command substitution all slip through; v2 per-uid is the
+      // real close). Pull users/<slug> and memory/users/<slug> references at a
+      // shell word boundary (incl. redirects/operators < > ; & | : `) — not
+      // embedded in a URL like example.com/users/1.
       const cmd = typeof input.command === 'string' ? input.command : '';
-      const re = /(?:^|[\s'"=(])((?:\/home\/coder\/project\/|\.?\/)?users\/[A-Za-z0-9._-]+)/g;
+      const re = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?(?:memory\/)?users\/[A-Za-z0-9._-]+)/g;
       let m; while ((m = re.exec(cmd))) out.push(m[1]);
       break;
     }
@@ -67,8 +103,10 @@ async function main() {
   // No actor context (the Telegram bot / any non-web-chat claude — IDE_ACTOR_SLUG
   // unset) or an admin turn → allow everything. This is critical: the Telegram
   // bot is the operator and must keep full access.
-  if (!process.env.IDE_ACTOR_SLUG || process.env.IDE_ACTOR_IS_ADMIN === '1') process.exit(0);
+  // 'default' is the synthetic solo/legacy actor (claude.js no longer sets it,
+  // but guard here too so the hook is a true no-op for solo regardless of caller).
   const ownSlug = process.env.IDE_ACTOR_SLUG;
+  if (!ownSlug || ownSlug === 'default' || process.env.IDE_ACTOR_IS_ADMIN === '1') process.exit(0);
 
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;

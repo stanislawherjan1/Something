@@ -21,7 +21,7 @@
  * With NO_NEW_PRIVS set on the bot-runner process, that flag inherits
  * down the whole tree: kernel then refuses every subsequent setuid
  * exec, mcp-runner's initgroups() fails with EPERM, and every
- * broker-mediated MCP server fails to start. That's the bug Stan ran
+ * broker-mediated MCP server fails to start. That's the bug the operator ran
  * into on 2026-05-11.
  *
  * Risk this introduces: bot.sh / claude / claude tools CAN exec setuid

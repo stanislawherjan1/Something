@@ -46,29 +46,47 @@ import { atomicWrite } from './atomic-write.js';
 
 const SOURCE = 'reflect-summary';
 
+// A valid owner slug becomes a path segment, so every entry point that accepts
+// `owner` sanitizes it here — a malformed value falls back to the shared dir,
+// never an escaped path. (writeVerdictCard only sets owner when scope==='private',
+// but hasVerdictCard/verdictCardPath are exported and could be called directly.)
+const OWNER_SLUG = /^[a-z0-9-]+$/;
+const safeOwner = (owner) => (typeof owner === 'string' && OWNER_SLUG.test(owner) ? owner : null);
+
 /**
  * Resolve the threads directory for verdict cards. Lazy + env-aware so
  * tests can override PROJECT_DIR without re-importing the module.
  */
-function threadsDir() {
-  return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory', 'threads');
+function threadsDir(owner) {
+  const base = process.env.PROJECT_DIR || PROJECT_DIR;
+  const o = safeOwner(owner);
+  // Team mode: a PRIVATE thread (one teammate's 1:1 — personal/sensitive) lives
+  // in that user's own memory, not the shared memory/threads/ every teammate can
+  // read.
+  return o
+    ? join(base, 'memory', 'users', o, 'threads')
+    : join(base, 'memory', 'threads');
 }
 
 /**
  * Build the canonical verdict-card path for a thread. Relative to
  * PROJECT_DIR so callers can report it back without leaking absolute
- * paths into the dashboard / logs.
+ * paths into the dashboard / logs. `owner` (a validated slug) routes the
+ * card into that teammate's private memory in team mode.
  */
-export function verdictCardPath(threadId) {
-  return join('memory', 'threads', `${threadId}.md`);
+export function verdictCardPath(threadId, owner) {
+  const o = safeOwner(owner);
+  return o
+    ? join('memory', 'users', o, 'threads', `${threadId}.md`)
+    : join('memory', 'threads', `${threadId}.md`);
 }
 
 /**
  * Returns true when a verdict card already exists for this thread.
  * Used by reflect-summary on `force: true` to set `supersedes`.
  */
-export function hasVerdictCard(threadId) {
-  return existsSync(join(threadsDir(), `${threadId}.md`));
+export function hasVerdictCard(threadId, owner) {
+  return existsSync(join(threadsDir(owner), `${threadId}.md`));
 }
 
 /**
@@ -175,7 +193,19 @@ export function writeVerdictCard(args) {
     throw new Error(`verdict-card-writer: refusing unsafe threadId "${threadId}"`);
   }
 
-  const dir = threadsDir();
+  // Team mode: a private thread (args.scope === 'private') belongs to one
+  // teammate — write it to memory/users/<owner>/threads/, never the shared dir.
+  // safeOwner() rejects a missing/malformed slug (→ shared, never an escaped path).
+  //
+  // COMPANION CHANGE REQUIRED before any caller passes scope:'private': the
+  // reader side (verdict-card-reader.js threadsDir / listVerdictCards, and
+  // memory-graph.js) only enumerates memory/threads/ today, so private cards
+  // would be written but never surfaced — and a naive broadening of its glob
+  // would leak other teammates' private verdicts. Make the reader owner-aware
+  // AND gate it with scope-rule.js pathInScope(actor) when that wiring lands.
+  const owner = args.scope === 'private' ? safeOwner(args.owner) : null;
+
+  const dir = threadsDir(owner);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
   const abs = join(dir, `${threadId}.md`);
@@ -186,7 +216,7 @@ export function writeVerdictCard(args) {
   try { bytes = statSync(abs).size; } catch { /* fine */ }
 
   return {
-    path: verdictCardPath(threadId),
+    path: verdictCardPath(threadId, owner),
     bytes,
     supersedes: args.supersedes || null,
   };

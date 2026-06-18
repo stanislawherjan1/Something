@@ -204,7 +204,7 @@ The cards + topics + patterns in this directory are one layer of memory among se
 
 ## Worked example — how a single turn uses memory
 
-Suppose the user asks: *"Draft a reply to Krystian's email about Q4 pricing."*
+Suppose the user asks: *"Draft a reply to Sam's email about Q4 pricing."*
 
 A disciplined turn walks through memory in this order:
 
@@ -212,11 +212,11 @@ A disciplined turn walks through memory in this order:
    is (`USER_PROFILE`), how he prefers to write (`USER_PREFERENCES`), what
    tone his agent uses (`AGENT_IDENTITY`), and which tools are activated
    (`AGENT_TOOLS`). No `Read` calls needed for these.
-2. **`memory_grep` for "Krystian"** to find every mention across cards,
+2. **`memory_grep` for "Sam"** to find every mention across cards,
    topics, threads, and patterns in one shot. Cheap (one tool call,
    line-level snippets returned).
-3. **If `USER_RELATIONSHIPS.md` has a section for Krystian**, `Read` that
-   one card. If the section points to `topics/krystian.md`, `Read` that
+3. **If `USER_RELATIONSHIPS.md` has a section for Sam**, `Read` that
+   one card. If the section points to `topics/sam.md`, `Read` that
    too — it'll have history, themes, prior pricing conversations.
 4. **If `threads/` has a prior verdict on a similar email**, `Read` it.
    That tells you what the user decided last time + which tone landed well.
@@ -247,7 +247,7 @@ keeps the workspace from repeating mistakes the user has already flagged.
   the card.
 - **Don't invent topic-page slugs.** If you're unsure whether a topic
   exists, `memory_grep` first or list `memory/topics/` before creating.
-  Duplicate slugs (`mimira` vs `mimira-pricing`) confuse the graph and
+  Duplicate slugs (`acme` vs `acme-pricing`) confuse the graph and
   the index.
 - **Don't put a pattern in a thread verdict or vice versa.** Pattern =
   "the workspace got X wrong, here's the rule." Verdict = "this thread closed

@@ -19,8 +19,8 @@ Don't use a topic page for:
 When you promote a card section into a topic page, leave a pointer in the card:
 
 ```
-## Krystian (cofounder)
-→ Full context: topics/krystian.md
+## Sam (cofounder)
+→ Full context: topics/sam.md
 - Direct, Polish
 - Recurring themes: pricing, churn
 ```

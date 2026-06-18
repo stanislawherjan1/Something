@@ -77,6 +77,10 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
     const prefix = buildCachedPrefix({
       memoryDir: join(PROJECT_DIR, 'memory'),
       excludeIds: ['RECENT_WEB'],
+      // Team mode: load THIS user's profile/preferences from their private
+      // memory (memory/users/<slug>/), not the shared flat card. Solo →
+      // actor is 'default', the loader ignores it and reads flat.
+      actor,
     });
     if (prefix && prefix.block) {
       args.push('--append-system-prompt', prefix.block);
@@ -135,7 +139,10 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
   // Per-user scope for the PreToolUse path-guard hook (hooks/scope-guard.js):
   // it denies this turn's claude from reading/touching another user's
   // project/users/<slug>/. Admin turns set IS_ADMIN=1 → the hook lets all through.
-  if (actor) childEnv.IDE_ACTOR_SLUG = String(actor);
+  // Only a REAL team member gets a slug — the solo/legacy 'default' actor must
+  // not trigger the scope hook (it has no private tree to guard), keeping solo
+  // behaviour identical to pre-team. The hook keys on IDE_ACTOR_SLUG presence.
+  if (actor && actor !== 'default') childEnv.IDE_ACTOR_SLUG = String(actor);
   childEnv.IDE_ACTOR_IS_ADMIN = actorIsAdmin ? '1' : '0';
 
   const proc = spawn(CLAUDE_BIN, args, {

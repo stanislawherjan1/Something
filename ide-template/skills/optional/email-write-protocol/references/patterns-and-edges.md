@@ -46,7 +46,7 @@ For batch low-risk ops, list what's affected, single confirm at the top, then an
 Every successful write is appended to `~/project/.email-audit.jsonl`:
 
 ```json
-{"ts":"2026-05-08T12:34:56Z","action":"send","account":"stan","to":["alice@acme.com"],"cc":[],"subject":"Q3 deck","snippet":"Hey Alice — here's the Q3 …","message_id":"<abc@…>"}
+{"ts":"2026-05-08T12:34:56Z","action":"send","account":"alex","to":["alice@acme.com"],"cc":[],"subject":"Q3 deck","snippet":"Hey Alice — here's the Q3 …","message_id":"<abc@…>"}
 ```
 
 The user can grep this file any time to see what the bot did on their behalf. **Never tamper with this file** — it's append-only by design.

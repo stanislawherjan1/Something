@@ -2,6 +2,15 @@
 
 Loaded by the `memory-router` skill when applying a routing decision. Keep this open while writing — these rules are easy to get wrong from memory.
 
+## Team workspace — Shared vs Private (read first in team mode)
+
+When an `[ACTOR …]` line is present, the personal cards live in the CURRENT user's private memory:
+
+- **Private cards** (per-user): `USER_PROFILE`, `USER_PREFERENCES`, `USER_RELATIONSHIPS`, `USER_REFLECTIONS` → `memory/users/<actor-slug>/<CARD>.md`. Personal preferences + individual working style are ALWAYS private.
+- **Shared cards** (flat, team-wide): `RULES`, `AGENT_TOOLS`, `AGENT_IDENTITY`, `INDEX` → `memory/<CARD>.md`.
+
+Every rule below applies to the **resolved** path: for a private card that's the actor's own file — never the shared root, never another teammate's `memory/users/<other-slug>/`. Solo workspace (no `[ACTOR]`) → all cards are flat `memory/`; ignore this section.
+
 ## Mechanical rules (apply to every write)
 
 - **One fact per line.** No prose paragraphs in cards.
@@ -29,20 +38,20 @@ When the new fact contradicts an existing entry on the same card:
 
 If the fact would push the target card past ~60 lines, **propose a promotion** instead of cramming the card:
 
-1. Pick a slug for the new topic page (e.g. `krystian` for the long-form Krystian dossier).
-2. Move the existing section content into `project/memory/topics/<slug>.md` (keep the same shape; this is a free-form long-form page).
+1. Pick a slug for the new topic page (e.g. `sam` for the long-form Sam dossier).
+2. Move the existing section content into `project/memory/topics/<slug>.md` (keep the same shape; this is a free-form long-form page). **Team mode:** if the overflowing card is **private** (a USER_* card under `memory/users/<actor>/`), the topic page is private too → `memory/users/<actor>/topics/<slug>.md`. Never promote a teammate's private content into the shared `memory/topics/`.
 3. Leave a short pointer in the original card:
 
    ```
-   ## Krystian (cofounder)
-   → Full context: topics/krystian.md
+   ## Sam (cofounder)
+   → Full context: topics/sam.md
    - Direct, Polish
    - Recurring themes: pricing, churn
    ```
 
-4. Add a one-line entry under `## Topics` in `memory/INDEX.md`.
+4. Add a one-line entry under `## Topics` in `memory/INDEX.md`. **Team mode:** for a private topic page, add the pointer to the actor's private index `memory/users/<actor>/INDEX.md` (create if absent), NOT the shared `memory/INDEX.md` — the shared index is loaded into every teammate's prompt, so a private topic title there is a leak.
 
-Cards stay summary surfaces; topic pages absorb the depth. The agent's session-start load reads INDEX + RULES + USER_PROFILE + USER_PREFERENCES — topic pages are loaded lazily when the conversation demands.
+Cards stay summary surfaces; topic pages absorb the depth. The agent's session-start load reads INDEX + RULES + USER_PROFILE + USER_PREFERENCES (the USER_* cards from the current user's `memory/users/<slug>/` in team mode) — topic pages are loaded lazily when the conversation demands.
 
 ## Confidence guardrail (ambiguous routing)
 

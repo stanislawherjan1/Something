@@ -25,11 +25,11 @@ Keep each person's section tight (5–10 lines). Long-form context goes in
 
 <!-- example of a well-shaped person entry — DELETE this comment block after the first real write:
 
-## Maciej (cofounder) — co-founder, technical lead
+## Jordan (cofounder) — co-founder, technical lead
 - Communication preference: Slack DMs, async batches; Polish
 - Hot buttons / things to avoid: don't ping on weekends; don't volunteer technical opinions on his side projects
 - Recurring themes: hiring engineers, onboarding tech debt, infra cost reviews
 - Last meaningful interaction: 2026-05-20 quarterly planning [Source: web chat]
-- Notes: terse messages; replies in batches once or twice a day. Full context in `documents/relationships/maciej/`
+- Notes: terse messages; replies in batches once or twice a day. Full context in `documents/relationships/jordan/`
 -->
 

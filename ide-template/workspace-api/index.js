@@ -41,6 +41,7 @@ import meRouter            from './routes/me.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
+import { migrateDefaultMemory } from './lib/memory-loader.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -156,6 +157,18 @@ try {
   }
 } catch (err) {
   process.stderr.write(`[workspace-api] default session migration failed: ${err.message}\n`);
+}
+
+// Team mode B2b: per-user memory. The flat memory/USER_PROFILE.md +
+// USER_PREFERENCES.md are the operator's solo-era profile; once cards load
+// per-user, adopt them under the primary admin so they aren't orphaned. Gated
+// on team mode (solo keeps loading them flat). Idempotent.
+try {
+  if (team.getTeamMode() && migrateDefaultMemory(team.primaryAdminSlug())) {
+    process.stdout.write(`[workspace-api] adopted solo profile/preferences → ${team.primaryAdminSlug()} private memory\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] default memory migration failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start

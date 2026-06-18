@@ -33,9 +33,11 @@ PS: CLAUDE.md still describes <integration> but it's been deactivated. Remove th
 ```
 
 - If user says **yes** → use Edit to remove that bullet from Context.
-- If user says **leave** → respect, don't ask again for 30 days. Note dismissal in memory: `add_observations("capability-tour-state", ["dismissed-cleanup-<integration>: <date>"])`.
+- If user says **leave** → respect, don't ask again for 30 days. Note dismissal in memory: `add_observations("capability-tour-state:<slug>", ["dismissed-cleanup-<integration>: <date>"])`.
 - If user says **no** (no explicit dismissal period) → respect, but you may ask again next month.
+
+> **Team mode — key the state PER USER.** The knowledge graph is shared, so a single `capability-tour-state` entity would make one teammate's dismissal suppress the tour for everyone (and load their interaction history into others' prompts). Use `capability-tour-state:<actor-slug>` (slug from the `[ACTOR …]` line) so dismissals + throttle are per person. Solo workspace → the bare `capability-tour-state` is fine.
 
 ## Repeated reminders cap
 
-Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. Track surfacing-attempt dates via `capability-tour-state` observations to enforce this.
+Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. Track surfacing-attempt dates via the per-user `capability-tour-state:<slug>` observations (bare `capability-tour-state` in solo) so the fortnight cap is evaluated against the CURRENT user's history only — not workspace-global.

@@ -23,6 +23,16 @@ User references something from an earlier conversation **and** you don't see it 
 - The user is asking about a stable fact (their role, preferences, a person) — that's `USER_PROFILE` / `USER_PREFERENCES` / `USER_RELATIONSHIPS` territory.
 - The user is asking about an old project or topic — that's a `topics/<slug>.md` lookup, not a transcript lookup.
 
+## Team workspace — attribution before quoting
+
+In a team workspace, `recent_messages({channel:"web"})` is currently a **cross-user aggregate** — the web snapshot interleaves every teammate's web chats, not just the current user's. So:
+
+- **Before quoting a web result, confirm the exchange belongs to the CURRENT user** (match the speaker / the topic to *this* person, named in the `[ACTOR …]` line). If you can't attribute it to them, **do not surface it** — say you couldn't find it *for them*. Never quote another teammate's conversation back to someone else.
+- **Scope `memory_grep` to the current user's reachable memory** — the shared cards plus *their* `memory/users/<slug>/`. Never surface a hit from another teammate's `memory/users/<other-slug>/`.
+- Telegram (`channel:"telegram"`) is the single operator surface — no per-user split there.
+
+(Solo workspace → ignore this; there's only one user.)
+
 ## How
 
 ### Step 1 — Identify channel

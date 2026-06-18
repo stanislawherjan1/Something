@@ -8,6 +8,16 @@ allowed-tools: Read, Bash, Write, mcp__memory__create_entities, mcp__memory__add
 
 You are about to save content to a file. Before calling Write, decide WHERE that file goes. **Don't dump in `~/project/` root** unless the file is explicitly project-level (`CLAUDE.md`, `README.md`, `Tasks.md`).
 
+## Step 0 — Shared or private? (team workspace)
+
+If an `[ACTOR name (slug: <slug>)]` line is present, decide the **root** before the folder:
+
+- **Personal to this user** — they said "save privately / my CV / a note just for me", or it's clearly about them alone → root is their private space `project/users/<their-slug>/` (then apply the normal folder logic *inside* it). The shared-root write would otherwise be visible to the whole team (the tool-guard allows shared-root writes, so nothing else stops it).
+- **Shared / company / project content** → the project root, as usual.
+- **Never** write into another teammate's `project/users/<other-slug>/`.
+
+Solo workspace (no `[ACTOR]` / no `users/` split) → ignore this; one flat tree as today.
+
 ## When this skill applies
 
 ✅ "Save this brief"
@@ -37,6 +47,8 @@ Use the Write tool with the full chosen path. Filename conventions (kebab-case, 
 ## Step 5 — index in memory
 
 After writing, log a `file_index` entity in the knowledge graph so the file is discoverable later. Exact shape (create vs add_observations) → `references/decision-tree.md`.
+
+**Team mode — do NOT index private files.** If the file you just saved lives under `project/users/<slug>/` (a personal file), **skip the `file_index` entity entirely**. The knowledge graph is shared and team-wide-searchable (read by `repo-audit` / `memory-reindex`, surfaced in every teammate's prompt), so a `file_index` whose `name` is a `users/<slug>/…` path — plus its topic keywords and the originating "trigger" request — leaks one person's private file (its existence, location, and what it's about) to everyone. Only index files saved to the **shared** project root.
 
 ## Cluster detection — propose a subfolder
 
