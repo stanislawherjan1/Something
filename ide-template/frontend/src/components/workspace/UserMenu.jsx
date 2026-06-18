@@ -31,10 +31,13 @@ export default function UserMenu() {
   } : null);
 
   if (!displayUser) return null;
-  // Prefer the user's own team profile (editable in User settings) over the
-  // Google name/picture, falling back to Google, then email/initial.
+  // Prefer the user's own team profile (editable in User settings) over Google.
   const name    = me?.displayName || displayUser.name || displayUser.email;
-  const avatar  = me?.avatarUrl || displayUser.picture;
+  // In a team workspace, match the Team list + settings modal exactly: custom
+  // avatar → displayName initial. Don't fall back to the Google picture — it's
+  // only available in this one surface, so it made the avatar differ between the
+  // sidebar, Team list, and modal. In solo, the Google picture is still used.
+  const avatar  = me?.avatarUrl || (me?.teamMode ? null : displayUser.picture);
   const initial = (name || '?').trim().charAt(0).toUpperCase();
 
   return (

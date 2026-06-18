@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 
 const AVATARS_DIR = join(PROJECT_DIR, '.team', 'avatars');
-const MAX_BYTES   = 512 * 1024;                 // browser pre-resizes; 512 KB is generous
+const MAX_BYTES   = 1024 * 1024;                // browser pre-resizes to ~tens of KB; 1 MB is a safety cap
 
 // Supported formats — detected by file magic (not by client-claimed type).
 const FORMATS = [
@@ -75,7 +75,7 @@ export function saveUserAvatar(slug, buffer) {
   const s = sanitizeSlug(slug);
   if (!s) throw new Error('Invalid user.');
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) throw new Error('Empty upload.');
-  if (buffer.length > MAX_BYTES) throw new Error('Avatar must be ≤ 512 KB (resize before upload).');
+  if (buffer.length > MAX_BYTES) throw new Error('That image is too large.');
   const fmt = detectFormat(buffer);
   if (!fmt) throw new Error('Avatar must be a PNG, JPEG, or webp image.');
 

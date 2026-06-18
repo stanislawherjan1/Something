@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Loader2, Upload, Trash2, AlertTriangle } from 'lucide-react';
 import { mutate } from '@/lib/useApi';
 
@@ -17,7 +17,6 @@ export default function UserSettingsModal({ me, onClose }) {
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState(null);
-  const fileRef = useRef(null);
 
   // Revoke the preview object URL on replace + unmount (no blob leak).
   useEffect(() => {
@@ -39,7 +38,7 @@ export default function UserSettingsModal({ me, onClose }) {
     if (!file) return;
     if (!/^image\//.test(file.type)) { setError('Pick an image (PNG, JPEG, or webp).'); return; }
     try {
-      const out = await resizeToWebp(file, 512);
+      const out = await resizeToImage(file, 512);
       setBlob(out);
       setRemoveAvatar(false);
       setPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(out); });
@@ -53,7 +52,7 @@ export default function UserSettingsModal({ me, onClose }) {
     try {
       if (blob) {
         const fd = new FormData();
-        fd.append('avatar', blob, 'avatar.webp');
+        fd.append('avatar', blob, 'avatar');   // server detects the format by magic
         const r = await fetch('/api/me/avatar', { method: 'POST', body: fd });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Avatar upload failed (${r.status})`);
       } else if (removeAvatar) {
@@ -115,10 +114,14 @@ export default function UserSettingsModal({ me, onClose }) {
             <div className="flex flex-col gap-1.5">
               <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">Profile picture</span>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border/55 px-2.5 py-1 text-[12px] font-medium text-foreground/85 hover:bg-muted/40 disabled:opacity-50">
+                <label
+                  className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border/55 px-2.5 py-1 text-[12px] font-medium text-foreground/85 hover:bg-muted/40 ${busy ? 'pointer-events-none opacity-50' : ''}`}>
                   <Upload className="size-3.5" strokeWidth={1.75} /> Upload
-                </button>
+                  <input
+                    type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={busy}
+                    onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }}
+                  />
+                </label>
                 {(hasExisting || blob) && (
                   <button type="button"
                     onClick={() => { setBlob(null); setPreviewUrl((o) => { if (o) URL.revokeObjectURL(o); return null; }); setRemoveAvatar(true); }}
@@ -128,9 +131,7 @@ export default function UserSettingsModal({ me, onClose }) {
                   </button>
                 )}
               </div>
-              <span className="text-[11px] text-muted-foreground/65">PNG, JPEG, or webp · resized to 512×512</span>
-              <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
-                onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+              <span className="text-[11px] text-muted-foreground/65">PNG or JPEG · we resize it to 512×512 automatically</span>
             </div>
           </div>
 
@@ -170,8 +171,14 @@ export default function UserSettingsModal({ me, onClose }) {
   );
 }
 
-// Resize an image file to a `size`×`size` webp Blob, cover-fit + center-cropped.
-function resizeToWebp(file, size) {
+// Resize an image to a size×size cover-cropped blob, kept small. Prefers webp;
+// falls back to JPEG when the browser's canvas can't encode webp (some
+// Safari/WebViews return PNG, which is huge for photos) — never ships PNG. Steps
+// the JPEG quality down if a high-detail photo is still over the cap, so the
+// upload always stays well under the server limit (the app does the resizing,
+// the user just picks any photo).
+function resizeToImage(file, size) {
+  const CAP = 480 * 1024;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('read failed'));
@@ -185,10 +192,15 @@ function resizeToWebp(file, size) {
         const scale = Math.max(size / img.width, size / img.height);
         const w = img.width * scale, h = img.height * scale;
         ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        canvas.toBlob(
-          (b) => b ? resolve(b) : reject(new Error('encode failed')),
-          'image/webp', 0.85,
-        );
+        const toBlob = (type, q) => new Promise((res) => canvas.toBlob(res, type, q));
+        (async () => {
+          let blob = await toBlob('image/webp', 0.85);
+          // webp unsupported (browser returns png) or oversized → JPEG.
+          if (!blob || blob.type !== 'image/webp' || blob.size > CAP) blob = await toBlob('image/jpeg', 0.85);
+          // very high-detail photo still over the cap → lower the quality.
+          if (blob && blob.size > CAP) blob = await toBlob('image/jpeg', 0.6);
+          if (blob) resolve(blob); else reject(new Error('encode failed'));
+        })();
       };
       img.src = e.target.result;
     };

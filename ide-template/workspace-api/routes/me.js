@@ -27,7 +27,7 @@ import * as userAvatars from '../lib/user-avatars.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 512 * 1024, files: 1 },   // browser pre-resizes; small cap
+  limits: { fileSize: 1024 * 1024, files: 1 },   // browser pre-resizes; 1 MB safety cap
 });
 
 // multer raises LIMIT_FILE_SIZE BEFORE the route handler, so it would fall
@@ -36,7 +36,7 @@ function avatarUpload(req, res, next) {
   upload.single('avatar')(req, res, (err) => {
     if (err) {
       const msg = err.code === 'LIMIT_FILE_SIZE'
-        ? 'Avatar must be ≤ 512 KB (resize before upload).'
+        ? 'That image is too large.'
         : 'Avatar upload failed.';
       return res.status(400).json({ error: msg });
     }
