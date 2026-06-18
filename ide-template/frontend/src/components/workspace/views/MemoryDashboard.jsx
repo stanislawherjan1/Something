@@ -48,6 +48,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
   const [showBare, setShowBare] = useState(true);
+  const [scopeFilter, setScopeFilter] = useState('all');   // 'all' | 'shared' | 'yours' (team mode)
   const [hover, setHover] = useState(null);
   const [activeNode, setActiveNode] = useState(null);
   const containerRef = useRef(null);
@@ -93,21 +94,31 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     return () => ro.disconnect();
   }, []);
 
-  // Filter edges by the wiki-only toggle and apply the search-highlight set.
+  // True when this workspace has any per-user ('yours') nodes — i.e. team mode.
+  // The Shared/Yours filter + legend only appear then.
+  const hasYours = useMemo(() => !!graph?.nodes?.some(n => n.scope === 'yours'), [graph]);
+
+  // Filter by scope (Shared/Yours) + the wiki-only toggle, and apply the
+  // search-highlight set. Edges whose endpoints got filtered out are dropped so
+  // the force layout doesn't choke on dangling links.
   const { displayed, matchSet } = useMemo(() => {
     if (!graph) return { displayed: null, matchSet: new Set() };
-    const edges = showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki');
+    let nodes = graph.nodes;
+    if (scopeFilter !== 'all') nodes = nodes.filter(n => (n.scope || 'shared') === scopeFilter);
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges = (showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki'))
+      .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
     const q = query.trim().toLowerCase();
     const matches = new Set();
     if (q) {
-      for (const n of graph.nodes) {
+      for (const n of nodes) {
         if (n.id.includes(q) || (n.name || '').toLowerCase().includes(q) || (n.preview || '').toLowerCase().includes(q)) {
           matches.add(n.id);
         }
       }
     }
-    return { displayed: { nodes: graph.nodes, links: edges }, matchSet: matches };
-  }, [graph, query, showBare]);
+    return { displayed: { nodes, links: edges }, matchSet: matches };
+  }, [graph, query, showBare, scopeFilter]);
 
   const onNodeClick = useCallback((node) => {
     if (node) setActiveNode(node);
@@ -139,6 +150,16 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
+    // 'Yours' (per-user, private) nodes get a coloured accent ring so they
+    // stand out from the shared team memory at a glance.
+    if (node.scope === 'yours') {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius + 2.5, 0, 2 * Math.PI, false);
+      ctx.lineWidth = 1.5 / globalScale;
+      ctx.strokeStyle = dimmed ? 'rgba(56,189,248,0.35)' : (isDark ? '#38bdf8' : '#0284c7');
+      ctx.stroke();
+    }
+
     // Label — only at high zoom to avoid clutter at the default view.
     const showLabel = globalScale > 1.6 || node.kind === 'index' || matchSet.has(node.id);
     if (showLabel) {
@@ -164,15 +185,18 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const linkWidth = useCallback((link) => link.kind === 'wiki' ? 1.4 : 0.6, []);
 
   const ready = graph !== null;
+  // Reflect what's actually on screen (after the Shared/Yours + wiki filters),
+  // so the count matches the rendered graph.
   const counts = useMemo(() => {
-    if (!graph) return { nodes: 0, edges: 0, wiki: 0, bare: 0 };
+    const d = displayed;
+    if (!d) return { nodes: 0, edges: 0, wiki: 0, bare: 0 };
     return {
-      nodes: graph.nodes.length,
-      edges: graph.edges.length,
-      wiki: graph.edges.filter(e => e.kind === 'wiki').length,
-      bare: graph.edges.filter(e => e.kind === 'bare').length,
+      nodes: d.nodes.length,
+      edges: d.links.length,
+      wiki: d.links.filter(e => e.kind === 'wiki').length,
+      bare: d.links.filter(e => e.kind === 'bare').length,
     };
-  }, [graph]);
+  }, [displayed]);
 
   const searchInput = (
     <div className="relative">
@@ -272,6 +296,25 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
             <Eye className="size-3" strokeWidth={1.75} />
             {showBare ? 'All edges' : 'Wiki only'}
           </button>
+          {hasYours && (
+            <div className="inline-flex items-center overflow-hidden rounded-md border border-border/55 text-[11px] font-medium">
+              {[['all', 'All'], ['shared', '🌐 Shared'], ['yours', '👤 Yours']].map(([s, label]) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setScopeFilter(s)}
+                  className={cn(
+                    'px-2 py-1 transition-colors',
+                    scopeFilter === s
+                      ? 'bg-foreground/10 text-foreground'
+                      : 'text-muted-foreground/70 hover:bg-foreground/5',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {ready && (
             <span className="text-[11px] text-muted-foreground/65">
               {counts.nodes} nodes · {counts.wiki} links
@@ -282,6 +325,12 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
           <Legend fill={NODE_COLOURS.index.fill} stroke={NODE_COLOURS.index.stroke} label="INDEX" />
           <Legend fill={NODE_COLOURS.card.fill}  stroke={NODE_COLOURS.card.stroke}  label="Card"  />
           <Legend fill={NODE_COLOURS.topic.fill} stroke={NODE_COLOURS.topic.stroke} label="Topic" />
+          {hasYours && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-[3px] text-[10.5px] font-medium text-foreground/75">
+              <span className="inline-block size-2 rounded-full" style={{ boxShadow: 'inset 0 0 0 1.5px #0284c7' }} />
+              Yours
+            </span>
+          )}
         </div>
       </div>
 
@@ -456,6 +505,11 @@ function MemoryCardModal({ node, onClose }) {
               <div className="truncate text-[12px] text-muted-foreground/75">{description}</div>
             )}
           </div>
+          {node.scope === 'yours' && (
+            <span className="shrink-0 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-[2px] text-[9.5px] font-medium uppercase tracking-wider text-sky-600 dark:text-sky-400">
+              Yours
+            </span>
+          )}
           <span className="shrink-0 rounded-full border border-border/55 bg-background/80 px-1.5 py-[2px] text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/75">
             {KIND_LABEL[node.kind] || node.kind}
           </span>

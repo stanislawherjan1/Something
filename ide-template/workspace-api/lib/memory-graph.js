@@ -26,6 +26,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { PROJECT_DIR } from './config.js';
+import { USERS_DIR } from './scope-rule.js';
 
 // Resolved lazily so env-var overrides + hermetic tests work without
 // re-importing the module. Production picks up PROJECT_DIR once at boot
@@ -72,74 +73,66 @@ function stem(name) {
   return name.toLowerCase().replace(/\.md$/i, '');
 }
 
+/** Classify a memory file by its stem + whether it sits at a memory root. */
+function fileKind(fileStem, atRoot) {
+  if (atRoot && fileStem.toUpperCase() === 'INDEX') return 'index';
+  if (CANONICAL_CARDS.has(fileStem.toUpperCase())) return 'card';
+  return 'topic';
+}
+
 /**
- * Enumerate all .md files under memory/. Returns:
- *   [{ id, kind, name, absPath, relPath }]
- * where id = stem(name). Cards and INDEX live at memory/ root; topics live
- * one level deeper under topics/.
+ * Enumerate the .md files that make up ONE actor's view of memory. Returns:
+ *   [{ id, baseStem, kind, name, absPath, relPath, scope }]
+ *
+ * `scope` is 'shared' (the flat memory/ tree — team-wide) or 'yours' (the
+ * current actor's private memory/users/<slug>/ tree). Private node ids are
+ * prefixed `yours:` so they can never collide with a shared node of the same
+ * stem; `baseStem` keeps the bare stem for link/bare-name matching. When
+ * actorSlug is null (solo / no team), only the shared tree is enumerated and
+ * everything is 'shared'. Another teammate's private memory is NEVER included.
  */
-function enumerateMemoryFiles() {
-  const memDir = memoryDir();
-  const topDir = topicsDir();
-  const thrDir = threadsDir();
+function enumerateMemoryFiles(actorSlug) {
   const out = [];
+  const seen = new Set();        // unique ids (dedupe)
+  const memDir = memoryDir();
   if (!existsSync(memDir)) return out;
 
-  // memory/ root — cards + INDEX
-  let rootEntries;
-  try { rootEntries = readdirSync(memDir, { withFileTypes: true }); }
-  catch { return out; }
-  for (const e of rootEntries) {
-    if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
-    const fileStem = e.name.replace(/\.md$/i, '');
-    let kind = 'topic';                   // fall-through (shouldn't happen at root)
-    if (fileStem === 'INDEX') kind = 'index';
-    else if (CANONICAL_CARDS.has(fileStem.toUpperCase())) kind = 'card';
-    out.push({
-      id: stem(e.name),
-      kind,
-      name: e.name,
-      absPath: join(memDir, e.name),
-      relPath: `memory/${e.name}`,
-    });
-  }
-
-  // memory/topics/<slug>.md
-  if (existsSync(topDir)) {
-    let topicEntries;
-    try { topicEntries = readdirSync(topDir, { withFileTypes: true }); }
-    catch { topicEntries = []; }
-    for (const e of topicEntries) {
+  const pushDir = (dir, { rootCards = false, kind = 'topic', relPrefix, scope, idPrefix = '' }) => {
+    if (!existsSync(dir)) return;
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
       if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
-      // Skip ABOUT.md — it's a meta-file, not a topic node.
-      if (e.name.toLowerCase() === 'about.md') continue;
+      if (e.name.toLowerCase() === 'about.md') continue;   // meta-file, not a node
+      const fileStem = e.name.replace(/\.md$/i, '');
+      const base = stem(e.name);
+      const id = idPrefix + base;
+      if (seen.has(id)) continue;
+      seen.add(id);
       out.push({
-        id: stem(e.name),
-        kind: 'topic',
+        id,
+        baseStem: base,
+        kind: rootCards ? fileKind(fileStem, true) : kind,
         name: e.name,
-        absPath: join(topDir, e.name),
-        relPath: `memory/topics/${e.name}`,
+        absPath: join(dir, e.name),
+        relPath: `${relPrefix}${e.name}`,
+        scope,
       });
     }
-  }
+  };
 
-  // memory/threads/<thread-id>.md — verdict cards (P4 Track B).
-  // Same enumeration shape as topics: any .md except ABOUT.md.
-  if (existsSync(thrDir)) {
-    let threadEntries;
-    try { threadEntries = readdirSync(thrDir, { withFileTypes: true }); }
-    catch { threadEntries = []; }
-    for (const e of threadEntries) {
-      if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
-      if (e.name.toLowerCase() === 'about.md') continue;
-      out.push({
-        id: stem(e.name),
-        kind: 'thread',
-        name: e.name,
-        absPath: join(thrDir, e.name),
-        relPath: `memory/threads/${e.name}`,
-      });
-    }
+  // Shared (flat) tree — team-wide.
+  pushDir(memDir,       { rootCards: true, relPrefix: 'memory/',        scope: 'shared' });
+  pushDir(topicsDir(),  { kind: 'topic',  relPrefix: 'memory/topics/',  scope: 'shared' });
+  pushDir(threadsDir(), { kind: 'thread', relPrefix: 'memory/threads/', scope: 'shared' });
+
+  // The current actor's OWN private tree (team mode). Never another user's.
+  if (actorSlug && /^[a-z0-9-]+$/.test(actorSlug)) {
+    const ud = join(memDir, USERS_DIR, actorSlug);
+    const pfx = `memory/users/${actorSlug}/`;
+    pushDir(ud,                  { rootCards: true, relPrefix: pfx,             scope: 'yours', idPrefix: 'yours:' });
+    pushDir(join(ud, 'topics'),  { kind: 'topic',  relPrefix: `${pfx}topics/`,  scope: 'yours', idPrefix: 'yours:' });
+    pushDir(join(ud, 'threads'), { kind: 'thread', relPrefix: `${pfx}threads/`, scope: 'yours', idPrefix: 'yours:' });
   }
 
   return out;
@@ -213,14 +206,25 @@ function parseEntitiesFromFrontmatter(body) {
  *     generated_at: ISO,
  *   }
  */
-export function buildMemoryGraph() {
-  const files = enumerateMemoryFiles();
+export function buildMemoryGraph(actorSlug = null) {
+  const files = enumerateMemoryFiles(actorSlug);
   if (files.length === 0) {
     return { nodes: [], edges: [], generated_at: new Date().toISOString() };
   }
 
-  // Build a basename → file map for resolving link targets.
+  // Build a unique-id → file map for resolving link targets.
   const byId = new Map(files.map(f => [f.id, f]));
+
+  // Resolve a bare target stem to a node id, honouring scope: a link FROM a
+  // private ('yours') card prefers a private target of the same stem, then
+  // falls back to the shared one; a shared card only links shared. This keeps a
+  // teammate's private cluster self-contained while still letting it reference
+  // shared topics.
+  const resolveTarget = (srcScope, targetStem) => {
+    if (srcScope === 'yours' && byId.has(`yours:${targetStem}`)) return `yours:${targetStem}`;
+    if (byId.has(targetStem)) return targetStem;
+    return null;
+  };
 
   // Read all bodies once.
   const bodies = new Map(); // id → body
@@ -251,15 +255,16 @@ export function buildMemoryGraph() {
     // kebab-case ASCII slugs) so addEdge resolves them via byId.
     if (src.kind === 'thread') {
       for (const ent of parseEntitiesFromFrontmatter(body)) {
-        addEdge(src.id, ent, 'wiki');
+        const t = resolveTarget(src.scope, ent);
+        if (t) addEdge(src.id, t, 'wiki');
       }
     }
 
     // [[wiki-link]] — strong edges. The payload can be a bare name
     // (`[[sam]]`), a path (`[[topics/sam]]`), or include `.md`.
     for (const m of body.matchAll(/\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g)) {
-      const targetId = stem(basename(m[1].trim()));
-      addEdge(src.id, targetId, 'wiki');
+      const t = resolveTarget(src.scope, stem(basename(m[1].trim())));
+      if (t) addEdge(src.id, t, 'wiki');
     }
 
     // Bare-name mentions — thin edges. Skip if the target was already
@@ -268,11 +273,13 @@ export function buildMemoryGraph() {
     // the visual without adding information).
     for (const tgt of files) {
       if (tgt.id === src.id) continue;
-      if (tgt.id.length < MIN_BARE_NAME_LEN) continue;
+      if (tgt.baseStem.length < MIN_BARE_NAME_LEN) continue;
+      const t = resolveTarget(src.scope, tgt.baseStem);
+      if (!t || t === src.id) continue;
       // Honour the wiki-deduplication rule above.
-      if (edgeMap.has(edgeKey(src.id, tgt.id, 'wiki'))) continue;
-      if (lower.includes(tgt.id)) {
-        addEdge(src.id, tgt.id, 'bare');
+      if (edgeMap.has(edgeKey(src.id, t, 'wiki'))) continue;
+      if (lower.includes(tgt.baseStem)) {
+        addEdge(src.id, t, 'bare');
       }
     }
   }
@@ -283,6 +290,7 @@ export function buildMemoryGraph() {
     return {
       id: f.id,
       kind: f.kind,
+      scope: f.scope,           // 'shared' (team-wide) | 'yours' (this actor's private)
       name: f.name,
       relPath: f.relPath,
       preview: preview(body),

@@ -22,14 +22,18 @@ import { grepMemory } from '../lib/memory-grep.js';
 import { buildCachedPrefix, meetsCacheFloor } from '../lib/memory-loader.js';
 import { listVerdictCards, readVerdictCard } from '../lib/verdict-card-reader.js';
 import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
-import { getTeamMode, primaryAdminSlug } from '../lib/team.js';
+import { getTeamMode, primaryAdminSlug, getUser } from '../lib/team.js';
 
 export default function memoryRouter() {
   const router = Router();
 
-  router.get('/memory/graph', (_req, res) => {
+  router.get('/memory/graph', (req, res) => {
     try {
-      const graph = buildMemoryGraph();
+      // Team mode: scope the graph to the REQUESTING user — the shared tree plus
+      // THEIR own private memory/users/<slug>/, never another teammate's. Solo /
+      // no team → null → shared tree only (everything tagged scope:'shared').
+      const slug = getTeamMode() ? (getUser(req.actor)?.slug || null) : null;
+      const graph = buildMemoryGraph(slug);
       res.json(graph);
     } catch (err) {
       process.stderr.write(`[memory/graph] ${err && err.stack || err}\n`);
