@@ -37,7 +37,7 @@
  * cache once + read many times.
  */
 
-import { existsSync, readFileSync, statSync, mkdirSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { USERS_DIR } from './scope-rule.js';
@@ -519,10 +519,21 @@ export function migrateDefaultMemory(adminSlug) {
     const src = join(memoryDir, path);
     const dest = join(destDir, path);
     try {
-      if (!existsSync(src) || existsSync(dest)) continue;
-      mkdirSync(destDir, { recursive: true });
-      renameSync(src, dest);
-      moved = true;
+      if (!existsSync(src)) continue;
+      if (existsSync(dest)) {
+        // The admin already has the private card → the flat one is the EMPTY
+        // template the entrypoint re-seeds on every deploy. In team mode nothing
+        // writes to the flat USER_TIER cards (skills route per-user), so this is
+        // a stale duplicate: remove it so it doesn't linger in the shared tree /
+        // memory dashboard / confuse "where's my profile".
+        unlinkSync(src);
+        moved = true;
+      } else {
+        // First migration: adopt the operator's solo card under the admin.
+        mkdirSync(destDir, { recursive: true });
+        renameSync(src, dest);
+        moved = true;
+      }
     } catch { /* best-effort — a real FS error just leaves the flat card dormant */ }
   }
   return moved;

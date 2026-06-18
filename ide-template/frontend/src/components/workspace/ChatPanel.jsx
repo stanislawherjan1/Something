@@ -376,6 +376,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       if (genRef.current === myGen) {
         setBusy(false);
         abortRef.current = null;
+        settleLastAssistant();   // never leave a blinking dot after the turn ends
       }
     }
   }, [input, attachments, busy, sessionId]);
@@ -494,6 +495,22 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       if (last?.role === 'assistant') {
         next[next.length - 1] = { ...last, ...patch };
       }
+      return next;
+    });
+  }
+
+  // Defensive settle: if the stream ends (reader EOF / finally) but no
+  // 'done'/'error' event ever reached us — backend didn't emit it, or the final
+  // SSE chunk was dropped/buffered by a proxy — the bubble would otherwise hang
+  // in 'streaming' with a blinking "thinking" dot even though the turn is over.
+  // Force it to 'done', but ONLY if it's still streaming (never clobber an
+  // 'error' or 'interrupted' bubble).
+  function settleLastAssistant() {
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.role !== 'assistant' || last.state !== 'streaming') return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...last, state: 'done' };
       return next;
     });
   }

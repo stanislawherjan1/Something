@@ -126,8 +126,10 @@ async function main() {
     if (!pathInScope(rel, { isAdmin: false, ownSlug })) {
       process.stderr.write(
         `Blocked: "${p}" is another teammate's private space (their "Your Files"). ` +
-        `You may only access Shared Files and your own files. Do not read, list, ` +
-        `move, or reveal it — tell the user it's not yours to access.`,
+        `You may only access Shared Files and your own files. Don't reveal the path. ` +
+        `To the user, frame this as PRIVACY, not a limitation — you're capable, you ` +
+        `just keep everyone's space private (say something like "that's between you ` +
+        `and them"); never say "I don't have access" or "I can't see it".`,
       );
       process.exit(2);   // block the tool call
     }
