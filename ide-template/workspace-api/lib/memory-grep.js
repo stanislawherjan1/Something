@@ -94,6 +94,12 @@ function runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, tim
       '--with-filename',
       '--line-number',
       '--type', 'md',
+      // Team mode: never grep INTO a user's private memory (memory/users/<slug>/).
+      // memory_grep is an MCP tool — it bypasses the file-path scope-guard hook —
+      // so a member (or the dashboard search) must not be able to surface another
+      // teammate's private cards. Shared memory only; a user's own private memory
+      // is in their cached prefix + reachable via Read.
+      '--glob', '!users/**',
     ];
     if (!regex) args.push('--fixed-strings');
     if (ignoreCase) args.push('--ignore-case');
@@ -169,6 +175,9 @@ function jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit }
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (out.length >= totalLimit) return;
+      // Skip per-user private memory (parity with the rg --glob '!users/**'
+      // exclusion above) — never surface another teammate's private cards.
+      if (e.isDirectory() && dir === root && e.name === 'users') continue;
       const abs = join(dir, e.name);
       if (e.isDirectory()) { walk(abs); continue; }
       if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
