@@ -20,6 +20,7 @@ import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { buildCachedPrefix } from './memory-loader.js';
 import { syncMcpServers } from './integrations/runtime.js';
+import { primaryAdminSlug } from './team.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
@@ -72,16 +73,22 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
     // upside — the model treats it as "your conversation memory" and pulls
     // unrelated web threads into a fresh chat.
     //
-    // RECENT_TELEGRAM STAYS — cross-surface awareness (one bot across
-    // surfaces) is a feature, not a bug. The fix for the bleed it caused
-    // ("a fresh web chat answered an ambiguous question from the Telegram
-    // Trello thread") is in the memory-loader guidance: RECENT_TELEGRAM is
-    // framed as a DIFFERENT conversation on another surface — draw context
-    // from it, but don't treat it as a direct continuation, and when a
-    // question is ambiguous, ask rather than assume it's about that thread.
+    // RECENT_TELEGRAM is the bot's ONE Telegram conversation = the OPERATOR's
+    // (primary admin's) DMs — there's a single Telegram token, so it is NOT
+    // per-user like RECENT_WEB. Cross-surface awareness (web sees the Telegram
+    // tail) is a feature for THAT person, but loading the flat card into ANOTHER
+    // teammate's web prefix LEAKS the operator's private Telegram chats. So
+    // include it only for the Telegram operator (actor === primaryAdminSlug; in
+    // solo both are 'default'), and exclude it for every other teammate. The
+    // old "RECENT_TELEGRAM STAYS — one bot across surfaces" assumption holds for
+    // solo but breaks in team mode (one bot, many web users). The cross-surface
+    // bleed it can cause is still handled by the memory-loader guidance (treat
+    // it as a DIFFERENT conversation; ask when ambiguous).
+    const isTgOperator = actor === primaryAdminSlug();
+    const excludeIds = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
     const prefix = buildCachedPrefix({
       memoryDir: join(PROJECT_DIR, 'memory'),
-      excludeIds: ['RECENT_WEB'],
+      excludeIds,
       // Team mode: load THIS user's profile/preferences from their private
       // memory (memory/users/<slug>/), not the shared flat card. Solo →
       // actor is 'default', the loader ignores it and reads flat.
