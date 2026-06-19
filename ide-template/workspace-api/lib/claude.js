@@ -38,7 +38,7 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, webSessionId, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -123,6 +123,20 @@ export function runClaudeTurn({ message, sessionId, webSessionId, actor, actorNa
       `${me}'s private "Your Files" = project/users/${actor}/; the SHARED workspace = the project root — everyone's common work. ` +
       `SHARED-FIRST: most questions about a teammate — "did X finish Y?", "what's the status of Z?", their progress on a shared project or task — are really about the SHARED space. Look in the shared files, Tasks, and shared memory FIRST and answer from there; if it'd help, you can even relay the question to them (see above). Do NOT deflect a work question with "that's private" — collaboration is the default. ` +
       `The one thing you genuinely can't reach is another teammate's OWN private space (project/users/<them>/, memory/users/<them>/). That only matters if the user specifically asks you to read THOSE private files — and even then, just help with the shared work unless they insist on cracking into someone's private files, in which case say each person's private space is theirs. Never invent another teammate's private content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
+
+    // B3 v2 — relay-thread awareness. If THIS session is a relay channel, the
+    // user is mid-conversation WITH the paired teammate(s) through you. Without
+    // this, the bot reads "tak, mam" as a remark to itself and the answer never
+    // gets back to the asker — the exact failure this fixes.
+    const peers = Array.isArray(relayThread) ? relayThread.filter(p => p && p.slug) : [];
+    if (peers.length) {
+      const peerList = peers.map(p => `${p.name} (slug: ${p.slug})`).join(', ');
+      args.push('--append-system-prompt',
+        `[RELAY THREAD] This conversation is a live relay channel between ${me} and ${peerList}. ` +
+        `${me} is talking WITH them THROUGH you — you're the courier. Earlier in this thread you delivered a message from them; ${me}'s messages here are part of that exchange, NOT remarks to you. ` +
+        `So when ${me} answers or reacts to what the teammate said ("tak, mam", "ok powiedz mu że…", a yes/no, a counter-question for them), relay it straight back to that teammate IMMEDIATELY via web_send_message (recipient = their slug), composed naturally in their language, then confirm to ${me} in one line. Do NOT ask "do you want me to pass that on?" for a clear answer — just pass it on. Keep using this same thread. ` +
+        `Only handle a message yourself (without relaying) when ${me} is plainly addressing YOU — e.g. asking what you meant, a side request, or troubleshooting. If you're genuinely unsure whether a line is for the teammate or for you, ask in one short question; but a direct answer to their question should just go back.`);
+    }
   }
 
   if (sessionId) args.push('--resume', sessionId);

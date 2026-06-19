@@ -456,6 +456,17 @@ export default function chatRouter() {
     const sessionEntry = getSession(req.chatActor, sid);
     const claudeSid = sessionEntry?.claudeSessionId || null;
 
+    // B3 v2 — is THIS session a relay channel? If it's paired with teammates
+    // (relayPeers), the user's messages here are part of a 2-way conversation
+    // WITH those people (the bot is the courier), not messages to the bot. Pass
+    // the peers so the turn knows to relay the user's answers back, in-thread.
+    const relayThread = sessionEntry?.relayPeers
+      ? Object.keys(sessionEntry.relayPeers).map(slug => {
+          const mate = (req.chatTeammates || []).find(t => t.slug === slug);
+          return { slug, name: mate?.name || slug };
+        })
+      : [];
+
     // No Claude session to --resume? Replay this session's own prior messages
     // (e.g. a proactive bot seed) so the assistant knows what it already said
     // here. Computed BEFORE appending the new user message so it's excluded.
@@ -513,6 +524,7 @@ export default function chatRouter() {
       message:       promptForClaude,
       sessionId:     claudeSid,
       webSessionId:  sid,                // B3 v2: our manifest id → IDE_SESSION_ID for relay threading
+      relayThread,                       // B3 v2: peers this thread is a relay channel with (reply→relay back)
       actor:         req.chatActor,      // PreToolUse scope-guard hook
       actorName:     req.chatActorName,  // per-turn [ACTOR …] context line
       actorIsAdmin:  req.chatIsAdmin,
