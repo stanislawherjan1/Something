@@ -15,8 +15,15 @@ import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList } from '../lib/team.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
+
+// Resolve a recipient slug to a real team member, or null. B3: a relay must
+// only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
+function resolveMember(slug) {
+  if (typeof slug !== 'string' || !/^[a-z0-9-]+$/.test(slug)) return null;
+  return teamList().find(m => m.slug === slug) || null;
+}
 
 // A proactive bot message has no specific recipient yet (per-user targeting is
 // a later team-mode phase), so it surfaces in the primary admin's chat history
@@ -69,12 +76,21 @@ export default function internalRouter() {
   // telegram-inbound mirror. notify.publish() fans out to every connected
   // /api/notifications/stream subscriber.
   router.post('/internal/notify', loopbackOnly, (req, res) => {
-    const { kind, title, body, meta, id } = req.body || {};
+    const { kind, title, body, meta, id, recipient, from } = req.body || {};
     if (typeof title !== 'string' && typeof body !== 'string') {
       return res.status(400).json({ ok: false, error: 'title or body required (strings)' });
     }
     try {
-      const n = publishNotification({ kind, title, body, meta, id });
+      // B3: a valid recipient slug scopes the toast to that teammate (+ admins);
+      // absent/invalid → global, as before. For a cross-user relay, make the
+      // toast recipient-facing — they should see who it's from, not the raw
+      // headline the sender's bot wrote.
+      const target = resolveMember(recipient)?.slug || null;
+      const sender = resolveMember(from);
+      const toastTitle = (target && sender && sender.slug !== target)
+        ? `📨 Wiadomość od ${sender.displayName || sender.slug}`
+        : title;
+      const n = publishNotification({ kind, title: toastTitle, body, meta, id, recipient: target });
       return res.json({ ok: true, id: n.id });
     } catch (err) {
       process.stderr.write(`[internal] notify failed: ${err.message}\n`);
@@ -91,23 +107,32 @@ export default function internalRouter() {
   // /internal/notify call (also fired by the MCP) gets the session_id
   // back via its meta so the UI can wire click → switch session.
   router.post('/internal/chat-session', loopbackOnly, (req, res) => {
-    const { title, body } = req.body || {};
+    const { title, body, recipient, from } = req.body || {};
     const cleanTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'Bot message';
-    const text = typeof body === 'string' && body.trim()
+    let text = typeof body === 'string' && body.trim()
       ? (title ? `${title}\n\n${body}` : body)
       : (title || '');
     if (!text) {
       return res.status(400).json({ ok: false, error: 'title or body required' });
     }
     try {
-      const actor = primaryAdminSlug();
-      const session = createSession(actor, { title: cleanTitle });
-      appendToSession(actor, session.id, {
-        role: 'assistant',
-        text,
-        kind: 'bot',
-      });
-      return res.json({ ok: true, id: session.id });
+      // B3 — recipient routing. Default (no/invalid recipient) = the primary
+      // admin's chat, preserving the legacy proactive-bot + cross-surface tunnel
+      // (within one user). A valid recipient slug → that teammate's chat.
+      const target = resolveMember(recipient);
+      const actor = target?.slug || primaryAdminSlug();
+      // Cross-USER relay: the message originated from a DIFFERENT teammate.
+      // Attribute it clearly so the recipient knows it's a relay (the bot is the
+      // courier), never an impersonation.
+      const sender = resolveMember(from);
+      const isRelay = !!(sender && sender.slug !== actor);
+      const relayTitle = isRelay ? `📨 ${sender.displayName || sender.slug}` : cleanTitle;
+      if (isRelay) {
+        text = `📨 **${sender.displayName || sender.slug}** poprosił mnie, żeby przekazać Ci:\n\n${body || title}`;
+      }
+      const session = createSession(actor, { title: relayTitle });
+      appendToSession(actor, session.id, { role: 'assistant', text, kind: 'bot' });
+      return res.json({ ok: true, id: session.id, recipient: actor, relay: isRelay });
     } catch (err) {
       process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

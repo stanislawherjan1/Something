@@ -14,6 +14,7 @@
 
 import { Router } from 'express';
 import { subscribe } from '../lib/notify.js';
+import { getUser, isAdmin } from '../lib/team.js';
 
 export default function notificationsRouter() {
   const router = Router();
@@ -28,7 +29,11 @@ export default function notificationsRouter() {
     res.flushHeaders();
     res.socket?.setNoDelay?.(true);
 
-    const detach = subscribe(res);
+    // B3: scope this stream to the viewer so a relay targeted at one teammate
+    // only reaches them. Global notifications (no recipient) reach everyone.
+    // Solo / no team → slug null → only global, unchanged.
+    const viewer = { slug: getUser(req.actor)?.slug || null, isAdmin: isAdmin(req.actor) };
+    const detach = subscribe(res, viewer);
     req.on('close', detach);
   });
 

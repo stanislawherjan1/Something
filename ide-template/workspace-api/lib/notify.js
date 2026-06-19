@@ -31,13 +31,24 @@ function writeEvent(res, name, data) {
   }
 }
 
+/** Does a notification target this viewer? A notification with no `recipient`
+ *  is GLOBAL (team-wide / legacy single-user); one WITH a recipient slug is
+ *  private to that teammate (B3 inter-user relay). Admins see everything. */
+function visibleTo(n, viewerSlug, viewerIsAdmin) {
+  if (!n.recipient) return true;            // global notification
+  if (viewerIsAdmin) return true;           // admin sees all
+  return !!viewerSlug && n.recipient === viewerSlug;
+}
+
 /**
  * Attach an SSE response stream. Replays the buffered notifications on
  * connect so a freshly opened tab sees what it just missed. Returns a
- * detacher to call on req close.
+ * detacher to call on req close. `viewer` ({ slug, isAdmin }) scopes which
+ * notifications this subscriber receives: global ones always, recipient-
+ * targeted ones only if they're the recipient (or an admin).
  */
-export function subscribe(res) {
-  const sub = { res };
+export function subscribe(res, viewer = {}) {
+  const sub = { res, slug: viewer.slug || null, isAdmin: !!viewer.isAdmin };
   subscribers.add(sub);
 
   writeEvent(res, 'hello', { ok: true, replay: recent.length });
@@ -45,7 +56,9 @@ export function subscribe(res) {
   // live arrivals — keeps the toast surface from re-popping the same
   // reminder on every page refresh, while NotificationsView still
   // renders the full backlog.
-  for (const n of recent) writeEvent(res, 'notification', { ...n, replay: true });
+  for (const n of recent) {
+    if (visibleTo(n, sub.slug, sub.isAdmin)) writeEvent(res, 'notification', { ...n, replay: true });
+  }
 
   const heartbeat = setInterval(() => {
     try { res.write(': keep-alive\n\n'); } catch {}
@@ -76,10 +89,16 @@ export function publish(input) {
     title: typeof input?.title === 'string' ? input.title : '',
     body: typeof input?.body === 'string' ? input.body : '',
     meta: input?.meta && typeof input.meta === 'object' ? input.meta : {},
+    // B3: a notification targeted at one teammate (their slug). null/absent =
+    // global (legacy single-user + team-wide). Only the recipient (+ admins)
+    // receive a targeted one — see visibleTo().
+    recipient: typeof input?.recipient === 'string' && input.recipient ? input.recipient : null,
   };
   recent.push(n);
   while (recent.length > BUFFER_LIMIT) recent.shift();
-  for (const sub of subscribers) writeEvent(sub.res, 'notification', n);
+  for (const sub of subscribers) {
+    if (visibleTo(n, sub.slug, sub.isAdmin)) writeEvent(sub.res, 'notification', n);
+  }
   return n;
 }
 

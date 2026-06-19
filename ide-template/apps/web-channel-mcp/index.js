@@ -39,14 +39,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'web_send_message',
       description:
-        'Send a message to the user in the workspace web UI. Use this when ' +
-        "the inbound prompt came over the web channel (e.g. prefixed with " +
-        "[WEB_USER] or [REMINDER channel=web]), OR when there is no Telegram " +
-        "channel available. The message renders as a notification toast in " +
-        "the user's browser; future Bot Chat view will thread these into a " +
-        "single conversation. Prefer plain text — no markdown rendering yet. " +
-        'Use `title` for the headline (~60 chars), `body` for the longer ' +
-        'reply. If you only have one line, set `title` only.',
+        'Send a message into a user\'s workspace web UI (a notification toast + a ' +
+        'chat entry). Two modes: (1) reply to the CURRENT web user (omit ' +
+        '`recipient`) — use when the prompt came over the web channel or there is ' +
+        'no Telegram; (2) RELAY to ANOTHER teammate — set `recipient` to their ' +
+        'slug (see the TEAM roster). A relay is delivered to that teammate, clearly ' +
+        "attributed to you (the bot is the courier; never impersonation). Only " +
+        'relay to a known teammate slug, and only when the current user explicitly ' +
+        'asked you to pass something on. Plain text. `title` = headline (~60 ' +
+        'chars), `body` = longer message.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -58,6 +59,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             description:
               'Optional longer message body. Plain text, newlines preserved.',
+          },
+          recipient: {
+            type: 'string',
+            description:
+              "Optional teammate SLUG to RELAY to (cross-user). Omit to reply to " +
+              "the current web user. Must be a real slug from the TEAM roster.",
           },
         },
       },
@@ -71,6 +78,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === 'web_send_message') {
     const title = typeof args?.title === 'string' ? args.title.trim() : '';
     const body  = typeof args?.body  === 'string' ? args.body.trim()  : '';
+    // B3 cross-user relay: recipient = a teammate slug (omit → current web user).
+    // The SENDER is this turn's actor, set by claude.js as IDE_ACTOR_SLUG — wsapi
+    // resolves it to a display name + uses it for attribution.
+    const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
+    const from = (process.env.IDE_ACTOR_SLUG || '').trim();
     if (!title && !body) {
       return {
         content: [{ type: 'text', text: 'Provide at least `title` or `body`.' }],
@@ -87,7 +99,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, body }),
+          body: JSON.stringify({ title, body, recipient, from }),
         });
         const sJson = await sRes.json().catch(() => ({}));
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
@@ -101,6 +113,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           title,
           body,
           meta: sessionId ? { session_id: sessionId } : {},
+          recipient,   // scopes the toast to the recipient teammate (relay); empty → global
+          from,        // wsapi resolves this to a name + builds the recipient-facing relay title
         }),
       });
       const nJson = await nRes.json().catch(() => ({}));
