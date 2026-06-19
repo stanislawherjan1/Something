@@ -507,6 +507,58 @@ if tg_inbound_marker not in content:
 else:
     print('[bot] telegram-log inbound: already patched')
 
+# ── Patch 4e: inbound RELAY ROUTING (separate bot.use, own marker) ─────
+# POSTs every inbound DM to wsapi /internal/telegram-inbound so a teammate's
+# Telegram reply threads back into the right web relay conversation. Captures
+# reply_to_message?.message_id (the logger above does NOT) for deterministic
+# threading. If wsapi reports the message was a relay reply (routed:true) we
+# suppress the identity-blind brain's own reply (return WITHOUT next()) so a
+# non-admin teammate doesn't get a confusing direct bot answer —
+# routeTelegramInbound skips the admin, so the operator's own brain path is
+# untouched (routed stays false for them). Awaited but capped at 1.5s and fully
+# swallowed: a hung or absent wsapi never blocks message handling. Registered as
+# its OWN bot.use (the existing logger block is left intact) and guarded by its
+# own marker for idempotency.
+tg_relay_marker = '// CC-BOT-PATCH: telegram inbound relay routing'
+if tg_relay_marker not in content:
+    relay_inject = (
+        '\n// ' + tg_relay_marker + '\n'
+        'bot.use(async (ctx, next) => {\n'
+        '  let routed = false;\n'
+        '  try {\n'
+        '    const rm = ctx.message;\n'
+        '    const rtext = rm?.text ?? rm?.caption ?? null;\n'
+        '    if (rtext) {\n'
+        '      const payload = JSON.stringify({\n'
+        '        chat_id: ctx.chat?.id != null ? String(ctx.chat.id) : null,\n'
+        '        text: rtext,\n'
+        '        message_id: rm?.message_id ?? null,\n'
+        '        reply_to_message_id: rm?.reply_to_message?.message_id ?? null,\n'
+        '      });\n'
+        '      const r: any = await Promise.race([\n'
+        '        fetch("http://127.0.0.1:3001/api/internal/telegram-inbound", {\n'
+        '          method: "POST", headers: { "Content-Type": "application/json" }, body: payload,\n'
+        '        }).then((res) => res.json()).catch(() => ({})),\n'
+        '        new Promise((res) => setTimeout(() => res({}), 1500)),\n'
+        '      ]);\n'
+        '      routed = !!(r && r.routed);\n'
+        '    }\n'
+        '  } catch (_) { /* swallow */ }\n'
+        '  if (routed) return;   // relay reply handled deterministically — do not let the brain also answer\n'
+        '  await next();\n'
+        '});\n'
+    )
+    pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
+    new_content, n = pattern.subn(r'\1' + relay_inject, content, count=1)
+    if n > 0:
+        content = new_content
+        changed = True
+        print('[bot] telegram inbound relay routing: patched')
+    else:
+        print('[bot] WARNING: telegram relay-routing pattern (const bot = new Bot) not found')
+else:
+    print('[bot] telegram inbound relay routing: already patched')
+
 # ── Patch 4 (continued): outbound API transformer ─────────────────────
 # grammy's bot.api.config.use(transformer) wraps EVERY API call. We
 # log only user-facing send* methods (sendMessage / sendPhoto /

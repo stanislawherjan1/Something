@@ -126,6 +126,12 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   try { sender = teamList().find(m => String(m.telegramChatId || '') === cid) || null; }
   catch { sender = null; }
   if (!sender) return { ok: true, routed: false, reason: 'not a teammate' };
+  // The operator/admin's Telegram replies are handled by their OWN brain (the
+  // single tmux claude IS the operator's assistant — it relays via
+  // web_send_message + the threading fixes). Routing them here too would
+  // double-deliver, and we must NOT suppress the brain for the operator. So skip
+  // the admin: routed:false ⟹ the bot.sh middleware lets the brain handle it.
+  if (sender.role === 'admin') return { ok: true, routed: false, reason: 'admin (brain handles)' };
 
   // Only the sender's OWN relay sessions (leak-safe).
   let sessions;
@@ -160,18 +166,19 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   // reply would otherwise be recorded write-only and the peer never hears it.
   // Push it onward NOW via the existing relay machinery (loopback /chat-session),
   // which threads into the peer's paired session + delivers on the peer's surface.
+  // Fire the relay-back ASYNC (not awaited) so the routing DECISION returns fast
+  // — the bot.sh middleware awaits this (capped) to decide whether to suppress
+  // the brain, and must not block on the slow downstream Telegram send.
   const peers = Object.keys(dest.relayPeers || {});
   const port = process.env.WORKSPACE_API_PORT || '3001';
   for (const peerSlug of peers) {
-    try {
-      await fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body }),
-      });
-    } catch (err) {
+    fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body }),
+    }).catch((err) => {
       process.stderr.write(`[telegram-inbound] relay-back to ${peerSlug} failed: ${err.message}\n`);
-    }
+    });
   }
   return { ok: true, routed: true, session_id: dest.id, peers };
 }
