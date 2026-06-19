@@ -13,7 +13,7 @@
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
-import { createSession } from '../lib/sessions.js';
+import { createSession, getSession, linkRelayPeer } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList } from '../lib/team.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
@@ -107,7 +107,7 @@ export default function internalRouter() {
   // /internal/notify call (also fired by the MCP) gets the session_id
   // back via its meta so the UI can wire click → switch session.
   router.post('/internal/chat-session', loopbackOnly, (req, res) => {
-    const { title, body, recipient, from } = req.body || {};
+    const { title, body, recipient, from, fromSession } = req.body || {};
     const cleanTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'Bot message';
     let text = typeof body === 'string' && body.trim()
       ? (title ? `${title}\n\n${body}` : body)
@@ -136,9 +136,31 @@ export default function internalRouter() {
           ? body.trim()
           : (typeof title === 'string' ? title.trim() : '');
       }
-      const session = createSession(actor, { title: relayTitle });
-      appendToSession(actor, session.id, { role: 'assistant', text, kind: 'bot' });
-      return res.json({ ok: true, id: session.id, recipient: actor, relay: isRelay });
+
+      // B3 v2 — thread continuity. A relay normally spawns a fresh session, so a
+      // back-and-forth scattered into a new thread on every reply. Instead, pair
+      // the sender's CURRENT session with the recipient's relay session
+      // (relayPeers, both directions). On a later relay between the same two
+      // people, reuse the paired thread so the reply "drops into" it. Falls back
+      // to a new session when we can't resolve the sender's session (proactive
+      // bot, cross-surface tunnel, missing IDE_SESSION_ID) — legacy behaviour.
+      let destId = null;
+      const haveSender = isRelay && typeof fromSession === 'string' && fromSession &&
+                         getSession(sender.slug, fromSession);
+      if (haveSender) {
+        const pairedId = haveSender.relayPeers?.[actor];
+        if (pairedId && getSession(actor, pairedId)) destId = pairedId; // reuse thread
+      }
+      if (!destId) {
+        destId = createSession(actor, { title: relayTitle }).id;
+        if (haveSender) {
+          // Pair both ways so the next reply (either direction) threads here.
+          linkRelayPeer(actor, destId, sender.slug, fromSession);
+          linkRelayPeer(sender.slug, fromSession, actor, destId);
+        }
+      }
+      appendToSession(actor, destId, { role: 'assistant', text, kind: 'bot' });
+      return res.json({ ok: true, id: destId, recipient: actor, relay: isRelay });
     } catch (err) {
       process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

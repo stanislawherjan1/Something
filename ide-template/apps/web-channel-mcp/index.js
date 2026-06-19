@@ -87,6 +87,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // resolves it to a display name + uses it for attribution.
     const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
     const from = (process.env.IDE_ACTOR_SLUG || '').trim();
+    // B3 v2 relay threading: the sender's current web session id, so wsapi can
+    // pair it with the recipient's relay thread and keep replies in-thread.
+    const fromSession = (process.env.IDE_SESSION_ID || '').trim();
     if (!title && !body) {
       return {
         content: [{ type: 'text', text: 'Provide at least `title` or `body`.' }],
@@ -103,7 +106,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, body, recipient, from }),
+          body: JSON.stringify({ title, body, recipient, from, fromSession }),
         });
         const sJson = await sRes.json().catch(() => ({}));
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;

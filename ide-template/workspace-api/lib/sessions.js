@@ -122,7 +122,7 @@ export function getSession(actor, sessionId) {
  * itself is NOT created here — append-on-first-write avoids littering disk
  * with abandoned drafts the user opened-and-closed without sending.
  */
-export function createSession(actor, { title } = {}) {
+export function createSession(actor, { title, relayPeers } = {}) {
   const idx = readIndex(actor);
   const now = new Date().toISOString();
   const entry = {
@@ -135,10 +135,30 @@ export function createSession(actor, { title } = {}) {
     pinned:          false,
     archived:        false,
     claudeSessionId: null,
+    // B3 v2 relay threading: peerSlug → that teammate's paired session id.
+    // Present only on relay-anchored sessions; omitted otherwise.
+    ...(relayPeers && typeof relayPeers === 'object' ? { relayPeers } : {}),
   };
   idx.sessions.push(entry);
   writeIndex(actor, idx);
   return entry;
+}
+
+/**
+ * B3 v2 relay threading — pair this session with a peer teammate's session so a
+ * reply relays back INTO the same thread instead of spawning a new one.
+ * `relayPeers` maps peerSlug → that peer's session id (one thread per peer).
+ * Idempotent; no-op if the session is gone. Caller writes both directions.
+ */
+export function linkRelayPeer(actor, sessionId, peerSlug, peerSessionId) {
+  if (!peerSlug || !peerSessionId) return null;
+  const idx = readIndex(actor);
+  const s = idx.sessions.find(x => x.id === sessionId);
+  if (!s) return null;
+  if (!s.relayPeers || typeof s.relayPeers !== 'object') s.relayPeers = {};
+  s.relayPeers[peerSlug] = peerSessionId;
+  writeIndex(actor, idx);
+  return s;
 }
 
 /**

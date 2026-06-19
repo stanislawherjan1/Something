@@ -38,7 +38,7 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, webSessionId, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -193,6 +193,11 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
   // not trigger the scope hook (it has no private tree to guard), keeping solo
   // behaviour identical to pre-team. The hook keys on IDE_ACTOR_SLUG presence.
   if (actor && actor !== 'default') childEnv.IDE_ACTOR_SLUG = String(actor);
+  // B3 v2 relay threading: the web tools (web-channel-mcp) read this to pair the
+  // sender's current thread with the recipient's relay session, so a reply lands
+  // back in the same thread instead of a new one. Our manifest session id (NOT
+  // claude's internal --resume id). Absent on Telegram / pre-session turns.
+  if (webSessionId) childEnv.IDE_SESSION_ID = String(webSessionId);
   childEnv.IDE_ACTOR_IS_ADMIN = actorIsAdmin ? '1' : '0';
 
   const proc = spawn(CLAUDE_BIN, args, {

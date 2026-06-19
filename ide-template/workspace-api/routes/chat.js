@@ -237,7 +237,7 @@ export default function chatRouter() {
       // Strip claudeSessionId from the response — internal only, never shown
       // in UI and a small data-minimization win.
       res.json({ sessions: sessions.map(s => {
-        const { claudeSessionId, ...pub } = s;
+        const { claudeSessionId, relayPeers, ...pub } = s;
         return pub;
       }) });
     } catch (err) {
@@ -249,7 +249,7 @@ export default function chatRouter() {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title.trim() : undefined;
       const created = createSession(req.chatActor, title ? { title } : {});
-      const { claudeSessionId, ...pub } = created;
+      const { claudeSessionId, relayPeers, ...pub } = created;
       res.status(201).json(pub);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -267,7 +267,7 @@ export default function chatRouter() {
       }
       const updated = updateSession(req.chatActor, req.params.id, patch);
       if (!updated) return res.status(404).json({ error: 'session not found' });
-      const { claudeSessionId, ...pub } = updated;
+      const { claudeSessionId, relayPeers, ...pub } = updated;
       res.json(pub);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -512,6 +512,7 @@ export default function chatRouter() {
     proc = runClaudeTurn({
       message:       promptForClaude,
       sessionId:     claudeSid,
+      webSessionId:  sid,                // B3 v2: our manifest id → IDE_SESSION_ID for relay threading
       actor:         req.chatActor,      // PreToolUse scope-guard hook
       actorName:     req.chatActorName,  // per-turn [ACTOR …] context line
       actorIsAdmin:  req.chatIsAdmin,
