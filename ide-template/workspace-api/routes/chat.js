@@ -206,10 +206,14 @@ export default function chatRouter() {
     req.chatActor     = u?.slug || 'default';
     req.chatActorName = u?.displayName || null;
     req.chatIsAdmin   = u?.role === 'admin';
-    // Names of the OTHER teammates, so the bot recognises when the user refers
-    // to a different person (and knows their stuff is private).
+    // The OTHER teammates, as { name, slug } — the NAME lets the bot recognise
+    // when the user refers to a different person; the SLUG is what it must pass
+    // as `recipient` to relay (web_send_message) or scope a per-user action. The
+    // name alone is not enough: relay routing keys on the slug (B3).
     req.chatTeammates = u
-      ? teamRoster().filter(x => x.slug && x.slug !== u.slug).map(x => x.displayName).filter(Boolean)
+      ? teamRoster()
+          .filter(x => x.slug && x.slug !== u.slug)
+          .map(x => ({ name: x.displayName || x.slug, slug: x.slug }))
       : [];
     next();
   });

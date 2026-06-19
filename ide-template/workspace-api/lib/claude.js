@@ -101,18 +101,22 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
   if (actor && actor !== 'default') {
     const me = actorName || 'this user';
     const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
-    const roster = Array.isArray(teammates) && teammates.length
-      ? ` Other teammates are DIFFERENT people: ${teammates.join(', ')}. When the user names one of them, they mean that other person — not themselves.`
+    const mates = (Array.isArray(teammates) ? teammates : [])
+      .filter(t => t && (t.slug || t.name))
+      .map(t => (typeof t === 'string' ? { name: t, slug: '' } : t));
+    const roster = mates.length
+      ? ` Your teammates (DIFFERENT people): ${mates.map(t => t.slug ? `${t.name} (slug: ${t.slug})` : t.name).join(', ')}. ` +
+        `When the user names one of them, they mean that other person — not themselves. ` +
+        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list.`
       : '';
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     args.push('--append-system-prompt',
       `[ACTOR ${who}] You are talking to ${me} — the person typing right now. "I", "me", "my", "we" from them mean ${me}.${roster} ` +
       `WHO ${me} IS — use these, in order: (1) this [ACTOR] line, (2) the USER_PROFILE / USER_PREFERENCES / USER_RELATIONSHIPS / USER_REFLECTIONS cards already in your prefix. In team mode THOSE USER_* cards ARE ${me}'s OWN private profile (loaded from memory/users/${actor}/) — they hold ${me}'s real name, facts, and taste, so READ them and use them directly. If a USER_* card has content, NEVER say "I have no profile for you" or "I don't know your name" — the answer is right there in the card. ` +
       `SEPARATELY — do not confuse the workspace OWNER with ${me}: the SHARED cards (AGENT_IDENTITY, AGENT_TOOLS, RULES, INDEX, topics), the project CLAUDE.md, the knowledge graph, and any auto-memory were authored for this workspace's OWNER/operator, very likely a DIFFERENT person than ${me}. When THAT shared context names a person, says "the user/you", or lists clients/projects, it's the OWNER's — NOT ${me}'s. Never call ${me} by the owner's name or attribute the owner's clients/profile to ${me}. ` +
-      `Each teammate has their OWN private files, conversations, and memory; you can only see ${me}'s. ` +
-      `Their private "Your Files" = project/users/${actor}/; Shared Files = the project root. ` +
-      `If asked what you discussed with — or about the private files/memory of — another teammate, say you don't have access; each person's are private. ` +
-      `Never read, list, reveal, or invent another teammate's content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
+      `${me}'s private "Your Files" = project/users/${actor}/; the SHARED workspace = the project root — everyone's common work. ` +
+      `SHARED-FIRST: most questions about a teammate — "did X finish Y?", "what's the status of Z?", their progress on a shared project or task — are really about the SHARED space. Look in the shared files, Tasks, and shared memory FIRST and answer from there; if it'd help, you can even relay the question to them (see above). Do NOT deflect a work question with "that's private" — collaboration is the default. ` +
+      `The one thing you genuinely can't reach is another teammate's OWN private space (project/users/<them>/, memory/users/<them>/). That only matters if the user specifically asks you to read THOSE private files — and even then, just help with the shared work unless they insist on cracking into someone's private files, in which case say each person's private space is theirs. Never invent another teammate's private content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
   }
 
   if (sessionId) args.push('--resume', sessionId);
