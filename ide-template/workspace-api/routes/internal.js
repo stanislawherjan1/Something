@@ -96,7 +96,7 @@ export default function internalRouter() {
         || (getTeamMode() ? primaryAdminSlug() : null);
       const sender = resolveMember(from);
       const toastTitle = (target && sender && sender.slug !== target)
-        ? `📨 Wiadomość od ${sender.displayName || sender.slug}`
+        ? `📨 Message from ${sender.displayName || sender.slug}`
         : title;
       const n = publishNotification({ kind, title: toastTitle, body, meta, id, recipient: target });
       return res.json({ ok: true, id: n.id });

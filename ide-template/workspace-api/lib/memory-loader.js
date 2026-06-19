@@ -127,14 +127,14 @@ character.
   idle window. **Treat these as a DIFFERENT conversation on ANOTHER
   surface — NOT a direct continuation of the chat you're in right now.**
   They are real context to draw on, not just status notes: when the user
-  clearly refers back ("o czym mówiłem?", "wczoraj na Telegramie…", "tamta
-  rozmowa"), consult the matching block before claiming no context.
+  clearly refers back ("what was I saying?", "yesterday on Telegram…", "that
+  other conversation"), consult the matching block before claiming no context.
   **But do not assume an ambiguous, context-free message in THIS
   conversation is about whatever happened to be last in another channel's
-  tail.** If "to jaki wynik?" arrives in a fresh chat that has nothing in
+  tail.** If "so what's the result?" arrives in a fresh chat that has nothing in
   it yet, **ask what they mean** — don't silently answer from the last
   Telegram thread. When you do pull cross-surface context, **say where it
-  came from** ("na Telegramie wcześniej wspominałeś…") so it's never
+  came from** ("earlier on Telegram you mentioned…") so it's never
   mistaken for something said here. If the relevant card is empty, say so
   plainly, but don't claim you can't see the surface at all.
 
@@ -153,8 +153,8 @@ character.
   > 2. **\`Read /home/coder/project/memory/RECENT_TELEGRAM.md\`** — the
   >    same file the snapshot-monitor maintains on disk. Equivalent to
   >    option 1; pick whichever is more natural in the moment.
-  > 3. Acknowledge the gap honestly: "moja zamrożona wersja pokazuje N
-  >    wiadomości, sprawdzę live snapshot" — then call the tool.
+  > 3. Acknowledge the gap honestly: "my frozen snapshot shows N
+  >    messages, let me check the live snapshot" — then call the tool.
   >
   > Don't claim "I don't have that" without trying one of (1) or (2)
   > first. The \`verify-denials\` Stop hook will block you from

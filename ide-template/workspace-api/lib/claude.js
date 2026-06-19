@@ -136,7 +136,7 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
       args.push('--append-system-prompt',
         `[RELAY THREAD] This conversation is a live relay channel between ${me} and ${peerList}. ` +
         `${me} is talking WITH them THROUGH you — you're the courier. Earlier in this thread you delivered a message from them; ${me}'s messages here are part of that exchange, NOT remarks to you. ` +
-        `So when ${me} answers or reacts to what the teammate said ("tak, mam", "ok powiedz mu że…", a yes/no, a counter-question for them), relay it straight back to that teammate IMMEDIATELY via web_send_message (recipient = their slug), composed naturally in their language, then confirm to ${me} in one line. Do NOT ask "do you want me to pass that on?" for a clear answer — just pass it on. Keep using this same thread. ` +
+        `So when ${me} answers or reacts to what the teammate said ("yes, I do", "ok, tell them that…", a yes/no, a counter-question for them), relay it straight back to that teammate IMMEDIATELY via web_send_message (recipient = their slug), composed naturally in their language, then confirm to ${me} in one line. Do NOT ask "do you want me to pass that on?" for a clear answer — just pass it on. Keep using this same thread. ` +
         `Only handle a message yourself (without relaying) when ${me} is plainly addressing YOU — e.g. asking what you meant, a side request, or troubleshooting. If you're genuinely unsure whether a line is for the teammate or for you, ask in one short question; but a direct answer to their question should just go back.`);
     }
   }
