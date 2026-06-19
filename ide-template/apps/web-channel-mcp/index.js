@@ -76,6 +76,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "Optional teammate SLUG to RELAY to (cross-user). Omit to reply to " +
               "the current web user. Must be a real slug from the TEAM roster.",
           },
+          channel: {
+            type: 'string',
+            enum: ['telegram', 'web'],
+            description:
+              "Optional explicit delivery channel — set this ONLY when the user " +
+              "names one ('on Telegram' → 'telegram'; 'in their workspace' / 'on " +
+              "web' → 'web'). It OVERRIDES the recipient's default preference. " +
+              "Omit it normally: the recipient is then reached on whichever " +
+              "channel THEY prefer. 'telegram' delivers only to Telegram when " +
+              "they're linked (no duplicate web toast).",
+          },
         },
       },
     },
@@ -92,6 +103,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // The SENDER is this turn's actor, set by claude.js as IDE_ACTOR_SLUG — wsapi
     // resolves it to a display name + uses it for attribution.
     const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
+    // Explicit delivery channel override ('telegram' | 'web'); '' = recipient's
+    // own preference decides.
+    const channel = (args?.channel === 'telegram' || args?.channel === 'web') ? args.channel : '';
     const from = (process.env.IDE_ACTOR_SLUG || '').trim();
     // B3 v2 relay threading: the sender's current web session id, so wsapi can
     // pair it with the recipient's relay thread and keep replies in-thread.
@@ -113,54 +127,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, body, recipient, from, fromSession }),
+          body: JSON.stringify({ title, body, recipient, from, fromSession, channel }),
         });
         const sJson = await sRes.json().catch(() => ({}));
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
         if (sJson?.delivery) delivery = sJson.delivery;
       } catch (_) { /* swallow — fall through to notify */ }
 
-      const nRes = await fetch(NOTIFY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'bot',
-          title,
-          body,
-          meta: sessionId ? { session_id: sessionId } : {},
-          recipient,   // scopes the toast to the recipient teammate (relay); empty → global
-          from,        // wsapi resolves this to a name + builds the recipient-facing relay title
-        }),
-      });
-      const nJson = await nRes.json().catch(() => ({}));
-      if (!nRes.ok || !nJson?.ok) {
-        return {
-          content: [{
-            type: 'text',
-            text: `web_send_message: wsapi /notify responded ${nRes.status}: ${JSON.stringify(nJson)}`,
-          }],
-          isError: true,
-        };
-      }
-      // Tell the bot WHERE it actually landed, so it relays the truth to the
-      // user instead of promising a channel that didn't happen.
-      let where = '';
-      if (recipient && delivery) {
-        if (delivery.telegram) {
-          where = ' Delivered to their web workspace AND their Telegram.';
-        } else if (delivery.recipientLinkedTelegram === false) {
-          where = ' Delivered to their web workspace. They have NOT linked Telegram, so it did NOT go to Telegram —' +
-                  ' tell the user it is waiting in the workspace, do not claim you sent it on Telegram.';
-        } else {
-          where = ' Delivered to their web workspace (their chosen surface — not Telegram).';
+      // Fire the web toast UNLESS this went to Telegram-only by explicit request
+      // (delivery.webToast === false) — the recipient already has it on Telegram,
+      // a web toast would be redundant/contradictory.
+      const wantWebToast = !delivery || delivery.webToast !== false;
+      let notifyId = null;
+      if (wantWebToast) {
+        const nRes = await fetch(NOTIFY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: 'bot',
+            title,
+            body,
+            meta: sessionId ? { session_id: sessionId } : {},
+            recipient,   // scopes the toast to the recipient teammate (relay); empty → global
+            from,        // wsapi resolves this to a name + builds the recipient-facing relay title
+          }),
+        });
+        const nJson = await nRes.json().catch(() => ({}));
+        if (!nRes.ok || !nJson?.ok) {
+          return {
+            content: [{
+              type: 'text',
+              text: `web_send_message: wsapi /notify responded ${nRes.status}: ${JSON.stringify(nJson)}`,
+            }],
+            isError: true,
+          };
         }
+        notifyId = nJson.id;
+      }
+
+      // Tell the bot WHERE it actually landed so it relays the truth to the user,
+      // instead of promising a channel that didn't happen. Covers relay + self.
+      const d = delivery || {};
+      const who = recipient ? 'their' : 'your';
+      let where;
+      if (d.telegram && d.webToast === false) {
+        where = `Delivered to ${who} Telegram.`;
+      } else if (d.telegram) {
+        where = `Delivered to ${who} workspace AND ${who} Telegram.`;
+      } else if (d.telegramRequested && d.recipientLinkedTelegram === false) {
+        where = `Delivered to ${who} workspace. Telegram was requested but ${recipient ? 'they have' : 'you have'} NOT linked Telegram, so it did NOT reach Telegram — tell the user that plainly, don't claim it went to Telegram.`;
+      } else if (d.telegramRequested) {
+        where = `Delivered to ${who} workspace. Telegram was requested but the Telegram send did not go through — say it's in the workspace, not on Telegram.`;
+      } else {
+        where = `Delivered to ${who} workspace.`;
       }
       return {
         content: [{
           type: 'text',
-          text: (sessionId
-            ? `Sent (notification=${nJson.id}, session=${sessionId}).`
-            : `Sent (notification=${nJson.id}, session-create failed — toast only).`) + where,
+          text: `Sent.${sessionId ? '' : ' (session-create failed — message still delivered.)'} ${where}`,
         }],
       };
     } catch (err) {

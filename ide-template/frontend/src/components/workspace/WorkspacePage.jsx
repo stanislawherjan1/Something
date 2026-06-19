@@ -312,9 +312,13 @@ export default function WorkspacePage() {
           >
             <div className="flex h-12 items-center justify-between gap-4 px-4">
               <div className="flex min-w-0 items-center gap-2.5">
-                <Send className="size-4 shrink-0 text-sky-500" strokeWidth={1.75} />
+                <img
+                  src={`${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg`}
+                  alt=""
+                  className="size-5 shrink-0"
+                />
                 <p className="truncate text-[13px] text-foreground/85">
-                  Link your Telegram so teammates can reach you there when they pass a message your way.
+                  Connect <span className="font-semibold text-foreground">your Telegram</span> so teammates can reach you there.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -323,7 +327,7 @@ export default function WorkspacePage() {
                   onClick={() => setLinkOpen(true)}
                   className="rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/85"
                 >
-                  Link Telegram
+                  Connect
                 </button>
                 <button
                   type="button"

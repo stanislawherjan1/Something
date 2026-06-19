@@ -13,7 +13,7 @@
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
-import { createSession, getSession, linkRelayPeer } from '../lib/sessions.js';
+import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
 import { sendTelegramMessage } from '../lib/integrations/telegram-sync.js';
@@ -24,6 +24,21 @@ import { ensureBrowserForMcp } from './docs-comments-login.js';
 function resolveMember(slug) {
   if (typeof slug !== 'string' || !/^[a-z0-9-]+$/.test(slug)) return null;
   return teamList().find(m => m.slug === slug) || null;
+}
+
+// Cross-surface relay threading: the recipient's existing session paired with
+// the sender (relayPeers[senderSlug]), most-recently active. Lets a reply that
+// arrives on ANOTHER surface (e.g. the sender answered on Telegram, which has no
+// web session id to thread on) drop into the SAME conversation instead of
+// spawning a new one. Null when there's no pair yet.
+function findPairedSession(recipientSlug, senderSlug) {
+  if (!recipientSlug || !senderSlug) return null;
+  let sessions;
+  try { sessions = listSessions(recipientSlug, { archived: false }); } catch { return null; }
+  const paired = sessions.filter(s => s.relayPeers && s.relayPeers[senderSlug]);
+  if (!paired.length) return null;
+  paired.sort((a, b) => String(b.lastMessageAt || '').localeCompare(String(a.lastMessageAt || '')));
+  return paired[0].id;
 }
 
 // A proactive bot message has no specific recipient yet (per-user targeting is
@@ -114,8 +129,8 @@ export default function internalRouter() {
   // alongside the user's normal conversations. The companion
   // /internal/notify call (also fired by the MCP) gets the session_id
   // back via its meta so the UI can wire click → switch session.
-  router.post('/internal/chat-session', loopbackOnly, (req, res) => {
-    const { title, body, recipient, from, fromSession } = req.body || {};
+  router.post('/internal/chat-session', loopbackOnly, async (req, res) => {
+    const { title, body, recipient, from, fromSession, channel } = req.body || {};
     const cleanTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'Bot message';
     let text = typeof body === 'string' && body.trim()
       ? (title ? `${title}\n\n${body}` : body)
@@ -133,8 +148,12 @@ export default function internalRouter() {
       // act as the operator). Keeps a Telegram "send to my web UI" in the
       // operator's own history rather than defaulting everyone to the admin.
       const actor = target?.slug || resolveMember(from)?.slug || primaryAdminSlug();
-      // Cross-USER relay: the message originated from a DIFFERENT teammate.
-      const sender = resolveMember(from);
+      // Who SENT this. A web turn passes `from`; a surface with no per-user
+      // identity (Telegram, reminders) passes none — there the sender IS the
+      // operator/admin. Attributing it lets a Telegram-originated reply thread
+      // back into the right relay conversation instead of spawning a new one.
+      const sender = resolveMember(from)
+        || (!from && getTeamMode() ? resolveMember(primaryAdminSlug()) : null);
       const isRelay = !!(sender && sender.slug !== actor);
       // For a relay the sender's bot already composed a natural, human message
       // FOR the recipient (greeting them, naming the sender inline, in their
@@ -163,6 +182,13 @@ export default function internalRouter() {
         const pairedId = haveSender.relayPeers?.[actor];
         if (pairedId && getSession(actor, pairedId)) destId = pairedId; // reuse thread
       }
+      // Cross-surface fallback: no fromSession (the reply came in over Telegram,
+      // which has no web session) — reuse the recipient's existing thread paired
+      // with the sender so it threads instead of opening a new conversation.
+      if (!destId && isRelay && sender) {
+        const paired = findPairedSession(actor, sender.slug);
+        if (paired) destId = paired;
+      }
       if (!destId) {
         destId = createSession(actor, { title: relayTitle }).id;
         if (haveSender) {
@@ -173,17 +199,36 @@ export default function internalRouter() {
       }
       appendToSession(actor, destId, { role: 'assistant', text, kind: 'bot' });
 
-      // TG-2 cross-surface: the web thread is always the record, but if the
-      // recipient prefers Telegram (and is linked) also ping them there so a
-      // relay reaches them where they actually are. Fire-and-forget — the web
-      // delivery already succeeded; a TG hiccup must not fail the request.
-      const tgWanted = !!(isRelay && target?.telegramChatId &&
-        (target.preferredSurface === 'telegram' || target.preferredSurface === 'both'));
-      if (tgWanted) sendTelegramMessage(target.telegramChatId, text).catch(() => {});
+      // Channel routing. Who actually receives this = `deliverTo`: the explicit
+      // recipient for a relay, or the actor for a self / cross-surface "message
+      // me on Telegram". Their preferredSurface is the DEFAULT channel; an
+      // explicit `channel` from the sender OVERRIDES it. The web thread above is
+      // always the record + 2-way anchor; here we decide the Telegram ping and
+      // whether to ALSO fire the web toast.
+      const deliverTo   = target || resolveMember(actor);
+      const explicitTg  = channel === 'telegram';
+      const explicitWeb = channel === 'web';
+      const prefersTg = !!(deliverTo?.telegramChatId &&
+        (deliverTo.preferredSurface === 'telegram' || deliverTo.preferredSurface === 'both'));
+      // Send to Telegram when the sender EXPLICITLY asked for it (works for a
+      // relay AND a self "send me on Telegram"), or — for a cross-user relay —
+      // when the recipient's preference is Telegram. Proactive/reminders (not
+      // explicit, not a relay) don't auto-forward here; they have their own path.
+      const wantTg = !!(deliverTo?.telegramChatId && !explicitWeb &&
+        (explicitTg || (isRelay && prefersTg)));
+      let tgSent = false;
+      if (wantTg) {
+        // Awaited (not fire-and-forget) so we know whether to suppress the web
+        // toast — if Telegram failed we must NOT also hide the web copy.
+        const r = await sendTelegramMessage(deliverTo.telegramChatId, text);
+        tgSent = !!(r && r.ok);
+      }
+      // Suppress the web toast ONLY when the sender explicitly chose Telegram and
+      // it actually landed there; otherwise the web toast still fires.
+      const webToast = !(explicitTg && tgSent);
 
-      // Report WHERE it actually landed so the caller (web_send_message → the
-      // bot) tells the user the truth instead of promising a channel that
-      // didn't happen.
+      // Report WHERE it actually landed so web_send_message → the bot tells the
+      // user the truth instead of promising a channel that didn't happen.
       return res.json({
         ok: true,
         id: destId,
@@ -191,8 +236,10 @@ export default function internalRouter() {
         relay: isRelay,
         delivery: {
           web: true,
-          telegram: tgWanted,
-          recipientLinkedTelegram: !!target?.telegramChatId,
+          webToast,
+          telegram: tgSent,
+          telegramRequested: explicitTg,
+          recipientLinkedTelegram: !!deliverTo?.telegramChatId,
         },
       });
     } catch (err) {

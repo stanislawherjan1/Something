@@ -432,6 +432,9 @@ function TelegramContact({ entry, canManage, onChange }) {
     );
   }
 
+  // Admins manage the LINK (the chat id) here. The preferred channel is the
+  // teammate's OWN choice (set via their "Connect your Telegram" prompt), shown
+  // read-only so it's clear it's their preference — not the admin's to pick.
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
       <Send className="size-3 shrink-0 text-muted-foreground/55" strokeWidth={1.75} />
@@ -445,25 +448,17 @@ function TelegramContact({ entry, canManage, onChange }) {
         onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
         placeholder="Telegram chat id"
         inputMode="numeric"
+        title="Their Telegram chat id (the DM with the bot)"
         className={cn(
           'w-32 rounded-md border border-border/50 bg-background px-2 py-0.5 text-[11.5px]',
           'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
         )}
       />
-      <select
-        value={entry.preferredSurface || ''}
-        onChange={(e) => save({ preferredSurface: e.target.value })}
-        title="Where to reach them for relays"
-        className={cn(
-          'rounded-md border border-border/50 bg-background px-1.5 py-0.5 text-[11px] font-medium',
-          'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
-        )}
-      >
-        <option value="">surface…</option>
-        <option value="web">web</option>
-        <option value="telegram">telegram</option>
-        <option value="both">both</option>
-      </select>
+      {entry.preferredSurface && (
+        <span className="text-[10.5px] text-muted-foreground/55" title="The teammate's own preferred channel">
+          prefers {entry.preferredSurface === 'both' ? 'web + telegram' : entry.preferredSurface}
+        </span>
+      )}
       {busy && <Loader2 className="size-3 animate-spin text-muted-foreground/50" />}
       {err && <span className="text-[10.5px] text-destructive">{err}</span>}
     </div>
