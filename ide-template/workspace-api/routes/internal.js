@@ -182,10 +182,15 @@ export default function internalRouter() {
         const pairedId = haveSender.relayPeers?.[actor];
         if (pairedId && getSession(actor, pairedId)) destId = pairedId; // reuse thread
       }
-      // Cross-surface fallback: no fromSession (the reply came in over Telegram,
-      // which has no web session) — reuse the recipient's existing thread paired
-      // with the sender so it threads instead of opening a new conversation.
-      if (!destId && isRelay && sender) {
+      // Cross-surface fallback — ONLY when we have no sender web session at all
+      // (haveSender is false: the reply arrived over Telegram, which carries no
+      // web session id). In that case reuse the recipient's existing thread
+      // paired with the sender so it threads instead of opening a new one.
+      // We must NOT do this when the sender DOES have a web session (haveSender):
+      // a relay started from a DIFFERENT web chat is its own conversation and
+      // gets its own pair — otherwise every chat with the same person collapses
+      // into the first-paired one, and replies always go back to that first chat.
+      if (!destId && isRelay && sender && !haveSender) {
         const paired = findPairedSession(actor, sender.slug);
         if (paired) destId = paired;
       }
