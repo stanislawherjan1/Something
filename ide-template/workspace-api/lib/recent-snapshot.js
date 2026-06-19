@@ -26,59 +26,79 @@
  *                writes memory/RECENT_TELEGRAM.md
  */
 
-import { existsSync, readFileSync, statSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, readdirSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
+import { getTeamMode, primaryAdminSlug } from './team.js';
+import { USERS_DIR } from './scope-rule.js';
 
 const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
 const MEMORY_DIR = join(PROJECT_DIR, 'memory');
 
 // Web chat history lives in per-session files at
-// `<workspace>/.team/users/<actor>/chats/<sessionId>.jsonl`. Team mode keys
-// these per user, so aggregate across EVERY user dir (not a hardcoded
-// 'default', which the startup migration renames to the admin's slug). The
-// shared Telegram bot reads this combined "recent web" snapshot for
-// cross-surface awareness; per-user RECENT_WEB comes with per-user bots later.
+// `<workspace>/.team/users/<actor>/chats/<sessionId>.jsonl` — one chats dir per
+// user. A web conversation tail is one person's private chat with the bot, so
+// in TEAM mode each user gets their OWN RECENT_WEB at memory/users/<slug>/, and
+// the shared memory/RECENT_WEB.md (which the Telegram bot reads for
+// cross-surface awareness) holds only the PRIMARY ADMIN's web sessions — the
+// bot has no per-user identity, it acts as the admin. The old behaviour merged
+// every user's chats into one shared file, which leaked everyone's web
+// conversations to whoever read it (esp. the operator's Telegram). Solo mode →
+// one user dir → one shared file, unchanged.
 const WEB_USERS_ROOT = join(PROJECT_DIR, '.team', 'users');
 
-function listWebSessionFiles() {
-  const out = [];
+// Map<slug, string[]> — *.jsonl session transcripts grouped by their owner's
+// slug (the .team/users/<slug> dir name). Skips _index.json and archive/.
+function listWebSessionsByUser() {
+  const out = new Map();
   let users;
   try { users = readdirSync(WEB_USERS_ROOT, { withFileTypes: true }); }
-  catch { return []; }
+  catch { return out; }
   for (const u of users) {
     if (!u.isDirectory()) continue;
     const chatsDir = join(WEB_USERS_ROOT, u.name, 'chats');
+    const files = [];
     try {
-      // *.jsonl session transcripts only — skips _index.json and archive/.
       for (const f of readdirSync(chatsDir)) {
-        if (f.endsWith('.jsonl')) out.push(join(chatsDir, f));
+        if (f.endsWith('.jsonl')) files.push(join(chatsDir, f));
       }
-    } catch { /* this user has no chats dir yet — skip */ }
+    } catch { continue; } // this user has no chats dir yet — skip
+    if (files.length) out.set(u.name, files);
   }
   return out;
 }
 
-// Merge every per-session web transcript into one timestamp-ordered tail.
-// Interleaving distinct conversations is intentional here: RECENT_WEB is a
-// cross-conversation "what happened on web recently" snapshot, consumed by
-// the bot tmux (Telegram) for cross-surface awareness and on-demand lookups.
-// It is NOT injected into the web chat prefix (excluded in lib/claude.js), so
-// it can't bleed one web chat into another.
-function readWebMessages() {
+// Merge a set of per-session transcripts into one timestamp-ordered tail.
+// Interleaving distinct conversations of ONE user is intentional — RECENT_WEB
+// is a "what did I talk about on web recently" snapshot. It is NOT injected
+// into the web chat prefix (excluded in lib/claude.js), so it can't bleed one
+// web chat into another.
+function readMessagesFrom(files) {
   const all = [];
-  for (const f of listWebSessionFiles()) {
+  for (const f of files) {
     for (const m of readJsonl(f)) all.push(m);
   }
   all.sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
   return all;
 }
 
+// All web messages across every user — only used for solo mode (one user dir).
+function readWebMessages() {
+  const files = [];
+  for (const fs of listWebSessionsByUser().values()) files.push(...fs);
+  return readMessagesFrom(files);
+}
+
+// Staleness key: newest mtime across EVERY user's session files, so a refresh
+// fires when any user is idle-done (the writer then rewrites all per-user
+// snapshots). Kept aggregate on purpose — see isSnapshotStale.
 function webSourceMtimeMs() {
   let newest = 0;
-  for (const f of listWebSessionFiles()) {
-    try { newest = Math.max(newest, statSync(f).mtimeMs); } catch { /* skip */ }
+  for (const fs of listWebSessionsByUser().values()) {
+    for (const f of fs) {
+      try { newest = Math.max(newest, statSync(f).mtimeMs); } catch { /* skip */ }
+    }
   }
   return newest;
 }
@@ -174,20 +194,8 @@ do_not_write_here: Don't add observations or summaries. This is the raw transcri
 `;
 }
 
-/**
- * Read the source JSONL tail and write the snapshot card for one channel.
- * Idempotent — safe to call repeatedly. Returns a small summary object
- * the caller (PM2 monitor, route handler) can log.
- */
-export function writeRecentSnapshot({
-  channel = 'web',
-  maxMessages = DEFAULT_MAX_MESSAGES,
-  maxChars = DEFAULT_MAX_CHARS,
-} = {}) {
-  const cfg = CHANNELS[channel];
-  if (!cfg) throw new Error(`unknown channel: ${channel}`);
-  const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
-  const updatedAt = new Date().toISOString();
+// Render the full snapshot file (header + tail body) for a set of messages.
+function renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt) {
   const head = buildHeader(cfg, messages.length, updatedAt);
   let body;
   if (messages.length === 0) {
@@ -201,13 +209,69 @@ export function writeRecentSnapshot({
       body = chunks.join('\n\n');
     }
   }
-  atomicWrite(cfg.snapshotPath, head + body + '\n');
+  return { content: head + body + '\n', charCount: body.length };
+}
+
+/**
+ * Read the source JSONL tail and write the snapshot card for one channel.
+ * Idempotent — safe to call repeatedly. Returns a small summary object
+ * the caller (PM2 monitor, route handler) can log.
+ *
+ * Team mode + web: writes ONE snapshot per user under memory/users/<slug>/ (a
+ * web tail is that person's private conversation) and the shared
+ * memory/RECENT_WEB.md from the primary admin's sessions only (the Telegram
+ * surface acts as the admin). Solo / telegram: a single shared file, unchanged.
+ */
+export function writeRecentSnapshot({
+  channel = 'web',
+  maxMessages = DEFAULT_MAX_MESSAGES,
+  maxChars = DEFAULT_MAX_CHARS,
+} = {}) {
+  const cfg = CHANNELS[channel];
+  if (!cfg) throw new Error(`unknown channel: ${channel}`);
+  const updatedAt = new Date().toISOString();
+
+  // Per-user web snapshots (team mode only).
+  if (channel === 'web' && getTeamMode()) {
+    const byUser = listWebSessionsByUser();
+    const adminSlug = primaryAdminSlug();
+    let wrote = 0;
+    let total = 0;
+    // 1) Each user's own private RECENT_WEB.
+    for (const [slug, files] of byUser) {
+      if (!/^[a-z0-9-]+$/.test(slug)) continue; // path-segment safety
+      const messages = readMessagesFrom(files);
+      total += messages.length;
+      const { content } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
+      const dir = join(MEMORY_DIR, USERS_DIR, slug);
+      try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+      atomicWrite(join(dir, 'RECENT_WEB.md'), content);
+      wrote++;
+    }
+    // 2) Shared file = the admin's sessions (Telegram cross-surface = admin).
+    const adminFiles = byUser.get(adminSlug) || [];
+    const adminMsgs = readMessagesFrom(adminFiles);
+    const { content } = renderSnapshot(cfg, channel, adminMsgs, maxMessages, maxChars, updatedAt);
+    atomicWrite(cfg.snapshotPath, content);
+    return {
+      channel,
+      path: cfg.snapshotPath,
+      perUser: wrote,
+      total,
+      written_at: updatedAt,
+    };
+  }
+
+  // Solo web, or telegram: one shared file (legacy behaviour).
+  const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
+  const { content, charCount } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
+  atomicWrite(cfg.snapshotPath, content);
   return {
     channel,
     path: cfg.snapshotPath,
     total: messages.length,
     written_at: updatedAt,
-    char_count: body.length,
+    char_count: charCount,
   };
 }
 

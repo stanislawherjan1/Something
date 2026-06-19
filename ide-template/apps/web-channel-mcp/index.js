@@ -43,11 +43,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'chat entry). Two modes: (1) reply to the CURRENT web user (omit ' +
         '`recipient`) — use when the prompt came over the web channel or there is ' +
         'no Telegram; (2) RELAY to ANOTHER teammate — set `recipient` to their ' +
-        'slug (see the TEAM roster). A relay is delivered to that teammate, clearly ' +
-        "attributed to you (the bot is the courier; never impersonation). Only " +
-        'relay to a known teammate slug, and only when the current user explicitly ' +
-        'asked you to pass something on. Plain text. `title` = headline (~60 ' +
-        'chars), `body` = longer message.',
+        'slug (see the TEAM roster). A relay is delivered to that teammate. ' +
+        'Compose it as a NATURAL, human message addressed to them: greet them and ' +
+        'weave the sender in conversationally (e.g. "Hi Jan, Stan is asking ' +
+        'whether you finished the analysis"). Write it in the RECIPIENT\'s ' +
+        'language (the roster shows "writes in <lang>" when known). Put that whole ' +
+        'message in `body` — it is delivered VERBATIM, so do NOT add a robotic ' +
+        '"X asked me to forward" preamble. Only relay to a known teammate slug, ' +
+        'and only when the current user explicitly asked you to pass something on. ' +
+        'Plain text. `title` = short chat-list label (optional), `body` = the message.',
       inputSchema: {
         type: 'object',
         properties: {

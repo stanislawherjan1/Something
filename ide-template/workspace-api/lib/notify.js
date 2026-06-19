@@ -32,11 +32,18 @@ function writeEvent(res, name, data) {
 }
 
 /** Does a notification target this viewer? A notification with no `recipient`
- *  is GLOBAL (team-wide / legacy single-user); one WITH a recipient slug is
- *  private to that teammate (B3 inter-user relay). Admins see everything. */
-function visibleTo(n, viewerSlug, viewerIsAdmin) {
-  if (!n.recipient) return true;            // global notification
-  if (viewerIsAdmin) return true;           // admin sees all
+ *  is GLOBAL (team-wide / legacy single-user) and reaches everyone. One WITH a
+ *  recipient slug is PRIVATE to that teammate (B3 inter-user relay) — it reaches
+ *  ONLY them: not the sender, not other admins.
+ *
+ *  Note we deliberately do NOT grant admins a view of targeted relays. Admin
+ *  "sees everything" is a FILE-access rule (the operator maintains the
+ *  workspace); a private message between two teammates is not the operator's to
+ *  receive. It also fixed a real bug: the sender (usually the admin) got an echo
+ *  toast of the very message they just relayed, on top of the in-chat
+ *  confirmation — both surfaces lit up for one outgoing message. */
+function visibleTo(n, viewerSlug) {
+  if (!n.recipient) return true;            // global notification → everyone
   return !!viewerSlug && n.recipient === viewerSlug;
 }
 
@@ -57,7 +64,7 @@ export function subscribe(res, viewer = {}) {
   // reminder on every page refresh, while NotificationsView still
   // renders the full backlog.
   for (const n of recent) {
-    if (visibleTo(n, sub.slug, sub.isAdmin)) writeEvent(res, 'notification', { ...n, replay: true });
+    if (visibleTo(n, sub.slug)) writeEvent(res, 'notification', { ...n, replay: true });
   }
 
   const heartbeat = setInterval(() => {
@@ -97,7 +104,7 @@ export function publish(input) {
   recent.push(n);
   while (recent.length > BUFFER_LIMIT) recent.shift();
   for (const sub of subscribers) {
-    if (visibleTo(n, sub.slug, sub.isAdmin)) writeEvent(sub.res, 'notification', n);
+    if (visibleTo(n, sub.slug)) writeEvent(sub.res, 'notification', n);
   }
   return n;
 }

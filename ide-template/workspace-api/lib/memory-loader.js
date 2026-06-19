@@ -68,11 +68,14 @@ const LOAD_ORDER = [
 // everything flat, as before. The rest of LOAD_ORDER (agent identity, tools,
 // rules, index, Telegram tail) stays shared across the team.
 //
-// RECENT_WEB is per-user CONCEPTUALLY but stays OUT of this set until the
-// snapshot writer (recent-snapshot.js) writes memory/users/<slug>/RECENT_WEB.md
-// — otherwise an actor-passing caller (the Telegram prefix) would load an empty
-// per-user card instead of the populated flat one. Re-add it together with the
-// per-user writer.
+// RECENT_WEB is now written per-user by the snapshot writer (recent-snapshot.js
+// → memory/users/<slug>/RECENT_WEB.md), with the shared memory/RECENT_WEB.md
+// holding the primary admin's sessions for the Telegram surface. We deliberately
+// keep it OUT of USER_TIER here: the web prefix EXCLUDES RECENT_WEB entirely
+// (lib/claude.js — each web session resumes its own thread), and the Telegram
+// prefix (actor = admin) wants the shared admin file, which is exactly the flat
+// load. So the per-user files exist for isolation + the dashboard, while prefix
+// loading stays correct without tiering this card.
 const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES']);
 
 const MAX_CARD_BYTES = 256 * 1024; // 256 KB ceiling per card — defensive
@@ -537,6 +540,64 @@ export function migrateDefaultMemory(adminSlug) {
     } catch { /* best-effort — a real FS error just leaves the flat card dormant */ }
   }
   return moved;
+}
+
+// Canonical language label keyed by the tokens (EN + PL forms) people actually
+// write in a profile/preferences card. Deliberately small + explicit — we only
+// surface a language HINT when it's unambiguously declared, never guessed.
+const LANG_CANON = {
+  english: 'English', angielski: 'English', angielskim: 'English', angielsku: 'English',
+  polish: 'Polish', polski: 'Polish', polskim: 'Polish', polsku: 'Polish',
+  german: 'German', niemiecki: 'German', niemieckim: 'German', niemiecku: 'German', deutsch: 'German',
+  spanish: 'Spanish', hiszpański: 'Spanish', hiszpańskim: 'Spanish', hiszpańsku: 'Spanish', español: 'Spanish',
+  french: 'French', francuski: 'French', francuskim: 'French', francusku: 'French', français: 'French',
+  ukrainian: 'Ukrainian', ukraiński: 'Ukrainian', ukraińskim: 'Ukrainian', ukraińsku: 'Ukrainian',
+  italian: 'Italian', włoski: 'Italian', włoskim: 'Italian', włosku: 'Italian',
+  portuguese: 'Portuguese', portugalski: 'Portuguese', portugalsku: 'Portuguese',
+};
+// A line only counts as a language DECLARATION if it pairs a clear PREFERENCE
+// cue with a known language token. The cue is a directive VERB (prefer / speak /
+// write / reply / respond / talk and their PL forms) or an explicit FIELD
+// marker ("language:" / "język:"). We deliberately do NOT treat a bare "po
+// angielsku" / "w języku niemieckim" as a cue: those also describe the language
+// of *content* ("raport po angielsku", "report in German"), which must NOT set
+// the user's preference. Precision over recall — a wrong relay language is worse
+// than none.
+// Verb stems are matched with a trailing \p{L}* so inflections count:
+// "rozmaw"→rozmawiaj, "prefer"→preferred, "m[oó]w"→mówię, "repl"→reply/replies.
+const LANG_CUE = /\b(?:prefer|speak|spoke|writ|wrote|repl|respond|talk|rozmaw|pisz|pisa|odpowiad|m[oó]w)\p{L}*|\bwol[eę]\b|\b(?:language|j[eę]zyk\w*)\s*[:=]/iu;
+
+/**
+ * Best-effort, conservative read of a teammate's DECLARED working language from
+ * their private memory (USER_PREFERENCES first, then USER_PROFILE). Returns a
+ * canonical English label ('English', 'Polish', …) or null when nothing is
+ * explicitly declared. Used to surface a per-recipient language hint in the
+ * team roster so a relay is composed in the RECIPIENT's language, not the
+ * sender's. Only a one-word label ever crosses to another user — never the
+ * recipient's private card text. Solo / invalid slug → null.
+ */
+export function preferredLanguage(slug) {
+  if (!slug || slug === 'default' || !/^[a-z0-9-]+$/.test(slug)) return null;
+  const dir = join(memoryDirFor(), USERS_DIR, slug);
+  for (const file of ['USER_PREFERENCES.md', 'USER_PROFILE.md']) {
+    let raw;
+    try {
+      const abs = join(dir, file);
+      if (!existsSync(abs)) continue;
+      raw = readFileSync(abs, 'utf8');
+    } catch { continue; }
+    for (const line of raw.split('\n')) {
+      if (!LANG_CUE.test(line)) continue;
+      const lower = line.toLowerCase();
+      for (const token of Object.keys(LANG_CANON)) {
+        // Word-boundary-ish match so "polski" doesn't match inside another word.
+        if (new RegExp(`(^|[^\\p{L}])${token}([^\\p{L}]|$)`, 'u').test(lower)) {
+          return LANG_CANON[token];
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /**

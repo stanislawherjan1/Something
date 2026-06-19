@@ -122,13 +122,19 @@ export default function internalRouter() {
       const target = resolveMember(recipient);
       const actor = target?.slug || primaryAdminSlug();
       // Cross-USER relay: the message originated from a DIFFERENT teammate.
-      // Attribute it clearly so the recipient knows it's a relay (the bot is the
-      // courier), never an impersonation.
       const sender = resolveMember(from);
       const isRelay = !!(sender && sender.slug !== actor);
+      // For a relay the sender's bot already composed a natural, human message
+      // FOR the recipient (greeting them, naming the sender inline, in their
+      // language) — so deliver it verbatim. No robotic "X asked me to forward"
+      // wrapper: that read as stilted and non-human. We only stamp the chat-list
+      // TITLE with the sender so the recipient sees at a glance who it's from;
+      // the message body stays exactly what the bot wrote.
       const relayTitle = isRelay ? `📨 ${sender.displayName || sender.slug}` : cleanTitle;
       if (isRelay) {
-        text = `📨 **${sender.displayName || sender.slug}** poprosił mnie, żeby przekazać Ci:\n\n${body || title}`;
+        text = (typeof body === 'string' && body.trim())
+          ? body.trim()
+          : (typeof title === 'string' ? title.trim() : '');
       }
       const session = createSession(actor, { title: relayTitle });
       appendToSession(actor, session.id, { role: 'assistant', text, kind: 'bot' });

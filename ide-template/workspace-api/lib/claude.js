@@ -104,10 +104,16 @@ export function runClaudeTurn({ message, sessionId, actor, actorName, actorIsAdm
     const mates = (Array.isArray(teammates) ? teammates : [])
       .filter(t => t && (t.slug || t.name))
       .map(t => (typeof t === 'string' ? { name: t, slug: '' } : t));
+    const fmtMate = (t) => {
+      if (!t.slug) return t.name;
+      const lang = t.lang ? `, writes in ${t.lang}` : '';
+      return `${t.name} (slug: ${t.slug}${lang})`;
+    };
     const roster = mates.length
-      ? ` Your teammates (DIFFERENT people): ${mates.map(t => t.slug ? `${t.name} (slug: ${t.slug})` : t.name).join(', ')}. ` +
+      ? ` Your teammates (DIFFERENT people): ${mates.map(fmtMate).join(', ')}. ` +
         `When the user names one of them, they mean that other person — not themselves. ` +
-        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list.`
+        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list. ` +
+        `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer.`
       : '';
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     args.push('--append-system-prompt',

@@ -43,6 +43,7 @@ import { saveAttachments, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from '../
 import { requireActor } from '../lib/auth.js';
 import { CLAUDE_BIN } from '../lib/config.js';
 import { getUser, list as teamRoster } from '../lib/team.js';
+import { preferredLanguage } from '../lib/memory-loader.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -206,14 +207,16 @@ export default function chatRouter() {
     req.chatActor     = u?.slug || 'default';
     req.chatActorName = u?.displayName || null;
     req.chatIsAdmin   = u?.role === 'admin';
-    // The OTHER teammates, as { name, slug } — the NAME lets the bot recognise
-    // when the user refers to a different person; the SLUG is what it must pass
-    // as `recipient` to relay (web_send_message) or scope a per-user action. The
-    // name alone is not enough: relay routing keys on the slug (B3).
+    // The OTHER teammates, as { name, slug, lang } — the NAME lets the bot
+    // recognise when the user refers to a different person; the SLUG is what it
+    // must pass as `recipient` to relay (web_send_message) or scope a per-user
+    // action; LANG (their declared working language, or null) lets the bot
+    // compose a relay in the RECIPIENT's language. The name alone is not enough:
+    // relay routing keys on the slug (B3).
     req.chatTeammates = u
       ? teamRoster()
           .filter(x => x.slug && x.slug !== u.slug)
-          .map(x => ({ name: x.displayName || x.slug, slug: x.slug }))
+          .map(x => ({ name: x.displayName || x.slug, slug: x.slug, lang: preferredLanguage(x.slug) }))
       : [];
     next();
   });
