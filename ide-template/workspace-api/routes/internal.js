@@ -15,7 +15,7 @@ import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
 import { sendTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
@@ -82,11 +82,18 @@ export default function internalRouter() {
       return res.status(400).json({ ok: false, error: 'title or body required (strings)' });
     }
     try {
-      // B3: a valid recipient slug scopes the toast to that teammate (+ admins);
-      // absent/invalid → global, as before. For a cross-user relay, make the
-      // toast recipient-facing — they should see who it's from, not the raw
-      // headline the sender's bot wrote.
-      const target = resolveMember(recipient)?.slug || null;
+      // Who should see this toast. Priority:
+      //   1. an explicit recipient slug (cross-user relay → that teammate);
+      //   2. else the ORIGINATOR (`from`) when known — a user's own proactive /
+      //      cross-surface message surfaces in THEIR view, not everyone's;
+      //   3. else, in TEAM mode, the operator/admin — the Telegram surface and
+      //      reminders run AS the operator and have no recipient/from, so a
+      //      "send to the web UI" from Telegram must land with the operator, not
+      //      fan out to every teammate (the leak this fixes);
+      //   4. solo → null = global (there's only one user anyway).
+      const target = resolveMember(recipient)?.slug
+        || resolveMember(from)?.slug
+        || (getTeamMode() ? primaryAdminSlug() : null);
       const sender = resolveMember(from);
       const toastTitle = (target && sender && sender.slug !== target)
         ? `📨 Wiadomość od ${sender.displayName || sender.slug}`
@@ -121,7 +128,11 @@ export default function internalRouter() {
       // admin's chat, preserving the legacy proactive-bot + cross-surface tunnel
       // (within one user). A valid recipient slug → that teammate's chat.
       const target = resolveMember(recipient);
-      const actor = target?.slug || primaryAdminSlug();
+      // Same precedence as /notify: explicit recipient → originator (own
+      // proactive/cross-surface message) → operator/admin (Telegram + reminders
+      // act as the operator). Keeps a Telegram "send to my web UI" in the
+      // operator's own history rather than defaulting everyone to the admin.
+      const actor = target?.slug || resolveMember(from)?.slug || primaryAdminSlug();
       // Cross-USER relay: the message originated from a DIFFERENT teammate.
       const sender = resolveMember(from);
       const isRelay = !!(sender && sender.slug !== actor);
