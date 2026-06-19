@@ -95,6 +95,20 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   // can ask for the next page strictly older than that.
   const oldestTsRef = useRef(null);
 
+  // B3 v2 live relay push: when a teammate's reply is relayed INTO this open
+  // thread, drop it in live instead of waiting for an Open/refresh. The
+  // notification stream carries meta.session_id; if it matches this session we
+  // append a bubble. De-dup is by a baseline: every notification id present
+  // when history finished loading is "already in history"; only ids arriving
+  // AFTER that get injected. Both refs reset on session switch.
+  const { notifications: liveNotifications } = useNotifications();
+  const notifBaselineRef = useRef(null);   // Set<id> reflected by loaded history
+  const injectedRelayRef = useRef(new Set());
+  useEffect(() => {
+    notifBaselineRef.current = null;
+    injectedRelayRef.current = new Set();
+  }, [sessionId]);
+
   const mapEntry = (m, i, prefix = 'h') => ({
     role: m.role,
     text: m.text,
@@ -129,6 +143,47 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
   }, [sessionId, historyUrl]);
+
+  // Once history has loaded, snapshot the notifications already known: they are
+  // (or will be) represented in the loaded transcript, so they must NOT be
+  // injected. Anything arriving after this baseline is genuinely new.
+  useEffect(() => {
+    if (historyLoading) return;
+    if (notifBaselineRef.current === null) {
+      notifBaselineRef.current = new Set(liveNotifications.map(n => n.id));
+    }
+  }, [historyLoading, liveNotifications]);
+
+  // Live relay push: append any post-baseline notification targeted at THIS
+  // session as an assistant bubble. kind 'bot' = a bot/relay message (the only
+  // kind that carries a chat session_id). Guarded by the baseline + an injected
+  // set so a bubble is added exactly once, and never duplicates loaded history.
+  useEffect(() => {
+    if (!sessionId || notifBaselineRef.current === null) return;
+    const baseline = notifBaselineRef.current;
+    const injected = injectedRelayRef.current;
+    const fresh = liveNotifications.filter(n =>
+      !baseline.has(n.id) &&
+      !injected.has(n.id) &&
+      n.kind === 'bot' &&
+      n.meta?.session_id === sessionId
+    );
+    if (!fresh.length) return;
+    for (const n of fresh) injected.add(n.id);
+    setMessages(prev => [
+      ...prev,
+      ...fresh.map(n => ({
+        role: 'assistant',
+        text: n.body || n.title || '',
+        kind: 'bot',
+        attachments: null,
+        images: [],
+        id: `relay-${n.id}`,
+        ts: n.ts || new Date().toISOString(),
+        state: 'done',
+      })),
+    ]);
+  }, [liveNotifications, sessionId]);
 
   const loadOlder = useCallback(async () => {
     if (loadingMore || !hasMore || !oldestTsRef.current) return;
