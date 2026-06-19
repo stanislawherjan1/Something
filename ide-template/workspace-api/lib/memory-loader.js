@@ -587,14 +587,26 @@ export function preferredLanguage(slug) {
       raw = readFileSync(abs, 'utf8');
     } catch { continue; }
     for (const line of raw.split('\n')) {
-      if (!LANG_CUE.test(line)) continue;
       const lower = line.toLowerCase();
+      const cue = lower.match(LANG_CUE);
+      if (!cue) continue;
+      // The DECLARED language is the token NEAREST AFTER the cue (right after
+      // "language:" / the directive verb) — NOT just the first token by key
+      // order. A line like "Conversation language: Polish; work output: English"
+      // must resolve to Polish (it follows "language:"), not English (which
+      // follows "output:" later in the same line). Pick the earliest canon token
+      // at or after the cue; unicode word-boundaries so "polski" doesn't match
+      // inside another word.
+      const cueEnd = cue.index + cue[0].length;
+      let best = null, bestPos = Infinity;
       for (const token of Object.keys(LANG_CANON)) {
-        // Word-boundary-ish match so "polski" doesn't match inside another word.
-        if (new RegExp(`(^|[^\\p{L}])${token}([^\\p{L}]|$)`, 'u').test(lower)) {
-          return LANG_CANON[token];
+        const re = new RegExp(`(?<!\\p{L})${token}(?!\\p{L})`, 'giu');
+        let m;
+        while ((m = re.exec(lower)) !== null) {
+          if (m.index >= cueEnd && m.index < bestPos) { bestPos = m.index; best = LANG_CANON[token]; }
         }
       }
+      if (best) return best;
     }
   }
   return null;

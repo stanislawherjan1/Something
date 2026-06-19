@@ -16,11 +16,36 @@
  * workspaces are unaffected.
  */
 
+import { appendFileSync } from 'node:fs';
 import * as store from './store.js';
 import * as runtime from './runtime.js';
 import { telegramAllowedIds, list as teamList } from '../team.js';
 import { listSessions } from '../sessions.js';
 import { appendToSession, readUndelivered } from '../chatHistory.js';
+
+// The bot's Telegram conversation log (source for RECENT_TELEGRAM + the live
+// recent_messages tool). It's mode 0660 group=botshare; wsapi is in botshare so
+// it can append. A relay we send from wsapi via the raw Bot API bypasses the
+// bot's own outbound transformer, so without this the bot's brain has NO record
+// of what it relayed to a teammate's Telegram and is confused when asked.
+const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
+
+// Append an outbound relay to the Telegram conversation log so the bot's brain
+// (recent_messages / next snapshot) knows what it relayed there. Best-effort —
+// missing file / perms are non-fatal (the web thread is still the record).
+function logTelegramOutbound(chatId, text, messageId) {
+  try {
+    const entry = {
+      ts: new Date().toISOString(),
+      direction: 'outbound',
+      method: 'sendMessage',
+      chat_id: String(chatId),
+      message_id: messageId != null ? String(messageId) : null,
+      text: String(text == null ? '' : text),
+    };
+    appendFileSync(TELEGRAM_LOG_PATH, JSON.stringify(entry) + '\n', 'utf8');
+  } catch { /* non-fatal */ }
+}
 
 function telegramActive() {
   try { return store.isActive('telegram'); } catch { return false; }
@@ -81,7 +106,11 @@ export async function sendTelegramMessage(chatId, text) {
     if (!resp.ok || !json.ok) {
       return { ok: false, error: `telegram ${resp.status}: ${JSON.stringify(json).slice(0, 180)}` };
     }
-    return { ok: true, messageId: json.result?.message_id };
+    const messageId = json.result?.message_id;
+    // Record it in the bot's Telegram conversation log so its brain knows what
+    // it relayed there (this send bypasses the bot's own outbound transformer).
+    logTelegramOutbound(id, body, messageId);
+    return { ok: true, messageId };
   } catch (err) {
     return { ok: false, error: err.message };
   }
