@@ -148,6 +148,15 @@ export default function memoryRouter() {
           error: `invalid channel (got "${channel}"); allowed: ${SUPPORTED_CHANNELS.join(', ')}`,
         });
       }
+      // Force-refresh the snapshot from the LIVE conversation log FIRST. This is
+      // the whole point of recent_messages: the prefix RECENT_* block is frozen
+      // at tmux start, so a relay just delivered to a teammate's Telegram is NOT
+      // in it — and a stale read here would make the bot confidently cite an
+      // OLDER relay. Refreshing the *file* never touches the already-loaded
+      // prefix (cache-safe), it just makes this tool return the current tail.
+      // Best-effort: on failure we read whatever's on disk.
+      try { writeRecentSnapshot({ channel }); }
+      catch (err) { process.stderr.write(`[memory/recent ${channel}] refresh failed: ${err.message}\n`); }
       const path = join(process.env.PROJECT_DIR || '/home/coder/project',
                         'memory', `RECENT_${channel.toUpperCase()}.md`);
       if (!existsSync(path)) {

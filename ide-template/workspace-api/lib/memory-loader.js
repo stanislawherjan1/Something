@@ -159,6 +159,17 @@ character.
   > Don't claim "I don't have that" without trying one of (1) or (2)
   > first. The \`verify-denials\` Stop hook will block you from
   > shipping such a claim without a lookup.
+  >
+  > **CRITICAL — relays / "what did you send me?" / "o co chodziło" /
+  > "przypomnij":** a message you RELAYED to this user (a teammate asked
+  > you to pass something on, delivered to their Telegram) is written to
+  > the log AFTER your snapshot froze, so it is NOT in your prefix — but an
+  > OLDER relay might be. Answering "what did you send / what was it about"
+  > from the snapshot will CONFIDENTLY cite the WRONG, stale relay (a real
+  > bug). So for ANY "what did you send / o co chodziło / remind me / which
+  > message" question, ALWAYS call \`recent_messages({channel:"telegram"})\`
+  > FIRST and answer from the live tail — never from the snapshot. The
+  > newest relay is an \`outbound\` entry at the very end of that list.
 
 ## Reply channels — when to use which tool
 

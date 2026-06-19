@@ -155,6 +155,13 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   try { sender = teamList().find(m => String(m.telegramChatId || '') === cid) || null; }
   catch { sender = null; }
   if (!sender) return { ok: true, routed: false, reason: 'not a teammate' };
+  // The operator/admin is handled by their OWN brain (the single tmux claude IS
+  // the operator's assistant). Auto-routing the admin's Telegram replies was too
+  // aggressive — a tap-reply asking the bot ABOUT a relay ("what's this about?")
+  // got mis-relayed to the teammate. So the admin always falls through to their
+  // brain, which relays only on an explicit instruction ("tell Jan …"). Non-admin
+  // teammates (whose DMs the identity-blind brain would misattribute) still route.
+  if (sender.role === 'admin') return { ok: true, routed: false, reason: 'admin (brain handles)' };
 
   // Only the sender's OWN relay sessions (leak-safe).
   let sessions;
@@ -176,15 +183,8 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
     }
   }
   if (!dest) {
-    // No deterministic reply-to match. For the ADMIN (operator — their OWN brain
-    // handles instructions like "tell Jan…" and normal DMs via web_send_message),
-    // don't auto-route: only an explicit reply-to is unambiguous enough, so a
-    // plain DM still reaches the brain. For a non-admin teammate (whose DM the
-    // identity-blind brain would misattribute) route to their single outstanding
-    // relay thread; refuse to guess across multiple.
-    if (sender.role === 'admin') {
-      return { ok: true, routed: false, reason: 'admin no reply-to (brain handles)' };
-    }
+    // No deterministic reply-to. Route a non-admin teammate to their single
+    // outstanding relay thread; refuse to guess across multiple.
     if (sessions.length === 1) dest = sessions[0];
     else return { ok: true, routed: false, reason: 'ambiguous' };   // never guess across peers
   }
