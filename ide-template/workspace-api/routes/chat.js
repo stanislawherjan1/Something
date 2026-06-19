@@ -32,10 +32,10 @@ import { runClaudeTurn } from '../lib/claude.js';
 import { hasClaudeToken, readClaudeToken } from '../lib/setup.js';
 import {
   listSessions, getSession, createSession, updateSession,
-  deleteSession, setClaudeSessionId,
+  deleteSession, setClaudeSessionId, setSyncedSeq,
 } from '../lib/sessions.js';
 import {
-  appendToSession, readSessionPage, archiveSessionFile,
+  appendToSession, readSessionPage, readUndelivered, archiveSessionFile,
   appendMessage, readPage, appendResetMarker, summary,
 } from '../lib/chatHistory.js';
 import { writeRecentSnapshot } from '../lib/recent-snapshot.js';
@@ -333,6 +333,15 @@ export default function chatRouter() {
 
       appendToSession(req.chatActor, sid, { role: 'system', text: '--- new topic ---', kind: 'reset' });
       setClaudeSessionId(req.chatActor, sid, null);
+      // Advance the never-blind watermark to the reset point: a "new topic" means
+      // the user declared everything before it consumed, so a relay that arrived
+      // pre-reset is NOT resurrected into the new topic. (Post-reset relays still
+      // surface — they have a higher index than this watermark.) readUndelivered
+      // reports the current message count via `total`.
+      try {
+        const { total } = readUndelivered(req.chatActor, sid, 0);
+        setSyncedSeq(req.chatActor, sid, total);
+      } catch (err) { process.stderr.write(`[chat/reset] watermark advance failed: ${err.message}\n`); }
 
       try { writeRecentSnapshot({ channel: 'web' }); }
       catch (err) { process.stderr.write(`[chat/reset] snapshot refresh failed: ${err.message}\n`); }
@@ -467,10 +476,26 @@ export default function chatRouter() {
         })
       : [];
 
-    // No Claude session to --resume? Replay this session's own prior messages
-    // (e.g. a proactive bot seed) so the assistant knows what it already said
-    // here. Computed BEFORE appending the new user message so it's excluded.
+    // ── Never-blind context ───────────────────────────────────────────────
+    // Out-of-band messages (relay-in / proactive) are appended to this session's
+    // jsonl by ANOTHER process and are NOT in Claude's --resume session, so the
+    // brain would reply blind to them. We force-feed everything appended since
+    // the watermark into the prompt. Two mutually-exclusive blocks:
+    //   • !claudeSid → full dialogue REPLAY (Block A, today's behaviour) — it
+    //     already contains the relay-in/proactive lines, so no separate block.
+    //   • claudeSid  → --resume restores the dialogue; inject only the UNDELIVERED
+    //     out-of-band lines (Block B) the resume can't know about.
+    // Computed BEFORE appending the user message so its index is excluded.
+    const syncedSeq = (typeof sessionEntry?.syncedSeq === 'number') ? sessionEntry.syncedSeq : 0;
+    const { messages: sinceMsgs, total: msgCountBefore } = readUndelivered(req.chatActor, sid, syncedSeq);
+    const undelivered = claudeSid
+      ? sinceMsgs.filter(m => m.kind === 'bot' && String(m.text || '').trim())
+      : [];
     const resumeContext = claudeSid ? null : buildResumeContext(req.chatActor, sid);
+    // The watermark to stamp once this turn is consumed: everything up to AND
+    // including the user message we're about to append. Captured BEFORE spawn so
+    // anything that lands mid-turn keeps a higher index and surfaces next turn.
+    const consumedThroughSeq = msgCountBefore + 1;
 
     appendToSession(req.chatActor, sid, { role: 'user', text: message, attachments: savedAttachments });
 
@@ -480,16 +505,29 @@ export default function chatRouter() {
           savedAttachments.map(a => `- ${a.path}`).join('\n')
         }`;
 
-    const promptForClaude = resumeContext
-      ? `[Earlier in THIS web chat — you are continuing this conversation, not starting it. `
+    let promptForClaude = baseMessage;
+    if (resumeContext) {
+      promptForClaude =
+        `[Earlier in THIS web chat — you are continuing this conversation, not starting it. `
         + `Lines marked "assistant (you)" are messages you already sent in this chat; some may `
         + `have been sent proactively by you and delivered here. Treat them as your own prior `
         + `turns — don't deny sending them — and stay consistent.]\n\n${resumeContext}\n\n`
-        + `---\n\n[The user's new message — reply to it:]\n\n${baseMessage}`
-      : baseMessage;
+        + `---\n\n[The user's new message — reply to it:]\n\n${baseMessage}`;
+    } else if (undelivered.length) {
+      const block = undelivered
+        .map(m => `${m.role === 'assistant' ? 'you' : (m.role || 'message')}: ${String(m.text).trim()}`)
+        .join('\n\n');
+      promptForClaude =
+        `[Delivered into THIS thread since your last reply — you have NOT seen these yet (they are `
+        + `not in your resumed session), but they were already shown to the people in this `
+        + `conversation. Lines marked "you" are your own prior sends — don't deny them. Some are `
+        + `messages relayed from a teammate; treat them as real and catch up, THEN answer the new `
+        + `message:]\n\n${block}\n\n---\n\n[The user's new message — reply to it:]\n\n${baseMessage}`;
+    }
 
     let finished = false;
     let proc;
+    let spawned = false;
     let assistantText = '';
 
     const finish = (kind, payload) => {
@@ -506,6 +544,17 @@ export default function chatRouter() {
         // Phase 5: kick off auto-title async if eligible.
         try { maybeAutoTitle(req.chatActor, sid); }
         catch (err) { process.stderr.write(`[chat] auto-title scheduling failed: ${err.message}\n`); }
+      }
+      // Advance the never-blind watermark on EVERY terminal path (done / error /
+      // interrupt / abort) — once the prompt was built and the process spawned,
+      // the undelivered set WAS fed to the brain, so it's consumed. Not advancing
+      // on error/interrupt would re-inject the same relays forever with "you have
+      // NOT seen these" framing, contradicting a brain that already saw them.
+      // Guarded by `spawned` so a pre-spawn failure never marks unseen relays as
+      // consumed. Monotonic (setSyncedSeq never moves backward).
+      if (spawned) {
+        try { setSyncedSeq(req.chatActor, sid, consumedThroughSeq); }
+        catch (err) { process.stderr.write(`[chat] setSyncedSeq: ${err.message}\n`); }
       }
       sendEvent(kind, payload);
       res.end();
@@ -546,6 +595,9 @@ export default function chatRouter() {
         finish('done', { ok: true, session_id: newClaudeSid, sessionId: sid });
       },
     });
+    // The process is live and the prompt (incl. the undelivered set) was fed —
+    // mark consumed so finish() advances the watermark on any terminal path.
+    spawned = true;
 
     activeBySession.set(sid, {
       proc,

@@ -135,6 +135,11 @@ export function createSession(actor, { title, relayPeers } = {}) {
     pinned:          false,
     archived:        false,
     claudeSessionId: null,
+    // Never-blind watermark: how many messages the bot's brain has consumed for
+    // this session. The chat route force-feeds messages with a higher index
+    // (out-of-band relay-in / proactive) into the next turn. 0 = nothing
+    // consumed yet (a fresh session replays its full tail once, harmless).
+    syncedSeq:       0,
     // B3 v2 relay threading: peerSlug → that teammate's paired session id.
     // Present only on relay-anchored sessions; omitted otherwise.
     ...(relayPeers && typeof relayPeers === 'object' ? { relayPeers } : {}),
@@ -199,6 +204,27 @@ export function setClaudeSessionId(actor, sessionId, claudeSessionId) {
   if (!s) return null;
   s.claudeSessionId = claudeSessionId || null;
   writeIndex(actor, idx);
+  return s;
+}
+
+/**
+ * Advance the never-blind watermark — the count of messages the bot's brain has
+ * consumed for this session. Stamped after a turn's context is built (to the
+ * count captured BEFORE the process spawned, so anything appended mid-turn
+ * keeps a higher index and surfaces next turn). Monotonic: never moves backward.
+ * Synchronous read-mutate-write, same as setClaudeSessionId — no lock needed
+ * (single wsapi process, no await between read and write).
+ */
+export function setSyncedSeq(actor, sessionId, seq) {
+  const n = Number(seq);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const idx = readIndex(actor);
+  const s = idx.sessions.find(x => x.id === sessionId);
+  if (!s) return null;
+  if (typeof s.syncedSeq !== 'number' || n > s.syncedSeq) {
+    s.syncedSeq = n;
+    writeIndex(actor, idx);
+  }
   return s;
 }
 

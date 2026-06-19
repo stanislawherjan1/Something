@@ -156,7 +156,7 @@ function _markImportedTitleSource(actor, sessionId) {
  * `state` is the new optional field for Phase 4 — pass 'interrupted' when
  * persisting a partial assistant turn that was cut short.
  */
-export function appendToSession(actor, sessionId, { role, text, attachments, kind, state }) {
+export function appendToSession(actor, sessionId, { role, text, attachments, kind, state, delivery, relayConvId }) {
   migrateLegacyConversation(actor);
   if (!text && !(attachments && attachments.length) && !kind) return null;
 
@@ -165,6 +165,13 @@ export function appendToSession(actor, sessionId, { role, text, attachments, kin
   if (attachments && attachments.length) entry.attachments = attachments;
   if (kind)  entry.kind  = kind;
   if (state) entry.state = state;
+  // Relay/cross-surface bookkeeping (team mode). `delivery` records which
+  // channel an out-of-band message actually went out on (web/telegram/both)
+  // so a Telegram reply can be threaded deterministically; `relayConvId` ties
+  // a relay conversation across surfaces. Both optional + ignored by every
+  // existing reader.
+  if (delivery && typeof delivery === 'object') entry.delivery = delivery;
+  if (relayConvId) entry.relayConvId = relayConvId;
 
   mkdirSync(_paths.chatsDir(actor), { recursive: true });
   appendFileSync(sessionFilePath(actor, sessionId), JSON.stringify(entry) + '\n', 'utf8');
@@ -202,6 +209,40 @@ export function readSessionPage(actor, sessionId, { before, limit } = {}) {
   }
   out.reverse();
   return { messages: out, hasMore };
+}
+
+/**
+ * Read messages appended to a session at or after a monotonic sequence index
+ * (`sinceSeq` = a count of messages the bot's brain has already consumed). Each
+ * returned message carries `_seq` = its 0-based position in the append-only log.
+ * `total` = the current message count, used as the next watermark.
+ *
+ * This is the read primitive behind the "never-blind" invariant: out-of-band
+ * messages (relay-in, proactive) written by ANOTHER process land in the jsonl
+ * but not in Claude's --resume session; the chat route force-feeds the ones with
+ * _seq >= the session's watermark into the next turn. Filtered-line indices are
+ * used consistently (empty lines are skipped on both read and append), so `_seq`
+ * lines up with the message count the manifest tracks.
+ */
+export function readUndelivered(actor, sessionId, sinceSeq = 0) {
+  migrateLegacyConversation(actor);
+  let raw;
+  try { raw = readFileSync(sessionFilePath(actor, sessionId), 'utf8'); }
+  catch (err) {
+    if (err.code === 'ENOENT') return { messages: [], total: 0 };
+    throw err;
+  }
+  const lines = raw.split('\n').filter(Boolean);
+  const total = lines.length;
+  const start = Math.max(0, Number(sinceSeq) || 0);
+  const messages = [];
+  for (let i = start; i < lines.length; i++) {
+    let m;
+    try { m = JSON.parse(lines[i]); } catch { continue; }
+    m._seq = i;
+    messages.push(m);
+  }
+  return { messages, total };
 }
 
 /**
