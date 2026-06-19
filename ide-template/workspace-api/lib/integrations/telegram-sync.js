@@ -29,18 +29,20 @@ function telegramActive() {
  * bot. Fire-and-forget from team routes (the caller shouldn't block its HTTP
  * response on a bot restart). Returns a small status object.
  *
- * Caveat: store.update() silently skips empty-string field values, so when the
- * LAST linked member is removed we can't blank the field through it — the stale
- * ids linger until another change rewrites them. Ex-members keeping DM access is
- * a minor over-permission, not a data leak; documented rather than worked around
- * (clearing would mean special-casing the shared store writer).
+ * Revoke correctness: store.update() silently skips empty-string values, so when
+ * the LAST linked member is removed the field can't be blanked directly — and a
+ * removed teammate would keep bot DM access. We avoid that by writing a sentinel
+ * "0" (no real Telegram user id) when the list is empty: it OVERWRITES the old
+ * ids (revoking them) and matches nobody. The admin keeps access via the
+ * separate TELEGRAM_ADMIN_CHAT_ID that bot.sh unions in.
  */
+const NO_IDS_SENTINEL = '0';
+
 export async function syncTelegramAllowedIds() {
   if (!telegramActive()) return { skipped: 'telegram not active' };
   try {
     const ids = telegramAllowedIds();
-    const joined = ids.join(',');
-    if (!joined) return { skipped: 'no linked ids (left unchanged)' };
+    const joined = ids.join(',') || NO_IDS_SENTINEL;
     store.update('telegram', { fields: { TELEGRAM_ALLOWED_IDS: joined } });
     runtime.applyFiles('telegram');           // → {home}/.{bot}/integrations.env
     const restartOk = await runtime.restartBot();

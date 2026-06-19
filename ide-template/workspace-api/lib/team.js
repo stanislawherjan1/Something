@@ -44,13 +44,14 @@ function normalize(email) {
   return String(email || '').trim().toLowerCase();
 }
 
-// A Telegram chat id is an integer — positive for a user DM, negative for a
-// group. Normalize to a clean string or null; reject anything else so a bad
-// value never reaches the allow-list or an outbound send.
+// A personal Telegram chat id is a POSITIVE integer (a user's DM). Negative ids
+// are groups/channels — never a private per-teammate link (a relay there would
+// fan out to everyone in the group), so reject them. Normalize to a clean string
+// or null; a bad value never reaches the allow-list or an outbound send.
 function normalizeChatId(v) {
   if (v == null) return null;
   const s = String(v).trim();
-  return /^-?\d{4,20}$/.test(s) ? s : null;
+  return /^\d{4,20}$/.test(s) ? s : null;
 }
 
 export function isValidEmail(email) {
@@ -413,9 +414,16 @@ export function setTelegram(email, { chatId, preferredSurface } = {}, actor) {
   if (chatId !== undefined) {
     const cleared = chatId === '' || chatId === null;
     if (!cleared && normalizeChatId(chatId) === null) {
-      throw new Error('Telegram chat id must be an integer (e.g. 123456789).');
+      throw new Error('Telegram chat id must be a positive integer (your DM with the bot, e.g. 123456789).');
     }
     patch.telegramChatId = cleared ? null : normalizeChatId(chatId);
+    // A chat id maps to ONE person: reject linking one that another teammate
+    // already holds (otherwise inbound routing is ambiguous + outbound double-
+    // delivers). No name in the error — don't reveal who holds it.
+    if (patch.telegramChatId) {
+      const taken = entries.some((x, i) => i !== idx && normalizeChatId(x.telegramChatId) === patch.telegramChatId);
+      if (taken) throw new Error('That Telegram chat id is already linked to another teammate.');
+    }
   }
   if (preferredSurface !== undefined) {
     const cleared = preferredSurface === '' || preferredSurface === null;

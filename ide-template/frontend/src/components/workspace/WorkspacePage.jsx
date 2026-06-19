@@ -523,9 +523,11 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
           <h2 className="text-[15px] font-semibold text-foreground">Link your Telegram</h2>
         </div>
         <p className="mb-4 text-[12.5px] leading-relaxed text-muted-foreground/80">
-          Paste your Telegram <span className="font-medium text-foreground/90">chat id</span> (DM
-          the bot, or message <span className="font-mono">@userinfobot</span> to get it). Teammates
-          can then have a message relayed to you on Telegram.
+          First <span className="font-medium text-foreground/90">send the bot <span className="font-mono">/start</span></span> on
+          Telegram — it can't message you until you do. Then paste your{' '}
+          <span className="font-medium text-foreground/90">chat id</span> (message{' '}
+          <span className="font-mono">@userinfobot</span> to get it). Teammates can then have a
+          message relayed to you on Telegram.
         </p>
 
         <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground/85">Telegram chat id</label>
