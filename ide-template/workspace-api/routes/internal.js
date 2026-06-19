@@ -16,6 +16,7 @@ import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList } from '../lib/team.js';
+import { sendTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
@@ -160,6 +161,15 @@ export default function internalRouter() {
         }
       }
       appendToSession(actor, destId, { role: 'assistant', text, kind: 'bot' });
+
+      // TG-2 cross-surface: the web thread is always the record, but if the
+      // recipient prefers Telegram (and is linked) also ping them there so a
+      // relay reaches them where they actually are. Fire-and-forget — the web
+      // delivery already succeeded; a TG hiccup must not fail the request.
+      if (isRelay && target?.telegramChatId &&
+          (target.preferredSurface === 'telegram' || target.preferredSurface === 'both')) {
+        sendTelegramMessage(target.telegramChatId, text).catch(() => {});
+      }
       return res.json({ ok: true, id: destId, recipient: actor, relay: isRelay });
     } catch (err) {
       process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);

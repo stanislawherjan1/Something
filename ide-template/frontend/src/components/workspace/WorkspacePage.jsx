@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Send, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Sidebar from './Sidebar.jsx';
 import EditorPane from './EditorPane.jsx';
@@ -15,7 +15,7 @@ import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import useDesktopNotifications from './useDesktopNotifications.js';
 import { useMobile } from '@/lib/useMobile';
-import { useApi } from '@/lib/useApi';
+import { useApi, invalidate } from '@/lib/useApi';
 
 /**
  * URL ⇄ selected state mapping. Each top-level view has a stable path; files
@@ -61,6 +61,9 @@ function selectedToPath(selected) {
 }
 
 const TELEGRAM_BANNER_DISMISSED_KEY = 'workspace.banner.telegram.dismissed';
+// Separate sticky-dismiss for the per-user "link YOUR Telegram" bar (distinct
+// from the workspace-level "set up Telegram" promo above).
+const TELEGRAM_LINK_DISMISSED_KEY = 'workspace.banner.telegram-link.dismissed';
 
 /**
  * Workspace — three-column shell.
@@ -183,6 +186,24 @@ export default function WorkspacePage() {
     try { window.localStorage.setItem(TELEGRAM_BANNER_DISMISSED_KEY, '1'); } catch {}
   };
 
+  // Per-user "link YOUR Telegram" bar: Telegram is active for the workspace, but
+  // THIS teammate hasn't linked their own chat id — so a relay can't reach them
+  // there. Distinct from the promo above (which is for workspaces with no
+  // Telegram at all). Team mode only; self-dismissible.
+  const { data: meData } = useApi('/api/me');
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkDismissed, setLinkDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try { return window.localStorage.getItem(TELEGRAM_LINK_DISMISSED_KEY) === '1'; }
+    catch { return false; }
+  });
+  const showLinkBar = !!meData && !!integrationsData && isTelegramActive
+    && meData.teamMode && !meData.telegramChatId && !linkDismissed;
+  const dismissLinkBar = () => {
+    setLinkDismissed(true);
+    try { window.localStorage.setItem(TELEGRAM_LINK_DISMISSED_KEY, '1'); } catch {}
+  };
+
   // On mobile, default sidebar to closed
   useEffect(() => {
     if (isMobile) {
@@ -277,6 +298,58 @@ export default function WorkspacePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Per-user Telegram link bar — "connect YOUR Telegram so teammates can
+          reach you there". Mirrors the promo banner's motion + layout. */}
+      <AnimatePresence>
+        {showLinkBar && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{    height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="z-[60] shrink-0 border-b border-[--color-sidebar-border] bg-background max-md:hidden"
+          >
+            <div className="flex h-12 items-center justify-between gap-4 px-4">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Send className="size-4 shrink-0 text-sky-500" strokeWidth={1.75} />
+                <p className="truncate text-[13px] text-foreground/85">
+                  Link your Telegram so teammates can reach you there when they pass a message your way.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setLinkOpen(true)}
+                  className="rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/85"
+                >
+                  Link Telegram
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissLinkBar}
+                  title="Dismiss"
+                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+                >
+                  <X className="size-3.5" strokeWidth={1.75} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {linkOpen && (
+        <LinkTelegramModal
+          initialSurface={meData?.preferredSurface || 'both'}
+          onClose={() => setLinkOpen(false)}
+          onSaved={() => {
+            setLinkOpen(false);
+            invalidate('/api/me');
+            invalidate('/api/team');
+          }}
+        />
+      )}
 
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Mobile Sidebar Backdrop */}
@@ -405,6 +478,98 @@ export default function WorkspacePage() {
           </motion.button>
         )}
       </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+// Self-link modal: a teammate connects their own Telegram chat id (so relays can
+// reach them there) and picks where they prefer to be reached. PATCHes /api/me.
+function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
+  const [chatId, setChatId]   = useState('');
+  const [surface, setSurface] = useState(initialSurface);
+  const [busy, setBusy]       = useState(false);
+  const [err, setErr]         = useState(null);
+
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const resp = await fetch('/api/me', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ telegramChatId: chatId.trim(), preferredSurface: surface }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      onSaved?.();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <Send className="size-4 text-sky-500" strokeWidth={1.75} />
+          <h2 className="text-[15px] font-semibold text-foreground">Link your Telegram</h2>
+        </div>
+        <p className="mb-4 text-[12.5px] leading-relaxed text-muted-foreground/80">
+          Paste your Telegram <span className="font-medium text-foreground/90">chat id</span> (DM
+          the bot, or message <span className="font-mono">@userinfobot</span> to get it). Teammates
+          can then have a message relayed to you on Telegram.
+        </p>
+
+        <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground/85">Telegram chat id</label>
+        <input
+          autoFocus
+          value={chatId}
+          onChange={(e) => setChatId(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && chatId.trim()) save(); }}
+          placeholder="e.g. 123456789"
+          inputMode="numeric"
+          className="mb-3 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-foreground/15"
+        />
+
+        <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground/85">Where should we reach you?</label>
+        <select
+          value={surface}
+          onChange={(e) => setSurface(e.target.value)}
+          className="mb-4 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-foreground/15"
+        >
+          <option value="both">Web + Telegram</option>
+          <option value="telegram">Telegram</option>
+          <option value="web">Web only</option>
+        </select>
+
+        {err && <p className="mb-3 text-[12px] text-destructive">{err}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy || !chatId.trim()}
+            onClick={save}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            Link
+          </button>
+        </div>
       </div>
     </div>
   );

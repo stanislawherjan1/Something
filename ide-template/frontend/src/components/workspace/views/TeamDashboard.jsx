@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound } from 'lucide-react';
+import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
@@ -148,6 +148,16 @@ export default function TeamDashboard({ sidebarOpen }) {
                     } catch (err) {
                       alert(err.message);   // simple — admin operation, low frequency
                     }
+                  }}
+                  onChangeTelegram={async (patch) => {
+                    const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
+                      method:  'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body:    JSON.stringify(patch),
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+                    reload();
                   }}
                 />
               ))}
@@ -318,7 +328,7 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onChangeRole }) {
+function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onChangeRole, onChangeTelegram }) {
   const { email, role, addedAt, addedBy, avatarUrl } = entry;
   return (
     <div className={cn(
@@ -342,6 +352,7 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onCha
             {addedBy && addedBy !== 'bootstrap' && ` by ${addedBy}`}
           </div>
         )}
+        <TelegramContact entry={entry} canManage={canManage} onChange={onChangeTelegram} />
       </div>
 
       <RolePill
@@ -390,6 +401,72 @@ function RolePill({ role, canManage, onChange }) {
       <option value="member">member</option>
       <option value="admin">admin</option>
     </select>
+  );
+}
+
+// Per-member cross-surface contact: Telegram chat id + preferred relay surface.
+// Admins edit inline; everyone else sees a compact read-only hint (the chat id
+// itself is redacted server-side unless it's your own row).
+function TelegramContact({ entry, canManage, onChange }) {
+  const [chatId, setChatId] = useState(entry.telegramChatId || '');
+  const [busy, setBusy]     = useState(false);
+  const [err, setErr]       = useState(null);
+  useEffect(() => { setChatId(entry.telegramChatId || ''); }, [entry.telegramChatId]);
+
+  const save = async (patch) => {
+    setBusy(true); setErr(null);
+    try { await onChange(patch); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  if (!canManage) {
+    const linked  = !!entry.telegramChatId;
+    const surface = entry.preferredSurface;
+    return (
+      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+        <Send className="size-3 shrink-0" strokeWidth={1.75} />
+        <span>{linked ? 'Telegram linked' : 'no Telegram'}</span>
+        {surface && <span>· prefers {surface}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <Send className="size-3 shrink-0 text-muted-foreground/55" strokeWidth={1.75} />
+      <input
+        value={chatId}
+        onChange={(e) => setChatId(e.target.value)}
+        onBlur={() => {
+          const next = chatId.trim();
+          if (next !== (entry.telegramChatId || '')) save({ telegramChatId: next });
+        }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        placeholder="Telegram chat id"
+        inputMode="numeric"
+        className={cn(
+          'w-32 rounded-md border border-border/50 bg-background px-2 py-0.5 text-[11.5px]',
+          'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
+        )}
+      />
+      <select
+        value={entry.preferredSurface || ''}
+        onChange={(e) => save({ preferredSurface: e.target.value })}
+        title="Where to reach them for relays"
+        className={cn(
+          'rounded-md border border-border/50 bg-background px-1.5 py-0.5 text-[11px] font-medium',
+          'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
+        )}
+      >
+        <option value="">surface…</option>
+        <option value="web">web</option>
+        <option value="telegram">telegram</option>
+        <option value="both">both</option>
+      </select>
+      {busy && <Loader2 className="size-3 animate-spin text-muted-foreground/50" />}
+      {err && <span className="text-[10.5px] text-destructive">{err}</span>}
+    </div>
   );
 }
 

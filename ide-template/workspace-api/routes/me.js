@@ -22,7 +22,8 @@ import { resolve } from 'node:path';
 import { PROJECT_DIR } from '../lib/config.js';
 import { requireActor } from '../lib/auth.js';
 import { actorScope, USERS_DIR } from '../lib/file-scope.js';
-import { getTeamMode, setProfile } from '../lib/team.js';
+import { getTeamMode, setProfile, setTelegram, find as findMember } from '../lib/team.js';
+import { syncTelegramAllowedIds } from '../lib/integrations/telegram-sync.js';
 import * as userAvatars from '../lib/user-avatars.js';
 
 const upload = multer({
@@ -48,6 +49,7 @@ function avatarUpload(req, res, next) {
 function meEnvelope(req) {
   const scope = actorScope(req);
   const teamMode = getTeamMode();
+  const member = findMember(scope.email);
   return {
     email:        scope.email,
     slug:         scope.slug,
@@ -61,6 +63,10 @@ function meEnvelope(req) {
     // Cache-busted URL for this user's custom avatar, or null (frontend falls
     // back to the Google picture / initial).
     avatarUrl:    scope.slug ? userAvatars.avatarUrl(scope.slug) : null,
+    // Cross-surface contact (own). Lets the UI show the "link your Telegram"
+    // prompt when Telegram is active but this user hasn't linked a chat id.
+    telegramChatId:   member?.telegramChatId || null,
+    preferredSurface: member?.preferredSurface || null,
   };
 }
 
@@ -78,14 +84,29 @@ export default function meRouter() {
     res.json(meEnvelope(req));
   });
 
-  // Self-service display name. Edits the CALLER's own entry only.
+  // Self-service profile. Edits the CALLER's own entry only — display name
+  // and/or their own cross-surface contact (Telegram chat id + preferred
+  // surface), so a teammate can self-link without an admin.
   router.patch('/me', requireActor, express.json({ limit: '2kb' }), (req, res) => {
-    const { displayName } = req.body || {};
-    if (typeof displayName !== 'string') {
-      return res.status(400).json({ error: 'displayName (string) is required.' });
-    }
+    const { displayName, telegramChatId, preferredSurface } = req.body || {};
     try {
-      setProfile(req.actor, { displayName });
+      let touched = false;
+      if (displayName !== undefined) {
+        if (typeof displayName !== 'string') {
+          return res.status(400).json({ error: 'displayName must be a string.' });
+        }
+        setProfile(req.actor, { displayName });
+        touched = true;
+      }
+      if (telegramChatId !== undefined || preferredSurface !== undefined) {
+        setTelegram(req.actor, { chatId: telegramChatId, preferredSurface }, req.actor);
+        // Self-link changes who may DM the bot — refresh the allow-list (bg).
+        if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
+        touched = true;
+      }
+      if (!touched) {
+        return res.status(400).json({ error: 'Nothing to update (displayName, telegramChatId, preferredSurface).' });
+      }
       res.json(meEnvelope(req));
     } catch (err) {
       res.status(400).json({ error: err.message });

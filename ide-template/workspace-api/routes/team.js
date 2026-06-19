@@ -21,6 +21,7 @@ import express from 'express';
 import * as team from '../lib/team.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
 import { avatarUrl } from '../lib/user-avatars.js';
+import { syncTelegramAllowedIds } from '../lib/integrations/telegram-sync.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -64,7 +65,16 @@ export default function teamRouter() {
   const router = Router();
 
   router.get('/team', (req, res) => {
-    const entries = team.list().map(e => ({ ...e, avatarUrl: avatarUrl(e.slug) }));
+    const viewerIsAdmin = req.actor ? team.isAdmin(req.actor) : false;
+    const viewerEmail = String(req.actor || '').toLowerCase();
+    const entries = team.list().map(e => {
+      const row = { ...e, avatarUrl: avatarUrl(e.slug) };
+      // A Telegram chat id is a private contact handle: only an admin, or the
+      // owner of the row, sees the actual value. `preferredSurface` stays
+      // visible (it's roster-level info, not a handle).
+      if (!viewerIsAdmin && e.email !== viewerEmail) row.telegramChatId = null;
+      return row;
+    });
     const me = req.actor ? team.find(req.actor) : null;
     res.json({
       entries,
@@ -113,9 +123,19 @@ export default function teamRouter() {
   });
 
   router.patch('/team/:email', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
-    const { role } = req.body || {};
+    const { role, telegramChatId, preferredSurface } = req.body || {};
     try {
-      const entry = team.setRole({ email: req.params.email, role, actor: req.actor });
+      let entry = null;
+      if (role !== undefined) {
+        entry = team.setRole({ email: req.params.email, role, actor: req.actor });
+      }
+      if (telegramChatId !== undefined || preferredSurface !== undefined) {
+        entry = team.setTelegram(req.params.email, { chatId: telegramChatId, preferredSurface }, req.actor);
+        // A changed chat id changes who may DM the bot — push the new allow-list
+        // to the integration + restart (background; don't block the response).
+        if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
+      }
+      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, or preferredSurface).' });
       res.json({ ok: true, entry });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -125,6 +145,8 @@ export default function teamRouter() {
   router.delete('/team/:email', requireAdmin, rateLimit, (req, res) => {
     try {
       const removed = team.remove({ email: req.params.email, actor: req.actor });
+      // Their chat id (if any) drops out of the allow-list.
+      if (removed?.telegramChatId) syncTelegramAllowedIds().catch(() => {});
       res.json({ ok: true, removed });
     } catch (err) {
       res.status(400).json({ error: err.message });
