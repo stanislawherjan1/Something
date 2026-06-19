@@ -411,7 +411,13 @@ export default function chatRouter() {
     // see WEB_CHAT_MULTI_SESSION.md "Critical open question").
     const prevActive = activeBySession.get(sid);
     if (prevActive) {
-      if (interrupt && prevActive.assistantText) {
+      // Persist whatever the previous turn already streamed as an interrupted
+      // assistant message — whether the client set the explicit interrupt flag
+      // OR just sent a follow-up mid-stream (a fast reply / double-tap). The text
+      // was shown to the user; discarding it on a plain collision made a visible
+      // reply vanish on the next page refresh. The superseded turn's own finish()
+      // is gen-guarded out below, so there's no double-append.
+      if (prevActive.assistantText) {
         try {
           appendToSession(req.chatActor, sid, {
             role:  'assistant',
@@ -421,11 +427,8 @@ export default function chatRouter() {
         } catch (err) {
           process.stderr.write(`[chat] interrupt-persist failed: ${err.message}\n`);
         }
-      } else {
-        // Non-interrupt collision: a frantic double-tap on send. Existing
-        // behavior is to abort + replace — keep that for the no-interrupt
-        // flag path so older clients don't get stuck.
-        process.stderr.write('[chat] new message mid-turn (no interrupt flag) — killing previous\n');
+      } else if (!interrupt) {
+        process.stderr.write('[chat] new message mid-turn (no partial text) — killing previous\n');
       }
       prevActive.proc.kill('SIGTERM');
       activeBySession.delete(sid);
@@ -489,7 +492,8 @@ export default function chatRouter() {
     const syncedSeq = (typeof sessionEntry?.syncedSeq === 'number') ? sessionEntry.syncedSeq : 0;
     const { messages: sinceMsgs, total: msgCountBefore } = readUndelivered(req.chatActor, sid, syncedSeq);
     const undelivered = claudeSid
-      ? sinceMsgs.filter(m => m.kind === 'bot' && String(m.text || '').trim())
+      ? sinceMsgs.filter(m =>
+          (m.kind === 'bot' || m.kind === 'telegram-reply') && String(m.text || '').trim())
       : [];
     const resumeContext = claudeSid ? null : buildResumeContext(req.chatActor, sid);
     // The watermark to stamp once this turn is consumed: everything up to AND
@@ -544,6 +548,13 @@ export default function chatRouter() {
         // Phase 5: kick off auto-title async if eligible.
         try { maybeAutoTitle(req.chatActor, sid); }
         catch (err) { process.stderr.write(`[chat] auto-title scheduling failed: ${err.message}\n`); }
+      } else if (assistantText) {
+        // Errored / interrupted while still the CURRENT turn (not superseded —
+        // the gen guard above let us through). Keep the streamed text as an
+        // interrupted message so a visible reply doesn't vanish on refresh.
+        try {
+          appendToSession(req.chatActor, sid, { role: 'assistant', text: assistantText, state: 'interrupted' });
+        } catch (err) { process.stderr.write(`[chat] partial-persist failed: ${err.message}\n`); }
       }
       // Advance the never-blind watermark on EVERY terminal path (done / error /
       // interrupt / abort) — once the prompt was built and the process spawned,

@@ -16,7 +16,7 @@ import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
-import { sendTelegramMessage } from '../lib/integrations/telegram-sync.js';
+import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
@@ -202,14 +202,12 @@ export default function internalRouter() {
           linkRelayPeer(sender.slug, fromSession, actor, destId);
         }
       }
-      appendToSession(actor, destId, { role: 'assistant', text, kind: 'bot' });
-
       // Channel routing. Who actually receives this = `deliverTo`: the explicit
       // recipient for a relay, or the actor for a self / cross-surface "message
       // me on Telegram". Their preferredSurface is the DEFAULT channel; an
-      // explicit `channel` from the sender OVERRIDES it. The web thread above is
-      // always the record + 2-way anchor; here we decide the Telegram ping and
-      // whether to ALSO fire the web toast.
+      // explicit `channel` from the sender OVERRIDES it. The web thread is always
+      // the record + 2-way anchor; here we decide the Telegram ping and whether
+      // to ALSO fire the web toast.
       const deliverTo   = target || resolveMember(actor);
       const explicitTg  = channel === 'telegram';
       const explicitWeb = channel === 'web';
@@ -222,15 +220,38 @@ export default function internalRouter() {
       const wantTg = !!(deliverTo?.telegramChatId && !explicitWeb &&
         (explicitTg || (isRelay && prefersTg)));
       let tgSent = false;
+      let tgMessageId = null;
       if (wantTg) {
         // Awaited (not fire-and-forget) so we know whether to suppress the web
-        // toast — if Telegram failed we must NOT also hide the web copy.
+        // toast AND can record the Telegram message id (for deterministic
+        // reply-to threading of the teammate's eventual reply).
         const r = await sendTelegramMessage(deliverTo.telegramChatId, text);
         tgSent = !!(r && r.ok);
+        tgMessageId = (r && r.messageId != null) ? String(r.messageId) : null;
       }
       // Suppress the web toast ONLY when the sender explicitly chose Telegram and
       // it actually landed there; otherwise the web toast still fires.
       const webToast = !(explicitTg && tgSent);
+
+      // Record the relay/bot message into the web thread WITH delivery truth.
+      // Moved AFTER the TG send so we know the channel + Telegram message id —
+      // a teammate's Telegram reply is then threaded back deterministically
+      // (reply_to_message_id → this tgMessageId). If the append throws after a
+      // successful TG send, the recipient still saw it (non-fatal, logged); the
+      // reply falls back to pair-based threading.
+      try {
+        appendToSession(actor, destId, {
+          role: 'assistant', text, kind: 'bot',
+          delivery: {
+            channel: tgSent ? (webToast ? 'both' : 'telegram') : 'web',
+            tgChatId: wantTg && deliverTo?.telegramChatId ? String(deliverTo.telegramChatId) : null,
+            tgMessageId,
+            at: new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        process.stderr.write(`[internal] relay append failed (delivered=${tgSent ? 'telegram' : 'web'}): ${err.message}\n`);
+      }
 
       // Report WHERE it actually landed so web_send_message → the bot tells the
       // user the truth instead of promising a channel that didn't happen.
@@ -249,6 +270,22 @@ export default function internalRouter() {
       });
     } catch (err) {
       process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Inbound Telegram DM from a teammate → thread it back into the right web
+  // relay conversation + push it onward to the peer. Called by the bot's grammy
+  // middleware (loopback) for EVERY inbound DM; routeTelegramInbound decides
+  // whether it belongs to a relay thread (and is a no-op otherwise, so a normal
+  // Telegram DM is untouched). Loopback-only — same trust boundary as the rest.
+  router.post('/internal/telegram-inbound', loopbackOnly, async (req, res) => {
+    const { chat_id, text, message_id, reply_to_message_id } = req.body || {};
+    try {
+      const out = await routeTelegramInbound({ chat_id, text, message_id, reply_to_message_id });
+      return res.json(out);
+    } catch (err) {
+      process.stderr.write(`[internal] telegram-inbound failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

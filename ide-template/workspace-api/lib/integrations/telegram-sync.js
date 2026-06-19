@@ -18,7 +18,9 @@
 
 import * as store from './store.js';
 import * as runtime from './runtime.js';
-import { telegramAllowedIds } from '../team.js';
+import { telegramAllowedIds, list as teamList } from '../team.js';
+import { listSessions } from '../sessions.js';
+import { appendToSession, readUndelivered } from '../chatHistory.js';
 
 function telegramActive() {
   try { return store.isActive('telegram'); } catch { return false; }
@@ -83,4 +85,93 @@ export async function sendTelegramMessage(chatId, text) {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+// Dedup recently-processed inbound Telegram message ids (the bot middleware may
+// retry). Small bounded set — replay protection, not durable state.
+const _recentInbound = new Set();
+function _seenInbound(messageId) {
+  if (messageId == null) return false;
+  const key = String(messageId);
+  if (_recentInbound.has(key)) return true;
+  _recentInbound.add(key);
+  if (_recentInbound.size > 1000) _recentInbound.delete(_recentInbound.values().next().value);
+  return false;
+}
+
+/**
+ * Route an INBOUND Telegram DM from a teammate back into the right web relay
+ * thread, then actively push it onward to the peer(s). This is what makes a
+ * teammate's Telegram reply land in the conversation it answers (instead of
+ * confusing the identity-blind bot) and reach the other person even when that
+ * teammate never opens the web.
+ *
+ * Safety: strictly scoped to the SENDER's OWN relay sessions (resolved from
+ * THEIR chat id), so a reply can never land in a thread they don't own.
+ * Threading is DETERMINISTIC — match the Telegram reply-to against a stored
+ * delivery.tgMessageId. When there's no reply-to and the sender has more than
+ * one outstanding relay thread, we REFUSE to guess (returning ambiguous) rather
+ * than cross-deliver one teammate's answer to the wrong peer.
+ *
+ * Returns { ok, routed, reason?, session_id?, peers? }. Never throws.
+ */
+export async function routeTelegramInbound({ chat_id, text, message_id, reply_to_message_id } = {}) {
+  const cid = String(chat_id == null ? '' : chat_id).trim();
+  const body = String(text == null ? '' : text).trim();
+  if (!cid || !body) return { ok: true, routed: false, reason: 'empty' };
+  if (_seenInbound(message_id)) return { ok: true, routed: false, reason: 'duplicate' };
+
+  // Resolve the sender from their linked chat id — ANY teammate, not just admin.
+  let sender = null;
+  try { sender = teamList().find(m => String(m.telegramChatId || '') === cid) || null; }
+  catch { sender = null; }
+  if (!sender) return { ok: true, routed: false, reason: 'not a teammate' };
+
+  // Only the sender's OWN relay sessions (leak-safe).
+  let sessions;
+  try {
+    sessions = listSessions(sender.slug, { archived: false })
+      .filter(s => s.relayPeers && Object.keys(s.relayPeers).length);
+  } catch { sessions = []; }
+  if (!sessions.length) return { ok: true, routed: false, reason: 'no relay thread' };
+
+  // Deterministic threading: match the Telegram reply-to against a stored
+  // tgMessageId on one of the sender's relay messages.
+  let dest = null;
+  if (reply_to_message_id != null) {
+    const rid = String(reply_to_message_id);
+    for (const s of sessions) {
+      let msgs = [];
+      try { msgs = readUndelivered(sender.slug, s.id, 0).messages; } catch { msgs = []; }
+      if (msgs.some(m => m.delivery && String(m.delivery.tgMessageId || '') === rid)) { dest = s; break; }
+    }
+  }
+  if (!dest) {
+    if (sessions.length === 1) dest = sessions[0];
+    else return { ok: true, routed: false, reason: 'ambiguous' };   // never guess across peers
+  }
+
+  // Thread the reply into the sender's own web relay thread (out-of-band → the
+  // never-blind watermark surfaces it on their next web turn).
+  try { appendToSession(sender.slug, dest.id, { role: 'user', text: body, kind: 'telegram-reply' }); }
+  catch (err) { process.stderr.write(`[telegram-inbound] append failed: ${err.message}\n`); }
+
+  // Active relay-back: a Telegram-native teammate never takes a web turn, so the
+  // reply would otherwise be recorded write-only and the peer never hears it.
+  // Push it onward NOW via the existing relay machinery (loopback /chat-session),
+  // which threads into the peer's paired session + delivers on the peer's surface.
+  const peers = Object.keys(dest.relayPeers || {});
+  const port = process.env.WORKSPACE_API_PORT || '3001';
+  for (const peerSlug of peers) {
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body }),
+      });
+    } catch (err) {
+      process.stderr.write(`[telegram-inbound] relay-back to ${peerSlug} failed: ${err.message}\n`);
+    }
+  }
+  return { ok: true, routed: true, session_id: dest.id, peers };
 }
