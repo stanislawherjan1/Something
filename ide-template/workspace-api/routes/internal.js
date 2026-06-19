@@ -177,11 +177,24 @@ export default function internalRouter() {
       // recipient prefers Telegram (and is linked) also ping them there so a
       // relay reaches them where they actually are. Fire-and-forget — the web
       // delivery already succeeded; a TG hiccup must not fail the request.
-      if (isRelay && target?.telegramChatId &&
-          (target.preferredSurface === 'telegram' || target.preferredSurface === 'both')) {
-        sendTelegramMessage(target.telegramChatId, text).catch(() => {});
-      }
-      return res.json({ ok: true, id: destId, recipient: actor, relay: isRelay });
+      const tgWanted = !!(isRelay && target?.telegramChatId &&
+        (target.preferredSurface === 'telegram' || target.preferredSurface === 'both'));
+      if (tgWanted) sendTelegramMessage(target.telegramChatId, text).catch(() => {});
+
+      // Report WHERE it actually landed so the caller (web_send_message → the
+      // bot) tells the user the truth instead of promising a channel that
+      // didn't happen.
+      return res.json({
+        ok: true,
+        id: destId,
+        recipient: actor,
+        relay: isRelay,
+        delivery: {
+          web: true,
+          telegram: tgWanted,
+          recipientLinkedTelegram: !!target?.telegramChatId,
+        },
+      });
     } catch (err) {
       process.stderr.write(`[internal] chat-session failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

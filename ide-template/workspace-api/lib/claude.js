@@ -113,6 +113,8 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
       ? ` Your teammates (DIFFERENT people): ${mates.map(fmtMate).join(', ')}. ` +
         `When the user names one of them, they mean that other person — not themselves. ` +
         `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list. ` +
+        `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram" / "na Telegramie": there is NO separate Telegram tool on this surface, and the recipient automatically gets the message wherever THEY chose to be reached (their workspace, plus their Telegram if linked). You do NOT pick the channel. ` +
+        `NEVER tell ${me} you sent or passed something on unless you ACTUALLY called web_send_message and it returned success — do not narrate a send you didn't make. The tool result says WHERE it landed; relay that truthfully (if it says web only, tell ${me} it's in the teammate's workspace, don't claim Telegram). ` +
         `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer.`
       : '';
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';

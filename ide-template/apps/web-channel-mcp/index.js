@@ -39,19 +39,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'web_send_message',
       description:
-        'Send a message into a user\'s workspace web UI (a notification toast + a ' +
-        'chat entry). Two modes: (1) reply to the CURRENT web user (omit ' +
-        '`recipient`) — use when the prompt came over the web channel or there is ' +
-        'no Telegram; (2) RELAY to ANOTHER teammate — set `recipient` to their ' +
-        'slug (see the TEAM roster). A relay is delivered to that teammate. ' +
-        'Compose it as a NATURAL, human message addressed to them: greet them and ' +
-        'weave the sender in conversationally (e.g. "Hi Jan, Stan is asking ' +
-        'whether you finished the analysis"). Write it in the RECIPIENT\'s ' +
-        'language (the roster shows "writes in <lang>" when known). Put that whole ' +
-        'message in `body` — it is delivered VERBATIM, so do NOT add a robotic ' +
-        '"X asked me to forward" preamble. Only relay to a known teammate slug, ' +
-        'and only when the current user explicitly asked you to pass something on. ' +
-        'Plain text. `title` = short chat-list label (optional), `body` = the message.',
+        'Send a message into a user\'s workspace (a notification + chat entry). ' +
+        'THIS IS THE ONLY WAY to reach a person from here — use it for EVERY ' +
+        'relay, INCLUDING when the user says "message them on Telegram" / "ask ' +
+        'them on TG". There is NO separate Telegram tool on this surface; this ' +
+        'tool delivers to the teammate on whichever surface THEY chose (their web ' +
+        'workspace always, plus their Telegram if they linked it and prefer it) — ' +
+        'the routing is automatic, you do NOT pick the channel. NEVER tell the ' +
+        'user you sent / relayed something unless you actually called this tool ' +
+        'and it returned success; the result states WHERE it landed — relay that ' +
+        'truthfully (do not promise Telegram if the result says web only). ' +
+        'Two modes: (1) reply to the CURRENT web user (omit `recipient`); ' +
+        '(2) RELAY to ANOTHER teammate — set `recipient` to their slug (TEAM ' +
+        'roster). Compose a NATURAL, human message addressed to them: greet them ' +
+        'and weave the sender in conversationally ("Hi Jan, Stan is asking ' +
+        'whether you finished the analysis"), in the RECIPIENT\'s language (roster ' +
+        'shows "writes in <lang>"). Put the whole message in `body` — delivered ' +
+        'VERBATIM, no "X asked me to forward" preamble. Only relay to a known ' +
+        'slug, only when the user asked you to pass something on. `title` = short ' +
+        'chat-list label (optional), `body` = the message.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -102,6 +108,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // toast still fires; the user can find the message but the click
       // → open conversation wiring goes inert.
       let sessionId = null;
+      let delivery = null;
       try {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
@@ -110,6 +117,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
         const sJson = await sRes.json().catch(() => ({}));
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
+        if (sJson?.delivery) delivery = sJson.delivery;
       } catch (_) { /* swallow — fall through to notify */ }
 
       const nRes = await fetch(NOTIFY_URL, {
@@ -134,12 +142,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isError: true,
         };
       }
+      // Tell the bot WHERE it actually landed, so it relays the truth to the
+      // user instead of promising a channel that didn't happen.
+      let where = '';
+      if (recipient && delivery) {
+        if (delivery.telegram) {
+          where = ' Delivered to their web workspace AND their Telegram.';
+        } else if (delivery.recipientLinkedTelegram === false) {
+          where = ' Delivered to their web workspace. They have NOT linked Telegram, so it did NOT go to Telegram —' +
+                  ' tell the user it is waiting in the workspace, do not claim you sent it on Telegram.';
+        } else {
+          where = ' Delivered to their web workspace (their chosen surface — not Telegram).';
+        }
+      }
       return {
         content: [{
           type: 'text',
-          text: sessionId
+          text: (sessionId
             ? `Sent (notification=${nJson.id}, session=${sessionId}).`
-            : `Sent (notification=${nJson.id}, session-create failed — toast only).`,
+            : `Sent (notification=${nJson.id}, session-create failed — toast only).`) + where,
         }],
       };
     } catch (err) {
