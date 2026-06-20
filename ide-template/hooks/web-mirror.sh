@@ -56,16 +56,33 @@ esac
 
 [ -z "$TITLE" ] && [ -z "$BODY" ] && exit 0
 
+# Scope the mirrored bubble to the OPERATOR (team mode). This hook mirrors the
+# operator's OWN Telegram conversation, so it must land in the operator's web
+# view — never fan out to every teammate. The bot now exports IDE_ACTOR_SLUG
+# (the operator slug), so pass it as the recipient EXPLICITLY instead of relying
+# on /internal/notify's primaryAdminSlug() fallback default. Solo / non-team
+# (slug unset) → omit it; /notify resolves null = the single user. Validated to
+# the slug charset before use.
+OP_SLUG="${IDE_ACTOR_SLUG:-}"
+printf '%s' "$OP_SLUG" | grep -qE '^[a-z0-9-]+$' || OP_SLUG=""
+
 # Build JSON safely. Python is always present in the image; the printf
 # fallback path mirrors web-notify.sh.
 if command -v python3 >/dev/null 2>&1; then
     JSON=$(python3 -c '
 import json, sys
-print(json.dumps({"kind": "bot", "title": sys.argv[1], "body": sys.argv[2]}))
-' "$TITLE" "$BODY")
+d = {"kind": "bot", "title": sys.argv[1], "body": sys.argv[2]}
+if len(sys.argv) > 3 and sys.argv[3]:
+    d["recipient"] = sys.argv[3]
+print(json.dumps(d))
+' "$TITLE" "$BODY" "$OP_SLUG")
 else
     esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-    JSON="{\"kind\":\"bot\",\"title\":\"$(esc "$TITLE")\",\"body\":\"$(esc "$BODY")\"}"
+    if [ -n "$OP_SLUG" ]; then
+        JSON="{\"kind\":\"bot\",\"title\":\"$(esc "$TITLE")\",\"body\":\"$(esc "$BODY")\",\"recipient\":\"$(esc "$OP_SLUG")\"}"
+    else
+        JSON="{\"kind\":\"bot\",\"title\":\"$(esc "$TITLE")\",\"body\":\"$(esc "$BODY")\"}"
+    fi
 fi
 
 # Fire and forget. Failure here must NEVER block the bot's turn: the

@@ -1114,6 +1114,31 @@ if command -v curl >/dev/null 2>&1; then
     fi
 fi
 
+# ── Operator identity (team mode) ─────────────────────────────────────
+# Export the operator's slug so the brain's web_send_message relays carry
+# from=<operator>: that's what gives the RECIPIENT an attributed chat title
+# AND toast ("📨 Message from <op>") instead of an anonymous bubble (F3).
+# Also IDE_ACTOR_IS_ADMIN=1 so scope-guard.mjs short-circuits (its line 109)
+# and the slug NEVER fences the operator brain out of shared/other files —
+# the brain keeps full access exactly as before. The slug is FETCHED from
+# wsapi (not derived in bash) so it can't drift from team.js's slugify /
+# uniqueSlug. Solo / non-team → the endpoint returns teamMode:false and we
+# leave the env unset (legacy full-access behaviour, unchanged). Exported
+# BEFORE the tmux launch so the claude process + its MCP servers inherit it.
+if command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    OP_JSON=$(curl -sS --max-time 5 --fail "http://localhost:3001/api/internal/operator-identity" 2>/dev/null || true)
+    if [ -n "$OP_JSON" ]; then
+        OP_SLUG=$(printf '%s' "$OP_JSON" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);process.stdout.write(j&&j.teamMode&&j.slug?String(j.slug):"")}catch{process.stdout.write("")}})' 2>/dev/null || true)
+        if printf '%s' "$OP_SLUG" | grep -qE '^[a-z0-9-]+$'; then
+            export IDE_ACTOR_SLUG="$OP_SLUG"
+            export IDE_ACTOR_IS_ADMIN=1
+            log "Operator identity: IDE_ACTOR_SLUG=$OP_SLUG IDE_ACTOR_IS_ADMIN=1 (relays attributed; scope-guard admin-passthrough)."
+        else
+            log "Operator identity: not in team mode (or no slug) — leaving IDE_ACTOR_SLUG unset (solo/legacy)."
+        fi
+    fi
+fi
+
 # Only load the Telegram channel plugin when we actually have a token —
 # without one the plugin process exits on startup with "TELEGRAM_BOT_TOKEN
 # required" and claude loses the MCP connection (diagnosed 2026-06-15 on

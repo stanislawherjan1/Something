@@ -17,6 +17,7 @@ import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/s
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
+import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
@@ -67,6 +68,26 @@ export default function internalRouter() {
       return res.json({ ok: true, changed: !!changed });
     } catch (err) {
       process.stderr.write(`[internal] sync-mcp failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Operator identity for the Telegram bot. bot.sh curls this at startup to
+  // export IDE_ACTOR_SLUG (+ IDE_ACTOR_IS_ADMIN=1) into the brain's env so the
+  // operator's web_send_message relays carry from=<operator> — that's what gives
+  // the recipient an attributed chat title AND toast ("📨 Message from <op>")
+  // instead of an anonymous bubble (F3). The slug is fetched (not derived in
+  // bash) so it can't drift from team.js's slugify/uniqueSlug. IS_ADMIN=1 makes
+  // scope-guard.mjs short-circuit (line 109) → the slug never fences the brain
+  // out of shared/other files. Solo / non-team → teamMode:false and bot.sh
+  // leaves the env unset (legacy full-access behaviour, unchanged).
+  router.get('/internal/operator-identity', loopbackOnly, (_req, res) => {
+    try {
+      const teamMode = getTeamMode();
+      const slug = teamMode ? primaryAdminSlug() : null;
+      return res.json({ ok: true, teamMode, slug, isAdmin: !!slug });
+    } catch (err) {
+      process.stderr.write(`[internal] operator-identity failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
@@ -256,6 +277,29 @@ export default function internalRouter() {
         });
       } catch (err) {
         process.stderr.write(`[internal] relay append failed (delivered=${tgSent ? 'telegram' : 'web'}): ${err.message}\n`);
+      }
+
+      // Reminder-style frame injection (team mode). When a teammate relay lands
+      // on the OPERATOR's Telegram, ALSO inject a framed line into the operator
+      // brain's live tmux context — [RELAY from=… thread=<tgMessageId> await=…] —
+      // so it recognises this is a relay from <name> awaiting an answer to route
+      // back, and keeps concurrent relays distinct. thread=<tgMessageId> is the
+      // SAME id routeTelegramInbound matches reply_to against → one key end to
+      // end, no new store. The raw Telegram DM above stays the durable/offline
+      // record; the frame is an awareness layer (the operator already received
+      // the DM, so the brain must NOT re-send it — see the [RELAY] guidance in
+      // the prefix). Scoped to the PRIMARY admin (the operator whose brain IS the
+      // tmux session), not any admin. Fire-and-forget: never blocks the HTTP
+      // response; bot offline (exit 2) just means the DM stands alone.
+      if (isRelay && tgSent && tgMessageId && getTeamMode() && deliverTo?.slug === primaryAdminSlug()) {
+        const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
+        const flat = (v) => String(v == null ? '' : v).replace(/[\n\r]+/g, ' ').trim();
+        const awaitMode = depth >= 2 ? 'none' : 'reply';
+        const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
+          + `thread=${kw(tgMessageId)} depth=${depth} await=${awaitMode} | ${flat(text)}]`;
+        injectBotFrame(frame)
+          .then((r) => { if (!r.injected && r.code !== 2) process.stderr.write(`[internal] relay frame inject failed (code=${r.code}): ${r.reason}\n`); })
+          .catch(() => { /* never throws */ });
       }
 
       // Report WHERE it actually landed so web_send_message → the bot tells the
