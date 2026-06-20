@@ -244,26 +244,58 @@ export default function internalRouter() {
       // explicit, not a relay) don't auto-forward here; they have their own path.
       const wantTg = !!(deliverTo?.telegramChatId && !explicitWeb &&
         (explicitTg || (isRelay && prefersTg)));
+      // A relay whose recipient is the OPERATOR — the primary admin, whose brain
+      // IS the persistent tmux claude. Deliver it via a reminder-style FRAME
+      // injection (the brain reads it in live context and emits it ITSELF),
+      // NOT a raw Bot API send. Doing BOTH double-delivers — the raw DM lands AND
+      // the brain re-emits after reading the frame (the "messages duplicate" bug).
+      // So for the operator we inject only; the raw send is the OFFLINE fallback.
+      const isOperatorRelay = isRelay && getTeamMode() && wantTg
+        && deliverTo?.slug === primaryAdminSlug();
+
       let tgSent = false;
       let tgMessageId = null;
-      if (wantTg) {
-        // Awaited (not fire-and-forget) so we know whether to suppress the web
-        // toast AND can record the Telegram message id (for deterministic
-        // reply-to threading of the teammate's eventual reply).
+      let framedToBrain = false;
+
+      if (isOperatorRelay) {
+        // thread=<destId> is a stable key the brain uses to keep concurrent
+        // relays distinct. The operator's own reply routes via the brain reading
+        // the frame (routeTelegramInbound admin-skips), so it needs no
+        // tgMessageId reply-to anchor. AWAITED so we can fall back if offline.
+        const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
+        const flat = (v) => String(v == null ? '' : v).replace(/[\n\r]+/g, ' ').trim();
+        const awaitMode = depth >= 2 ? 'none' : 'reply';
+        const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
+          + `thread=${kw(destId)} chat_id=${kw(deliverTo.telegramChatId)} depth=${depth} await=${awaitMode} | ${flat(text)}]`;
+        const r = await injectBotFrame(frame);
+        framedToBrain = !!r.injected;
+        if (framedToBrain) {
+          tgSent = true;   // the brain delivers it to the operator's Telegram
+        } else {
+          // Bot offline (exit 2) or inject failed → raw send so it still lands.
+          if (r.code !== 2) process.stderr.write(`[internal] relay frame inject failed (code=${r.code}): ${r.reason}; raw-send fallback\n`);
+          const sr = await sendTelegramMessage(deliverTo.telegramChatId, text);
+          tgSent = !!(sr && sr.ok);
+          tgMessageId = (sr && sr.messageId != null) ? String(sr.messageId) : null;
+        }
+      } else if (wantTg) {
+        // Non-operator recipient (or self cross-surface): raw Bot API send, which
+        // mints the tgMessageId anchor for THEIR deterministic reply-to threading.
         const r = await sendTelegramMessage(deliverTo.telegramChatId, text);
         tgSent = !!(r && r.ok);
         tgMessageId = (r && r.messageId != null) ? String(r.messageId) : null;
       }
-      // Suppress the web toast ONLY when the sender explicitly chose Telegram and
-      // it actually landed there; otherwise the web toast still fires.
-      const webToast = !(explicitTg && tgSent);
 
-      // Record the relay/bot message into the web thread WITH delivery truth.
-      // Moved AFTER the TG send so we know the channel + Telegram message id —
-      // a teammate's Telegram reply is then threaded back deterministically
-      // (reply_to_message_id → this tgMessageId). If the append throws after a
-      // successful TG send, the recipient still saw it (non-fatal, logged); the
-      // reply falls back to pair-based threading.
+      // Web toast: suppress when the sender explicitly chose Telegram and it
+      // landed there, OR when the frame was injected (the brain's Telegram emit
+      // is mirrored to the operator's web by web-mirror.sh, so a toast here would
+      // double the web notification too).
+      const webToast = framedToBrain ? false : !(explicitTg && tgSent);
+
+      // Record the relay/bot message into the web thread WITH delivery truth, so
+      // a teammate's Telegram reply can thread back deterministically (their
+      // reply_to_message_id → tgMessageId). For the operator-relay path tgMessageId
+      // is null (no raw send) and threading rides the injected frame instead.
       try {
         appendToSession(actor, destId, {
           role: 'assistant', text, kind: 'bot',
@@ -272,34 +304,12 @@ export default function internalRouter() {
             tgChatId: wantTg && deliverTo?.telegramChatId ? String(deliverTo.telegramChatId) : null,
             tgMessageId,
             relayDepth: depth,
+            framedToBrain,
             at: new Date().toISOString(),
           },
         });
       } catch (err) {
         process.stderr.write(`[internal] relay append failed (delivered=${tgSent ? 'telegram' : 'web'}): ${err.message}\n`);
-      }
-
-      // Reminder-style frame injection (team mode). When a teammate relay lands
-      // on the OPERATOR's Telegram, ALSO inject a framed line into the operator
-      // brain's live tmux context — [RELAY from=… thread=<tgMessageId> await=…] —
-      // so it recognises this is a relay from <name> awaiting an answer to route
-      // back, and keeps concurrent relays distinct. thread=<tgMessageId> is the
-      // SAME id routeTelegramInbound matches reply_to against → one key end to
-      // end, no new store. The raw Telegram DM above stays the durable/offline
-      // record; the frame is an awareness layer (the operator already received
-      // the DM, so the brain must NOT re-send it — see the [RELAY] guidance in
-      // the prefix). Scoped to the PRIMARY admin (the operator whose brain IS the
-      // tmux session), not any admin. Fire-and-forget: never blocks the HTTP
-      // response; bot offline (exit 2) just means the DM stands alone.
-      if (isRelay && tgSent && tgMessageId && getTeamMode() && deliverTo?.slug === primaryAdminSlug()) {
-        const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
-        const flat = (v) => String(v == null ? '' : v).replace(/[\n\r]+/g, ' ').trim();
-        const awaitMode = depth >= 2 ? 'none' : 'reply';
-        const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
-          + `thread=${kw(tgMessageId)} depth=${depth} await=${awaitMode} | ${flat(text)}]`;
-        injectBotFrame(frame)
-          .then((r) => { if (!r.injected && r.code !== 2) process.stderr.write(`[internal] relay frame inject failed (code=${r.code}): ${r.reason}\n`); })
-          .catch(() => { /* never throws */ });
       }
 
       // Report WHERE it actually landed so web_send_message → the bot tells the

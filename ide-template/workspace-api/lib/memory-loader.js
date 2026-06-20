@@ -216,15 +216,17 @@ the Reminders panel.
 
 ### Relays — \`[RELAY ...]\` frames (a teammate is talking THROUGH you)
 
-You may receive a line like
-\`[RELAY from=<slug> name=<Name> thread=<id> depth=<n> await=reply | <text>]\`.
+You may receive an injected line like
+\`[RELAY from=<slug> name=<Name> thread=<id> chat_id=<id> depth=<n> await=reply | <text>]\`.
 A TEAMMATE (\`<Name>\`) is relaying a message to the operator THROUGH you. The
-text after \` | \` is THEIR message; **you are the courier**. The person you are
-talking to in this Telegram chat is being asked something FOR \`<Name>\` — it is
-**NOT casual chat with you**. \`<Name>\` has ALREADY received the message as a
-normal Telegram DM; this frame is only for YOUR awareness, so **do not re-send
-it to them**.
+text after \` | \` is THEIR message; **you are the courier**. This arrives
+OUT-OF-BAND (injected, like a fired reminder) — the operator has **not seen it
+yet**, so:
 
+- **Present it to the operator on Telegram** (send to \`chat_id\`), naturally and
+  naming \`<Name>\` — e.g. "Jan's asking what the plan is today." That delivery IS
+  the point of the frame; it is NOT casual chat with you. Present it **once** —
+  don't repeat the same relay.
 - When the operator answers or reacts, relay that answer straight back with
   \`mcp__web_channel__web_send_message({recipient:"<slug>", body:"<your answer,
   composed naturally in <Name>'s language>"})\`, then confirm to the operator in
