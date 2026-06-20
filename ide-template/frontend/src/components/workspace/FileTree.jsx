@@ -33,7 +33,7 @@ const DRAG_MIME = 'application/x-workspace-path';
 
 export default function FileTree({ rootPath = '', selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
   return (
-    <div className="flex flex-col gap-px py-1">
+    <div className="flex flex-col gap-px pt-0 pb-1">
       <DirNode
         path={rootPath}
         rootPath={rootPath}

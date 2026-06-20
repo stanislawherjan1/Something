@@ -546,7 +546,7 @@ function AddSkillTile({ onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-muted-foreground/70 transition-all hover:border-foreground/25 hover:bg-muted/30 hover:text-foreground/85"
+      className="w-full group flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-muted-foreground/70 transition-all hover:border-foreground/25 hover:bg-muted/30 hover:text-foreground/85"
     >
       <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-background ring-1 ring-border/60 transition-colors group-hover:ring-foreground/20">
         <Plus className="size-5" strokeWidth={1.75} />

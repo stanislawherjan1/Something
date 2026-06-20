@@ -84,23 +84,13 @@ export default function TeamDashboard({ sidebarOpen }) {
           )}
 
           {!isInitialLoad && data && teamMode && (
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-4">
             <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
               Anyone on this list can sign in to the workspace with their Google account.
               {isAdmin
                 ? ' Admins can invite, promote, and remove team members.'
                 : ' Only admins can invite or remove members.'}
             </p>
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setAdding(true)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85"
-              >
-                <UserPlus className="size-3.5" strokeWidth={2} />
-                Invite member
-              </button>
-            )}
           </div>
           )}
 
@@ -125,42 +115,43 @@ export default function TeamDashboard({ sidebarOpen }) {
           )}
 
           {data && teamMode && entries.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
               {entries.map((entry, idx) => (
-                <TeamRow
-                  key={entry.email}
-                  entry={entry}
-                  isMe={entry.email === myEmail}
-                  isLastAdmin={entry.role === 'admin' && adminCount === 1}
-                  canManage={isAdmin}
-                  isFirst={idx === 0}
-                  onRemove={() => setRemoving(entry)}
-                  onChangeRole={async (role) => {
-                    try {
+                <div key={entry.email} className="rounded-xl border border-border/60 bg-card transition-all duration-150 hover:border-border hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
+                  <TeamRow
+                    entry={entry}
+                    isMe={entry.email === myEmail}
+                    isLastAdmin={entry.role === 'admin' && adminCount === 1}
+                    canManage={isAdmin}
+                    onRemove={() => setRemoving(entry)}
+                    onChangeRole={async (role) => {
+                      try {
+                        const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
+                          method:  'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body:    JSON.stringify({ role }),
+                        });
+                        const data = await resp.json().catch(() => ({}));
+                        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+                        reload();
+                      } catch (err) {
+                        alert(err.message);   // simple — admin operation, low frequency
+                      }
+                    }}
+                    onChangeTelegram={async (patch) => {
                       const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
                         method:  'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body:    JSON.stringify({ role }),
+                        body:    JSON.stringify(patch),
                       });
                       const data = await resp.json().catch(() => ({}));
                       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
                       reload();
-                    } catch (err) {
-                      alert(err.message);   // simple — admin operation, low frequency
-                    }
-                  }}
-                  onChangeTelegram={async (patch) => {
-                    const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
-                      method:  'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body:    JSON.stringify(patch),
-                    });
-                    const data = await resp.json().catch(() => ({}));
-                    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-                    reload();
-                  }}
-                />
+                    }}
+                  />
+                </div>
               ))}
+              {isAdmin && <AddMemberTile onClick={() => setAdding(true)} />}
             </div>
           )}
         </div>
@@ -328,26 +319,25 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onChangeRole, onChangeTelegram }) {
-  const { email, role, addedAt, addedBy, avatarUrl } = entry;
+function TeamRow({ entry, isMe, isLastAdmin, canManage, onRemove, onChangeRole, onChangeTelegram }) {
+  const { email, role, addedAt, addedBy, avatarUrl, displayName } = entry;
   return (
-    <div className={cn(
-      'group flex items-center gap-3 px-4 py-3 transition-colors',
-      !isFirst && 'border-t border-border/40',
-      'hover:bg-muted/25',
-    )}>
-      <Avatar email={email} avatarUrl={avatarUrl} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 truncate text-[13.5px] font-medium text-foreground/90">
-          {email}
+    <div className="group flex flex-col items-center gap-3 px-4 py-4 text-center transition-colors hover:bg-muted/15">
+      <LargeAvatar email={email} avatarUrl={avatarUrl} />
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex items-center gap-2 justify-center text-[15px] font-bold text-foreground/98">
+          {displayName || email.split('@')[0]}
           {isMe && (
             <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/85">
               you
             </span>
           )}
         </div>
+        <div className="text-[12px] text-muted-foreground/70">
+          {email}
+        </div>
         {addedAt && (
-          <div className="text-[11.5px] text-muted-foreground/65">
+          <div className="text-[11px] text-muted-foreground/60">
             invited {formatRelative(new Date(addedAt))}
             {addedBy && addedBy !== 'bootstrap' && ` by ${addedBy}`}
           </div>
@@ -355,22 +345,46 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, isFirst, onRemove, onCha
         <TelegramContact entry={entry} canManage={canManage} onChange={onChangeTelegram} />
       </div>
 
-      <RolePill
-        role={role}
-        canManage={canManage && !isMe && !isLastAdmin}
-        onChange={onChangeRole}
-      />
+      <div className="flex items-center gap-2 w-full justify-center">
+        <RolePill
+          role={role}
+          canManage={canManage && !isMe && !isLastAdmin}
+          onChange={onChangeRole}
+        />
 
-      {canManage && !isMe && !isLastAdmin && (
-        <button
-          type="button"
-          onClick={onRemove}
-          title="Remove member"
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/55 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-        >
-          <Trash2 className="size-3.5" strokeWidth={1.75} />
-        </button>
-      )}
+        {canManage && !isMe && !isLastAdmin && (
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove member"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/55 transition-all hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LargeAvatar({ email, avatarUrl }) {
+  const initial = (email || '?').trim().charAt(0).toUpperCase();
+  const palette = [
+    'from-yellow-200 to-amber-300',
+    'from-amber-200 to-orange-300',
+    'from-orange-200 to-amber-300',
+    'from-yellow-200 to-orange-300',
+  ];
+  const idx = (email || '').charCodeAt(0) % palette.length;
+  return (
+    <div className={cn(
+      'flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br',
+      'text-[28px] font-semibold text-foreground ring-2 ring-border/60',
+      palette[idx],
+    )}>
+      {avatarUrl
+        ? <img src={avatarUrl} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        : initial}
     </div>
   );
 }
@@ -673,6 +687,22 @@ function RemoveMemberModal({ entry, isLastAdmin, onClose, onSuccess }) {
         </div>
       </div>
     </ModalShell>
+  );
+}
+
+function AddMemberTile({ onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full group flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-muted-foreground/70 transition-all hover:border-foreground/25 hover:bg-muted/30 hover:text-foreground/85"
+    >
+      <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-background ring-1 ring-border/60 transition-colors group-hover:ring-foreground/20">
+        <UserPlus className="size-5" strokeWidth={1.75} />
+      </div>
+      <div className="text-[13.5px] font-medium">Add member</div>
+      <div className="text-[11.5px] text-muted-foreground/65">Invite a teammate</div>
+    </button>
   );
 }
 
