@@ -26,7 +26,7 @@
  *                writes memory/RECENT_TELEGRAM.md
  */
 
-import { existsSync, readFileSync, statSync, readdirSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, readdirSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
@@ -262,7 +262,25 @@ export function writeRecentSnapshot({
     };
   }
 
-  // Solo web, or telegram: one shared file (legacy behaviour).
+  // Per-operator Telegram snapshot (team mode). The bot's ONE Telegram log is
+  // the OPERATOR's private conversation (single token). Writing it to the shared
+  // memory/RECENT_TELEGRAM.md let any teammate read it via /api/files/read (the
+  // prompt-exclusion alone is not an ACL). Write it to the admin's per-user dir
+  // instead — scope-rule.js guards memory/users/<slug>/ — and remove the stale
+  // flat file so old content can't leak.
+  const adminSlug = channel === 'telegram' && getTeamMode() ? primaryAdminSlug() : null;
+  if (adminSlug && /^[a-z0-9-]+$/.test(adminSlug)) {
+    const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
+    const { content, charCount } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
+    const dir = join(MEMORY_DIR, USERS_DIR, adminSlug);
+    try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    const perUserPath = join(dir, 'RECENT_TELEGRAM.md');
+    atomicWrite(perUserPath, content);
+    try { if (existsSync(cfg.snapshotPath)) unlinkSync(cfg.snapshotPath); } catch { /* best-effort */ }
+    return { channel, path: perUserPath, total: messages.length, written_at: updatedAt, char_count: charCount };
+  }
+
+  // Solo web, or telegram in solo: one shared file (legacy behaviour).
   const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
   const { content, charCount } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
   atomicWrite(cfg.snapshotPath, content);

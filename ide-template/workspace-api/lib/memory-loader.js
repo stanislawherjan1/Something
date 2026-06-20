@@ -76,7 +76,12 @@ const LOAD_ORDER = [
 // prefix (actor = admin) wants the shared admin file, which is exactly the flat
 // load. So the per-user files exist for isolation + the dashboard, while prefix
 // loading stays correct without tiering this card.
-const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES']);
+// RECENT_TELEGRAM is per-user too (team mode): the bot's single Telegram log is
+// the OPERATOR's private conversation, written to memory/users/<adminSlug>/ by
+// recent-snapshot.js. Loading it per-user means it comes from the actor's own
+// dir — the operator gets theirs, a non-operator gets an (empty) one, and
+// claude.js additionally excludes it for non-operators. Solo → flat, as before.
+const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES', 'RECENT_TELEGRAM']);
 
 const MAX_CARD_BYTES = 256 * 1024; // 256 KB ceiling per card — defensive
 

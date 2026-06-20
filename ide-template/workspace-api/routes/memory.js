@@ -157,8 +157,23 @@ export default function memoryRouter() {
       // Best-effort: on failure we read whatever's on disk.
       try { writeRecentSnapshot({ channel }); }
       catch (err) { process.stderr.write(`[memory/recent ${channel}] refresh failed: ${err.message}\n`); }
-      const path = join(process.env.PROJECT_DIR || '/home/coder/project',
-                        'memory', `RECENT_${channel.toUpperCase()}.md`);
+      const projectDir = process.env.PROJECT_DIR || '/home/coder/project';
+      // RECENT_TELEGRAM is the OPERATOR's private conversation (single bot). In
+      // team mode it lives in the admin's per-user dir, and ONLY the operator may
+      // read it — a non-operator asking for the Telegram tail gets nothing (don't
+      // hand the operator's DMs to another teammate through this tool).
+      let path;
+      if (channel === 'telegram' && getTeamMode()) {
+        const adminSlug = primaryAdminSlug();
+        const me = getUser(req.actor)?.slug || null;
+        if (!me || me !== adminSlug) {
+          return res.json({ channel, exists: false, snapshot_age_seconds: null, content: '', bytes: 0,
+            note: 'Telegram is the operator\'s channel; no Telegram tail for this user.' });
+        }
+        path = join(projectDir, 'memory', 'users', adminSlug, 'RECENT_TELEGRAM.md');
+      } else {
+        path = join(projectDir, 'memory', `RECENT_${channel.toUpperCase()}.md`);
+      }
       if (!existsSync(path)) {
         return res.json({
           channel,

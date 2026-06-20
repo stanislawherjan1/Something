@@ -42,6 +42,7 @@ import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot }
 import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
 import { migrateDefaultMemory } from './lib/memory-loader.js';
+import { writeRecentSnapshot } from './lib/recent-snapshot.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -173,6 +174,17 @@ try {
   }
 } catch (err) {
   process.stderr.write(`[workspace-api] default memory migration failed: ${err.message}\n`);
+}
+
+// Team mode: the Telegram snapshot is the operator's private conversation. Move
+// it out of the shared memory/RECENT_TELEGRAM.md (readable by any teammate via
+// /api/files/read) into the admin's per-user dir on boot — writeRecentSnapshot
+// writes the per-user file AND unlinks the stale flat one. Closes the leak
+// immediately instead of waiting for the next idle refresh.
+try {
+  if (team.getTeamMode()) writeRecentSnapshot({ channel: 'telegram' });
+} catch (err) {
+  process.stderr.write(`[workspace-api] telegram snapshot relocation failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start
