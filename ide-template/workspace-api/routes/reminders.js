@@ -20,6 +20,7 @@ import express, { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { getTeamMode, getUser, list as teamList } from '../lib/team.js';
+import { avatarUrl } from '../lib/user-avatars.js';
 
 const REMINDERS_FILE = join(process.env.PROJECT_DIR || '/home/coder/project', '.reminders.json');
 const EVERYONE = '*everyone*';
@@ -48,24 +49,30 @@ export default function remindersRouter() {
     return !!u && u.role === 'admin';
   };
 
-  // A reminder concerns this member if they set it, are a recipient, or it's
-  // team-wide. A legacy/operator reminder (no recipients) is the operator's →
-  // not a member's. Solo (me=null) → everything.
-  const concernsMe = (r, me) => {
+  // A reminder concerns this user if they set it, are a recipient, or it's
+  // team-wide. System rituals + legacy operator reminders (no recipients AND no
+  // setter) are the operator's → only the admin/operator sees them. Solo
+  // (me=null) → everything.
+  const concernsMe = (r, me, admin) => {
     if (!me) return true;
-    if ((r.setBy || '') === me) return true;
     const rc = Array.isArray(r.recipients) ? r.recipients : null;
+    if (r.kind === 'system' || (!rc && !r.setBy)) return admin;
+    if ((r.setBy || '') === me) return true;
     return !!rc && (rc.includes(me) || rc.includes(EVERYONE));
   };
 
-  // GET /api/reminders — scoped list + a slug→displayName map for badges.
+  // GET /api/reminders — scoped list + a slug→{name,avatar} map for badges.
   router.get('/reminders', (req, res) => {
     try {
       const me = actorSlug(req);
-      const reminders = readReminders().filter(r => concernsMe(r, me));
-      const names = {};
-      if (getTeamMode()) for (const m of teamList()) names[m.slug] = m.displayName || m.slug;
-      return res.json({ ok: true, teamMode: getTeamMode(), me, reminders, names });
+      const admin = isAdmin(req);
+      const reminders = readReminders().filter(r => concernsMe(r, me, admin));
+      // slug → { name, avatar } for the recipient avatars in the UI.
+      const people = {};
+      if (getTeamMode()) for (const m of teamList()) {
+        people[m.slug] = { name: m.displayName || m.slug, avatar: avatarUrl(m.slug) || null };
+      }
+      return res.json({ ok: true, teamMode: getTeamMode(), me, reminders, people });
     } catch (err) {
       process.stderr.write(`[reminders] list failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

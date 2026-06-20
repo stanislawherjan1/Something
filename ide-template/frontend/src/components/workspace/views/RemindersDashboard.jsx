@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, User } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -103,22 +103,33 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
 
   const isInitialLoad = loading && !data;
 
-  // The scoped endpoint returns { reminders, names, me }. `names` is slug→
-  // displayName for recipient badges; `me` is the current user's slug (what
-  // counts as "yours"). Solo → me is null and every reminder is shown.
+  // The scoped endpoint returns { reminders, people, me }. `people` is slug→
+  // { name, avatar } for the recipient avatars; `me` is the current user's slug
+  // (what counts as "yours"). Solo → me is null and every reminder is shown.
   const all = useMemo(() => {
     const list = Array.isArray(data?.reminders) ? data.reminders : [];
     return list.slice().sort((a, b) => new Date(a.due) - new Date(b.due));
   }, [data]);
-  const names = data?.names || {};
+  const people = data?.people || {};   // slug → { name, avatar } for recipient avatars
   const me = data?.me || null;
 
   // Split system rituals (baseline weekly self-maintenance the bootstrap
   // seeded — bot-managed, not user-cancellable from chat) from user-created
   // reminders. Display them in separate sections so the user knows which
   // ones they can/should mess with.
-  const userReminders   = useMemo(() => all.filter(r => (r.kind || 'user') !== 'system'), [all]);
   const systemReminders = useMemo(() => all.filter(r => r.kind === 'system'), [all]);
+  const nonSystem       = useMemo(() => all.filter(r => (r.kind || 'user') !== 'system'), [all]);
+  // "Fires to me" vs "I scheduled for others". A reminder targeting only OTHER
+  // teammates (one I set) gets its own section, so "Your reminders" stays what
+  // actually nudges ME — not everything I created.
+  const firesToMe = useCallback((r) => {
+    if (!me) return true;
+    const rc = Array.isArray(r.recipients) ? r.recipients : null;
+    if (!rc) return true;                  // legacy/operator reminder → the operator viewing it
+    return rc.includes(me) || rc.includes('*everyone*');
+  }, [me]);
+  const userReminders = useMemo(() => nonSystem.filter(firesToMe), [nonSystem, firesToMe]);
+  const forOthers     = useMemo(() => nonSystem.filter(r => !firesToMe(r)), [nonSystem, firesToMe]);
 
   // 404 is fine — file just doesn't exist yet. Other errors are real.
   const realError = error && !error.includes('404') ? error : null;
@@ -163,7 +174,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                         <ReminderRow
                           key={r.id}
                           reminder={r}
-                          names={names}
+                          people={people}
                           me={me}
                           onDelete={() => setDeleting(r)}
                         />
@@ -171,6 +182,27 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                     </div>
                   )}
                 </Section>
+
+                {/* Reminders you scheduled FOR teammates — they fire on the
+                    teammate's side, so they live apart from "your" nudges. */}
+                {forOthers.length > 0 && (
+                  <Section
+                    title="Scheduled for others"
+                    subtitle="Reminders you set for teammates — these fire on their side, not yours. You can still clear them from here."
+                  >
+                    <div className="flex flex-col gap-2">
+                      {forOthers.map(r => (
+                        <ReminderRow
+                          key={r.id}
+                          reminder={r}
+                          people={people}
+                          me={me}
+                          onDelete={() => setDeleting(r)}
+                        />
+                      ))}
+                    </div>
+                  </Section>
+                )}
 
                 {/* System rituals — bootstrap-seeded weekly self-maintenance.
                     Whole section dimmed (opacity-65) so it reads as
@@ -252,45 +284,61 @@ function InfoTip({ label, side = 'top', children }) {
   );
 }
 
-// Who a reminder is for. Nothing for a plain self-reminder; a "Team" pill for a
-// team-wide one; name chips for specific teammates; a muted "from <setter>" when
-// someone else scheduled it for you.
-function RecipientBadge({ reminder, names = {}, me = null }) {
-  const rc = Array.isArray(reminder.recipients) ? reminder.recipients : null;
-  const setBy = reminder.setBy || null;
-  const fromOther = setBy && me && setBy !== me ? (names[setBy] || setBy) : null;
-
-  let audience = null;            // 'team' | string[] of other recipients
-  if (rc) {
-    if (rc.includes('*everyone*')) audience = 'team';
-    else {
-      const others = rc.filter(s => s !== me);
-      if (others.length) audience = others.map(s => names[s] || s);
-    }
-  }
-  if (!fromOther && !audience) return null;
-
+// A small circular profile picture (img with an initial fallback), name on hover.
+function MiniAvatar({ name, avatar, label }) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5">
-      {audience === 'team' && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
-          <Users className="size-2.5" strokeWidth={2} /> Team
-        </span>
-      )}
-      {Array.isArray(audience) && (
-        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
-          <User className="size-2.5" strokeWidth={2} />
-          {audience.slice(0, 2).join(', ')}{audience.length > 2 ? ` +${audience.length - 2}` : ''}
-        </span>
-      )}
-      {fromOther && (
-        <span className="text-[10px] italic text-muted-foreground/55">from {fromOther}</span>
-      )}
-    </span>
+    <InfoTip label={label || name}>
+      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[9px] font-semibold text-muted-foreground/90 ring-1 ring-border/60">
+        {avatar
+          ? <img src={avatar} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          : initial}
+      </span>
+    </InfoTip>
   );
 }
 
-function ReminderRow({ reminder, names = {}, me = null, onDelete }) {
+// Who a reminder is FOR, as profile picture(s) to the right of the repeat icon:
+// a teammate's avatar (or a stack for several), a Team glyph for everyone, or
+// the setter's avatar when they scheduled it for you. Nothing for a plain
+// self-reminder.
+function RecipientBadge({ reminder, people = {}, me = null }) {
+  const rc = Array.isArray(reminder.recipients) ? reminder.recipients : null;
+  const setBy = reminder.setBy || null;
+
+  if (rc && rc.includes('*everyone*')) {
+    return (
+      <InfoTip label="Everyone on the team">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground/80 ring-1 ring-border/60">
+          <Users className="size-2.5" strokeWidth={2} />
+        </span>
+      </InfoTip>
+    );
+  }
+
+  const others = rc ? rc.filter(s => s !== me) : [];
+  if (others.length) {
+    const shown = others.slice(0, 3);
+    return (
+      <span className="flex shrink-0 items-center -space-x-1.5">
+        {shown.map(s => <MiniAvatar key={s} name={people[s]?.name || s} avatar={people[s]?.avatar} />)}
+        {others.length > 3 && (
+          <span className="pl-2 text-[10px] font-medium text-muted-foreground/60">+{others.length - 3}</span>
+        )}
+      </span>
+    );
+  }
+
+  // For me, but scheduled BY someone else → show who's nudging me.
+  if (setBy && me && setBy !== me) {
+    const n = people[setBy]?.name || setBy;
+    return <MiniAvatar name={n} avatar={people[setBy]?.avatar} label={`from ${n}`} />;
+  }
+
+  return null;   // plain self-reminder
+}
+
+function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
   const [open, setOpen] = useState(false);
   const due = new Date(reminder.due);
   const overdue = due < new Date();
@@ -326,9 +374,10 @@ function ReminderRow({ reminder, names = {}, me = null, onDelete }) {
                 </span>
               </InfoTip>
             )}
-            {/* Who it's for — Team / teammate chips, + "from <setter>" when a
-                teammate scheduled it for you. Nothing for a plain self-reminder. */}
-            <RecipientBadge reminder={reminder} names={names} me={me} />
+            {/* Who it's for — recipient avatar(s): a teammate's profile picture,
+                a Team glyph for everyone, or the setter's when they scheduled it
+                for you. Nothing for a plain self-reminder. */}
+            <RecipientBadge reminder={reminder} people={people} me={me} />
           </div>
         </div>
 
