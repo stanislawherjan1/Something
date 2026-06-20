@@ -172,14 +172,17 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   if (!sessions.length) return { ok: true, routed: false, reason: 'no relay thread' };
 
   // Deterministic threading: match the Telegram reply-to against a stored
-  // tgMessageId on one of the sender's relay messages.
+  // tgMessageId on one of the sender's relay messages. Capture the relay depth
+  // recorded on the matched message so we can bound a Telegram ping-pong (C1).
   let dest = null;
+  let matchedDepth = 0;
   if (reply_to_message_id != null) {
     const rid = String(reply_to_message_id);
     for (const s of sessions) {
       let msgs = [];
       try { msgs = readUndelivered(sender.slug, s.id, 0).messages; } catch { msgs = []; }
-      if (msgs.some(m => m.delivery && String(m.delivery.tgMessageId || '') === rid)) { dest = s; break; }
+      const hit = msgs.find(m => m.delivery && String(m.delivery.tgMessageId || '') === rid);
+      if (hit) { dest = s; matchedDepth = Number(hit.delivery.relayDepth) || 0; break; }
     }
   }
   if (!dest) {
@@ -189,28 +192,64 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
     else return { ok: true, routed: false, reason: 'ambiguous' };   // never guess across peers
   }
 
-  // Thread the reply into the sender's own web relay thread (out-of-band → the
-  // never-blind watermark surfaces it on their next web turn).
-  try { appendToSession(sender.slug, dest.id, { role: 'user', text: body, kind: 'telegram-reply' }); }
-  catch (err) { process.stderr.write(`[telegram-inbound] append failed: ${err.message}\n`); }
+  // Durable dedup (H6/RC-2): the in-memory _seenInbound set is wiped on a wsapi
+  // restart, so a bot retry after a restart would double-route. Each inbound is
+  // stamped with its Telegram message id (inside delivery — the only persisted
+  // free-form slot appendToSession keeps), so re-check the dest thread on disk.
+  if (message_id != null) {
+    let prior = [];
+    try { prior = readUndelivered(sender.slug, dest.id, 0).messages; } catch { prior = []; }
+    if (prior.some(m => m.delivery && String(m.delivery.tgInboundId || '') === String(message_id))) {
+      return { ok: true, routed: false, reason: 'duplicate (durable)' };
+    }
+  }
 
-  // Active relay-back: a Telegram-native teammate never takes a web turn, so the
-  // reply would otherwise be recorded write-only and the peer never hears it.
-  // Push it onward NOW via the existing relay machinery (loopback /chat-session),
-  // which threads into the peer's paired session + delivers on the peer's surface.
-  // Fire the relay-back ASYNC (not awaited) so the routing DECISION returns fast
-  // — the bot.sh middleware awaits this (capped) to decide whether to suppress
-  // the brain, and must not block on the slow downstream Telegram send.
+  // Thread the reply into the sender's own web relay thread (out-of-band → the
+  // never-blind watermark surfaces it on their next web turn). Stamp the inbound
+  // message id (durable dedup above) into delivery.
+  try {
+    appendToSession(sender.slug, dest.id, {
+      role: 'user', text: body, kind: 'telegram-reply',
+      delivery: { tgInboundId: message_id != null ? String(message_id) : null, at: new Date().toISOString() },
+    });
+  } catch (err) { process.stderr.write(`[telegram-inbound] append failed: ${err.message}\n`); }
+
+  // C1 — bound the Telegram ping-pong. Two teammates who BOTH prefer Telegram
+  // would otherwise relay-back forever (each reply auto-pings the other's TG,
+  // whose reply routes back …). The depth rides on the delivery the peer replied
+  // to; once it passes the cap we still thread the reply for the record but stop
+  // auto-forwarding it onward.
   const peers = Object.keys(dest.relayPeers || {});
+  const MAX_RELAY_DEPTH = 2;
+  if (matchedDepth >= MAX_RELAY_DEPTH) {
+    process.stderr.write(`[telegram-inbound] relay depth ${matchedDepth} ≥ ${MAX_RELAY_DEPTH}; threaded but not forwarded (loop guard)\n`);
+    return { ok: true, routed: true, session_id: dest.id, peers, delivered: false, reason: 'depth-capped' };
+  }
+
+  // Active relay-back, AWAITED (RC-1). A Telegram-native teammate never takes a
+  // web turn, so the reply would otherwise be recorded write-only and the peer
+  // never hears it. Push it onward via the relay machinery (loopback
+  // /chat-session) and AWAIT the result (bounded) — a silent fire-and-forget
+  // failure used to drop the message with no trace. bot.sh awaits this turn
+  // (1.5s cap) to decide suppression, so each call is capped below that.
   const port = process.env.WORKSPACE_API_PORT || '3001';
-  for (const peerSlug of peers) {
-    fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
+  const postRelay = (peerSlug) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1200);
+    return fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body }),
-    }).catch((err) => {
+      body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body, relayDepth: matchedDepth + 1 }),
+      signal: ctl.signal,
+    }).then(r => r.ok).catch((err) => {
       process.stderr.write(`[telegram-inbound] relay-back to ${peerSlug} failed: ${err.message}\n`);
-    });
+      return false;
+    }).finally(() => clearTimeout(timer));
+  };
+  const results = await Promise.allSettled(peers.map(postRelay));
+  const delivered = results.some(r => r.status === 'fulfilled' && r.value === true);
+  if (peers.length && !delivered) {
+    process.stderr.write(`[telegram-inbound] relay-back to all peers failed (session ${dest.id})\n`);
   }
-  return { ok: true, routed: true, session_id: dest.id, peers };
+  return { ok: true, routed: true, session_id: dest.id, peers, delivered };
 }

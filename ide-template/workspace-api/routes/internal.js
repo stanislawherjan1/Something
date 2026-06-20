@@ -130,7 +130,11 @@ export default function internalRouter() {
   // /internal/notify call (also fired by the MCP) gets the session_id
   // back via its meta so the UI can wire click → switch session.
   router.post('/internal/chat-session', loopbackOnly, async (req, res) => {
-    const { title, body, recipient, from, fromSession, channel } = req.body || {};
+    const { title, body, recipient, from, fromSession, channel, relayDepth } = req.body || {};
+    // C1 loop guard — how many relay hops produced this message. An originating
+    // relay is 0; each Telegram relay-back increments it. Stored on the delivery
+    // so routeTelegramInbound can bound a two-Telegram-user ping-pong.
+    const depth = Number.isInteger(relayDepth) && relayDepth > 0 ? relayDepth : 0;
     const cleanTitle = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'Bot message';
     let text = typeof body === 'string' && body.trim()
       ? (title ? `${title}\n\n${body}` : body)
@@ -246,6 +250,7 @@ export default function internalRouter() {
             channel: tgSent ? (webToast ? 'both' : 'telegram') : 'web',
             tgChatId: wantTg && deliverTo?.telegramChatId ? String(deliverTo.telegramChatId) : null,
             tgMessageId,
+            relayDepth: depth,
             at: new Date().toISOString(),
           },
         });
