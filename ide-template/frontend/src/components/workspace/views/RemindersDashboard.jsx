@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, User } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -7,8 +7,10 @@ import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
 import { useApi } from '@/lib/useApi';
 import { SkeletonRow } from '@/components/ui/Skeleton';
 
-const REMINDERS_FILE = '.reminders.json';
-const REMINDERS_URL  = `/api/files/read?path=${encodeURIComponent(REMINDERS_FILE)}`;
+// Server-scoped reminder list (own + targeting-me + team-wide; never another
+// member's). Replaces reading the raw .reminders.json via /api/files — which
+// leaked every member's titles and let anyone rewrite the shared file.
+const REMINDERS_URL = '/api/reminders';
 
 /**
  * Resolve a reminder into { title, description } for display.
@@ -99,21 +101,17 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
 
   const load = useCallback(() => reloadApi(), [reloadApi]);
 
-  const isInitialLoad = loading && !data && !(error && error.includes('404'));
+  const isInitialLoad = loading && !data;
 
-  // Parse reminders out of the raw file contents we got from /api/files/read.
-  // The file might not exist yet (404 → empty list) or be malformed (we
-  // ignore bad JSON to avoid a crashing UI).
+  // The scoped endpoint returns { reminders, names, me }. `names` is slug→
+  // displayName for recipient badges; `me` is the current user's slug (what
+  // counts as "yours"). Solo → me is null and every reminder is shown.
   const all = useMemo(() => {
-    if (!data?.content) return [];
-    try {
-      const parsed = JSON.parse(data.content);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.slice().sort((a, b) => new Date(a.due) - new Date(b.due));
-    } catch {
-      return [];
-    }
+    const list = Array.isArray(data?.reminders) ? data.reminders : [];
+    return list.slice().sort((a, b) => new Date(a.due) - new Date(b.due));
   }, [data]);
+  const names = data?.names || {};
+  const me = data?.me || null;
 
   // Split system rituals (baseline weekly self-maintenance the bootstrap
   // seeded — bot-managed, not user-cancellable from chat) from user-created
@@ -165,6 +163,8 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                         <ReminderRow
                           key={r.id}
                           reminder={r}
+                          names={names}
+                          me={me}
                           onDelete={() => setDeleting(r)}
                         />
                       ))}
@@ -199,7 +199,6 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
       {deleting && (
         <DeleteReminderModal
           reminder={deleting}
-          allReminders={all}
           onClose={() => setDeleting(null)}
           onDeleted={() => { setDeleting(null); load(); }}
         />
@@ -253,7 +252,45 @@ function InfoTip({ label, side = 'top', children }) {
   );
 }
 
-function ReminderRow({ reminder, onDelete }) {
+// Who a reminder is for. Nothing for a plain self-reminder; a "Team" pill for a
+// team-wide one; name chips for specific teammates; a muted "from <setter>" when
+// someone else scheduled it for you.
+function RecipientBadge({ reminder, names = {}, me = null }) {
+  const rc = Array.isArray(reminder.recipients) ? reminder.recipients : null;
+  const setBy = reminder.setBy || null;
+  const fromOther = setBy && me && setBy !== me ? (names[setBy] || setBy) : null;
+
+  let audience = null;            // 'team' | string[] of other recipients
+  if (rc) {
+    if (rc.includes('*everyone*')) audience = 'team';
+    else {
+      const others = rc.filter(s => s !== me);
+      if (others.length) audience = others.map(s => names[s] || s);
+    }
+  }
+  if (!fromOther && !audience) return null;
+
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5">
+      {audience === 'team' && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
+          <Users className="size-2.5" strokeWidth={2} /> Team
+        </span>
+      )}
+      {Array.isArray(audience) && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/80">
+          <User className="size-2.5" strokeWidth={2} />
+          {audience.slice(0, 2).join(', ')}{audience.length > 2 ? ` +${audience.length - 2}` : ''}
+        </span>
+      )}
+      {fromOther && (
+        <span className="text-[10px] italic text-muted-foreground/55">from {fromOther}</span>
+      )}
+    </span>
+  );
+}
+
+function ReminderRow({ reminder, names = {}, me = null, onDelete }) {
   const [open, setOpen] = useState(false);
   const due = new Date(reminder.due);
   const overdue = due < new Date();
@@ -289,6 +326,9 @@ function ReminderRow({ reminder, onDelete }) {
                 </span>
               </InfoTip>
             )}
+            {/* Who it's for — Team / teammate chips, + "from <setter>" when a
+                teammate scheduled it for you. Nothing for a plain self-reminder. */}
+            <RecipientBadge reminder={reminder} names={names} me={me} />
           </div>
         </div>
 
@@ -376,7 +416,7 @@ function SystemReminderRow({ reminder }) {
 
 // ─── Delete modal ──────────────────────────────────────────────────────────
 
-function DeleteReminderModal({ reminder, allReminders, onClose, onDeleted }) {
+function DeleteReminderModal({ reminder, onClose, onDeleted }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -391,11 +431,13 @@ function DeleteReminderModal({ reminder, allReminders, onClose, onDeleted }) {
   const remove = async () => {
     setBusy(true); setError(null);
     try {
-      const next = (allReminders || []).filter(r => r.id !== reminder.id);
-      const resp = await fetch('/api/files/write', {
+      // Guarded cancel — server enforces ownership (member: own only; admin:
+      // any; system protected). Replaces rewriting the whole shared file via
+      // /api/files/write, which let any member nuke/retarget others'.
+      const resp = await fetch('/api/reminders/cancel', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ path: REMINDERS_FILE, content: JSON.stringify(next, null, 2) }),
+        body:    JSON.stringify({ id: reminder.id }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));

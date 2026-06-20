@@ -38,6 +38,7 @@ import botRouter           from './routes/bot.js';
 import internalRouter      from './routes/internal.js';
 import notificationsRouter from './routes/notifications.js';
 import meRouter            from './routes/me.js';
+import remindersRouter     from './routes/reminders.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
@@ -91,6 +92,7 @@ app.use('/api', botRouter());
 app.use('/api', internalRouter());
 app.use('/api', notificationsRouter());
 app.use('/api', meRouter());
+app.use('/api', remindersRouter());
 app.use('/api/integrations/docs-comments', docsCommentsLoginRouter());
 
 // On startup: seed WORKSPACE.md into .claude/ if it doesn't exist yet.

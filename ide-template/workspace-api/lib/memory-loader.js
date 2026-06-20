@@ -278,6 +278,27 @@ Only fall back to the env default (\`channel: "all"\`) when no surface
 is implied by context. "All" doubles the noise (TG ping + web bubble);
 use it intentionally.
 
+## Reminders — who it's for (team mode)
+
+\`set_reminder\` takes a \`recipient\` — infer WHO from the request, exactly
+as you resolve relay recipients:
+
+- **Default = the asker.** "remind me to call Cass" → omit \`recipient\`
+  (or pass "me"); the reminder is for the person asking. This is the
+  common case and needs no extra thought.
+- **Named people** → resolve each NAME to their roster slug and pass the
+  array: "remind Jan and Kasia about the deadline" →
+  \`recipient: ["jan","kasia"]\`. Slugs, never display names or emails.
+- **The whole team** → "remind everyone / the team about standup" →
+  \`recipient: "everyone"\`.
+- Resolve names to slugs from the team roster in your context. **Ask only
+  when genuinely ambiguous** (the name could match two teammates, or it's
+  unclear whether they mean themselves or the team) — never guess a wrong
+  target.
+- **Permissions still apply:** only an admin can target "everyone" or
+  other people. If the tool refuses, say an admin is needed and offer to
+  remind just the asker. Solo workspace → omit \`recipient\` entirely.
+
 ## Don't confuse this with Claude Code's native auto-memory
 
 Recent Claude Code CLI versions surface a built-in file-based memory

@@ -112,6 +112,68 @@ export default function internalRouter() {
   // are reminder-monitor.sh (via web-notify.sh) and future skill hooks /
   // telegram-inbound mirror. notify.publish() fans out to every connected
   // /api/notifications/stream subscriber.
+  // Team roster for the reminder MCP's set-time name→slug resolution +
+  // validation (the MCP is a separate process with no in-process team.js). Same
+  // loopback trust boundary as /internal/operator-identity.
+  router.get('/internal/roster', loopbackOnly, (_req, res) => {
+    try {
+      const op = getTeamMode() ? primaryAdminSlug() : null;
+      const members = teamList().map(m => ({
+        slug: m.slug,
+        displayName: m.displayName || m.slug,
+        role: m.role,
+        telegramChatId: m.telegramChatId || null,
+        preferredSurface: m.preferredSurface || null,
+        isOperator: !!op && m.slug === op,
+      }));
+      return res.json({ ok: true, teamMode: getTeamMode(), members });
+    } catch (err) {
+      process.stderr.write(`[internal] roster failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Per-recipient reminder fan-out (team mode). reminder-monitor.sh POSTs here
+  // when a due reminder has recipients. The OPERATOR is delivered separately by
+  // the monitor (brain frame in bash) and EXCLUDED here, so no teammate-leg ever
+  // double-fires them. Each remaining teammate gets a recipient-scoped web toast
+  // (notify.visibleTo) + their Telegram if linked & preferred. '*everyone*' is
+  // expanded late (live roster). Best-effort per leg; never throws.
+  router.post('/internal/reminder-deliver', loopbackOnly, async (req, res) => {
+    const { recipients, channel, title, body } = req.body || {};
+    try {
+      if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
+      const ch = ['telegram', 'web', 'all'].includes(channel) ? channel : 'all';
+      const opSlug = primaryAdminSlug();
+      let slugs = Array.isArray(recipients) ? recipients.slice() : [];
+      if (slugs.length === 1 && slugs[0] === '*everyone*') slugs = teamList().map(m => m.slug);
+      slugs = [...new Set(slugs.filter(s => /^[a-z0-9-]+$/.test(s) && s !== opSlug))];
+      const t = String(title == null ? '' : title).trim();
+      const b = String(body == null ? '' : body).trim();
+      if (!t && !b) return res.status(400).json({ ok: false, error: 'title or body required' });
+      const delivered = [];
+      for (const slug of slugs) {
+        const m = resolveMember(slug);
+        if (!m) continue;                                 // departed/unknown → skip
+        let web = false, telegram = false;
+        if (ch === 'web' || ch === 'all') {
+          try { publishNotification({ kind: 'reminder', title: t || '⏰ Reminder', body: b, recipient: slug }); web = true; }
+          catch (e) { process.stderr.write(`[reminder-deliver] web leg ${slug}: ${e.message}\n`); }
+        }
+        if ((ch === 'telegram' || ch === 'all') && m.telegramChatId
+            && (m.preferredSurface === 'telegram' || m.preferredSurface === 'both')) {
+          try { const r = await sendTelegramMessage(m.telegramChatId, `⏰ ${t}${b ? ' — ' + b : ''}`.trim()); telegram = !!(r && r.ok); }
+          catch (e) { process.stderr.write(`[reminder-deliver] tg leg ${slug}: ${e.message}\n`); }
+        }
+        delivered.push({ slug, web, telegram });
+      }
+      return res.json({ ok: true, delivered, count: delivered.length });
+    } catch (err) {
+      process.stderr.write(`[internal] reminder-deliver failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   router.post('/internal/notify', loopbackOnly, (req, res) => {
     const { kind, title, body, meta, id, recipient, from } = req.body || {};
     if (typeof title !== 'string' && typeof body !== 'string') {

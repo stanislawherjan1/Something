@@ -37,6 +37,57 @@ async function writeReminders(reminders) {
   await fs.rename(tmp, REMINDERS_FILE); // atomic swap — prevents corruption on crash
 }
 
+// ─── Team-mode recipient resolution ──────────────────────────────────────────
+// In team mode the spawning env carries the actor — claude.js (web) and bot.sh
+// (Telegram) export IDE_ACTOR_SLUG + IDE_ACTOR_IS_ADMIN. Absent → SOLO: no
+// per-recipient logic at all; reminders keep the exact pre-feature shape (no
+// setBy / recipients fields), so the monitor + UI behave byte-for-byte as today.
+const WSAPI_PORT = process.env.WORKSPACE_API_PORT || '3001';
+const EVERYONE = '*everyone*';                       // late-bound team-wide sentinel (outside the slug alphabet)
+const SELF_WORDS     = new Set(['me', 'myself', 'self', 'siebie', 'mnie', 'sobie']);
+const EVERYONE_WORDS = new Set(['everyone', 'everybody', 'all', 'team', 'all of us', 'whole team', 'wszyscy', 'wszystkim', 'zespol', 'zespół']);
+
+function actorSlug()    { const s = (process.env.IDE_ACTOR_SLUG || '').trim(); return /^[a-z0-9-]+$/.test(s) ? s : ''; }
+function actorIsAdmin() { return process.env.IDE_ACTOR_IS_ADMIN === '1'; }
+
+// Roster for set-time name→slug resolution + validation. The MCP is a separate
+// process with no in-process team.js, so it fetches the same loopback endpoint
+// bot.sh uses for /internal/operator-identity. Null on failure (caller errors).
+async function fetchRoster() {
+  try {
+    const r = await fetch(`http://127.0.0.1:${WSAPI_PORT}/api/internal/roster`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    return Array.isArray(j?.members) ? j.members : null;
+  } catch { return null; }
+}
+
+// Resolve the AI-filled `recipient` arg (string | string[] | undefined) to a
+// normalized slug array, or the EVERYONE sentinel. Returns {recipients} or
+// {error}. Names resolve against the roster by slug, full displayName, or first
+// name; "me/self" → the setter; "everyone/all/team" → the sentinel.
+function resolveRecipients(rawArg, roster, setter) {
+  const tokens = (Array.isArray(rawArg) ? rawArg : [rawArg])
+    .filter(v => typeof v === 'string')
+    .flatMap(v => v.split(/[,;]+/))
+    .map(v => v.trim()).filter(Boolean);
+  if (!tokens.length) return { recipients: [setter] };                 // default: the asker
+  if (tokens.some(t => EVERYONE_WORDS.has(t.toLowerCase()))) return { recipients: [EVERYONE] };
+  const out = new Set();
+  for (const tok of tokens) {
+    const low = tok.toLowerCase();
+    if (SELF_WORDS.has(low)) { out.add(setter); continue; }
+    if (/^[a-z0-9-]+$/.test(low) && roster.some(m => m.slug === low)) { out.add(low); continue; }
+    const byName = roster.find(m => {
+      const dn = String(m.displayName || '').toLowerCase();
+      return dn === low || dn.split(/\s+/)[0] === low;
+    });
+    if (byName) { out.add(byName.slug); continue; }
+    return { error: `I don't recognise "${tok}" as a teammate — who do you mean?` };
+  }
+  return { recipients: [...out] };
+}
+
 /**
  * Parse a human-readable due time into a Date.
  * Accepts:
@@ -180,6 +231,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "user's intent disagrees with the default — e.g. they're " +
               'chatting via web but say "ping me on Telegram tomorrow".',
           },
+          recipient: {
+            type: ['string', 'array'],
+            items: { type: 'string' },
+            description:
+              'WHO this reminder is for (team mode). Infer it from the user\'s wording, ' +
+              'exactly as you resolve relay recipients. DEFAULT = the person asking — ' +
+              'OMIT this arg (or pass "me") for a normal self-reminder ("remind me to call ' +
+              'Cass"). When they name people ("remind Jan and Kasia about the deadline"), ' +
+              'resolve each NAME to that teammate\'s roster SLUG and pass the array of slugs ' +
+              '(["jan","kasia"]) — never display names, never emails. When they say ' +
+              '"everyone"/"all"/"the team", pass the single string "everyone". Resolve names ' +
+              'to slugs from the team roster in your context; ask ONLY when genuinely ambiguous, ' +
+              'never guess a wrong target. Permissions still apply (only an admin can target ' +
+              '"everyone" or other people) — if the tool refuses, relay that and offer to remind ' +
+              'just the asker. Omit entirely in a solo workspace.',
+          },
         },
         required: ['due'],
       },
@@ -247,6 +314,43 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // the next matching slot so the first ping lands on a real occurrence.
     const firstDueMs = recur.computeFirstDue(recurrence, dueDate.getTime(), Date.now());
 
+    // Team-mode recipient resolution + authorization (solo → both omitted).
+    // Inference proposes (the AI fills `recipient`); permissions dispose here,
+    // against the TRUSTED env actor, never the AI's claim.
+    const setter = actorSlug();
+    let setBy;
+    let recipients;                     // undefined in solo → field omitted entirely
+    if (setter) {
+      setBy = setter;
+      const isAdmin = actorIsAdmin();
+      const hasArg = args.recipient != null
+        && !(typeof args.recipient === 'string' && !args.recipient.trim())
+        && !(Array.isArray(args.recipient) && !args.recipient.length);
+      if (!hasArg) {
+        recipients = [setter];          // default: the asker
+      } else {
+        const roster = await fetchRoster();
+        if (!roster) {
+          return { content: [{ type: 'text', text: 'Could not reach the team roster to resolve who this is for — try again in a moment.' }], isError: true };
+        }
+        const res = resolveRecipients(args.recipient, roster, setter);
+        if (res.error) return { content: [{ type: 'text', text: res.error }], isError: true };
+        recipients = res.recipients;
+        if (recipients.length === 1 && recipients[0] === EVERYONE) {
+          if (!isAdmin) {
+            return { content: [{ type: 'text', text: 'Only an admin can set a team-wide reminder. I can remind just you instead?' }], isError: true };
+          }
+        } else if (recipients.some(s => s !== setter)) {
+          // Targeting other teammates: admins always; members gated by the
+          // REMINDER_CROSS_MEMBER flag (default ON, relay-parity).
+          const crossAllowed = isAdmin || process.env.REMINDER_CROSS_MEMBER !== 'false';
+          if (!crossAllowed) {
+            return { content: [{ type: 'text', text: 'You can only set reminders for yourself here. Want me to remind you instead?' }], isError: true };
+          }
+        }
+      }
+    }
+
     const reminders = await readReminders();
     const reminder = {
       id: `r_${randomUUID().slice(0, 8)}`,
@@ -280,17 +384,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
       created: new Date().toISOString(),
       status: 'pending',
+      // Team mode: who set it + who it's for. Both omitted in solo (setter='')
+      // → the record is byte-identical to pre-feature, and the monitor's
+      // empty-recipients branch reproduces today's operator-only delivery.
+      ...(setBy ? { setBy } : {}),
+      ...(recipients ? { recipients } : {}),
     };
 
     reminders.push(reminder);
     await writeReminders(reminders);
 
     const dueStr = reminder.due.slice(0, 16).replace('T', ' ') + ' UTC';
+    const forLabel = recipients
+      ? (recipients[0] === EVERYONE ? 'the whole team'
+         : (recipients.length === 1 && recipients[0] === setter) ? null    // self — implied
+         : recipients.join(', '))
+      : null;
     return {
       content: [{
         type: 'text',
         text: `Reminder set.\nID: ${reminder.id}\nTitle: ${reminder.title}` +
               (reminder.description ? `\nDescription: ${reminder.description}` : '') +
+              (forLabel ? `\nFor: ${forLabel}` : '') +
               `\nNext fire: ${dueStr}\nRepeat: ${recur.humanizeRecur(recurrence)}`,
       }],
     };
@@ -299,7 +414,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── list_reminders ─────────────────────────────────────────────────────────
   if (name === 'list_reminders') {
     const reminders = await readReminders();
-    const pending = reminders.filter((r) => r.status === 'pending');
+    // Team mode: a member sees only reminders they set, are a recipient of, or
+    // that target everyone; admin/operator sees all. Solo (no actor) → all.
+    const me = actorSlug();
+    const isAdmin = actorIsAdmin();
+    const visibleTo = (r) => {
+      if (!me || isAdmin) return true;
+      if ((r.setBy || '') === me) return true;
+      const rc = Array.isArray(r.recipients) ? r.recipients : null;
+      return !!rc && (rc.includes(me) || rc.includes(EVERYONE));
+    };
+    const pending = reminders.filter((r) => r.status === 'pending' && visibleTo(r));
 
     if (pending.length === 0) {
       return { content: [{ type: 'text', text: 'No pending reminders.' }] };
@@ -367,6 +492,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           type: 'text',
           text: `Cannot cancel ${args.id} — this is a system reminder (baseline ritual). To turn it off, use the Reminders panel in the workspace UI; the user can toggle it off there. Don't try to delete the file directly either; bootstrap will re-seed it.`,
         }],
+        isError: true,
+      };
+    }
+
+    // Team mode: a member may cancel only what THEY set; admin/operator cancels
+    // anything. Solo (no actor) → unrestricted, as before.
+    const me = actorSlug();
+    if (me && !actorIsAdmin() && (reminders[idx].setBy || '') !== me) {
+      return {
+        content: [{ type: 'text', text: `That reminder isn't yours to cancel — only the person who set it (or an admin) can.` }],
         isError: true,
       };
     }
