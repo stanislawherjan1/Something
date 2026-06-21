@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback, lazy, Suspense } from 'react';
 import { Brain, Search, Eye, Link as LinkIcon, FileText, ShieldAlert, Hash, AlertCircle, X, Loader2, Lock, AlertTriangle } from 'lucide-react';
+import { forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide } from 'd3-force-3d';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
@@ -22,24 +23,25 @@ import { useBranding } from '../identity';
 // Lazy so the graph runtime isn't in the main bundle.
 const ForceGraph2D = lazy(() => import('react-force-graph-2d'));
 
-// A gentle d3-force that pulls every UN-PINNED node toward the origin,
-// proportional to its distance — the equivalent of forceX(0)+forceY(0).
-// This is the piece the layout was missing: a card with no links (no edge,
-// no tether) has nothing holding it, so charge repulsion alone flings it
-// off-screen. With this spring, charge pushes out / this pulls in, so a
-// link-less card settles in a tight ring right next to the connected cluster.
-// Written inline because d3-force isn't hoisted as a top-level module here.
-// Skips pinned nodes (fx/fy) so the filter-stability pins still win.
-function centeringForce(strength) {
-  let nodes = [];
-  function force(alpha) {
-    for (const n of nodes) {
-      if (n.fx == null && Number.isFinite(n.x)) n.vx -= n.x * strength * alpha;
-      if (n.fy == null && Number.isFinite(n.y)) n.vy -= n.y * strength * alpha;
-    }
-  }
-  force.initialize = (n) => { nodes = n; };
-  return force;
+// Headless 2-D layout, run synchronously BEFORE the graph is handed to
+// force-graph. We settle the simulation here and give force-graph already-placed,
+// pinned nodes (warmupTicks/cooldownTicks both 0) so:
+//   - there is NO open-from-centre animation — it renders already laid out, and
+//   - link-less cards are reeled in tight by the centre spring (forceX/forceY),
+//     while a capped charge range (distanceMax) makes it physically impossible
+//     for anything to settle far out (beyond it a node feels only the inward
+//     pull). d3-force's RNG is fixed-seed, so the layout is deterministic.
+function settleLayout(nodes, links) {
+  if (!nodes.length) return nodes;
+  const sim = forceSimulation(nodes, 2)
+    .force('link', forceLink(links).id((d) => d.id).distance(34).strength(0.9))
+    .force('charge', forceManyBody().strength(-32).distanceMax(95))
+    .force('x', forceX(0).strength(0.32))
+    .force('y', forceY(0).strength(0.32))
+    .force('collide', forceCollide(11))
+    .stop();
+  for (let i = 0; i < 300; i++) sim.tick();
+  return nodes;
 }
 
 // Monochrome theme-aware palette. White-family in light mode (index pure
@@ -119,7 +121,6 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const avatarImgRef = useRef(null);   // your profile pic (round, over the Yours loop)
   const logoImgRef = useRef(null);     // org logo (rounded square, over the Shared loop)
   const posCacheRef = useRef(new Map());   // id → {x,y} so re-filtering doesn't re-explode the layout
-  const fittedRef = useRef(false);         // frame-to-fit once, after the first layout settles
 
   // Theme — pick label colour + node palette against the workspace's CSS
   // var values. NODE_COLOURS switches palette on light/dark; both render
@@ -189,13 +190,22 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       if (sharedHub && yoursHub) links.push({ source: sharedHub.id, target: yoursHub.id, kind: 'tether' });
     }
     const cache = posCacheRef.current;
-    const cloned = nodes.map(n => {
+    // Seed from the position cache (filter stability). If anything lacks a
+    // cached position, run the headless settle so the FIRST paint is already
+    // laid out (no animation) and bounded (no flinging).
+    const simNodes = nodes.map(n => {
       const c = cache.get(n.id);
-      // Once a node has a settled position, pin it (fx/fy) so toggling the
-      // filter just hides/shows nodes instead of re-running the layout and
-      // shuffling everything. First load (no cache yet) lays out normally.
-      return c ? { ...n, x: c.x, y: c.y, fx: c.x, fy: c.y } : { ...n };
+      return c ? { ...n, x: c.x, y: c.y } : { ...n };
     });
+    if (simNodes.some(n => !Number.isFinite(n.x))) {
+      const simLinks = links.map(l => ({ ...l }));   // forceLink mutates these
+      settleLayout(simNodes, simLinks);
+      simNodes.forEach(n => cache.set(n.id, { x: n.x, y: n.y }));
+    }
+    // Pin every node at its settled position → force-graph renders it static
+    // (no open animation, no drift). Dragging still works: force-graph updates
+    // fx/fy on drag, and drawNode re-caches wherever it lands.
+    const cloned = simNodes.map(n => ({ ...n, fx: n.x, fy: n.y }));
     return { nodes: cloned, links };
   }, [graph, showBare, scopeFilter]);
 
@@ -240,43 +250,17 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Force tuning. The CENTRING spring (centerPull) is the fix for link-less
-  // cards drifting off-screen: it pulls every un-pinned node toward the middle
-  // so isolated cards settle right next to the cluster instead of at infinity.
-  // Charge gets a capped, moderate repulsion so nodes don't overlap but can't
-  // fling either. We re-apply on every data change and reheat so the FIRST
-  // settle already happens with these forces (force-graph's initial warmup runs
-  // before this effect, so the reheat is what makes the opening layout compact).
+  // The layout is pre-settled + pinned (see displayed/settleLayout), so
+  // force-graph never moves the nodes — no animation. All we do here is frame
+  // the camera once the static graph is on screen, and re-frame on
+  // filter/resize. Positions are known synchronously; a short delay just lets
+  // force-graph finish mounting the canvas.
   useEffect(() => {
     const fg = graphRef.current;
-    if (!fg) return;
-    const charge = fg.d3Force('charge');
-    if (charge) {
-      charge.strength?.(-30);
-      // Hard cap on repulsion range: beyond this a node feels ONLY the centre
-      // spring, so it can never settle further out than ~this from the middle.
-      charge.distanceMax?.(90);
-    }
-    // Strong centre spring so LINK-LESS cards tuck in almost as close as the
-    // linked ones (linked nodes are already held near `index` by their edges,
-    // so a strong pull barely moves them but reels isolated cards right in).
-    fg.d3Force?.('centerPull', centeringForce(0.34));
-    fg.d3ReheatSimulation?.();
-  }, [displayed, size.w]);
-
-  // Re-centre the camera on whatever's visible whenever the scope filter
-  // changes (or on first paint) — so picking "Shared" frames the shared cluster
-  // instead of leaving it off to one side. No animation (duration 0); generous
-  // padding so it opens centred and slightly zoomed out.
-  useEffect(() => {
-    const fg = graphRef.current;
-    if (!fg || !size.w) return;
-    // Skip until the first layout has settled + been framed by onEngineStop
-    // (otherwise this fires at 90ms on the still-collapsing warmup=0 spiral and
-    // over-zooms). After that, reframe on every filter/resize change.
-    const t = setTimeout(() => { if (fittedRef.current) fg.zoomToFit?.(0, 110); }, 90);
+    if (!fg || !size.w || !displayed) return;
+    const t = setTimeout(() => fg.zoomToFit?.(0, 110), 60);
     return () => clearTimeout(t);
-  }, [scopeFilter, size.w]);
+  }, [displayed, size.w]);
 
   const onNodeClick = useCallback((node) => {
     if (node) setActiveNode(node);
@@ -560,27 +544,16 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
               linkDirectionalArrowLength={3}
               linkDirectionalArrowRelPos={1}
               linkDirectionalArrowColor={linkColour}
-              // warmupTicks MUST stay 0: warmup runs synchronously (child effect)
-              // before our force effect sets distanceMax/centring, and an
-              // uncapped charge over many warmup ticks is exactly what flung
-              // link-less cards off-screen. With 0 warmup the simulation only
-              // ever ticks AFTER our forces are applied (capped charge + centre
-              // spring), so nothing can escape the cluster. Settling animates
-              // over the cooldown ticks from the initial (tight) spiral.
+              // Layout is pre-settled and every node is pinned (fx/fy) in
+              // `displayed`, so force-graph's own simulation can't move anything
+              // — there is NO open animation regardless of tick counts. warmup=0
+              // avoids any pre-paint work; a few cooldown ticks just keep the
+              // render loop alive so the async-loaded avatar/logo badges repaint.
               warmupTicks={0}
-              cooldownTicks={90}
+              cooldownTicks={30}
               d3VelocityDecay={0.32}
               onNodeClick={onNodeClick}
               onNodeHover={setHover}
-              // Frame the graph once the FIRST layout settles (warmup=0 means it
-              // animates open from the spiral, so an early zoomToFit would over-
-              // zoom the tight initial state). Guarded so drag/reheat stops don't
-              // keep re-framing; filter changes are handled by the effect below.
-              onEngineStop={() => {
-                if (fittedRef.current) return;
-                fittedRef.current = true;
-                graphRef.current?.zoomToFit?.(0, 110);
-              }}
               backgroundColor="rgba(0,0,0,0)"
             />
           </Suspense>
