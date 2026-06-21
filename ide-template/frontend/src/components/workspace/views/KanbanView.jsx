@@ -10,8 +10,8 @@ const VIEW_MODE_KEY = 'tasks-view-mode';
 
 // Board columns, in display order. `key` matches a task's `status`.
 const TASK_COLUMNS = [
-  { key: 'in_progress', name: 'In Progress' },
   { key: 'backlog',     name: 'Backlog' },
+  { key: 'in_progress', name: 'In Progress' },
   { key: 'done',        name: 'Done' },
 ];
 
@@ -269,8 +269,8 @@ function PriorityChip({ value }) {
 // ─── Loading skeletons (match the board / list layouts) ──────────────────────
 
 const SKELETON_COLS = [
-  { name: 'In Progress', n: 2 },
   { name: 'Backlog', n: 3 },
+  { name: 'In Progress', n: 2 },
   { name: 'Done', n: 1 },
 ];
 

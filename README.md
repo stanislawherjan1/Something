@@ -204,6 +204,7 @@ Beginner walkthrough in [docs/QUICK_START.md](docs/QUICK_START.md). End-to-end m
 - [INTEGRATIONS.md](docs/INTEGRATIONS.md) — the integration catalog, self-service activation, encrypted credentials
 - [SKILLS.md](docs/SKILLS.md) — reusable Claude playbooks + dashboard editor
 - [MEMORY.md](docs/MEMORY.md) — Karpathy-style LLM-wiki: cards, topics, rolling snapshots, reflect-bots
+- [TEAM_MODE.md](docs/TEAM_MODE.md) — collaborative workspaces: roster & roles, Shared vs Personal files/memory, per-recipient reminders, task assignment, cross-surface relay
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design and data flows (with a glossary up top)
 - [SECURITY.md](docs/SECURITY.md) — threat model, auth layers, vulnerability reporting
 - [DEPLOY.md](docs/DEPLOY.md) — production deployment & day-2 operations reference

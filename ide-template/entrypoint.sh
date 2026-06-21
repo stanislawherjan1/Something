@@ -1762,9 +1762,16 @@ start_bot_stack() {
     # One-time migration of an existing Markdown Tasks.md into the structured
     # board (.tasks.json). Idempotent + self-guarded (no-op once migrated or if
     # there's no Tasks.md), so it's safe to run on every boot for old clients.
+    # Runs as coder (a workspace-group member); then we match .tasks.json to the
+    # .reminders.json ownership model (group `workspace`, group-writable) so both
+    # wsapi (the board API) and the tasks MCP can rewrite it on mutation.
     if [ -f /opt/ide/bootstrap/migrate-tasks.mjs ]; then
-        PROJECT_DIR="$PROJECT_DIR" su coder -c 'PROJECT_DIR="'"$PROJECT_DIR"'" node /opt/ide/bootstrap/migrate-tasks.mjs' \
+        su coder -c "PROJECT_DIR='$PROJECT_DIR' node /opt/ide/bootstrap/migrate-tasks.mjs" \
             2>&1 | sed 's/^/[migrate-tasks] /' || true
+        if [ -f "$PROJECT_DIR/.tasks.json" ]; then
+            chgrp workspace "$PROJECT_DIR/.tasks.json" 2>/dev/null || true
+            chmod 664 "$PROJECT_DIR/.tasks.json" 2>/dev/null || true
+        fi
     fi
 
     pm2 start /home/coder/ecosystem.config.js --only "${BOT_NAME},${BOT_NAME}-reminders,${BOT_NAME}-snapshot,${BOT_NAME}-browser-watchdog" \

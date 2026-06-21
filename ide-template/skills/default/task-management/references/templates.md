@@ -47,8 +47,10 @@ ownership. If the user wants the teammate pinged, that's a relay or a
 | Medium | Important but not urgent — can wait 2–4 weeks |
 | Low | Nice to have, no deadline pressure |
 
-## Column meaning
+## Column order & meaning
 
-- **In Progress** — actively being worked. What the user opens the board for.
+Columns read left-to-right (board) / top-to-bottom (list) as the natural flow:
+
 - **Backlog** — not yet started.
+- **In Progress** — actively being worked.
 - **Done** — completed; a log, not a focus area.
