@@ -36,6 +36,16 @@ const VALID_ROLES = new Set(['admin', 'member', 'observer']);
 // Where a teammate prefers to be reached for relays. 'both' = web thread (always
 // the record) + a Telegram ping; 'telegram' = prefer TG; 'web' = web only.
 const VALID_SURFACES = new Set(['web', 'telegram', 'both']);
+
+// Preferred WRITING LANGUAGE — SHARED roster metadata (not private), because
+// another teammate's bot needs it to compose a relay in the right language and
+// can't read this person's private memory. Free text ("Polish", "English",
+// "pl"); trimmed, capped, or null if unset.
+function normalizeLang(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s ? s.slice(0, 40) : null;
+}
 // Loose RFC-5322-ish — strict enough to catch typos, lax enough to allow the
 // common shapes (subdomains, plus-addressing, etc.).
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -170,6 +180,8 @@ export function list() {
     // and where they prefer to be reached. Drives relay delivery routing.
     telegramChatId:   normalizeChatId(e.telegramChatId),
     preferredSurface: VALID_SURFACES.has(e.preferredSurface) ? e.preferredSurface : null,
+    // Shared so a teammate's bot can relay to this person in their language.
+    preferredLanguage: normalizeLang(e.preferredLanguage),
   })).filter(e => isValidEmail(e.email));
   return withProfiles(valid);   // fills slug/displayName if absent (deterministic)
 }
@@ -404,7 +416,7 @@ export function setProfile(email, { displayName }) {
  * the surface is mirrored into the TEAM roster so the bot knows where to reach
  * them. Returns the updated enriched member.
  */
-export function setTelegram(email, { chatId, preferredSurface } = {}, actor) {
+export function setTelegram(email, { chatId, preferredSurface, preferredLanguage } = {}, actor) {
   const e = normalize(email);
   const entries = readRaw();
   const idx = entries.findIndex(x => normalize(x.email) === e);
@@ -432,12 +444,16 @@ export function setTelegram(email, { chatId, preferredSurface } = {}, actor) {
     }
     patch.preferredSurface = cleared ? null : preferredSurface;
   }
+  if (preferredLanguage !== undefined) {
+    patch.preferredLanguage = normalizeLang(preferredLanguage);
+  }
   entries[idx] = { ...entries[idx], ...patch };
   writeRaw(entries);
   appendAudit('telegram_update', e, {
     actor: normalize(actor) || null,
     linked: patch.telegramChatId !== undefined ? !!patch.telegramChatId : undefined,
     preferredSurface: patch.preferredSurface,
+    preferredLanguage: patch.preferredLanguage,
   });
   writeTeamRoster();   // surface hint is mirrored into the roster card
   return getUser(e);
@@ -539,8 +555,9 @@ export function writeTeamRoster() {
         : (m.telegramChatId ? 'prefers either' : 'web only');
       return `${pref} (${linked})`;
     };
+    const langHint = (m) => (m.preferredLanguage ? `writes in ${m.preferredLanguage}` : 'unknown');
     const rows = list()
-      .map(m => `| ${m.displayName || m.slug} | \`${m.slug}\` | ${m.role} | ${contactHint(m)} | \`memory/users/${m.slug}/\` |`)
+      .map(m => `| ${m.displayName || m.slug} | \`${m.slug}\` | ${m.role} | ${langHint(m)} | ${contactHint(m)} | \`memory/users/${m.slug}/\` |`)
       .join('\n');
     const body =
 `---
@@ -552,10 +569,10 @@ purpose: Team roster — who is in this workspace (display name, slug, role). Ea
 
 The people sharing this workspace. Use it to recognise teammates and for attribution. A person's profile, preferences, and notes are their OWN private memory at \`memory/users/<slug>/\` — never assume this roster reveals their personal facts, and never open another teammate's private memory (it's tool-guard blocked unless it's the current user or you're an admin).
 
-When you relay a message to someone (web_send_message), the **Contact** column is a hint for where they like to be reached — the system handles the actual delivery (the web thread is always the record; Telegram is an extra ping when they prefer it and are linked).
+When you relay a message to someone (web_send_message), compose it in their **Language** and use the **Contact** column as a hint for where they like to be reached — the system handles the actual delivery (the web thread is always the record; Telegram is an extra ping when they prefer it and are linked). Language + Contact are SHARED here precisely because *your* bot can't read *their* private memory — so anything needed to reach a teammate correctly lives in this roster, not in their private cards.
 
-| Name | slug | Role | Contact | Private memory |
-|------|------|------|---------|----------------|
+| Name | slug | Role | Language | Contact | Private memory |
+|------|------|------|----------|---------|----------------|
 ${rows}
 `;
     mkdirSync(join(PROJECT_DIR, 'memory'), { recursive: true });

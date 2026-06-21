@@ -218,13 +218,20 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     const fg = graphRef.current;
     if (!fg || !displayed) return;
     let fnodes = [];
+    // Pull every node toward the centre; the pull grows with distance, so a
+    // DISCONNECTED cluster (no links holding it in) is reeled back near the
+    // shared cluster instead of being flung to the corners by raw charge.
     const recenter = (alpha) => {
-      for (const n of fnodes) { n.vx -= n.x * 0.05 * alpha; n.vy -= n.y * 0.05 * alpha; }
+      for (const n of fnodes) { n.vx -= n.x * 0.2 * alpha; n.vy -= n.y * 0.2 * alpha; }
     };
     recenter.initialize = (ns) => { fnodes = ns; };
     fg.d3Force('recenter', recenter);
+    // Cap repulsion range so far-apart nodes don't keep shoving each other out.
     const charge = fg.d3Force('charge');
-    if (charge?.distanceMax) charge.distanceMax(280);
+    if (charge?.distanceMax) charge.distanceMax(150);
+    // Forces are set after the initial warmup, so give the sim one gentle
+    // re-settle to actually apply them (pulls the stray clusters in).
+    fg.d3ReheatSimulation?.();
   }, [displayed, size.w]);
 
   // Re-centre the camera on whatever's visible whenever the scope filter

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound, Send, Pencil, Check, Globe } from 'lucide-react';
+import { Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound, Send, Pencil, Check, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
@@ -397,35 +397,6 @@ function RoleBadge({ role }) {
   );
 }
 
-function RolePill({ role, canManage, onChange }) {
-  if (!canManage) {
-    return (
-      <span className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider',
-        role === 'admin'
-          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
-          : 'bg-muted/60 text-muted-foreground/85',
-      )}>
-        {role === 'admin' && <Shield className="size-2.5" strokeWidth={2.5} />}
-        {role}
-      </span>
-    );
-  }
-  return (
-    <select
-      value={role}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        'rounded-md border border-border/50 bg-background px-2 py-1 text-[11.5px] font-medium',
-        'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
-      )}
-    >
-      <option value="member">member</option>
-      <option value="admin">admin</option>
-    </select>
-  );
-}
-
 // Channel icons — where this teammate can be reached. Web is always available
 // (everyone signs into the workspace); Telegram only when linked. The preferred
 // surface gets a subtle accent so it reads as "primary".
@@ -533,12 +504,11 @@ function RolePicker({ value, onChange, disabled }) {
 function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
   const [role, setRole]       = useState(entry.role || 'member');
   const [chatId, setChatId]   = useState(entry.telegramChatId || '');
+  const [lang, setLang]       = useState(entry.preferredLanguage || '');
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState(null);
 
   const name = entry.displayName || (entry.email || '').split('@')[0];
-  const surface = entry.preferredSurface;
-  const surfaceLabel = surface === 'both' ? 'web + telegram' : surface;
   const roleLocked = isMe || isLastAdmin;
 
   async function submit(e) {
@@ -550,6 +520,8 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
       if (!roleLocked && role !== entry.role) patch.role = role;
       const nextChat = chatId.trim();
       if (nextChat !== (entry.telegramChatId || '')) patch.telegramChatId = nextChat;
+      const nextLang = lang.trim();
+      if (nextLang !== (entry.preferredLanguage || '')) patch.preferredLanguage = nextLang;
       if (Object.keys(patch).length === 0) { onClose(); return; }
       const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
         method:  'PATCH',
@@ -613,6 +585,21 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
               inputMode="numeric"
               className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
             />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+              Preferred language
+            </span>
+            <input
+              value={lang}
+              onChange={(e) => setLang(e.target.value)}
+              placeholder="e.g. Polish, English"
+              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
+            />
+            <span className="text-[11.5px] text-muted-foreground/65">
+              Shared with the team so teammates&apos; assistants relay to {name} in their language.
+            </span>
           </label>
 
           {error && (

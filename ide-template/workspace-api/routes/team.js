@@ -123,19 +123,19 @@ export default function teamRouter() {
   });
 
   router.patch('/team/:email', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
-    const { role, telegramChatId, preferredSurface } = req.body || {};
+    const { role, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
     try {
       let entry = null;
       if (role !== undefined) {
         entry = team.setRole({ email: req.params.email, role, actor: req.actor });
       }
-      if (telegramChatId !== undefined || preferredSurface !== undefined) {
-        entry = team.setTelegram(req.params.email, { chatId: telegramChatId, preferredSurface }, req.actor);
+      if (telegramChatId !== undefined || preferredSurface !== undefined || preferredLanguage !== undefined) {
+        entry = team.setTelegram(req.params.email, { chatId: telegramChatId, preferredSurface, preferredLanguage }, req.actor);
         // A changed chat id changes who may DM the bot — push the new allow-list
         // to the integration + restart (background; don't block the response).
         if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
       }
-      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, or preferredSurface).' });
+      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, preferredSurface, or preferredLanguage).' });
       res.json({ ok: true, entry });
     } catch (err) {
       res.status(400).json({ error: err.message });

@@ -124,6 +124,7 @@ export default function internalRouter() {
         role: m.role,
         telegramChatId: m.telegramChatId || null,
         preferredSurface: m.preferredSurface || null,
+        preferredLanguage: m.preferredLanguage || null,
         isOperator: !!op && m.slug === op,
       }));
       return res.json({ ok: true, teamMode: getTeamMode(), members });

@@ -67,6 +67,7 @@ function meEnvelope(req) {
     // prompt when Telegram is active but this user hasn't linked a chat id.
     telegramChatId:   member?.telegramChatId || null,
     preferredSurface: member?.preferredSurface || null,
+    preferredLanguage: member?.preferredLanguage || null,
   };
 }
 
@@ -88,7 +89,7 @@ export default function meRouter() {
   // and/or their own cross-surface contact (Telegram chat id + preferred
   // surface), so a teammate can self-link without an admin.
   router.patch('/me', requireActor, express.json({ limit: '2kb' }), (req, res) => {
-    const { displayName, telegramChatId, preferredSurface } = req.body || {};
+    const { displayName, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
     try {
       let touched = false;
       if (displayName !== undefined) {
@@ -98,14 +99,14 @@ export default function meRouter() {
         setProfile(req.actor, { displayName });
         touched = true;
       }
-      if (telegramChatId !== undefined || preferredSurface !== undefined) {
-        setTelegram(req.actor, { chatId: telegramChatId, preferredSurface }, req.actor);
+      if (telegramChatId !== undefined || preferredSurface !== undefined || preferredLanguage !== undefined) {
+        setTelegram(req.actor, { chatId: telegramChatId, preferredSurface, preferredLanguage }, req.actor);
         // Self-link changes who may DM the bot — refresh the allow-list (bg).
         if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
         touched = true;
       }
       if (!touched) {
-        return res.status(400).json({ error: 'Nothing to update (displayName, telegramChatId, preferredSurface).' });
+        return res.status(400).json({ error: 'Nothing to update (displayName, telegramChatId, preferredSurface, preferredLanguage).' });
       }
       res.json(meEnvelope(req));
     } catch (err) {
