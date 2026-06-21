@@ -119,6 +119,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const avatarImgRef = useRef(null);   // your profile pic (round, over the Yours loop)
   const logoImgRef = useRef(null);     // org logo (rounded square, over the Shared loop)
   const posCacheRef = useRef(new Map());   // id → {x,y} so re-filtering doesn't re-explode the layout
+  const fittedRef = useRef(false);         // frame-to-fit once, after the first layout settles
 
   // Theme — pick label colour + node palette against the workspace's CSS
   // var values. NODE_COLOURS switches palette on light/dark; both render
@@ -251,10 +252,12 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     if (!fg) return;
     const charge = fg.d3Force('charge');
     if (charge) {
-      charge.strength?.(-42);
-      charge.distanceMax?.(150);
+      charge.strength?.(-34);
+      // Hard cap on repulsion range: beyond this a node feels ONLY the centre
+      // spring, so it can never settle further out than ~this from the middle.
+      charge.distanceMax?.(120);
     }
-    fg.d3Force?.('centerPull', centeringForce(0.10));
+    fg.d3Force?.('centerPull', centeringForce(0.14));
     fg.d3ReheatSimulation?.();
   }, [displayed, size.w]);
 
@@ -265,7 +268,10 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg || !size.w) return;
-    const t = setTimeout(() => fg.zoomToFit?.(0, 110), 90);
+    // Skip until the first layout has settled + been framed by onEngineStop
+    // (otherwise this fires at 90ms on the still-collapsing warmup=0 spiral and
+    // over-zooms). After that, reframe on every filter/resize change.
+    const t = setTimeout(() => { if (fittedRef.current) fg.zoomToFit?.(0, 110); }, 90);
     return () => clearTimeout(t);
   }, [scopeFilter, size.w]);
 
@@ -551,11 +557,27 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
               linkDirectionalArrowLength={3}
               linkDirectionalArrowRelPos={1}
               linkDirectionalArrowColor={linkColour}
-              warmupTicks={150}
-              cooldownTicks={40}
+              // warmupTicks MUST stay 0: warmup runs synchronously (child effect)
+              // before our force effect sets distanceMax/centring, and an
+              // uncapped charge over many warmup ticks is exactly what flung
+              // link-less cards off-screen. With 0 warmup the simulation only
+              // ever ticks AFTER our forces are applied (capped charge + centre
+              // spring), so nothing can escape the cluster. Settling animates
+              // over the cooldown ticks from the initial (tight) spiral.
+              warmupTicks={0}
+              cooldownTicks={90}
               d3VelocityDecay={0.32}
               onNodeClick={onNodeClick}
               onNodeHover={setHover}
+              // Frame the graph once the FIRST layout settles (warmup=0 means it
+              // animates open from the spiral, so an early zoomToFit would over-
+              // zoom the tight initial state). Guarded so drag/reheat stops don't
+              // keep re-framing; filter changes are handled by the effect below.
+              onEngineStop={() => {
+                if (fittedRef.current) return;
+                fittedRef.current = true;
+                graphRef.current?.zoomToFit?.(0, 110);
+              }}
               backgroundColor="rgba(0,0,0,0)"
             />
           </Suspense>
