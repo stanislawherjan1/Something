@@ -10,6 +10,8 @@
     &nbsp;·&nbsp;
     <a href="#demo">Demo</a>
     &nbsp;·&nbsp;
+    <a href="#team">Team</a>
+    &nbsp;·&nbsp;
     <a href="#integrations">Integrations</a>
     &nbsp;·&nbsp;
     <a href="#deploy-your-own">Deploy</a>
@@ -40,6 +42,7 @@
 - **Ping you proactively.** Restock alerts, weekly reports, deadlines. They schedule their own follow-ups.
 - **Write their own playbooks.** *Skills* (markdown files) describe how to handle recurring tasks. Editable from the UI.
 - **Track tasks with you.** A `Tasks.md` becomes a list-or-board view with owner, priority, and deadline — your coworker keeps it up to date as work moves.
+- **Work as your whole team's coworker.** Turn on collaborative mode and everyone signs in with their own account — each with a private space beside the shared one — while your coworker routes reminders, tasks, and messages to the right person.
 
 
 <br/>
@@ -93,6 +96,36 @@ Proactive messages travel the same paths. When a scheduled job wraps or a remind
 
 <br/>
 
+<a id="team"></a>
+
+## One coworker, your whole team
+
+<p align="center">
+  <img src="assets/team.png" alt="Team dashboard — roster with roles and avatars, channel links, and the Shared / Your Files split" width="820" />
+</p>
+
+<br/>
+
+Flip on **collaborative mode** and your coworker stops being only *yours* — it becomes the team's, while still knowing each of you as an individual. Everyone signs in with their own Google account; an admin keeps the roster: invite people, set roles (admin, member, observer), link their Telegram.
+
+Now there's a shared workspace and a private one for each person, side by side:
+
+- **Shared** — the files, the task board, and the team-wide memory everyone works from.
+- **Yours** — your own files and your own memory cards, scoped to you. A teammate can't read them, and your coworker won't go digging through them on someone else's behalf.
+
+The instinct is collaboration, not secrecy: ask *"did Mara finish the report?"* and your coworker answers from the shared work — privacy is the exception, not the first reflex.
+
+Because it knows the whole team, it routes work to the right person — and carries messages between you:
+
+> **You** — Remind Mara to send the review tomorrow morning.<br/>
+> **Coworker** — Done. I'll ping Mara at 9:00 tomorrow — in her workspace, and on Telegram since that's how she likes to be reached.
+
+Reminders and tasks can be aimed at one teammate (or at *everyone*); a task's owner is a real face on the board. And you can talk *through* your coworker to a colleague — it delivers the message into their workspace or Telegram, in their language, phrased like a person rather than a forwarded memo.
+
+Solo setups are untouched: with team mode off there are no roles, no split, no routing — the clean single-user workspace stays exactly as it was. Full design — roster and roles, file and memory scoping, per-recipient delivery, cross-surface relay, and the privacy model — in **[docs/TEAM_MODE.md](docs/TEAM_MODE.md)**.
+
+<br/>
+
 ## Skills
 
 A *Skill* is a markdown file that tells your coworker how to handle one recurring task — like a job description for a single responsibility.
@@ -136,7 +169,7 @@ Your coworker also schedules their own — a Monday board review, a first-of-the
 
 <br/>
 
-Your coworker doesn't start from zero every conversation. A small markdown wiki under `project/memory/` holds the basics — who you are, who's on your team, what your hard rules are, what the active integrations can do — plus rolling snapshots of your most recent web + Telegram exchanges. The whole block is loaded into the bot's system prompt on every turn so you never have to re-explain context.
+Your coworker doesn't start from zero every conversation. A small markdown wiki under `project/memory/` holds the basics — who you are, who's on your team, what your hard rules are, what the active integrations can do — plus rolling snapshots of your most recent web + Telegram exchanges. The whole block is loaded into the bot's system prompt on every turn so you never have to re-explain context. In a [team workspace](#team) this memory splits the way the files do — shared cards the whole team works from, plus private cards that are only yours.
 
 Open **AI Settings → Memory** to see it as a graph: cards (facts), topic pages (long-form), and the two auto-maintained rolling snapshots, all linked together. Click any node to see the file, search to highlight, and let the bot maintain itself — `reflect-learnings` writes new facts after each session, `reflect-organizer` promotes overgrown card sections to topic pages, `taste-recall` reminds the bot of past mistakes before it repeats them.
 
