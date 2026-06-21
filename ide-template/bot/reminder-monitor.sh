@@ -214,9 +214,32 @@ function advanceReminder(r, nowMs) {
 }
 // <<<RECUR-SHARED-END>>>
 
+// Best-effort advisory lock shared with the set_reminder MCP (apps/reminder-mcp),
+// which runs the same read-modify-write when the user adds/cancels a reminder.
+// Without it, a user mutation landing in this 60s tick can clobber a
+// fire/advance (last rename wins, the other write is lost). We break a stale
+// lock and, after a short wait, proceed WITHOUT it rather than ever skip a due
+// ping — a wedged lock must never stop reminders from firing.
+const LOCK_FILE = file + '.lock';
+const sleepMs = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} };
+let lockHeld = false;
+{
+  const deadline = Date.now() + 4000;
+  while (true) {
+    try { fs.closeSync(fs.openSync(LOCK_FILE, 'wx')); lockHeld = true; break; } // O_CREAT|O_EXCL
+    catch (err) {
+      if (err.code !== 'EEXIST') break; // unexpected FS error → proceed unlocked
+      try { const st = fs.statSync(LOCK_FILE); if (Date.now() - st.mtimeMs > 30000) { fs.unlinkSync(LOCK_FILE); continue; } } catch {}
+      if (Date.now() >= deadline) break; // give up waiting → fail open
+      sleepMs(40);
+    }
+  }
+}
+const releaseLock = () => { if (lockHeld) { try { fs.unlinkSync(LOCK_FILE); } catch {} lockHeld = false; } };
+
 let reminders;
 try { reminders = JSON.parse(fs.readFileSync(file, 'utf8')); }
-catch { process.exit(0); }
+catch { releaseLock(); process.exit(0); }
 
 let changed = false;
 const toSend = [];
@@ -271,11 +294,18 @@ reminders = reminders.map(r => {
 
 if (changed) {
     reminders = reminders.filter(r => r.status !== 'sent');
-    const tmp = file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(reminders, null, 2));
-    fs.renameSync(tmp, file); // atomic swap
+    // Unique tmp per writer — a fixed `.tmp` lets the MCP and this monitor
+    // interleave into the same scratch file and corrupt the rename.
+    const tmp = `${file}.${process.pid}.${Math.random().toString(16).slice(2, 10)}.tmp`;
+    try {
+        fs.writeFileSync(tmp, JSON.stringify(reminders, null, 2));
+        fs.renameSync(tmp, file); // atomic swap
+    } catch (e) {
+        try { fs.unlinkSync(tmp); } catch {}
+    }
 }
 
+releaseLock();
 toSend.forEach(m => process.stdout.write(m + '\n'));
 NODEEOF
     )

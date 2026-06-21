@@ -56,6 +56,14 @@ Then, from your own computer, run:
 curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/install.sh | bash
 ```
 
+Prefer to read it before running? Download, skim, then execute — same result:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/install.sh -o install.sh
+less install.sh    # review exactly what it does
+bash install.sh
+```
+
 The installer guides you through setup interactively. It asks for your Google sign-in app, server address, domain, and admin email, then deploys. Plan for ~45–60 minutes end to end — most of it waiting on the server, DNS, and the first build.
 
 First time renting a server or pointing a domain? **[Full step-by-step guide →](docs/QUICK_START.md)**

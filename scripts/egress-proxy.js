@@ -101,6 +101,65 @@ const MAX_HEADER_BYTES  = 4_096;
 // `:3129` and stay subject to the allow-list.
 const OPEN_PORT = parseInt(process.env.EGRESS_PROXY_OPEN_PORT || '3130', 10);
 
+// The open listener can't use the hostname allow-list (a browser legitimately
+// reaches the open web), but it must NOT become a wide-open exfil/SSRF channel
+// for anything else in the container that points its proxy at :3130. Two
+// constraints that don't affect real page loads:
+//   1. Web ports only — blocks arbitrary-TCP exfil / C2 over non-web ports.
+//   2. Public targets only — refuses anything resolving to a private,
+//      loopback, link-local or cloud-metadata address (SSRF / internal pivot),
+//      and pins the dial to the vetted IP so a DNS rebind can't swap a public
+//      answer for a private one between the check and the connect.
+// Residual risk (exfil to an arbitrary *public* host through the browser) is
+// inherent to browsing and needs network/uid isolation of :3130 — tracked as
+// a follow-up, not closeable here.
+const OPEN_ALLOWED_PORTS = new Set(
+  (process.env.EGRESS_OPEN_PORTS || '80,443')
+    .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean),
+);
+
+// True only for routable public unicast IPs.
+function isPublicIp(ip) {
+  if (net.isIPv4(ip)) {
+    const o = ip.split('.').map(Number);
+    if (o[0] === 0)   return false;                              // 0.0.0.0/8
+    if (o[0] === 10)  return false;                              // 10.0.0.0/8
+    if (o[0] === 127) return false;                              // loopback
+    if (o[0] === 169 && o[1] === 254) return false;              // link-local + metadata
+    if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return false;  // 172.16.0.0/12
+    if (o[0] === 192 && o[1] === 168) return false;              // 192.168.0.0/16
+    if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return false; // CGNAT 100.64.0.0/10
+    if (o[0] === 192 && o[1] === 0 && o[2] === 0) return false;  // 192.0.0.0/24
+    if (o[0] >= 224)  return false;                              // multicast + reserved
+    return true;
+  }
+  if (net.isIPv6(ip)) {
+    const a = ip.toLowerCase();
+    if (a === '::1' || a === '::') return false;     // loopback / unspecified
+    if (/^fe[89ab]/.test(a)) return false;           // link-local fe80::/10
+    if (/^f[cd]/.test(a))    return false;           // ULA fc00::/7
+    if (/^ff/.test(a))       return false;           // multicast
+    const mapped = a.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/); // IPv4-mapped
+    if (mapped) return isPublicIp(mapped[1]);
+    return true;
+  }
+  return false;
+}
+
+// Resolve + vet a CONNECT target for the open listener. Returns a concrete
+// public IP to dial (pinned against rebinding), or null to deny.
+async function vetOpenTarget(host, port) {
+  if (!OPEN_ALLOWED_PORTS.has(port)) return null;
+  let ips = [];
+  if (net.isIP(host)) ips = [host];
+  else {
+    try { ips = await proxyResolver.resolve4(host); } catch {}
+    if (!ips.length) { try { ips = await proxyResolver.resolve6(host); } catch {} }
+  }
+  for (const ip of ips) if (isPublicIp(ip)) return ip;
+  return null;
+}
+
 // DNS forwarder config — see DNS section near the bottom of this file.
 // Default port 53/udp on the same proxy container. Requires
 // CAP_NET_BIND_SERVICE on the node binary in the image (we run as an
@@ -444,16 +503,32 @@ function makeConnectServer({ tag, strict }) {
       let clientGone = false;
       client.once('close', () => { clientGone = true; });
       (async () => {
-        const allowed = strict ? await isAllowedAsync(host) : true;
+        // Default to dialling the hostname (strict path, unchanged). The open
+        // path overrides this with a vetted public IP so the connect can't be
+        // rebound to an internal address after the check.
+        let dialHost = host;
+        let denyReason = null;
+        if (strict) {
+          if (!await isAllowedAsync(host)) {
+            denyReason = `Hostname ${host} not in egress allow-list.`;
+          }
+        } else {
+          const vetted = await vetOpenTarget(host, port);
+          if (!vetted) {
+            denyReason = `Target ${host}:${port} not permitted on the open listener (web ports + public hosts only).`;
+          } else {
+            dialHost = vetted;
+          }
+        }
         if (clientGone) return;
-        if (!allowed) {
+        if (denyReason) {
           console.log(`[egress-proxy] ${tag} DENY ${host}:${port}`);
-          try { client.end(`HTTP/1.1 403 Forbidden\r\n\r\nHostname ${host} not in egress allow-list.\r\n`); } catch {}
+          try { client.end(`HTTP/1.1 403 Forbidden\r\n\r\n${denyReason}\r\n`); } catch {}
           return;
         }
 
-        console.log(`[egress-proxy] ${tag} ALLOW ${host}:${port}`);
-        const upstream = net.createConnection({ host, port }, () => {
+        console.log(`[egress-proxy] ${tag} ALLOW ${host}:${port}${dialHost !== host ? ` (${dialHost})` : ''}`);
+        const upstream = net.createConnection({ host: dialHost, port }, () => {
           try { client.write('HTTP/1.1 200 Connection Established\r\nProxy-agent: egress-proxy/1\r\n\r\n'); } catch {}
           const leftover = buf.slice(headerEnd + 4);
           if (leftover.length) upstream.write(leftover);

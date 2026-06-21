@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, AlertTriangle,
   Wand2, Upload, Building2, ChevronLeft, ChevronRight,
@@ -120,6 +120,14 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
     if (!/^image\/(png|jpe?g)$/i.test(file.type)) { setError('Must be a PNG or JPEG.'); return; }
     setError(null); setFile(file); setPreview(URL.createObjectURL(file));
   }
+
+  // Revoke the logo preview's object URL when it's replaced or the wizard
+  // unmounts — otherwise each re-pick (and the final preview) leaks a blob
+  // until the page unloads. Cleanup runs with the prior value on every change.
+  useEffect(() => {
+    if (!orgLogoPreview || !orgLogoPreview.startsWith('blob:')) return undefined;
+    return () => URL.revokeObjectURL(orgLogoPreview);
+  }, [orgLogoPreview]);
 
   const activeAvatarUrl = PRESET_AVATARS[avatarIdx].url;
 
