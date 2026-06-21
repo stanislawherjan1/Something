@@ -121,6 +121,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const avatarImgRef = useRef(null);   // your profile pic (round, over the Yours loop)
   const logoImgRef = useRef(null);     // org logo (rounded square, over the Shared loop)
   const posCacheRef = useRef(new Map());   // id → {x,y} so re-filtering doesn't re-explode the layout
+  const badgeHitsRef = useRef({});         // scope → {x,y,r} (graph coords) for badge drag hit-testing
 
   // Theme — pick label colour + node palette against the workspace's CSS
   // var values. NODE_COLOURS switches palette on light/dark; both render
@@ -322,7 +323,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     const filter = scopeFilterRef.current;
     // Loops + badges only frame the split in the combined "All" view. Once you
     // filter to a single scope they're redundant — skip them.
-    if (filter !== 'all') return;
+    if (filter !== 'all') { badgeHitsRef.current = {}; return; }
     const dark = isDarkRef.current;
 
     // Monochrome + subtle: both loops share one neutral foreground tone, faint
@@ -335,6 +336,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       yours:  { img: avatarImgRef.current, shape: 'circle' },
     };
 
+    const badgeHits = {};
     for (const scope of ['shared', 'yours']) {
       if (filter !== 'all' && filter !== scope) continue;
       const style = SCOPES[scope];
@@ -396,6 +398,9 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       for (const p of outline) if (p.y < topY) topY = p.y;
       const R = 16 / globalScale;
       const bx = cx, by = topY - 10 / globalScale - R;
+      // Remember the badge's graph-space position + a comfortable hit radius so
+      // the drag handler (below) can tell when a press lands on it.
+      badgeHits[scope] = { x: bx, y: by, r: R + 6 / globalScale };
 
       const drawBadgeShape = () => {
         if (style.shape === 'circle') ctx.arc(bx, by, R, 0, 2 * Math.PI);
@@ -423,6 +428,87 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       ctx.strokeStyle = stroke;
       ctx.stroke();
     }
+    badgeHitsRef.current = badgeHits;
+  }, []);
+
+  // Drag a whole cluster by its badge (org logo / your avatar). A press over a
+  // badge is caught in the CAPTURE phase on the container, before force-graph's
+  // d3-zoom (which pans on mousedown) sees it — so we stopPropagation there and
+  // move every node in that scope by the pointer delta (pinned fx/fy included).
+  // Presses that AREN'T on a badge fall through untouched, so single-node drag
+  // and background pan keep working. graphRef is read lazily so this survives
+  // the lazy ForceGraph2D mounting after the effect.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const toGraph = (ev) => {
+      const fg = graphRef.current;
+      if (!fg?.screen2GraphCoords) return null;
+      const r = el.getBoundingClientRect();
+      return fg.screen2GraphCoords(ev.clientX - r.left, ev.clientY - r.top);
+    };
+    const badgeAt = (g) => {
+      if (!g) return null;
+      const hits = badgeHitsRef.current || {};
+      for (const s of ['shared', 'yours']) {
+        const h = hits[s];
+        if (h && Math.hypot(g.x - h.x, g.y - h.y) <= h.r) return s;
+      }
+      return null;
+    };
+    let drag = null;
+    const onWinMove = (ev) => {
+      if (!drag) return;
+      const g = toGraph(ev);
+      if (!g) return;
+      const dx = g.x - drag.lastX, dy = g.y - drag.lastY;
+      drag.lastX = g.x; drag.lastY = g.y;
+      const d = displayedRef.current;
+      if (d) for (const nd of d.nodes) {
+        if ((nd.scope || 'shared') !== drag.scope) continue;
+        nd.x += dx; nd.y += dy;
+        if (nd.fx != null) nd.fx += dx;
+        if (nd.fy != null) nd.fy += dy;
+      }
+      graphRef.current?.d3ReheatSimulation?.();   // repaint; nodes pinned → no animation
+    };
+    const onWinUp = () => {
+      if (!drag) return;
+      const d = displayedRef.current;
+      if (d) for (const nd of d.nodes) {
+        if ((nd.scope || 'shared') === drag.scope && Number.isFinite(nd.x)) {
+          posCacheRef.current.set(nd.id, { x: nd.x, y: nd.y });
+        }
+      }
+      drag = null;
+      el.style.cursor = '';
+      window.removeEventListener('mousemove', onWinMove);
+      window.removeEventListener('mouseup', onWinUp);
+    };
+    const onDown = (ev) => {
+      if (ev.button !== 0 || scopeFilterRef.current !== 'all') return;
+      const scope = badgeAt(toGraph(ev));
+      if (!scope) return;
+      const g = toGraph(ev);
+      drag = { scope, lastX: g.x, lastY: g.y };
+      el.style.cursor = 'grabbing';
+      ev.stopPropagation();
+      ev.preventDefault();
+      window.addEventListener('mousemove', onWinMove);
+      window.addEventListener('mouseup', onWinUp);
+    };
+    const onHover = (ev) => {
+      if (drag || scopeFilterRef.current !== 'all') return;
+      el.style.cursor = badgeAt(toGraph(ev)) ? 'grab' : '';
+    };
+    el.addEventListener('mousedown', onDown, true);   // capture, before d3-zoom on the canvas
+    el.addEventListener('mousemove', onHover);
+    return () => {
+      el.removeEventListener('mousedown', onDown, true);
+      el.removeEventListener('mousemove', onHover);
+      window.removeEventListener('mousemove', onWinMove);
+      window.removeEventListener('mouseup', onWinUp);
+    };
   }, []);
 
   const linkColour = useCallback((link) => {
