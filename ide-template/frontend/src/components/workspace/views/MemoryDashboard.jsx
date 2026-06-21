@@ -252,12 +252,15 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     if (!fg) return;
     const charge = fg.d3Force('charge');
     if (charge) {
-      charge.strength?.(-34);
+      charge.strength?.(-30);
       // Hard cap on repulsion range: beyond this a node feels ONLY the centre
       // spring, so it can never settle further out than ~this from the middle.
-      charge.distanceMax?.(120);
+      charge.distanceMax?.(90);
     }
-    fg.d3Force?.('centerPull', centeringForce(0.14));
+    // Strong centre spring so LINK-LESS cards tuck in almost as close as the
+    // linked ones (linked nodes are already held near `index` by their edges,
+    // so a strong pull barely moves them but reels isolated cards right in).
+    fg.d3Force?.('centerPull', centeringForce(0.34));
     fg.d3ReheatSimulation?.();
   }, [displayed, size.w]);
 
