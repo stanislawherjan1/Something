@@ -48,11 +48,11 @@ const watcher = chokidar.watch(PROJECT_ABS, {
   persistent: true,
   ignored: (p) => {
     const rel = relative(PROJECT_ABS, p).replace(/\\/g, '/');
-    // Always watch .claude/skills and .reminders.json so the Skills and
-    // Reminders dashboards refresh without a full page reload. Visibility
-    // in the file tree is gated separately in files.js — watching doesn't
-    // expose content.
-    if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json') return false;
+    // Always watch .claude/skills, .reminders.json and .tasks.json so the
+    // Skills, Reminders and Tasks dashboards refresh without a full page
+    // reload. Visibility in the file tree is gated separately in files.js —
+    // watching doesn't expose content.
+    if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json' || rel === '.tasks.json') return false;
     const base = p.split(sep).pop();
     return base ? !isVisibleEntry(base) : false;
   },

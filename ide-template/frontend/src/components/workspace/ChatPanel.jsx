@@ -3,6 +3,7 @@ import { ArrowUp, ArrowUpRight, AlertCircle, FileText, Folder, Globe, Loader2, P
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
+import { looksLikePath, pathToSelection } from '@/lib/filePaths';
 import { ToolChipRow } from './ToolChip.jsx';
 import SpinningAvatar from './SpinningAvatar.jsx';
 import useNotifications from './useNotifications.js';
@@ -1015,16 +1016,48 @@ function FileChip({ path, onSelect }) {
   );
 }
 
+// An inline file path written in `backticks` — rendered as a clickable token
+// that opens the file, while still reading like a path (monospace, underline).
+function FilePathInline({ path, onSelect }) {
+  const sel = pathToSelection(path);
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={`Open ${sel.path}`}
+      onClick={() => onSelect?.({ path: sel.path, type: sel.type })}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.({ path: sel.path, type: sel.type }); } }}
+      className="cursor-pointer rounded bg-secondary/60 px-1 py-0.5 font-mono text-[12px] text-foreground underline decoration-foreground/25 underline-offset-2 transition-colors hover:bg-foreground/[0.1] hover:decoration-foreground/60"
+    >
+      {path}
+    </span>
+  );
+}
+
+// Markdown component overrides that make file paths clickable: a `file:` link
+// (emitted by linkifyFilePaths for absolute paths) → a FileChip; an inline code
+// span that looks like a path → a clickable FilePathInline.
+function mdComponentsWithFiles(onFileSelect) {
+  return {
+    ...MD_COMPONENTS,
+    a: ({ href, children }) =>
+      href?.startsWith('file:')
+        ? <FileChip path={href.slice(5)} onSelect={onFileSelect} />
+        : MD_COMPONENTS.a({ href, children }),
+    code: ({ inline, children, ...rest }) => {
+      const text = String(Array.isArray(children) ? children.join('') : children ?? '');
+      if (inline && onFileSelect && looksLikePath(text)) {
+        return <FilePathInline path={text} onSelect={onFileSelect} />;
+      }
+      return MD_COMPONENTS.code({ inline, children, ...rest });
+    },
+  };
+}
+
 function TextBlock({ text, onFileSelect, withSources = false }) {
   const { body, sources } = withSources ? splitSources(text) : { body: text, sources: [] };
   const processedBody = linkifyFilePaths(body);
-  const components = {
-    ...MD_COMPONENTS,
-    a: ({ href, children }) => {
-      if (href?.startsWith('file:')) return <FileChip path={href.slice(5)} onSelect={onFileSelect} />;
-      return MD_COMPONENTS.a({ href, children });
-    },
-  };
+  const components = mdComponentsWithFiles(onFileSelect);
   return (
     <>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
@@ -1099,13 +1132,7 @@ function AssistantBody({ text, images, content, onFileSelect }) {
   // Legacy fallback: text first, then all images at the bottom.
   const { body, sources } = splitSources(text);
   const processedBody = linkifyFilePaths(body);
-  const components = {
-    ...MD_COMPONENTS,
-    a: ({ href, children }) => {
-      if (href?.startsWith('file:')) return <FileChip path={href.slice(5)} onSelect={onFileSelect} />;
-      return MD_COMPONENTS.a({ href, children });
-    },
-  };
+  const components = mdComponentsWithFiles(onFileSelect);
   return (
     <>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>

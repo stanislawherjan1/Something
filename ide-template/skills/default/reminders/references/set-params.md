@@ -83,6 +83,25 @@ When a reminder fires in a skipped hour/day, it advances to the next non-skipped
 
 All times are UTC. **Tell the user this.** If they say "9am", clarify: "9am UTC, which is 11am Warsaw time — is that right?" When you confirm a *recurring* reminder, state **both** the recurrence and the next concrete fire in their local zone — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday."
 
+## Who it's for — `recipient` (team mode)
+
+`recipient` decides **who you notify / act for** when the reminder fires. It does **not** make anyone "own a task" — reminders never touch a teammate's `Tasks.md`. Targeting Jan means *at the due time you reach out to Jan* (a nudge, or an action delivered to him).
+
+- **Default = the asker.** Omit `recipient` (or pass `"me"`) for a normal self-reminder — `"remind me to call Cass"`.
+- **Named teammates →** resolve each name to its roster **slug**, pass the array: `"recipient": ["jan","kasia"]`. Never display names, never emails.
+- **Everyone →** `"recipient": "everyone"` for a team-wide reminder.
+
+```json
+{
+  "title": "Submit your timesheets",
+  "due": "friday at 16:00",
+  "repeat": "weekly",
+  "recipient": ["jan", "kasia"]
+}
+```
+
+Resolve names to slugs from the team roster in your context; ask only when genuinely ambiguous — never guess a wrong target. **Permissions:** only an admin can target `"everyone"` or other people. If the tool refuses, relay that and offer to remind just the asker. **Omit entirely in a solo workspace.**
+
 ## Other tools
 
 ```json

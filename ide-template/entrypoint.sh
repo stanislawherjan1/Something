@@ -1095,6 +1095,7 @@ EOF
     # workspace-api/lib/config.js — keep in sync.
     RCLONE_EXCLUDES=(
         --exclude ".reminders.json"
+        --exclude ".tasks.json"
         --exclude ".allowed-emails.json"
         --exclude ".allowed-emails.audit.log"
         --exclude ".branding.json"
@@ -1503,6 +1504,18 @@ managed['reminders'] = {
     }
 }
 
+# Tasks MCP — the structured task board stored in ~/project/.tasks.json. Always
+# on: no credentials required. The board replaced Tasks.md; the bot manages it
+# through this MCP (list/add/update/move) — never by editing a Markdown file.
+managed['tasks'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/tasks-mcp/index.js'],
+    'env': {
+        'TASKS_FILE': '/home/coder/project/.tasks.json',
+        'WORKSPACE_API_PORT': os.environ.get('WORKSPACE_API_PORT', '3001'),
+    }
+}
+
 # Workspace-API MCP — thin wrapper exposing workspace-api HTTP routes as
 # MCP tools. Currently surfaces `memory_grep` (the tool the cached prefix
 # PREAMBLE instructs the model to use). Always on: no credentials required.
@@ -1744,6 +1757,14 @@ start_bot_stack() {
             su coder -c '/opt/ide/bootstrap/bootstrap-project.sh' \
             2>&1 | sed 's/^/[bootstrap] /' || \
             echo "[entrypoint] WARNING: bootstrap-project.sh exited non-zero — workspace may be missing baseline rituals"
+    fi
+
+    # One-time migration of an existing Markdown Tasks.md into the structured
+    # board (.tasks.json). Idempotent + self-guarded (no-op once migrated or if
+    # there's no Tasks.md), so it's safe to run on every boot for old clients.
+    if [ -f /opt/ide/bootstrap/migrate-tasks.mjs ]; then
+        PROJECT_DIR="$PROJECT_DIR" su coder -c 'PROJECT_DIR="'"$PROJECT_DIR"'" node /opt/ide/bootstrap/migrate-tasks.mjs' \
+            2>&1 | sed 's/^/[migrate-tasks] /' || true
     fi
 
     pm2 start /home/coder/ecosystem.config.js --only "${BOT_NAME},${BOT_NAME}-reminders,${BOT_NAME}-snapshot,${BOT_NAME}-browser-watchdog" \

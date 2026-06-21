@@ -19,9 +19,9 @@ If the task has a blocker: ask "When should I remind you about this blocker?" th
 
 ## When moving In Progress → Done
 
-1. Append `**Completed:** YYYY-MM-DD` to the task entry.
+1. `update_task { id, status: "done" }` — the completion date is stamped automatically.
 2. `list_reminders` → find any reminder whose message contains the task title → `cancel_reminder`.
-3. Never delete the task — move to `## Done` section.
+3. Never delete the task — `done` is the archive.
 
 ## When updating an existing task
 

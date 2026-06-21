@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
-  Wrench, Plug, Clock, UsersRound, Inbox,
+  Wrench, Plug, Clock, UsersRound, Inbox, Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
@@ -308,6 +308,13 @@ export default function Sidebar({
 
 const SHORTCUTS = [
   {
+    key: 'search',
+    label: 'Search',
+    icon: Search,
+    action: 'search',   // opens the command palette instead of selecting a view
+    match: () => false,
+  },
+  {
     key: 'notifications',
     label: 'Notifications',
     icon: Inbox,
@@ -327,15 +334,15 @@ const SHORTCUTS = [
     icon: KanbanSquare,
     target: { path: 'Tasks.md', type: 'file' },
     match: (sel) => sel?.path === 'Tasks.md',
-    groupBreak: true,  // visual separator above — splits comms (Notifications/Team) from workspace content (Tasks/Gallery)
   },
-  {
-    key: 'gallery',
-    label: 'Gallery',
-    icon: Images,
-    target: { path: 'generated', type: 'dir' },
-    match: (sel) => sel?.path === 'generated' || sel?.path?.startsWith('generated/'),
-  },
+  // Gallery hidden for now.
+  // {
+  //   key: 'gallery',
+  //   label: 'Gallery',
+  //   icon: Images,
+  //   target: { path: 'generated', type: 'dir' },
+  //   match: (sel) => sel?.path === 'generated' || sel?.path?.startsWith('generated/'),
+  // },
 ];
 
 function Shortcuts({ selected, onSelect }) {
@@ -353,9 +360,11 @@ function Shortcuts({ selected, onSelect }) {
           <button
             key={item.key}
             type="button"
-            onClick={() => onSelect(item.target)}
+            onClick={() => item.action === 'search'
+              ? window.dispatchEvent(new CustomEvent('ide:open-search'))
+              : onSelect(item.target)}
             className={cn(
-              'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
+              'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-3 transition-colors duration-150',
               'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
               item.groupBreak && 'mt-3',
               active
@@ -381,7 +390,10 @@ function Shortcuts({ selected, onSelect }) {
                 />
               )}
             </span>
-            <span>{item.label}</span>
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.action === 'search' && (
+              <kbd className="hidden rounded border border-border/55 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/60 md:inline-block">⌘K</kbd>
+            )}
           </button>
         );
       })}

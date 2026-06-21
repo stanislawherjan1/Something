@@ -52,7 +52,10 @@ log "created Inbox/, Research/, $BOT/"
 
 # ── 2. Templates with token substitution ───────────────────────────────────
 # Only copy if destination doesn't exist (don't clobber user content).
-for src_name in "README.md" "Tasks.md"; do
+# (Tasks are no longer a Markdown file — they live in the structured board
+# at .tasks.json, managed via the tasks MCP / the workspace board. An absent
+# .tasks.json simply reads as an empty board, so nothing to seed here.)
+for src_name in "README.md"; do
     src="$BOOTSTRAP_SRC/$src_name"
     dst="$PROJECT/$src_name"
     if [ ! -f "$dst" ] && [ -f "$src" ]; then

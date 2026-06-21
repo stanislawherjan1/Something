@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
-import { SkeletonTileGrid } from '@/components/ui/Skeleton';
+import { SkeletonCardGrid } from '@/components/ui/Skeleton';
 import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } from '../RestartBanners';
 
 /**
@@ -236,7 +236,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
             Connect external services so the assistant can use them on your behalf. In case of any questions, message {botDisplayName}.
           </p>
-          {isInitialLoad && <SkeletonTileGrid count={6} />}
+          {isInitialLoad && <SkeletonCardGrid count={6} />}
 
           {error && !data && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">

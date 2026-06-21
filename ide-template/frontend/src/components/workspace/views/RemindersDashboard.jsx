@@ -286,15 +286,23 @@ function InfoTip({ label, side = 'top', children }) {
 
 // A small circular profile picture (img with an initial fallback), name on hover.
 function MiniAvatar({ name, avatar, label }) {
-  const initial = (name || '?').trim().charAt(0).toUpperCase();
   return (
     <InfoTip label={label || name}>
-      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[9px] font-semibold text-muted-foreground/90 ring-1 ring-border/60">
-        {avatar
-          ? <img src={avatar} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-          : initial}
-      </span>
+      <AvatarDot name={name} avatar={avatar} />
     </InfoTip>
+  );
+}
+
+// The bare avatar circle, no tooltip — used inside a stack that already carries
+// a single shared tooltip (e.g. the "Everyone on the team" pile).
+function AvatarDot({ name, avatar }) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[9px] font-semibold text-muted-foreground/90 ring-1 ring-border/60">
+      {avatar
+        ? <img src={avatar} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        : initial}
+    </span>
   );
 }
 
@@ -307,6 +315,22 @@ function RecipientBadge({ reminder, people = {}, me = null }) {
   const setBy = reminder.setBy || null;
 
   if (rc && rc.includes('*everyone*')) {
+    // Team-wide → just stack everyone's profile pictures. Falls back to the
+    // generic glyph only if we somehow have no roster to show.
+    const all = Object.keys(people);
+    if (all.length) {
+      const shown = all.slice(0, 5);
+      return (
+        <InfoTip label="Everyone on the team">
+          <span className="flex shrink-0 items-center -space-x-1.5">
+            {shown.map(s => <AvatarDot key={s} name={people[s]?.name || s} avatar={people[s]?.avatar} />)}
+            {all.length > 5 && (
+              <span className="pl-2 text-[10px] font-medium text-muted-foreground/60">+{all.length - 5}</span>
+            )}
+          </span>
+        </InfoTip>
+      );
+    }
     return (
       <InfoTip label="Everyone on the team">
         <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground/80 ring-1 ring-border/60">

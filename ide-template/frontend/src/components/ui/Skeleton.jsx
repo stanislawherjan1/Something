@@ -59,3 +59,35 @@ export function SkeletonTileGrid({ count = 6 }) {
     </div>
   );
 }
+
+/**
+ * Vertical card placeholder — matches the Skills / Integrations tiles
+ * (logo/icon top-left + status pill, title, description, a footer action).
+ */
+export function SkeletonCard() {
+  return (
+    <div className="flex flex-col rounded-xl border border-border/55 bg-card">
+      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
+        <Skeleton className="size-12 rounded-lg" />
+        <Skeleton className="h-5 w-14 rounded-full" />
+      </div>
+      <div className="flex flex-col gap-2 px-4">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-2/3" />
+      </div>
+      <div className="px-4 pb-4 pt-3.5">
+        <Skeleton className="h-8 w-full rounded-md" />
+      </div>
+    </div>
+  );
+}
+
+/** Card grid skeleton — matches the 320px auto-fill grid Skills/Integrations use. */
+export function SkeletonCardGrid({ count = 6 }) {
+  return (
+    <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+      {Array.from({ length: count }, (_, i) => <SkeletonCard key={i} />)}
+    </div>
+  );
+}

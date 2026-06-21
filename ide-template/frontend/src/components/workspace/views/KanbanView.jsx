@@ -1,11 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, createContext, useContext } from 'react';
 import { KanbanSquare, CircleUserRound, Calendar, CheckCircle2, Columns3, List as ListIcon, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity.jsx';
 import { useApi } from '@/lib/useApi';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const VIEW_MODE_KEY = 'tasks-view-mode';
+
+// Board columns, in display order. `key` matches a task's `status`.
+const TASK_COLUMNS = [
+  { key: 'in_progress', name: 'In Progress' },
+  { key: 'backlog',     name: 'Backlog' },
+  { key: 'done',        name: 'Done' },
+];
 
 /**
  * KanbanView — render Tasks.md as a board.
@@ -26,9 +34,19 @@ const VIEW_MODE_KEY = 'tasks-view-mode';
  *
  * Iteration 3: read-only render. Drag-drop + write-back to file lands later.
  */
+// slug → { name, avatar } for resolving a task's Owner to a teammate's profile.
+const PeopleContext = createContext({});
+
 export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
-  const url = `/api/files/read?path=${encodeURIComponent(path)}`;
-  const { data, loading, error, reload } = useApi(url);
+  const { data, loading, error, reload } = useApi('/api/tasks');
+
+  // Local optimistic copy of the structured task list, synced from the API.
+  // Mutations (drag-drop, check→done) update this immediately, then PATCH.
+  const [tasks, setTasks] = useState(null);
+  useEffect(() => { if (data?.tasks) setTasks(data.tasks); }, [data]);
+
+  // slug → { name, avatar } for assignee avatars (comes with the task list).
+  const people = useMemo(() => data?.people || {}, [data]);
 
   // View mode persists per-device in localStorage. Default 'list' — most
   // tasks are read top-to-bottom and the list is denser for scanning.
@@ -47,14 +65,32 @@ export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
     if (fileEventNonce) reload();
   }, [fileEventNonce, reload]);
 
+  // Optimistic field update → PATCH /api/tasks/:id. On failure, reload truth.
+  const patchTask = useCallback(async (id, patch) => {
+    setTasks(prev => (prev ? prev.map(t => (t.id === id ? { ...t, ...patch } : t)) : prev));
+    try {
+      const r = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    } catch {
+      reload();   // revert to server truth
+    }
+  }, [reload]);
+
   const columns = useMemo(() => {
-    if (!data?.content) return [];
-    return parseKanban(data.content);
-  }, [data]);
+    const list = tasks || [];
+    return TASK_COLUMNS.map(c => ({
+      key: c.key,
+      name: c.name,
+      cards: list.filter(t => t.status === c.key).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    }));
+  }, [tasks]);
 
   const isInitialLoad = loading && !data;
-  const isNotFound = error && (error.includes('404') || error.includes('ENOENT'));
-  const realError = error && !isNotFound ? error : null;
+  const isEmpty = tasks && tasks.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -65,13 +101,21 @@ export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
         sidebarOpen={sidebarOpen}
       />
       <div className="flex-1 overflow-auto">
-        {isInitialLoad && <Centered>Loading…</Centered>}
-        {isNotFound && <TasksEmptyState />}
-        {realError && <Centered error>Error: {realError}</Centered>}
-        {!isInitialLoad && !isNotFound && (
+        {isInitialLoad && (
           <div className="h-full pb-6 pt-2">
-            {viewMode === 'list' ? <ListView columns={columns} /> : <Board columns={columns} />}
+            {viewMode === 'list' ? <ListSkeleton /> : <BoardSkeleton />}
           </div>
+        )}
+        {error && !data && <Centered error>Error: {error}</Centered>}
+        {!isInitialLoad && isEmpty && <TasksEmptyState />}
+        {!isInitialLoad && tasks && !isEmpty && (
+          <PeopleContext.Provider value={people}>
+            <div className="h-full pb-6 pt-2">
+              {viewMode === 'list'
+                ? <ListView columns={columns} onPatch={patchTask} />
+                : <Board columns={columns} onPatch={patchTask} />}
+            </div>
+          </PeopleContext.Provider>
         )}
       </div>
     </div>
@@ -107,30 +151,36 @@ function ToggleButton({ active, label, icon: Icon, onClick }) {
   );
 }
 
-function ListView({ columns }) {
-  if (columns.length === 0) {
-    return (
-      <Centered>
-        No columns yet. Add headings like
-        <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-[12px]">## Backlog</code>
-        and tasks as
-        <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-[12px]">### Title</code>.
-      </Centered>
-    );
-  }
+function ListView({ columns, onPatch }) {
+  // Drop onto a section → move the task there, appended to the end.
+  const onDropTask = (id, status, cards) => onPatch(id, { status, order: cards.length });
   return (
     <div className="flex w-full flex-col gap-7 px-6 pt-2">
-      {columns.map((col, i) => (
-        <ListSection key={i} column={col} />
+      {columns.map((col) => (
+        <ListSection key={col.key} column={col} onPatch={onPatch} onDropTask={onDropTask} />
       ))}
     </div>
   );
 }
 
-function ListSection({ column }) {
-  const isDone = /^done$/i.test(column.name.trim());
+function ListSection({ column, onPatch, onDropTask }) {
+  const isDone = column.key === 'done';
+  const [over, setOver] = useState(false);
   return (
-    <section className="flex flex-col gap-2">
+    <section
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const id = e.dataTransfer.getData('text/plain');
+        if (id) onDropTask(id, column.key, column.cards);
+      }}
+      className={cn(
+        'flex flex-col gap-2 rounded-xl p-1 -m-1 transition-colors',
+        over && 'bg-foreground/[0.04] ring-1 ring-inset ring-foreground/20',
+      )}
+    >
       <div className="flex items-center gap-2 px-1">
         <h3 className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
           {column.name}
@@ -141,12 +191,12 @@ function ListSection({ column }) {
       </div>
       {column.cards.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/40 bg-muted/10 px-4 py-4 text-[12.5px] italic text-muted-foreground/55">
-          No tasks
+          {over ? 'Drop here' : 'No tasks'}
         </div>
       ) : (
         <ul className="flex flex-col gap-1.5">
-          {column.cards.map((card, i) => (
-            <ListRow key={i} card={card} done={isDone} />
+          {column.cards.map((card) => (
+            <ListRow key={card.id} card={card} done={isDone} onPatch={onPatch} />
           ))}
         </ul>
       )}
@@ -154,20 +204,30 @@ function ListSection({ column }) {
   );
 }
 
-function ListRow({ card, done }) {
+function ListRow({ card, done, onPatch }) {
   return (
     <li
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', card.id); e.dataTransfer.effectAllowed = 'move'; }}
       className={cn(
-        'group flex items-center gap-3 rounded-xl border border-border/55 bg-card px-4 py-3 transition-all duration-150',
+        'group flex cursor-grab items-center gap-3 rounded-xl border border-border/55 bg-card px-4 py-3 transition-all duration-150 active:cursor-grabbing',
         'hover:border-foreground/15 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
         done && 'opacity-70',
       )}
     >
-      {done ? (
-        <CheckCircle2 className="size-[15px] shrink-0 text-emerald-600/75 dark:text-emerald-400/75" strokeWidth={2} />
-      ) : (
-        <span className="size-[15px] shrink-0 rounded-full ring-[1.5px] ring-border/55 ring-offset-0" aria-hidden />
-      )}
+      <button
+        type="button"
+        onClick={() => onPatch?.(card.id, { status: done ? 'backlog' : 'done' })}
+        title={done ? 'Move back to Backlog' : 'Mark done'}
+        aria-label={done ? 'Move back to Backlog' : 'Mark done'}
+        className="shrink-0 rounded-full outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-foreground/20"
+      >
+        {done ? (
+          <CheckCircle2 className="size-[16px] text-emerald-600/80 dark:text-emerald-400/80" strokeWidth={2} />
+        ) : (
+          <span className="block size-[16px] rounded-full ring-[1.5px] ring-border/60 transition-colors hover:ring-emerald-500/60" aria-hidden />
+        )}
+      </button>
       <span className={cn(
         'min-w-0 flex-1 truncate text-[13.5px] leading-snug',
         done ? 'font-medium text-muted-foreground/75 line-through' : 'font-medium text-foreground/90',
@@ -175,6 +235,7 @@ function ListRow({ card, done }) {
         {card.title}
       </span>
       <span className="flex shrink-0 items-center gap-2.5">
+        <ListAssignee owner={card.owner} />
         {card.deadline && (
           <span className="inline-flex items-center gap-1 text-[11.5px] tabular-nums text-muted-foreground/75">
             <Calendar className="size-[12px]" strokeWidth={1.75} />
@@ -205,26 +266,89 @@ function PriorityChip({ value }) {
   );
 }
 
-function Board({ columns }) {
-  if (columns.length === 0) {
-    return (
-      <Centered>
-        No columns. Add headings like
-        <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-[12px]">## Backlog</code>
-        and tasks as
-        <code className="mx-1 rounded bg-muted px-1.5 py-0.5 text-[12px]">### Title</code>.
-      </Centered>
-    );
-  }
+// ─── Loading skeletons (match the board / list layouts) ──────────────────────
+
+const SKELETON_COLS = [
+  { name: 'In Progress', n: 2 },
+  { name: 'Backlog', n: 3 },
+  { name: 'Done', n: 1 },
+];
+
+function BoardSkeleton() {
   return (
     <div className="flex h-full gap-5 overflow-x-auto px-6 pt-2">
-      {columns.map((col, i) => <Column key={i} column={col} />)}
+      {SKELETON_COLS.map((col) => (
+        <div key={col.name} className="flex w-[300px] shrink-0 flex-col gap-3">
+          <div className="flex items-center gap-2 px-1">
+            <Skeleton className="h-2.5 w-20" />
+            <Skeleton className="h-4 w-5 rounded-full" />
+          </div>
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: col.n }, (_, i) => <CardSkeleton key={i} />)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function Column({ column }) {
-  const isDone = /^done$/i.test(column.name.trim());
+function CardSkeleton() {
+  return (
+    <div className="rounded-xl border border-border/55 bg-card p-3.5">
+      <Skeleton className="h-3.5 w-3/4" />
+      <Skeleton className="mt-2 h-3 w-full" />
+      <Skeleton className="mt-1.5 h-3 w-2/3" />
+      <div className="mt-3 flex items-center gap-1.5">
+        <Skeleton className="h-5 w-16 rounded-[3px]" />
+        <Skeleton className="h-5 w-14 rounded-[3px]" />
+        <Skeleton className="ml-auto h-5 w-12 rounded-[3px]" />
+      </div>
+    </div>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="flex w-full flex-col gap-7 px-6 pt-2">
+      {SKELETON_COLS.map((col) => (
+        <section key={col.name} className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 px-1">
+            <Skeleton className="h-2.5 w-20" />
+            <Skeleton className="h-4 w-5 rounded-full" />
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {Array.from({ length: col.n }, (_, i) => (
+              <li key={i} className="flex items-center gap-3 rounded-xl border border-border/55 bg-card px-4 py-3">
+                <Skeleton className="size-[16px] shrink-0 rounded-full" />
+                <Skeleton className="h-3.5 w-1/2" />
+                <span className="ml-auto flex items-center gap-2.5">
+                  <Skeleton className="size-[18px] rounded-full" />
+                  <Skeleton className="h-3 w-16" />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function Board({ columns, onPatch }) {
+  // Drop onto a column → move the task there, appended to the end.
+  const onDropTask = (taskId, status, targetCards) => {
+    onPatch(taskId, { status, order: targetCards.length });
+  };
+  return (
+    <div className="flex h-full gap-5 overflow-x-auto px-6 pt-2">
+      {columns.map((col) => <Column key={col.key} column={col} onDropTask={onDropTask} />)}
+    </div>
+  );
+}
+
+function Column({ column, onDropTask }) {
+  const isDone = column.key === 'done';
+  const [over, setOver] = useState(false);
   return (
     <div className="flex w-[300px] shrink-0 flex-col gap-3">
       <div className="flex items-center gap-2 px-1">
@@ -235,11 +359,24 @@ function Column({ column }) {
           {column.cards.length}
         </span>
       </div>
-      <div className="flex flex-col gap-2">
-        {column.cards.map((card, i) => <Card key={i} card={card} done={isDone} />)}
+      <div
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const id = e.dataTransfer.getData('text/plain');
+          if (id) onDropTask(id, column.key, column.cards);
+        }}
+        className={cn(
+          'flex min-h-[64px] flex-col gap-2 rounded-xl p-1 -m-1 transition-colors',
+          over && 'bg-foreground/[0.04] ring-1 ring-inset ring-foreground/20',
+        )}
+      >
+        {column.cards.map((card) => <Card key={card.id} card={card} done={isDone} />)}
         {column.cards.length === 0 && (
           <div className="rounded-xl border border-dashed border-border/40 bg-muted/10 px-3.5 py-3 text-[12px] italic text-muted-foreground/55">
-            No tasks
+            {over ? 'Drop here' : 'No tasks'}
           </div>
         )}
       </div>
@@ -249,11 +386,15 @@ function Column({ column }) {
 
 function Card({ card, done }) {
   return (
-    <div className={cn(
-      'rounded-xl border border-border/55 bg-card p-3.5 transition-all duration-150',
-      'hover:border-foreground/15 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
-      done && 'opacity-70',
-    )}>
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', card.id); e.dataTransfer.effectAllowed = 'move'; }}
+      className={cn(
+        'cursor-grab rounded-xl border border-border/55 bg-card p-3.5 transition-all duration-150 active:cursor-grabbing',
+        'hover:border-foreground/15 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
+        done && 'opacity-70',
+      )}
+    >
       <div className={cn(
         'text-[13.5px] font-medium leading-snug',
         done ? 'text-muted-foreground/75 line-through' : 'text-foreground/90',
@@ -275,12 +416,7 @@ function Card({ card, done }) {
               {card.deadline}
             </span>
           )}
-          {card.owner && (
-            <span className={metaPillClass}>
-              <CircleUserRound className="size-[13px] text-muted-foreground/60" strokeWidth={1.75} />
-              {card.owner}
-            </span>
-          )}
+          <Assignee owner={card.owner} />
           {card.priority && (
             <span className={cn(metaPillClass, 'ml-auto')}>
               <PriorityChip value={card.priority} />
@@ -290,12 +426,6 @@ function Card({ card, done }) {
         </div>
       )}
 
-      {card.completed && (
-        <div className="mt-3 inline-flex items-center gap-1 text-[11px] text-muted-foreground/60">
-          <CheckCircle2 className="size-3" strokeWidth={2} />
-          {card.completed}
-        </div>
-      )}
     </div>
   );
 }
@@ -305,6 +435,58 @@ function Card({ card, done }) {
 // the task title or description.
 const metaPillClass =
   'inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[11px] text-muted-foreground/85 ring-1 ring-inset ring-border/50';
+
+// Task assignee. An Owner value matching a roster slug renders as that
+// teammate's avatar + name; otherwise it's shown as plain text (solo workspace
+// or a free-text owner). Renders nothing when there's no owner.
+function Assignee({ owner }) {
+  const people = useContext(PeopleContext);
+  if (!owner) return null;
+  const person = people[owner.trim().toLowerCase()];
+  if (person) {
+    return (
+      <span className={metaPillClass} title={`Assigned to ${person.name}`}>
+        <TaskAvatar name={person.name} avatar={person.avatar} />
+        {person.name}
+      </span>
+    );
+  }
+  return (
+    <span className={metaPillClass}>
+      <CircleUserRound className="size-[13px] text-muted-foreground/60" strokeWidth={1.75} />
+      {owner}
+    </span>
+  );
+}
+
+// Compact assignee for the dense list rows — avatar only (with a tooltip), or
+// nothing when unassigned / owner isn't a known teammate.
+function ListAssignee({ owner }) {
+  const people = useContext(PeopleContext);
+  if (!owner) return null;
+  const person = people[owner.trim().toLowerCase()];
+  if (!person) return null;
+  return (
+    <span title={`Assigned to ${person.name}`}>
+      <TaskAvatar name={person.name} avatar={person.avatar} className="size-[18px] text-[9px]" />
+    </span>
+  );
+}
+
+// Small circular profile picture with an initial fallback.
+function TaskAvatar({ name, avatar, className }) {
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  return (
+    <span className={cn(
+      'flex size-[15px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[8px] font-semibold text-muted-foreground/90 ring-1 ring-border/55',
+      className,
+    )}>
+      {avatar
+        ? <img src={avatar} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+        : initial}
+    </span>
+  );
+}
 
 // Priority — bare icon: arrow up (high), dash (medium), arrow down (low).
 const PRIORITY_STYLE = {
@@ -341,105 +523,4 @@ function TasksEmptyState() {
       </div>
     </div>
   );
-}
-
-/* ─── Parser ──────────────────────────────────────────────────────────── */
-
-/**
- * Parse Tasks.md (per the task-management skill format) into columns of cards.
- *
- * Rules:
- *   `## Heading`     — start a new column, reset current card.
- *   `### Heading`    — start a new card under the current column.
- *   `**Key:** Value` lines (separated by ` · `) — populate Owner/Priority/
- *                     Deadline/Completed metadata for the current card.
- *   anything else    — appended to the current card's description, with
- *                     leading/trailing blank lines collapsed.
- *
- * Content above the first `##` (e.g. a top-level `# Tasks` title) is ignored.
- */
-function parseKanban(md) {
-  if (!md) return [];
-  const columns = [];
-  let column = null;
-  let card   = null;
-  // descLines accumulates plain lines for the current card; we trim/join on flush.
-  let descLines = [];
-
-  const flushCard = () => {
-    if (!card) return;
-    card.description = descLines.join('\n').replace(/^\s+|\s+$/g, '');
-    descLines = [];
-  };
-
-  for (const rawLine of md.split('\n')) {
-    const line = rawLine.replace(/\s+$/, '');
-
-    const colMatch = /^##\s+(.+)/.exec(line);
-    if (colMatch) {
-      flushCard();
-      card = null;
-      column = { name: colMatch[1].trim(), cards: [] };
-      columns.push(column);
-      continue;
-    }
-
-    if (!column) continue;  // skip preamble before first column
-
-    const cardMatch = /^###\s+(.+)/.exec(line);
-    if (cardMatch) {
-      flushCard();
-      card = { title: cardMatch[1].trim() };
-      column.cards.push(card);
-      continue;
-    }
-
-    if (!card) continue;  // text inside a column but before any card — skip
-
-    // Metadata line: contains one or more `**Key:** Value` chunks.
-    const fields = parseMetadataLine(line);
-    if (fields) {
-      Object.assign(card, fields);
-      continue;
-    }
-
-    // Plain content → description. Skip leading blank lines but keep mid-paragraph ones.
-    if (line === '' && descLines.length === 0) continue;
-    descLines.push(line);
-  }
-  flushCard();
-  return columns;
-}
-
-const KEY_TO_FIELD = {
-  owner:     'owner',
-  priority:  'priority',
-  deadline:  'deadline',
-  completed: 'completed',
-};
-
-/**
- * Parse a metadata line like
- *   **Owner:** Alex · **Priority:** High · **Deadline:** 2026-05-02
- * Returns an object with keys from KEY_TO_FIELD, or null if the line doesn't
- * look like metadata.
- */
-function parseMetadataLine(line) {
-  // Quick reject: must contain at least one `**Key:**` token.
-  if (!/\*\*[A-Za-z]+:\*\*/.test(line)) return null;
-  const out = {};
-  let any = false;
-  // Each chunk: `**Key:** Value`. Allow chunks to be separated by ` · ` or `,`
-  // or newline-trimmed extra whitespace; metadata typically all on one line.
-  const re = /\*\*([A-Za-z]+):\*\*\s*([^*·]+?)(?=\s*(?:·|\*\*|$))/g;
-  let m;
-  while ((m = re.exec(line)) !== null) {
-    const key = m[1].toLowerCase();
-    const val = m[2].trim();
-    if (KEY_TO_FIELD[key] && val) {
-      out[KEY_TO_FIELD[key]] = val;
-      any = true;
-    }
-  }
-  return any ? out : null;
 }

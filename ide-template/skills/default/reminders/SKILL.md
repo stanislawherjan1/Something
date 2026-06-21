@@ -6,14 +6,25 @@ allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp
 
 # Reminders Protocol
 
-## Tasks vs Reminders
+## What a reminder is
+
+A reminder is a **timed action that YOU (the bot) perform** — at the due time *you* do something: send a nudge, or carry out an action and deliver the result. It is **not** a to-do item parked on a board.
+
+In team mode every reminder is **tied to a person** — by default the asker, optionally a teammate or everyone. Targeting someone means *at the due time you reach out to them* (notify them, or do something and hand them the result). It does **NOT** assign them a task or write anything to their `Tasks.md`. The reminder stays *your* scheduled job; the recipient is simply who it concerns. "Remind Jan about the deadline at 3pm" = *at 3pm, you ping Jan* — not "give Jan a to-do."
+
+## Tasks vs Reminders — don't conflate them
 
 | What the user means | System |
 |---|---|
-| "I need to do X" — their own to-do | **Tasks.md** (task-management skill) |
-| "Remind me at a specific time" — bot sends Telegram alert | **set_reminder** (this skill) |
+| "I need to do X" / "add X to the list" — a to-do, no fire time | **Tasks.md** (task-management skill) |
+| "At \<time\>, remind/notify \<someone\> about X" — a timed action | **set_reminder** (this skill) |
 
-**If no time is mentioned → it's a task, not a reminder.**
+- **No time mentioned → it's a task, not a reminder.**
+- **A reminder aimed at a teammate is still a reminder** — you deliver it at the fire time. Never turn "remind Jan at 3" into a `Tasks.md` entry Jan owns, and don't promote a Tasks.md item into a reminder unless the user gives a fire time.
+
+## Who it's for (team mode)
+
+Infer the recipient from wording, exactly like a relay. Default = the asker → omit `recipient`. Named people → their roster **slugs** (`["jan","kasia"]`, never display names/emails). "everyone"/"the team" → `"everyone"`. This only sets **who you notify / act for** at fire time — it never assigns work. Full param + permission rules → `references/set-params.md`.
 
 ## Tool usage
 

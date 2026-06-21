@@ -57,8 +57,6 @@ export default function UserMenu() {
             <span className="truncate text-[13.5px] font-medium leading-tight text-foreground">
               {name}
             </span>
-            {/* Role only matters in a collaborative workspace — no badge solo. */}
-            <RoleBadge role={me?.teamMode ? me?.role : null} />
           </div>
           <div className="truncate text-[11.5px] text-muted-foreground/70">
             {displayUser.email}
@@ -108,27 +106,6 @@ export default function UserMenu() {
         <UserSettingsModal me={me} onClose={() => setShowSettings(false)} />
       )}
     </div>
-  );
-}
-
-/**
- * Role chip — team-mode identity at a glance. Admin gets the accent; observer
- * reads as a muted "read-only" so the restricted role is visible, not hidden.
- */
-function RoleBadge({ role }) {
-  if (!role) return null;
-  const cfg = {
-    admin:    { label: 'Admin',     cls: 'bg-[--color-ring]/15 text-[--color-ring]' },
-    member:   { label: 'Member',    cls: 'bg-foreground/[0.08] text-foreground/65' },
-    observer: { label: 'Read-only', cls: 'bg-foreground/[0.08] text-muted-foreground/70' },
-  }[role] || { label: role, cls: 'bg-foreground/[0.08] text-foreground/65' };
-  return (
-    <span className={cn(
-      'shrink-0 rounded px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide leading-[1.4]',
-      cfg.cls,
-    )}>
-      {cfg.label}
-    </span>
   );
 }
 

@@ -227,7 +227,7 @@ scp bot/browser-watchdog.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 scp bot/ecosystem.config.js   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 
 # MCP servers
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/shopify-mcp' '$REMOTE_PATH/apps/meta-mcp' '$REMOTE_PATH/apps/seedream-mcp' '$REMOTE_PATH/apps/google-ads-mcp' '$REMOTE_PATH/apps/reminder-mcp' '$REMOTE_PATH/apps/nano-banana-mcp' '$REMOTE_PATH/apps/signwell-mcp' '$REMOTE_PATH/apps/workspace-api-mcp'"
+ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/shopify-mcp' '$REMOTE_PATH/apps/meta-mcp' '$REMOTE_PATH/apps/seedream-mcp' '$REMOTE_PATH/apps/google-ads-mcp' '$REMOTE_PATH/apps/reminder-mcp' '$REMOTE_PATH/apps/tasks-mcp' '$REMOTE_PATH/apps/nano-banana-mcp' '$REMOTE_PATH/apps/signwell-mcp' '$REMOTE_PATH/apps/workspace-api-mcp'"
 scp apps/shopify-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
 scp apps/shopify-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
 scp apps/meta-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
@@ -242,6 +242,8 @@ scp apps/nano-banana-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/nano-bana
 scp apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 scp apps/reminder-mcp/recur.cjs      "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 scp apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
+scp apps/tasks-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/tasks-mcp/"        || exit 1
+scp apps/tasks-mcp/package.json      "$HETZNER_HOST:$REMOTE_PATH/apps/tasks-mcp/"        || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/web-channel-mcp'"

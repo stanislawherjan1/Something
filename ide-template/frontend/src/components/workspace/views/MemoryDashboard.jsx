@@ -46,6 +46,39 @@ const NODE_RADIUS = { index: 9, card: 6.5, topic: 4.5 };
 // graph; strip it for any user-facing label.
 const cleanId = (id) => String(id || '').replace(/^yours:/, '');
 
+// Convex hull (Andrew's monotone chain). In/out: arrays of {x,y,...}. Returns
+// the boundary points in CCW order; used to wrap a loop around a node cluster.
+function convexHull(points) {
+  const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length <= 2) return pts;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+// Trace a rounded-rectangle path (ctx.roundRect isn't in every engine we ship to).
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  ctx.closePath();
+}
+
 export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const { botDisplayName } = useBranding();
   const [graph, setGraph] = useState(null);
@@ -58,6 +91,14 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const containerRef = useRef(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const graphRef = useRef(null);
+  // Live mirrors for the per-frame "yours" loop renderer (reads node positions
+  // each frame without re-creating the callback).
+  const displayedRef = useRef(null);
+  const scopeFilterRef = useRef('all');
+  const isDarkRef = useRef(false);
+  const avatarImgRef = useRef(null);   // your profile pic (round, over the Yours loop)
+  const logoImgRef = useRef(null);     // org logo (rounded square, over the Shared loop)
+  const posCacheRef = useRef(new Map());   // id → {x,y} so re-filtering doesn't re-explode the layout
 
   // Theme — pick label colour + node palette against the workspace's CSS
   // var values. NODE_COLOURS switches palette on light/dark; both render
@@ -102,33 +143,111 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   // The Shared/Yours filter + legend only appear then.
   const hasYours = useMemo(() => !!graph?.nodes?.some(n => n.scope === 'yours'), [graph]);
 
-  // Filter by scope (Shared/Yours) + the wiki-only toggle, and apply the
-  // search-highlight set. Edges whose endpoints got filtered out are dropped so
-  // the force layout doesn't choke on dangling links.
-  const { displayed, matchSet } = useMemo(() => {
-    if (!graph) return { displayed: null, matchSet: new Set() };
+  // Filter by scope (Shared/Yours) + the wiki-only toggle. We hand the graph
+  // FRESH clones every time: force-graph mutates the objects it's given
+  // (link.source/target become node refs, nodes get x/y/vx/vy), so reusing our
+  // canonical `graph` objects corrupts them — that's what was wiping the edges
+  // after a filter click. Cloning fixes it; seeding clones from a position
+  // cache keeps the layout from re-exploding on every filter change.
+  const displayed = useMemo(() => {
+    if (!graph) return null;
     let nodes = graph.nodes;
     if (scopeFilter !== 'all') nodes = nodes.filter(n => (n.scope || 'shared') === scopeFilter);
     const nodeIds = new Set(nodes.map(n => n.id));
-    const edges = (showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki'))
-      .filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+    const eid = (e) => (e && typeof e === 'object' ? e.id : e);   // d3 may have replaced ids with node refs
+    const links = (showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki'))
+      .filter(e => nodeIds.has(eid(e.source)) && nodeIds.has(eid(e.target)))
+      .map(e => ({ ...e, source: eid(e.source), target: eid(e.target) }));
+    const cache = posCacheRef.current;
+    const cloned = nodes.map(n => {
+      const c = cache.get(n.id);
+      // Once a node has a settled position, pin it (fx/fy) so toggling the
+      // filter just hides/shows nodes instead of re-running the layout and
+      // shuffling everything. First load (no cache yet) lays out normally.
+      return c ? { ...n, x: c.x, y: c.y, fx: c.x, fy: c.y } : { ...n };
+    });
+    return { nodes: cloned, links };
+  }, [graph, showBare, scopeFilter]);
+
+  // Search highlight — separate from `displayed` so typing doesn't re-clone the
+  // graph (which would reheat the layout on every keystroke).
+  const matchSet = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const matches = new Set();
-    if (q) {
-      for (const n of nodes) {
+    const m = new Set();
+    if (q && displayed) {
+      for (const n of displayed.nodes) {
         if (n.id.includes(q) || (n.name || '').toLowerCase().includes(q) || (n.preview || '').toLowerCase().includes(q)) {
-          matches.add(n.id);
+          m.add(n.id);
         }
       }
     }
-    return { displayed: { nodes, links: edges }, matchSet: matches };
-  }, [graph, query, showBare, scopeFilter]);
+    return m;
+  }, [displayed, query]);
+
+  // Mirror live state into refs for the per-frame loop renderer.
+  useEffect(() => { displayedRef.current = displayed; }, [displayed]);
+  useEffect(() => { scopeFilterRef.current = scopeFilter; }, [scopeFilter]);
+  useEffect(() => { isDarkRef.current = isDark; }, [isDark]);
+
+  // Cluster badge images: your profile pic (over the Yours loop) + the org logo
+  // (over the Shared loop). Loaded once; a light reheat repaints when ready.
+  useEffect(() => {
+    let cancelled = false;
+    const load = (url, ref) => {
+      if (!url) return;
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        ref.current = img;
+        graphRef.current?.d3ReheatSimulation?.();
+      };
+      img.src = url;
+    };
+    fetch('/api/me').then(r => (r.ok ? r.json() : null))
+      .then(me => { if (!cancelled) load(me?.avatarUrl, avatarImgRef); }).catch(() => {});
+    fetch('/api/branding').then(r => (r.ok ? r.json() : null))
+      .then(b => { if (!cancelled) load(b?.logoUrl || b?.iconUrl, logoImgRef); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Keep the two clusters from drifting apart: a mild pull toward the origin
+  // (custom force, no d3-force import) so Shared can't be dragged miles from
+  // Yours, and a capped repulsion range so distant nodes don't shove each other
+  // to infinity. Re-applied whenever the graph data swaps (filter changes).
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg || !displayed) return;
+    let fnodes = [];
+    const recenter = (alpha) => {
+      for (const n of fnodes) { n.vx -= n.x * 0.05 * alpha; n.vy -= n.y * 0.05 * alpha; }
+    };
+    recenter.initialize = (ns) => { fnodes = ns; };
+    fg.d3Force('recenter', recenter);
+    const charge = fg.d3Force('charge');
+    if (charge?.distanceMax) charge.distanceMax(280);
+  }, [displayed, size.w]);
+
+  // Re-centre the camera on whatever's visible whenever the scope filter
+  // changes (or on first paint) — so picking "Shared" frames the shared cluster
+  // instead of leaving it off to one side. No animation (duration 0); generous
+  // padding so it opens centred and slightly zoomed out.
+  useEffect(() => {
+    const fg = graphRef.current;
+    if (!fg || !size.w) return;
+    const t = setTimeout(() => fg.zoomToFit?.(0, 110), 90);
+    return () => clearTimeout(t);
+  }, [scopeFilter, size.w]);
 
   const onNodeClick = useCallback((node) => {
     if (node) setActiveNode(node);
   }, []);
 
   const drawNode = useCallback((node, ctx, globalScale) => {
+    // Remember where the layout settled each node, so a filter change can seed
+    // the next render from here instead of re-exploding from the centre.
+    if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+      posCacheRef.current.set(node.id, { x: node.x, y: node.y });
+    }
     const colour = NODE_COLOURS[node.kind] || NODE_COLOURS.topic;
     const radius = NODE_RADIUS[node.kind] || 5;
     const isMatch = matchSet.size > 0 && matchSet.has(node.id);
@@ -154,15 +273,8 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // 'Yours' (per-user, private) nodes get a coloured accent ring so they
-    // stand out from the shared team memory at a glance.
-    if (node.scope === 'yours') {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, radius + 2.5, 0, 2 * Math.PI, false);
-      ctx.lineWidth = 1.5 / globalScale;
-      ctx.strokeStyle = dimmed ? 'rgba(56,189,248,0.35)' : (isDark ? '#38bdf8' : '#0284c7');
-      ctx.stroke();
-    }
+    // Clusters are framed by a single loop drawn behind them
+    // (see drawHulls / onRenderFramePre), not a per-node ring.
 
     // Label — only at high zoom to avoid clutter at the default view.
     const showLabel = globalScale > 1.6 || node.kind === 'index' || matchSet.has(node.id);
@@ -176,6 +288,118 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       ctx.fillText(label, node.x, node.y + radius + 2.5);
     }
   }, [matchSet, isDark]);
+
+  // Draw a soft loop around each scope's cluster, with a badge floating above it:
+  // a round profile picture over "Yours", a rounded-square org logo over "Shared".
+  // Runs every frame (onRenderFramePre) so the loop tracks the live force layout.
+  const drawHulls = useCallback((ctx, globalScale) => {
+    const d = displayedRef.current;
+    if (!d?.nodes?.length) return;
+    const filter = scopeFilterRef.current;
+    // Loops + badges only frame the split in the combined "All" view. Once you
+    // filter to a single scope they're redundant — skip them.
+    if (filter !== 'all') return;
+    const dark = isDarkRef.current;
+
+    // Monochrome + subtle: both loops share one neutral foreground tone, faint
+    // fill. Shared vs Yours is told apart by the badge (square logo / round pic),
+    // not by colour.
+    const stroke = dark ? 'rgba(226,232,240,0.28)' : 'rgba(15,23,42,0.22)';
+    const fill   = dark ? 'rgba(226,232,240,0.035)' : 'rgba(15,23,42,0.022)';
+    const SCOPES = {
+      shared: { img: logoImgRef.current, shape: 'square' },
+      yours:  { img: avatarImgRef.current, shape: 'circle' },
+    };
+
+    for (const scope of ['shared', 'yours']) {
+      if (filter !== 'all' && filter !== scope) continue;
+      const style = SCOPES[scope];
+      const pts = d.nodes
+        .filter(n => (n.scope || 'shared') === scope && Number.isFinite(n.x) && Number.isFinite(n.y))
+        .map(n => ({ x: n.x, y: n.y, r: NODE_RADIUS[n.kind] || 5 }));
+      if (pts.length < 1) continue;
+
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const PAD = 20;
+
+      // Padded outline: a circle for 1–2 points, else an expanded convex hull.
+      let outline;
+      if (pts.length <= 2) {
+        let rad = 0;
+        for (const p of pts) rad = Math.max(rad, Math.hypot(p.x - cx, p.y - cy) + p.r);
+        rad += PAD;
+        outline = [];
+        for (let i = 0; i < 36; i++) { const a = (i / 36) * 2 * Math.PI; outline.push({ x: cx + rad * Math.cos(a), y: cy + rad * Math.sin(a) }); }
+      } else {
+        outline = convexHull(pts).map(p => {
+          const dx = p.x - cx, dy = p.y - cy;
+          const len = Math.hypot(dx, dy) || 1;
+          const grow = PAD + p.r;
+          return { x: p.x + (dx / len) * grow, y: p.y + (dy / len) * grow };
+        });
+      }
+
+      // Closed loop with lightly rounded corners — straight edges, soft joints
+      // (between a sharp polygon and a full blob).
+      const n = outline.length;
+      const ROUND = 10;   // graph-unit corner radius
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const prev = outline[(i - 1 + n) % n];
+        const cur = outline[i];
+        const next = outline[(i + 1) % n];
+        const lp = Math.hypot(cur.x - prev.x, cur.y - prev.y) || 1;
+        const ln = Math.hypot(next.x - cur.x, next.y - cur.y) || 1;
+        const dp = Math.min(ROUND, lp / 2), dn = Math.min(ROUND, ln / 2);
+        const p1 = { x: cur.x + (prev.x - cur.x) / lp * dp, y: cur.y + (prev.y - cur.y) / lp * dp };
+        const p2 = { x: cur.x + (next.x - cur.x) / ln * dn, y: cur.y + (next.y - cur.y) / ln * dn };
+        if (i === 0) ctx.moveTo(p1.x, p1.y); else ctx.lineTo(p1.x, p1.y);
+        ctx.quadraticCurveTo(cur.x, cur.y, p2.x, p2.y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = 1.1 / globalScale;
+      ctx.setLineDash([5 / globalScale, 4 / globalScale]);
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Badge floating above the cluster's centre (not the topmost vertex), with
+      // breathing room below it. Small, bare image + a light ring.
+      let topY = Infinity;
+      for (const p of outline) if (p.y < topY) topY = p.y;
+      const R = 16 / globalScale;
+      const bx = cx, by = topY - 10 / globalScale - R;
+
+      const drawBadgeShape = () => {
+        if (style.shape === 'circle') ctx.arc(bx, by, R, 0, 2 * Math.PI);
+        else roundRectPath(ctx, bx - R, by - R, R * 2, R * 2, R * 0.42);
+      };
+
+      // Badge renders fully opaque regardless of any alpha left on the context.
+      ctx.globalAlpha = 1;
+
+      // Opaque backing so a transparent logo doesn't blend with the graph.
+      ctx.beginPath(); drawBadgeShape();
+      ctx.fillStyle = dark ? '#0b1220' : '#ffffff';
+      ctx.fill();
+
+      if (style.img) {
+        ctx.save();
+        ctx.beginPath(); drawBadgeShape(); ctx.clip();
+        ctx.drawImage(style.img, bx - R, by - R, R * 2, R * 2);
+        ctx.restore();
+      }
+
+      // Light contour around the badge.
+      ctx.beginPath(); drawBadgeShape();
+      ctx.lineWidth = 1 / globalScale;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    }
+  }, []);
 
   const linkColour = useCallback((link) => {
     // Warm-neutral grays for edges — faintly off the slate-blue side, but
@@ -202,16 +426,39 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     };
   }, [displayed]);
 
+  const scopeFilterControl = hasYours && (
+    <div className="inline-flex items-center overflow-hidden rounded-md border border-border/55 text-[11.5px] font-medium">
+      {[['all', 'All'], ['shared', 'Shared'], ['yours', 'Yours']].map(([s, label]) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => setScopeFilter(s)}
+          className={cn(
+            'px-2.5 py-1 transition-colors',
+            scopeFilter === s
+              ? 'bg-foreground/10 text-foreground'
+              : 'text-muted-foreground/70 hover:bg-foreground/5',
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const searchInput = (
-    <div className="relative">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/55" strokeWidth={1.75} />
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search memory"
-        className="h-7 w-56 rounded-md border border-border/55 bg-background pl-7 pr-2 text-[12.5px] text-foreground outline-none transition-colors focus:border-foreground/40"
-      />
+    <div className="flex items-center gap-2">
+      {scopeFilterControl}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/55" strokeWidth={1.75} />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search memory"
+          className="h-7 w-56 rounded-md border border-border/55 bg-background pl-7 pr-2 text-[12.5px] text-foreground outline-none transition-colors focus:border-foreground/40"
+        />
+      </div>
     </div>
   );
 
@@ -259,6 +506,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
               nodeRelSize={4}
               nodeCanvasObject={drawNode}
               nodeCanvasObjectMode={() => 'replace'}
+              onRenderFramePre={drawHulls}
               nodePointerAreaPaint={(node, color, ctx) => {
                 const r = (NODE_RADIUS[node.kind] || 5) + 3;
                 ctx.fillStyle = color;
@@ -271,7 +519,9 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
               linkDirectionalArrowLength={3}
               linkDirectionalArrowRelPos={1}
               linkDirectionalArrowColor={linkColour}
-              cooldownTicks={120}
+              warmupTicks={150}
+              cooldownTicks={40}
+              d3VelocityDecay={0.32}
               onNodeClick={onNodeClick}
               onNodeHover={setHover}
               backgroundColor="rgba(0,0,0,0)"
@@ -300,25 +550,6 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
             <Eye className="size-3" strokeWidth={1.75} />
             {showBare ? 'All edges' : 'Wiki only'}
           </button>
-          {hasYours && (
-            <div className="inline-flex items-center overflow-hidden rounded-md border border-border/55 text-[11px] font-medium">
-              {[['all', 'All'], ['shared', '🌐 Shared'], ['yours', '👤 Yours']].map(([s, label]) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setScopeFilter(s)}
-                  className={cn(
-                    'px-2 py-1 transition-colors',
-                    scopeFilter === s
-                      ? 'bg-foreground/10 text-foreground'
-                      : 'text-muted-foreground/70 hover:bg-foreground/5',
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
           {ready && (
             <span className="text-[11px] text-muted-foreground/65">
               {counts.nodes} nodes · {counts.wiki} links
@@ -329,12 +560,6 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
           <Legend fill={NODE_COLOURS.index.fill} stroke={NODE_COLOURS.index.stroke} label="INDEX" />
           <Legend fill={NODE_COLOURS.card.fill}  stroke={NODE_COLOURS.card.stroke}  label="Card"  />
           <Legend fill={NODE_COLOURS.topic.fill} stroke={NODE_COLOURS.topic.stroke} label="Topic" />
-          {hasYours && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-[3px] text-[10.5px] font-medium text-foreground/75">
-              <span className="inline-block size-2 rounded-full" style={{ boxShadow: 'inset 0 0 0 1.5px #0284c7' }} />
-              Yours
-            </span>
-          )}
         </div>
       </div>
 

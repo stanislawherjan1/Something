@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
-import { SkeletonTileGrid } from '@/components/ui/Skeleton';
+import { SkeletonCardGrid } from '@/components/ui/Skeleton';
 
 /**
  * Skills dashboard — visual parity with IntegrationsDashboard.
@@ -121,7 +121,7 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
             it behaves, or add new ones in <span className="font-mono text-[12.5px] text-foreground/75">.claude/skills/</span>.
           </p>
 
-          {isInitialLoad && <SkeletonTileGrid count={6} />}
+          {isInitialLoad && <SkeletonCardGrid count={6} />}
 
           {error && !data && (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">

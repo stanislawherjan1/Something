@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound, Send } from 'lucide-react';
+import { Users, Loader2, Trash2, UserPlus, Shield, AlertTriangle, X, Lock, UsersRound, UserRound, Send, Pencil, Check, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
 import { useApi, invalidate } from '@/lib/useApi';
-import { SkeletonRow } from '@/components/ui/Skeleton';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 /**
  * TeamDashboard — file-based whitelist management.
@@ -22,6 +22,7 @@ export default function TeamDashboard({ sidebarOpen }) {
   const { user } = useAuth();
   const { data, loading, error, reload: reloadApi } = useApi('/api/team');
   const [adding, setAdding]     = useState(false);
+  const [editing, setEditing]   = useState(null);
   const [removing, setRemoving] = useState(null);
   const [switching, setSwitching] = useState(false);
   const [modeError, setModeError] = useState(null);
@@ -72,7 +73,7 @@ export default function TeamDashboard({ sidebarOpen }) {
       <EditorHeader icon={UsersRound} title="Team" sidebarOpen={sidebarOpen} />
 
       <div className="flex-1 overflow-auto">
-        <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
+        <div className="flex min-h-full flex-col gap-5 px-6 pb-8 pt-2">
           {!isInitialLoad && data && (
             <ModeCard
               teamMode={teamMode}
@@ -83,22 +84,11 @@ export default function TeamDashboard({ sidebarOpen }) {
             />
           )}
 
-          {!isInitialLoad && data && teamMode && (
-          <div className="flex flex-col gap-4">
-            <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
-              Anyone on this list can sign in to the workspace with their Google account.
-              {isAdmin
-                ? ' Admins can invite, promote, and remove team members.'
-                : ' Only admins can invite or remove members.'}
-            </p>
-          </div>
-          )}
-
           {isInitialLoad && (
-            <div className="overflow-hidden rounded-xl border border-border/60 bg-card divide-y divide-border/60">
-              <SkeletonRow />
-              <SkeletonRow />
-              <SkeletonRow />
+            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+              <TeamCardSkeleton />
+              <TeamCardSkeleton />
+              <TeamCardSkeleton />
             </div>
           )}
 
@@ -116,43 +106,29 @@ export default function TeamDashboard({ sidebarOpen }) {
 
           {data && teamMode && entries.length > 0 && (
             <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
-              {entries.map((entry, idx) => (
+              {entries.map((entry) => (
                 <div key={entry.email} className="rounded-xl border border-border/60 bg-card transition-all duration-150 hover:border-border hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
                   <TeamRow
                     entry={entry}
                     isMe={entry.email === myEmail}
                     isLastAdmin={entry.role === 'admin' && adminCount === 1}
                     canManage={isAdmin}
+                    onEdit={() => setEditing(entry)}
                     onRemove={() => setRemoving(entry)}
-                    onChangeRole={async (role) => {
-                      try {
-                        const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
-                          method:  'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body:    JSON.stringify({ role }),
-                        });
-                        const data = await resp.json().catch(() => ({}));
-                        if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-                        reload();
-                      } catch (err) {
-                        alert(err.message);   // simple — admin operation, low frequency
-                      }
-                    }}
-                    onChangeTelegram={async (patch) => {
-                      const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
-                        method:  'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body:    JSON.stringify(patch),
-                      });
-                      const data = await resp.json().catch(() => ({}));
-                      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-                      reload();
-                    }}
                   />
                 </div>
               ))}
               {isAdmin && <AddMemberTile onClick={() => setAdding(true)} />}
             </div>
+          )}
+
+          {!isInitialLoad && data && teamMode && entries.length > 0 && (
+            <p className="mx-auto mt-auto max-w-xl text-balance pt-6 text-center text-[12px] leading-relaxed text-muted-foreground/55">
+              Anyone on this list can sign in to the workspace with their Google account.
+              {isAdmin
+                ? ' Admins can invite, promote, and remove team members.'
+                : ' Only admins can invite or remove members.'}
+            </p>
           )}
         </div>
       </div>
@@ -161,6 +137,15 @@ export default function TeamDashboard({ sidebarOpen }) {
         <AddMemberModal
           onClose={() => setAdding(false)}
           onSuccess={() => { setAdding(false); reload(); }}
+        />
+      )}
+      {editing && (
+        <EditMemberModal
+          entry={editing}
+          isMe={editing.email === myEmail}
+          isLastAdmin={editing.role === 'admin' && adminCount === 1}
+          onClose={() => setEditing(null)}
+          onSuccess={() => { setEditing(null); reload(); }}
         />
       )}
       {removing && (
@@ -194,16 +179,14 @@ function ModeCard({ teamMode, isAdmin, busy, error, onChange }) {
     <div className="rounded-xl border border-border/60 bg-card px-5 py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-foreground/70">
-            {teamMode
-              ? <UsersRound className="size-4" strokeWidth={1.75} />
-              : <UserRound className="size-4" strokeWidth={1.75} />}
+          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-foreground/70">
+            <Globe className="size-[18px]" strokeWidth={1.75} />
           </div>
           <div className="min-w-0">
-            <div className="text-[14px] font-semibold text-foreground/90">
+            <div className="text-[14.5px] font-semibold text-foreground/90">
               {teamMode ? 'Collaborative workspace' : 'Solo workspace'}
             </div>
-            <p className="mt-0.5 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground/80">
+            <p className="mt-0.5 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground/75">
               {teamMode
                 ? 'Teammates can sign in — each gets their own files plus the shared files.'
                 : 'Just you. Turn on collaboration to invite teammates and split Shared vs. Your files.'}
@@ -319,73 +302,96 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
 
 // ─── Row ──────────────────────────────────────────────────────────────────
 
-function TeamRow({ entry, isMe, isLastAdmin, canManage, onRemove, onChangeRole, onChangeTelegram }) {
+function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
   const { email, role, addedAt, addedBy, avatarUrl, displayName } = entry;
+  const canRemove = canManage && !isMe && !isLastAdmin;
   return (
-    <div className="group flex flex-col items-center gap-3 px-4 py-4 text-center transition-colors hover:bg-muted/15">
-      <LargeAvatar email={email} avatarUrl={avatarUrl} />
-      <div className="flex flex-col gap-1 w-full">
-        <div className="flex items-center gap-2 justify-center text-[15px] font-bold text-foreground/98">
-          {displayName || email.split('@')[0]}
-          {isMe && (
-            <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/85">
-              you
-            </span>
-          )}
+    <div className="flex h-full flex-col">
+      {/* Header - avatar on the left, role on the right */}
+      <div className="flex items-start justify-between gap-3 pl-4 pr-[18px] pt-4 pb-3">
+        <Avatar email={email} avatarUrl={avatarUrl} className="size-12 text-[18px]" />
+        <RoleBadge role={role} />
+      </div>
+
+      {/* Identity - name + channels, email, invited meta */}
+      <div className="flex flex-1 flex-col px-4">
+        <div className="flex items-center justify-between gap-2 pr-2 text-[16px] font-semibold leading-tight text-foreground/90">
+          <span className="truncate">{displayName || email.split('@')[0]}</span>
+          <ChannelIcons entry={entry} />
         </div>
-        <div className="text-[12px] text-muted-foreground/70">
+        <div className="mt-1.5 truncate text-[12.5px] text-muted-foreground/70">
           {email}
         </div>
         {addedAt && (
-          <div className="text-[11px] text-muted-foreground/60">
+          <div className="mt-2.5 text-[11px] text-muted-foreground/55">
             invited {formatRelative(new Date(addedAt))}
             {addedBy && addedBy !== 'bootstrap' && ` by ${addedBy}`}
           </div>
         )}
-        <TelegramContact entry={entry} canManage={canManage} onChange={onChangeTelegram} />
       </div>
 
-      <div className="flex items-center gap-2 w-full justify-center">
-        <RolePill
-          role={role}
-          canManage={canManage && !isMe && !isLastAdmin}
-          onChange={onChangeRole}
-        />
+      {/* Footer - actions, mirrors the integration tile action row */}
+      {canManage && (
+        <div className="px-4 pb-4 pt-3.5">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+            >
+              <Pencil className="size-3.5" strokeWidth={1.75} />
+              Edit
+            </button>
+            {canRemove && (
+              <button
+                type="button"
+                onClick={onRemove}
+                title="Remove member"
+                aria-label="Remove member"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/40 text-muted-foreground/65 transition-colors hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-        {canManage && !isMe && !isLastAdmin && (
-          <button
-            type="button"
-            onClick={onRemove}
-            title="Remove member"
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/55 transition-all hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="size-3.5" strokeWidth={1.75} />
-          </button>
-        )}
+// Loading placeholder matching a TeamRow card (avatar + role on top, name /
+// email / invited below, an action footer).
+function TeamCardSkeleton() {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card">
+      <div className="flex items-start justify-between gap-3 pl-4 pr-[18px] pt-4 pb-3">
+        <Skeleton className="size-12 rounded-full" />
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </div>
+      <div className="flex flex-col gap-2 px-4">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+      <div className="px-4 pb-4 pt-3.5">
+        <Skeleton className="h-8 w-full rounded-md" />
       </div>
     </div>
   );
 }
 
-function LargeAvatar({ email, avatarUrl }) {
-  const initial = (email || '?').trim().charAt(0).toUpperCase();
-  const palette = [
-    'from-yellow-200 to-amber-300',
-    'from-amber-200 to-orange-300',
-    'from-orange-200 to-amber-300',
-    'from-yellow-200 to-orange-300',
-  ];
-  const idx = (email || '').charCodeAt(0) % palette.length;
+function RoleBadge({ role }) {
   return (
-    <div className={cn(
-      'flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br',
-      'text-[28px] font-semibold text-foreground ring-2 ring-border/60',
-      palette[idx],
+    <span className={cn(
+      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider',
+      role === 'admin'
+        ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+        : 'bg-muted/60 text-muted-foreground/80',
     )}>
-      {avatarUrl
-        ? <img src={avatarUrl} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        : initial}
-    </div>
+      {role === 'admin' && <Shield className="size-2.5" strokeWidth={2.5} />}
+      {role}
+    </span>
   );
 }
 
@@ -418,68 +424,36 @@ function RolePill({ role, canManage, onChange }) {
   );
 }
 
-// Per-member cross-surface contact: Telegram chat id + preferred relay surface.
-// Admins edit inline; everyone else sees a compact read-only hint (the chat id
-// itself is redacted server-side unless it's your own row).
-function TelegramContact({ entry, canManage, onChange }) {
-  const [chatId, setChatId] = useState(entry.telegramChatId || '');
-  const [busy, setBusy]     = useState(false);
-  const [err, setErr]       = useState(null);
-  useEffect(() => { setChatId(entry.telegramChatId || ''); }, [entry.telegramChatId]);
-
-  const save = async (patch) => {
-    setBusy(true); setErr(null);
-    try { await onChange(patch); }
-    catch (e) { setErr(e.message); }
-    finally { setBusy(false); }
-  };
-
-  if (!canManage) {
-    const linked  = !!entry.telegramChatId;
-    const surface = entry.preferredSurface;
-    return (
-      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
-        <Send className="size-3 shrink-0" strokeWidth={1.75} />
-        <span>{linked ? 'Telegram linked' : 'no Telegram'}</span>
-        {surface && <span>· prefers {surface}</span>}
-      </div>
-    );
-  }
-
-  // Admins manage the LINK (the chat id) here. The preferred channel is the
-  // teammate's OWN choice (set via their "Connect your Telegram" prompt), shown
-  // read-only so it's clear it's their preference — not the admin's to pick.
+// Channel icons — where this teammate can be reached. Web is always available
+// (everyone signs into the workspace); Telegram only when linked. The preferred
+// surface gets a subtle accent so it reads as "primary".
+function ChannelIcons({ entry }) {
+  const linked  = !!entry.telegramChatId;
+  const surface = entry.preferredSurface;
+  const webPrimary = surface === 'web' || surface === 'both' || !linked;
+  const tgPrimary  = linked && (surface === 'telegram' || surface === 'both');
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-      <Send className="size-3 shrink-0 text-muted-foreground/55" strokeWidth={1.75} />
-      <input
-        value={chatId}
-        onChange={(e) => setChatId(e.target.value)}
-        onBlur={() => {
-          const next = chatId.trim();
-          if (next !== (entry.telegramChatId || '')) save({ telegramChatId: next });
-        }}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-        placeholder="Telegram chat id"
-        inputMode="numeric"
-        title="Their Telegram chat id (the DM with the bot)"
-        className={cn(
-          'w-32 rounded-md border border-border/50 bg-background px-2 py-0.5 text-[11.5px]',
-          'transition-colors hover:border-foreground/25 focus:outline-none focus:ring-1 focus:ring-foreground/20',
-        )}
+    <div className="flex shrink-0 items-center gap-2">
+      <Globe
+        className={cn('size-3', webPrimary ? 'text-foreground/55' : 'text-muted-foreground/40')}
+        strokeWidth={1.75}
+        aria-label="Web workspace"
+        title="Web workspace"
       />
-      {entry.preferredSurface && (
-        <span className="text-[10.5px] text-muted-foreground/55" title="The teammate's own preferred channel">
-          prefers {entry.preferredSurface === 'both' ? 'web + telegram' : entry.preferredSurface}
-        </span>
+      {linked && (
+        <Send
+          className={cn('size-3', tgPrimary ? 'text-foreground/55' : 'text-muted-foreground/45')}
+          strokeWidth={1.75}
+          aria-label="Telegram linked"
+          title={surface === 'both' ? 'Telegram linked · prefers web + telegram'
+               : surface ? `Telegram linked · prefers ${surface}` : 'Telegram linked'}
+        />
       )}
-      {busy && <Loader2 className="size-3 animate-spin text-muted-foreground/50" />}
-      {err && <span className="text-[10.5px] text-destructive">{err}</span>}
     </div>
   );
 }
 
-function Avatar({ email, avatarUrl }) {
+function Avatar({ email, avatarUrl, className }) {
   const initial = (email || '?').trim().charAt(0).toUpperCase();
   const palette = [
     'from-yellow-200 to-amber-300',
@@ -490,9 +464,10 @@ function Avatar({ email, avatarUrl }) {
   const idx = (email || '').charCodeAt(0) % palette.length;
   return (
     <div className={cn(
-      'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br',
-      'text-[12px] font-semibold text-foreground ring-1 ring-border/60',
+      'flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br',
+      'text-[22px] font-semibold text-foreground ring-1 ring-border/60',
       palette[idx],
+      className,
     )}>
       {avatarUrl
         ? <img src={avatarUrl} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -502,6 +477,172 @@ function Avatar({ email, avatarUrl }) {
 }
 
 // ─── Modals ───────────────────────────────────────────────────────────────
+
+// Custom role selector - radio cards (not the native select), so the picker
+// matches the rest of the polished UI. Disabled when the role can't change
+// (editing yourself, or the last admin).
+function RolePicker({ value, onChange, disabled }) {
+  const options = [
+    { value: 'member', label: 'Member', desc: 'Can sign in and use the workspace', icon: UserRound },
+    { value: 'admin',  label: 'Admin',  desc: 'Can also invite and remove others', icon: Shield },
+  ];
+  return (
+    <div className="grid gap-2">
+      {options.map((opt) => {
+        const Icon = opt.icon;
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all',
+              disabled && 'cursor-not-allowed opacity-60',
+              active
+                ? 'border-foreground/30 bg-muted/40 ring-1 ring-foreground/15'
+                : 'border-border/55 hover:border-foreground/20 hover:bg-muted/25',
+            )}
+          >
+            <div className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md transition-colors',
+              active ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground/70',
+            )}>
+              <Icon className="size-4" strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-medium text-foreground/90">{opt.label}</div>
+              <div className="text-[11.5px] text-muted-foreground/65">{opt.desc}</div>
+            </div>
+            <div className={cn(
+              'flex size-[18px] shrink-0 items-center justify-center rounded-full border transition-colors',
+              active ? 'border-foreground bg-foreground' : 'border-border/70',
+            )}>
+              {active && <Check className="size-2.5 text-background" strokeWidth={3.5} />}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
+  const [role, setRole]       = useState(entry.role || 'member');
+  const [chatId, setChatId]   = useState(entry.telegramChatId || '');
+  const [busy, setBusy]       = useState(false);
+  const [error, setError]     = useState(null);
+
+  const name = entry.displayName || (entry.email || '').split('@')[0];
+  const surface = entry.preferredSurface;
+  const surfaceLabel = surface === 'both' ? 'web + telegram' : surface;
+  const roleLocked = isMe || isLastAdmin;
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const patch = {};
+      if (!roleLocked && role !== entry.role) patch.role = role;
+      const nextChat = chatId.trim();
+      if (nextChat !== (entry.telegramChatId || '')) patch.telegramChatId = nextChat;
+      if (Object.keys(patch).length === 0) { onClose(); return; }
+      const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(patch),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      onSuccess();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onClose} ariaLabel="Edit team member">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <Avatar email={entry.email} avatarUrl={entry.avatarUrl} className="size-9 text-[14px]" />
+            <div className="flex flex-col">
+              <h2 className="text-[14px] font-semibold leading-tight text-foreground/90">{name}</h2>
+              <span className="text-[12px] text-muted-foreground/65">{entry.email}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85"
+          >
+            <X className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-5 py-4">
+          <div className="flex flex-col gap-2">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+              Role
+            </span>
+            <RolePicker value={role} onChange={setRole} disabled={roleLocked} />
+            {roleLocked && (
+              <span className="text-[11.5px] text-muted-foreground/65">
+                {isMe ? "You can't change your own role." : "This is the last admin, promote someone else first."}
+              </span>
+            )}
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+              Telegram chat id
+            </span>
+            <input
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              placeholder="e.g. 123456789"
+              inputMode="numeric"
+              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
+            />
+          </label>
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
 
 function AddMemberModal({ onClose, onSuccess }) {
   const [email, setEmail] = useState('');

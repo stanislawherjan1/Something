@@ -85,6 +85,63 @@ export default function filesRouter() {
     });
   });
 
+  // GET /api/files/search?q=<query> — workspace-wide search over file NAMES and
+  // text CONTENT. Walks the same visible tree as /files/tree (hidden + system
+  // paths excluded) and gates every hit through actorCanAccess, so it can never
+  // surface a file the user couldn't already open. Binary/oversized files are
+  // skipped (readTextFile refuses them). Bounded so a huge tree can't hang the
+  // request; the UI debounces.
+  router.get('/files/search', (req, res) => {
+    const q = (typeof req.query.q === 'string' ? req.query.q : '').trim();
+    if (q.length < 2) return res.json({ ok: true, results: [] });
+    const ql = q.toLowerCase();
+    const rootAbs = resolveSafePath('');
+    if (!rootAbs) return res.status(400).json({ error: 'invalid path' });
+
+    const MAX_RESULTS = 40;
+    const MAX_DIRS = 4000;
+    const MAX_CONTENT_FILES = 1200;
+    const results = [];
+    let dirsWalked = 0, contentScanned = 0;
+
+    const queue = [{ abs: rootAbs, rel: '' }];
+    while (queue.length && results.length < MAX_RESULTS && dirsWalked < MAX_DIRS) {
+      const { abs, rel } = queue.shift();
+      dirsWalked++;
+      let entries;
+      try { entries = listDir(abs, { includeHidden: false }); }
+      catch { continue; }
+      for (const e of entries) {
+        if (results.length >= MAX_RESULTS) break;
+        const childRel = rel ? `${rel}/${e.name}` : e.name;
+        const childAbs = resolveSafePath(childRel);
+        if (!childAbs || !actorCanAccess(childAbs, req)) continue;
+        if (e.type === 'dir') { queue.push({ abs: childAbs, rel: childRel }); continue; }
+
+        const nameMatch = e.name.toLowerCase().includes(ql);
+        let snippet = null, line = null;
+        if (contentScanned < MAX_CONTENT_FILES) {
+          contentScanned++;
+          const r = readTextFile(childAbs);
+          if (r.kind === 'ok' && typeof r.content === 'string') {
+            const idx = r.content.toLowerCase().indexOf(ql);
+            if (idx !== -1) {
+              const lineStart = r.content.lastIndexOf('\n', idx) + 1;
+              let lineEnd = r.content.indexOf('\n', idx);
+              if (lineEnd === -1) lineEnd = r.content.length;
+              line = r.content.slice(0, idx).split('\n').length;
+              snippet = r.content.slice(lineStart, lineEnd).trim().slice(0, 160);
+            }
+          }
+        }
+        if (nameMatch || snippet) results.push({ path: childRel, name: e.name, type: 'file', line, snippet, nameMatch });
+      }
+    }
+    // File-name matches rank above content-only matches.
+    results.sort((a, b) => (a.nameMatch === b.nameMatch ? 0 : a.nameMatch ? -1 : 1));
+    res.json({ ok: true, results: results.map(({ nameMatch, ...r }) => r) });
+  });
+
   router.post('/files/mkdir', (req, res) => {
     const { path: relPath } = req.body || {};
     if (typeof relPath !== 'string' || !relPath) {

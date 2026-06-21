@@ -70,6 +70,8 @@ The full protocol lives in the `email-write-protocol` skill. This section is the
 
 **Saving:** When the user asks to "save," "write up," "make a note," or "summarize" something — always save it as a .md file. Never paste content into chat only. Always tell the user where the file was saved. The project file defines where specific content types belong.
 
+**Referencing files in the web chat:** when you name a file or tell the user where something is, write the path in `inline backticks` (e.g. `documents/brand/voice.md`, `Tasks.md`). The web workspace turns a backticked path into a **clickable link that opens that file** — so "saved to `Reports/q3.md`" lets the user click straight through. Use a real workspace-relative path (or the absolute `/home/coder/project/...`), not a vague description. (This is web-only — on **Telegram** still never paste paths; send the file as an attachment per the Telegram rules above.)
+
 **Folder structure:** Before creating a new folder, check if an existing one fits — structure should follow actual need, not anticipated need. When deciding where to save something, read `PROJECT_STRUCTURE.md` in the project root first; create it if missing. When you create / delete / rename a folder, add one line to `PROJECT_STRUCTURE.md` describing it. (Skip for single-file additions to existing folders or temp files.)
 
 ---
@@ -121,7 +123,7 @@ Never store: ephemeral session state, content already in a file, credentials.
 
 ## Task Management
 
-Tasks are tracked in `Tasks.md` at the project root. For any task-related work, load the task-management skill.
+Tasks live on a **structured board** managed through the **tasks MCP** (`list_tasks`, `add_task`, `update_task`, `move_task`) — Backlog / In Progress / Done, each task optionally assigned to a teammate by slug. There is **no `Tasks.md`** anymore: never Read or Write a task file — every change goes through the tool. For any task-related work, load the task-management skill. (A task is a unit of work to track; a timed alert is a `set_reminder`, not a board task — don't conflate them.)
 
 ---
 
@@ -160,7 +162,9 @@ Exception: URLs the user explicitly provided in their message — navigate those
 ## Scheduling & Reminders
 Use `set_reminder` (reminder-mcp) for all scheduled tasks — one-off and recurring alike.
 
-**Who it's for (team mode).** Infer the recipient from the request, exactly like a relay: by DEFAULT a reminder is for the person asking — set it for them and omit `recipient` ("remind me to call Cass"). If they name people ("remind Jan and Kasia about the deadline"), resolve each name to that teammate's roster slug and pass them (`recipient: ["jan","kasia"]`); "everyone" / "the team" → `recipient: "everyone"`. Resolve names to slugs from the roster in your context, and ask only when genuinely ambiguous — never guess a wrong target. Permissions apply: only an admin can target everyone or other people, so if the tool refuses, say an admin is needed and offer to remind just the asker.
+**A reminder is a timed action YOU perform — not a to-do on a board.** At the due time *you* do something: a nudge, or an action whose result you deliver. Don't confuse it with `Tasks.md`: no fire time → it's a task, not a reminder; and a reminder aimed at a teammate is still *your* scheduled job, never an entry written into their task list.
+
+**Who it's for (team mode).** Infer the recipient from the request, exactly like a relay: by DEFAULT a reminder is for the person asking — set it for them and omit `recipient` ("remind me to call Cass"). If they name people ("remind Jan and Kasia about the deadline"), resolve each name to that teammate's roster slug and pass them (`recipient: ["jan","kasia"]`); "everyone" / "the team" → `recipient: "everyone"`. Targeting a teammate means *at the due time you reach out to them* (notify them / act for them) — it does NOT assign them a task. Resolve names to slugs from the roster in your context, and ask only when genuinely ambiguous — never guess a wrong target. Permissions apply: only an admin can target everyone or other people, so if the tool refuses, say an admin is needed and offer to remind just the asker.
 
 Do NOT use CronCreate, CronList, or any SDK cron tools. They require an active session and do not survive bot restarts. `set_reminder` fires via Telegram independently of any session and is the only reliable scheduling mechanism in this environment.
 

@@ -1,56 +1,57 @@
 ---
 name: task-management
-description: Use this when the user wants to add, update, move, or review tasks. Tasks are tracked in Tasks.md at the project root with Backlog / In Progress / Done columns.
-allowed-tools: Read, Write, mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
+description: Use this when the user wants to add, update, move, assign, or review tasks. Tasks live on a structured board (Backlog / In Progress / Done) managed through the tasks MCP — list_tasks, add_task, update_task, move_task. Each task can be assigned to a teammate.
+allowed-tools: mcp__tasks__list_tasks, mcp__tasks__add_task, mcp__tasks__update_task, mcp__tasks__move_task, mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
 ---
 
 # Task Management Protocol
+
+## Storage — a structured board, NOT a Markdown file
+
+Tasks live in a structured store the workspace board reads/writes. **You manage it through the tasks MCP, never by editing a file.** There is no `Tasks.md` to Read or Write — don't look for one, don't create one. Every change goes through a tool:
+
+- `list_tasks` — the whole board grouped by status, each task with its `id`. **Always call this before adding or changing anything** — check for an existing task to update instead of duplicating.
+- `add_task` — `{ title, description?, status?, owner?, priority?, deadline? }`. Defaults to Backlog.
+- `update_task` — `{ id, ...fields to change }`. Pass only what changes.
+- `move_task` — `{ id, status }`. Shortcut for changing the column.
+
+A task has: `title`, `description`, `status` (backlog / in_progress / done), `owner` (a teammate slug or none), `priority` (high / medium / low), `deadline` (YYYY-MM-DD or none). Moving a task to `done` stamps the completion date automatically — you never set it by hand.
 
 ## Tasks vs Reminders
 
 | What the user means | System |
 |---|---|
-| "I need to do X" — their own to-do | **Tasks.md** (this skill) |
-| "Remind me at a specific time" — bot sends Telegram alert | **set_reminder** (reminders skill) |
+| "I need to do X" / "add X to the list" — a unit of work to track | **the task board** (this skill) |
+| "Remind me at \<time\>" — a timed action the bot performs | **set_reminder** (reminders skill) |
 
-Tasks.md is for the user's own work items — not for scheduling bot alerts.
+The board is for work items with no firing time. A timed alert is a reminder — don't put it on the board, and don't turn a board task into a reminder unless the user gives a fire time. (A reminder can *target* a teammate without it being a task; a task can be *assigned* to a teammate without notifying them — see below.)
 
-## Storage
+## Assigning a task — `owner`
 
-`Tasks.md` at the project root, three sections: `## In Progress`, `## Backlog`, `## Done` (see `references/templates.md` for ordering rationale and full task entry format).
-
-**Always read `Tasks.md` before adding or updating** — check for duplicates first.
+`owner` is **who's responsible**, not who created it. In team mode pass the teammate's roster **slug** (or a name / "me" — the tool resolves it); the board shows their profile picture. Default the owner to the person asking; only assign someone else when the user says so ("assign this to Jan"). Leave it unset if nobody owns it yet. **Assigning does NOT notify the teammate** — it just records ownership. If they should be pinged, that's a relay or a `set_reminder` with `recipient`, separate from the board. Full rules → `references/templates.md`.
 
 ## Adding a task
 
-1. Read `Tasks.md` — check for existing task to update instead.
-2. Add to `## Backlog` unless work has already started.
-3. Use the template in `references/templates.md` — Owner, Priority, Deadline (TBD if unknown) are mandatory.
+1. `list_tasks` — check for an existing task to update instead.
+2. `add_task` → Backlog, unless work has already started (`status: "in_progress"`).
+3. `title` is imperative and self-contained; `priority` and `deadline` when known (omit otherwise); `owner` per above.
 4. Set reminders per `references/reminder-rules.md` (deadline within 14d → silent day-before; beyond 14d → ask; blocker → ask when to remind).
 
 ## Moving a task
 
-- **Backlog → In Progress**: work has started. Check + offer deadline reminder per `references/reminder-rules.md`.
-- **In Progress → Done**: append `**Completed:** YYYY-MM-DD`, cancel any deadline reminder for the task.
-- **Never delete tasks** — always move to Done.
+- **Backlog → In Progress**: work has started. `move_task`. Check + offer a deadline reminder per `references/reminder-rules.md`.
+- **In Progress → Done**: `update_task { id, status: "done" }` — completion date is stamped for you. Cancel any deadline reminder for the task.
+- **Never delete tasks** — move them to Done.
 
 ## Updating a task
 
-Update in place when: deadline changes, owner changes, blocker resolves, new info arrives. Keep history in session notes, not in the task entry.
-
-Deadline change triggers cancel-old-reminder + set-new-reminder (see `references/reminder-rules.md`). Other field changes don't need reminder updates.
+`update_task` when the deadline changes, owner changes, a blocker resolves, or new info arrives. Pass only the changed fields. A deadline change triggers cancel-old-reminder + set-new-reminder (see `references/reminder-rules.md`); other field changes don't need reminder updates.
 
 ## When to add tasks automatically
 
-**Add when:**
-- Someone commits to doing something with a clear next step
-- A decision creates follow-up work
-- A deadline or dependency is mentioned
+**Add when:** someone commits to a clear next step · a decision creates follow-up work · a deadline or dependency is mentioned.
 
-**Don't add when:**
-- Vague ideas without owner or action
-- Timed alerts the bot should send — use `set_reminder` instead
-- Completed work with no follow-up
+**Don't add when:** vague ideas with no owner or action · timed alerts the bot should send (use `set_reminder`) · completed work with no follow-up.
 
 ## Weekly board review
 
@@ -58,12 +59,9 @@ When the first In Progress task is added: offer to set a weekly board-review rem
 
 ## Overdue check — on session start
 
-After reading session notes: scan `Tasks.md` for tasks where `Deadline` has passed and status is still Backlog or In Progress. If any found — flag immediately:
+After reading session notes: `list_tasks` and scan for tasks whose `deadline` has passed while status is still Backlog or In Progress. If any — flag immediately:
 > "Overdue: [task title] — deadline was [date]. Still relevant?"
 
 ## Summarizing the board
 
-When asked "what's open?" or "what do we have?":
-- Summarize In Progress + high-priority Backlog items
-- Don't paste the full file
-- Flag any overdue items
+When asked "what's open?" / "what do we have?": `list_tasks`, then summarize In Progress + high-priority Backlog items (and flag overdue). Don't dump the whole board.

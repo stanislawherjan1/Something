@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2 } from 'lucide-react';
+import { X, Send, Loader2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Sidebar from './Sidebar.jsx';
 import EditorPane from './EditorPane.jsx';
@@ -11,6 +11,7 @@ import NotificationToasts from './NotificationToasts.jsx';
 import useFileWatcher from './useFileWatcher.js';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
+import SearchPalette from './SearchPalette.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import useDesktopNotifications from './useDesktopNotifications.js';
@@ -126,6 +127,25 @@ export default function WorkspacePage() {
     };
     window.addEventListener('ide:chat-prefill', onPrefill);
     return () => window.removeEventListener('ide:chat-prefill', onPrefill);
+  }, []);
+
+  // Command palette (file search). Opened by the sidebar "Search" item
+  // (ide:open-search event) or Cmd/Ctrl+K from anywhere.
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    const onOpen = () => setSearchOpen(true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('ide:open-search', onOpen);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('ide:open-search', onOpen);
+    };
   }, []);
 
   // Notification bubble click → expand the chat pane AND mark any
@@ -355,6 +375,13 @@ export default function WorkspacePage() {
         />
       )}
 
+      {searchOpen && (
+        <SearchPalette
+          onClose={() => setSearchOpen(false)}
+          onSelect={(sel) => navigate(selectedToPath(sel))}
+        />
+      )}
+
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
       {/* Mobile Sidebar Backdrop */}
       <AnimatePresence>
@@ -469,7 +496,7 @@ export default function WorkspacePage() {
             className={cn(
               'fixed max-md:bottom-6 right-5 z-50 rounded-full shadow-[0_4px_16px_rgba(0,0,0,0.14),0_1px_3px_rgba(0,0,0,0.08)]',
               'transition-[top] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
-              showBanner ? 'md:top-[68px]' : 'md:top-5',
+              (showBanner || showLinkBar) ? 'md:top-[68px]' : 'md:top-5',
             )}
           >
             <SpinningAvatar className="max-md:size-[60px] md:size-12" />
@@ -490,6 +517,8 @@ export default function WorkspacePage() {
 // Self-link modal: a teammate connects their own Telegram chat id (so relays can
 // reach them there) and picks where they prefer to be reached. PATCHes /api/me.
 function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
+  const { botDisplayName } = useBranding();
+  const botName = botDisplayName || 'the assistant';
   const [chatId, setChatId]   = useState('');
   const [surface, setSurface] = useState(initialSurface);
   const [busy, setBusy]       = useState(false);
@@ -515,54 +544,75 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-5 shadow-xl"
+        className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-1 flex items-center gap-2">
-          <Send className="size-4 text-sky-500" strokeWidth={1.75} />
-          <h2 className="text-[15px] font-semibold text-foreground">Link your Telegram</h2>
-        </div>
-        <p className="mb-4 text-[12.5px] leading-relaxed text-muted-foreground/80">
-          First <span className="font-medium text-foreground/90">send the bot <span className="font-mono">/start</span></span> on
-          Telegram — it can't message you until you do. Then paste your{' '}
-          <span className="font-medium text-foreground/90">chat id</span> (message{' '}
-          <span className="font-mono">@userinfobot</span> to get it). Teammates can then have a
-          message relayed to you on Telegram.
-        </p>
-
-        <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground/85">Telegram chat id</label>
-        <input
-          autoFocus
-          value={chatId}
-          onChange={(e) => setChatId(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && chatId.trim()) save(); }}
-          placeholder="e.g. 123456789"
-          inputMode="numeric"
-          className="mb-3 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-foreground/15"
-        />
-
-        <label className="mb-1 block text-[11.5px] font-medium text-muted-foreground/85">Where should we reach you?</label>
-        <select
-          value={surface}
-          onChange={(e) => setSurface(e.target.value)}
-          className="mb-4 w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-[13px] focus:outline-none focus:ring-2 focus:ring-foreground/15"
-        >
-          <option value="both">Web + Telegram</option>
-          <option value="telegram">Telegram</option>
-          <option value="web">Web only</option>
-        </select>
-
-        {err && <p className="mb-3 text-[12px] text-destructive">{err}</p>}
-
-        <div className="flex justify-end gap-2">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-border/40 px-5 py-4">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="text-[15px] font-semibold leading-tight text-foreground/90">Link your Telegram</h2>
+            <span className="text-[12.5px] text-muted-foreground/70">So teammates can reach you there</span>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:bg-muted/50"
+            className="-mr-1 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground/85"
+          >
+            <X className="size-4" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-col gap-4 px-5 py-4">
+          <div className="flex flex-col gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-3">
+            <Step n={1}>
+              On Telegram, send <span className="font-medium text-foreground/90">{botName}</span> the command <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">/start</code> — it can&apos;t message you until you do.
+            </Step>
+            <Step n={2}>
+              Then message <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">@userinfobot</code>, copy the chat id it replies with, and paste it below.
+            </Step>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+              Telegram chat id
+            </span>
+            <input
+              autoFocus
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && chatId.trim()) save(); }}
+              placeholder="e.g. 123456789"
+              inputMode="numeric"
+              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
+            />
+          </label>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+              Where should {botName} reach you?
+            </span>
+            <SurfacePicker value={surface} onChange={setSurface} />
+          </div>
+
+          {err && (
+            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+              <span>{err}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -570,13 +620,57 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
             type="button"
             disabled={busy || !chatId.trim()}
             onClick={save}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
           >
             {busy && <Loader2 className="size-3.5 animate-spin" />}
-            Link
+            {busy ? 'Linking…' : 'Link Telegram'}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Numbered step row for the link-telegram instructions.
+function Step({ n, children }) {
+  return (
+    <div className="flex items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground/85">
+      <span className="mt-px flex size-[18px] shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] text-[10px] font-semibold text-foreground/70">
+        {n}
+      </span>
+      <span className="min-w-0">{children}</span>
+    </div>
+  );
+}
+
+// Segmented control for the preferred relay surface.
+function SurfacePicker({ value, onChange }) {
+  const options = [
+    { value: 'both',     label: 'Web UI + Telegram' },
+    { value: 'telegram', label: 'Telegram' },
+    { value: 'web',      label: 'Web UI' },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              'flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11.5px] font-medium transition-colors',
+              active
+                ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
+                : 'text-muted-foreground/70 hover:text-foreground/85',
+            )}
+          >
+            {active && <Check className="size-3 shrink-0" strokeWidth={3} />}
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
