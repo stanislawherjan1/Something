@@ -234,10 +234,12 @@ export function writeRecentSnapshot({
   // Per-user web snapshots (team mode only).
   if (channel === 'web' && getTeamMode()) {
     const byUser = listWebSessionsByUser();
-    const adminSlug = primaryAdminSlug();
     let wrote = 0;
     let total = 0;
-    // 1) Each user's own private RECENT_WEB.
+    // Each user's own private RECENT_WEB (a web tail is that person's private
+    // conversation). The operator's cross-surface web context is read from their
+    // OWN memory/users/<adminSlug>/RECENT_WEB.md — memory-loader tiers RECENT_WEB
+    // per-user and the bot's prefix endpoint resolves the actor to the admin.
     for (const [slug, files] of byUser) {
       if (!/^[a-z0-9-]+$/.test(slug)) continue; // path-segment safety
       const messages = readMessagesFrom(files);
@@ -248,14 +250,13 @@ export function writeRecentSnapshot({
       atomicWrite(join(dir, 'RECENT_WEB.md'), content);
       wrote++;
     }
-    // 2) Shared file = the admin's sessions (Telegram cross-surface = admin).
-    const adminFiles = byUser.get(adminSlug) || [];
-    const adminMsgs = readMessagesFrom(adminFiles);
-    const { content } = renderSnapshot(cfg, channel, adminMsgs, maxMessages, maxChars, updatedAt);
-    atomicWrite(cfg.snapshotPath, content);
+    // The shared memory/RECENT_WEB.md duplicated the admin's private web tail in
+    // a teammate-readable file — the same leak we closed for RECENT_TELEGRAM.
+    // Don't write it; remove any stale copy so old content can't leak.
+    try { if (existsSync(cfg.snapshotPath)) unlinkSync(cfg.snapshotPath); } catch { /* best-effort */ }
     return {
       channel,
-      path: cfg.snapshotPath,
+      path: join(MEMORY_DIR, USERS_DIR),
       perUser: wrote,
       total,
       written_at: updatedAt,

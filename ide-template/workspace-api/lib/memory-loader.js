@@ -68,20 +68,20 @@ const LOAD_ORDER = [
 // everything flat, as before. The rest of LOAD_ORDER (agent identity, tools,
 // rules, index, Telegram tail) stays shared across the team.
 //
-// RECENT_WEB is now written per-user by the snapshot writer (recent-snapshot.js
-// → memory/users/<slug>/RECENT_WEB.md), with the shared memory/RECENT_WEB.md
-// holding the primary admin's sessions for the Telegram surface. We deliberately
-// keep it OUT of USER_TIER here: the web prefix EXCLUDES RECENT_WEB entirely
-// (lib/claude.js — each web session resumes its own thread), and the Telegram
-// prefix (actor = admin) wants the shared admin file, which is exactly the flat
-// load. So the per-user files exist for isolation + the dashboard, while prefix
-// loading stays correct without tiering this card.
+// RECENT_WEB is per-user in team mode: recent-snapshot.js writes each person's
+// web tail to memory/users/<slug>/RECENT_WEB.md. The web prefix EXCLUDES it
+// entirely (lib/claude.js — each web session resumes its own thread); the
+// Telegram prefix (actor = admin) loads the OPERATOR's own web tail from their
+// private dir for cross-surface awareness. Tiering it here — instead of a shared
+// flat memory/RECENT_WEB.md — keeps the operator's private web conversation out
+// of a teammate-readable file (prompt-exclusion is not an ACL). Same treatment
+// as RECENT_TELEGRAM, whose shared flat file the writer now removes too.
 // RECENT_TELEGRAM is per-user too (team mode): the bot's single Telegram log is
 // the OPERATOR's private conversation, written to memory/users/<adminSlug>/ by
 // recent-snapshot.js. Loading it per-user means it comes from the actor's own
 // dir — the operator gets theirs, a non-operator gets an (empty) one, and
 // claude.js additionally excludes it for non-operators. Solo → flat, as before.
-const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES', 'RECENT_TELEGRAM']);
+const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES', 'RECENT_TELEGRAM', 'RECENT_WEB']);
 
 const MAX_CARD_BYTES = 256 * 1024; // 256 KB ceiling per card — defensive
 
