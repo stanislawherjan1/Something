@@ -31,33 +31,110 @@
   margin-top: 0.15rem;
 }
 
-/* Headings — Notion-ish proportions. H1 is just bigger body, not display size. */
-.bn-default-styles h1.bn-block-content,
+/* Headings — small, tight scale (body is 15px; headings stay close to it and
+ * lean on weight for hierarchy, not display size).
+ *
+ * NOTE the `!important` on font-size/font-weight: @blocknote/core sets these
+ * with a (0,5,0) selector —
+ *   .bn-block-outer:not([data-prev-type])>.bn-block>.bn-block-content[...heading]
+ *     { font-size: var(--level); font-weight: 700 }
+ * which outranks any plain `.bn-default-styles [...]` rule we can write here, so
+ * earlier (non-important) overrides silently lost. !important is the clean way
+ * to win without depth-fragile selector gymnastics. line-height / margin /
+ * letter-spacing are NOT set by that core rule, so they apply normally. */
+/* CRITICAL: level-1 headings carry NO `data-level` attribute — @blocknote/core
+ * styles them via the bare `[data-content-type=heading]` base rule, and only
+ * H2–H6 get `[data-level="2".."6"]`. So an `[data-level="1"]` selector matches
+ * nothing and the real H1 stays at the 3em core default. Target H1 via
+ * `:not([data-level])` (and keep `[data-level="1"]` as a belt-and-braces). */
+.bn-default-styles [data-content-type="heading"]:not([data-level]),
 .bn-default-styles [data-content-type="heading"][data-level="1"] {
-  font-size: 1.625rem;       /* ~26 px */
+  font-size: 1.5625rem !important;   /* 25 px — H1 */
+  font-weight: 700 !important;
   line-height: 1.3;
-  font-weight: 700;
   letter-spacing: -0.02em;
-  margin-top: 1.6rem;
-  margin-bottom: 0.4rem;
+  margin: 0.6rem 0 0.25rem;
 }
-.bn-default-styles h2.bn-block-content,
 .bn-default-styles [data-content-type="heading"][data-level="2"] {
-  font-size: 1.25rem;        /* ~20 px */
-  line-height: 1.35;
-  font-weight: 600;
+  font-size: 1.0625rem !important;   /* 17 px — H2 */
+  font-weight: 600 !important;
+  line-height: 1.3;
   letter-spacing: -0.015em;
-  margin-top: 1.25rem;
-  margin-bottom: 0.3rem;
+  margin: 0.45rem 0 0.2rem;
 }
-.bn-default-styles h3.bn-block-content,
 .bn-default-styles [data-content-type="heading"][data-level="3"] {
-  font-size: 1.0625rem;      /* ~17 px */
+  font-size: 0.9375rem !important;   /* 15 px — H3 */
+  font-weight: 600 !important;
   line-height: 1.4;
-  font-weight: 600;
   letter-spacing: -0.01em;
-  margin-top: 1rem;
-  margin-bottom: 0.2rem;
+  margin: 0.4rem 0 0.15rem;
+}
+.bn-default-styles [data-content-type="heading"][data-level="4"] {
+  font-size: 0.875rem !important;    /* 14 px — H4 */
+  font-weight: 600 !important;
+  line-height: 1.45;
+  margin: 0.35rem 0 0.12rem;
+}
+.bn-default-styles [data-content-type="heading"][data-level="5"] {
+  font-size: 0.8125rem !important;   /* 13 px — H5 */
+  font-weight: 600 !important;
+  line-height: 1.45;
+  margin: 0.3rem 0 0.1rem;
+}
+.bn-default-styles [data-content-type="heading"][data-level="6"] {
+  font-size: 0.75rem !important;     /* 12 px — H6 */
+  font-weight: 700 !important;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin: 0.3rem 0 0.1rem;
+}
+
+/* Re-calibrate the side-menu (+/drag-handle) heights to our smaller headings.
+ * BlockNote centres the 24px handle inside a per-level box whose height it
+ * hard-codes for the DEFAULT heading metrics; once we shrink headings (and add
+ * margin-top), the default 78/54/37 boxes are mis-sized and the handle floats
+ * above the text. Height ≈ 2·margin-top + content-padding(8px) + fontSize·lh,
+ * so the centred handle lands on the heading's first line. Same (0,2,0)
+ * specificity as core, but loaded later → wins. (4–6 aren't set by core.) */
+.bn-side-menu[data-block-type="heading"]:not([data-level]),
+.bn-side-menu[data-block-type="heading"][data-level="1"] { height: 60px; }
+.bn-side-menu[data-block-type="heading"][data-level="2"] { height: 45px; }
+.bn-side-menu[data-block-type="heading"][data-level="3"] { height: 42px; }
+.bn-side-menu[data-block-type="heading"][data-level="4"] { height: 40px; }
+.bn-side-menu[data-block-type="heading"][data-level="5"] { height: 37px; }
+.bn-side-menu[data-block-type="heading"][data-level="6"] { height: 35px; }
+
+/* Gutter icons → our lucide set (Plus + GripVertical), to match the workspace.
+ * BlockNote hard-codes react-icons (AiOutlinePlus / MdDragIndicator) on the
+ * add + drag-handle buttons, tagged data-test="dragHandleAdd"/"dragHandle".
+ * We can't pass an icon prop, so swap purely in CSS: hide the original glyph
+ * (fill:transparent) and paint a lucide shape via mask-image + currentColor.
+ * The <svg> element stays in the DOM, so the add button's onClick and the drag
+ * handle's drag behaviour are untouched — only the rendered shape changes. */
+.bn-side-menu [data-test="dragHandleAdd"],
+.bn-side-menu [data-test="dragHandle"] {
+  fill: transparent !important;            /* hide the react-icons glyph */
+  color: var(--muted-foreground);
+  background-color: currentColor;          /* the lucide shape's colour */
+  width: 20px !important;
+  height: 20px !important;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: 18px 18px; mask-size: 18px 18px;
+}
+.bn-side-menu .bn-button:hover [data-test="dragHandleAdd"],
+.bn-side-menu .bn-button:hover [data-test="dragHandle"] {
+  color: var(--foreground);
+}
+.bn-side-menu [data-test="dragHandleAdd"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3Cpath d='M12 5v14'/%3E%3C/svg%3E");
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3Cpath d='M12 5v14'/%3E%3C/svg%3E");
+}
+.bn-side-menu [data-test="dragHandle"] {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Ccircle cx='9' cy='5' r='1.4'/%3E%3Ccircle cx='9' cy='12' r='1.4'/%3E%3Ccircle cx='9' cy='19' r='1.4'/%3E%3Ccircle cx='15' cy='5' r='1.4'/%3E%3Ccircle cx='15' cy='12' r='1.4'/%3E%3Ccircle cx='15' cy='19' r='1.4'/%3E%3C/svg%3E");
+          mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Ccircle cx='9' cy='5' r='1.4'/%3E%3Ccircle cx='9' cy='12' r='1.4'/%3E%3Ccircle cx='9' cy='19' r='1.4'/%3E%3Ccircle cx='15' cy='5' r='1.4'/%3E%3Ccircle cx='15' cy='12' r='1.4'/%3E%3Ccircle cx='15' cy='19' r='1.4'/%3E%3C/svg%3E");
 }
 
 /* Body paragraph defaults */
@@ -215,6 +292,83 @@
 .bn-default-styles .bn-block-content[data-content-type="checkListItem"] .bn-inline-content {
   line-height: 1.65;
 }
+
+/* ───────── Floating UI font — match the workspace shell (Geist).
+ * BlockNote's shadcn menus/panels/toolbars render in a Radix portal mounted
+ * on <body>, so they inherit <body>'s Inter instead of our Geist. Pin Geist
+ * across every floating surface (and let every descendant inherit it) so the
+ * slash menu, embed panel, formatting toolbar etc. read as one with the rest
+ * of the workspace. List mirrors @blocknote/react's portal wrapper classes. */
+:is(
+  .bn-suggestion-menu, .bn-grid-suggestion-menu,
+  .bn-formatting-toolbar, .bn-action-toolbar, .bn-toolbar,
+  .bn-link-toolbar, .bn-panel, .bn-panel-popover, .bn-tab-panel,
+  .bn-popover-content, .bn-form-popover, .bn-emoji-picker-popover,
+  .bn-drag-handle-menu, .bn-side-menu, .bn-table-handle-menu,
+  .bn-menu-dropdown, .bn-color-picker-dropdown
+),
+:is(
+  .bn-suggestion-menu, .bn-grid-suggestion-menu,
+  .bn-formatting-toolbar, .bn-action-toolbar, .bn-toolbar,
+  .bn-link-toolbar, .bn-panel, .bn-panel-popover, .bn-tab-panel,
+  .bn-popover-content, .bn-form-popover, .bn-emoji-picker-popover,
+  .bn-drag-handle-menu, .bn-side-menu, .bn-table-handle-menu,
+  .bn-menu-dropdown, .bn-color-picker-dropdown
+) * {
+  font-family: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif !important;
+}
+
+/* Slash (/) menu — tune to our type scale. Section labels ("Headings",
+ * "Basic blocks") read as quiet uppercase eyebrows; items sit at body size;
+ * the shortcut hints on the right go muted so they don't shout. */
+.bn-suggestion-menu-label {
+  font-size: 0.6875rem;          /* ~11 px */
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  padding: 0.5rem 0.25rem 0.25rem;
+}
+.bn-suggestion-menu-item {
+  font-size: 0.875rem;           /* ~14 px */
+  border-radius: var(--radius-md);
+}
+.bn-suggestion-menu-item-small {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+/* Keyboard-shortcut hints (⌘-Alt-1 …) — shadcn Badge on the trailing edge.
+ * Soften to a quiet muted pill instead of a high-contrast chip. */
+.bn-suggestion-menu-item .bn-badge,
+.bn-suggestion-menu-item [class*="badge"],
+.bn-suggestion-menu-item kbd {
+  background: var(--muted) !important;
+  color: var(--muted-foreground) !important;
+  border: none !important;
+  font-size: 0.6875rem !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.01em;
+}
+
+/* "Add image / file" placeholder block — render it as one of our muted
+ * placeholder surfaces (soft fill, hairline border, our radius) rather than
+ * BlockNote's flat grey bar, and tint the icon/label with muted-foreground. */
+.bn-add-file-button {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+  padding: 0.6rem 0.85rem;
+  gap: 0.6rem;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.bn-add-file-button:hover {
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+  color: var(--foreground);
+}
+.bn-add-file-button-icon { color: inherit; opacity: 0.8; }
+.bn-add-file-button-text { font-size: 0.9rem; }
 
 /* BlockNote ships its own copy of shadcn DropdownMenu primitives baked
  * into its bundle (see @blocknote/shadcn/dist/blocknote-shadcn.js).

@@ -1,143 +1,204 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileText, Hexagon } from 'lucide-react';
-import CodeMirror from '@uiw/react-codemirror';
-import { EditorView, Decoration, ViewPlugin, MatchDecorator } from '@codemirror/view';
-import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { tags as t } from '@lezer/highlight';
+import {
+  useCreateBlockNote,
+  FormattingToolbarController,
+  FilePanelController,
+  SuggestionMenuController,
+  getDefaultReactSlashMenuItems,
+} from '@blocknote/react';
+import { filterSuggestionItems } from '@blocknote/core/extensions';
+import { BlockNoteView } from '@blocknote/shadcn';
+import '@blocknote/shadcn/style.css';
+import './markdown-editor.css';
+import EditorToolbar from './EditorToolbar.jsx';
+import EditorFilePanel from './EditorFilePanel.jsx';
+import EditorSlashMenu from './EditorSlashMenu.jsx';
 import { cn } from '@/lib/utils';
-import { looksLikePath, pathToSelection } from '@/lib/filePaths';
 import EditorHeader from './EditorHeader.jsx';
 import { useTheme } from '@/context/ThemeContext';
 
-/**
- * MarkdownEditor — CodeMirror 6 editor for `.md` files.
- *
- * Why CM6 (replacing BlockNote): the document model IS the raw markdown string
- * — there is no block→markdown serialization, so `.md` files round-trip
- * BYTE-FOR-BYTE. Editing a bot-written file with frontmatter / raw HTML /
- * footnotes never reflows or mangles anything the user didn't touch. The
- * backend already writes the editor's output verbatim, so what gets saved is
- * exactly the bytes. One surface — no edit/preview toggle.
- *
- *   - Loads raw markdown via /api/files/read on mount
- *   - Live markdown syntax styling (headings, bold/italic, links, code, quotes)
- *   - File paths in the text are clickable (Cmd/Ctrl-click → open the file)
- *   - Debounced verbatim save to /api/files/write
- *   - Watcher events refresh only when the local buffer is clean
- */
-
-// Markdown source styling — "pretty source": headings stand out, emphasis reads
-// as emphasis, punctuation markers recede. Colours come from our CSS vars so it
-// tracks light/dark automatically.
-const mdHighlight = HighlightStyle.define([
-  { tag: t.heading1, fontSize: '1.5em', fontWeight: '700', lineHeight: '1.3' },
-  { tag: t.heading2, fontSize: '1.3em', fontWeight: '700', lineHeight: '1.3' },
-  { tag: t.heading3, fontSize: '1.15em', fontWeight: '600' },
-  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: '600' },
-  { tag: t.strong, fontWeight: '700' },
-  { tag: t.emphasis, fontStyle: 'italic' },
-  { tag: t.strikethrough, textDecoration: 'line-through' },
-  { tag: [t.link, t.url], color: 'var(--color-ring)' },
-  { tag: t.monospace, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.92em' },
-  { tag: t.quote, color: 'var(--color-muted-foreground)', fontStyle: 'italic' },
-  // Markdown punctuation (#, *, `, -, >, list bullets) recedes.
-  { tag: [t.meta, t.processingInstruction, t.contentSeparator], color: 'color-mix(in srgb, var(--color-muted-foreground) 70%, transparent)' },
-]);
-
-// A token that looks like a workspace file path → a styled, Cmd/Ctrl-clickable
-// mark. It decorates the UNDERLYING text, so it serializes for free (the file
-// still contains the literal path).
-const pathMatcher = new MatchDecorator({
-  regexp: /(?:\/home\/coder\/project\/)?(?:[\w.\-]+\/)+[\w.\-]+\.[A-Za-z0-9]{1,8}/g,
-  decoration: (m) =>
-    looksLikePath(m[0])
-      ? Decoration.mark({ class: 'cm-filepath', attributes: { 'data-filepath': m[0], title: 'Cmd/Ctrl-click to open' } })
-      : null,
-});
-const filePathPlugin = ViewPlugin.fromClass(
-  class {
-    constructor(view) { this.decorations = pathMatcher.createDeco(view); }
-    update(u) { if (u.docChanged || u.viewportChanged) this.decorations = pathMatcher.updateDeco(u, this.decorations); }
+// BlockNote ships its own light/dark themes — they don't inherit our CSS
+// vars and the default dark is a near-black that clashes with the rest of
+// the workspace. Define explicit themes that mirror our palette so the
+// editor surface looks like every other panel.
+// `selected` drives every highlight BlockNote renders for slash-menu pick,
+// drag-handle column/row controls, and current-block side gutter. The
+// previous value piped through --accent (Tailwind amber-600/500) which
+// painted the inline table controls an obtrusive orange that clashed with
+// the otherwise-neutral palette the rest of the workspace uses. Match
+// `foreground` here (the same near-black we use for primary buttons), so
+// selection reads as a strong but tonal accent instead of a brand-orange
+// stripe.
+const blockNoteTheme = {
+  light: {
+    colors: {
+      editor:   { text: '#1c1b18', background: '#f7f6f2' },
+      menu:     { text: '#1c1b18', background: '#ffffff' },
+      tooltip:  { text: '#1c1b18', background: '#ffffff' },
+      hovered:  { text: '#1c1b18', background: '#f0efea' },
+      selected: { text: '#f7f6f2', background: '#1c1b18' },
+      disabled: { text: '#9e9b96', background: '#f0efea' },
+      shadow:   '#e8e7e2',
+      border:   '#e8e7e2',
+      sideMenu: '#6b6963',
+    },
+    borderRadius: 6,
+    fontFamily: '"Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif',
   },
-  { decorations: (v) => v.decorations },
-);
+  dark: {
+    colors: {
+      editor:   { text: '#ebebea', background: '#1b1b1a' },
+      menu:     { text: '#ebebea', background: '#252524' },
+      tooltip:  { text: '#ebebea', background: '#252524' },
+      hovered:  { text: '#ebebea', background: '#303030' },
+      selected: { text: '#1b1b1a', background: '#ebebea' },
+      disabled: { text: '#787877', background: '#252524' },
+      shadow:   '#181817',
+      border:   '#303030',
+      sideMenu: '#a8a8a7',
+    },
+    borderRadius: 6,
+    fontFamily: '"Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif',
+  },
+};
 
-export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen, onSelect }) {
+/**
+ * MarkdownEditor — Notion-like block editor for `.md` files.
+ *
+ *   - Loads markdown via /api/files/read on mount
+ *   - Renders blocks via BlockNote (built on TipTap/ProseMirror)
+ *   - On every change: serialize → markdown → debounced PUT to /api/files/write
+ *   - Watcher events refresh content only if local buffer is clean (no pending
+ *     edits) — avoids clobbering the user's in-progress typing
+ *
+ * Save status badge sits in the header (Saving… / Saved / dirty), so the
+ * user has visible feedback that edits hit disk.
+ */
+export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
+  const editor = useCreateBlockNote();
   const { resolvedTheme } = useTheme();
-  const [doc, setDoc] = useState('');
   const [status, setStatus] = useState({ kind: 'loading' });
   const [savedAt, setSavedAt] = useState(null);
+  // Flash + "Updated" badge when the file changes externally (bot edit).
+  // Cleared after 2.4 s so the user has time to register the change.
   const [externalUpdate, setExternalUpdate] = useState(false);
-
   const dirtyRef    = useRef(false);
   const savingRef   = useRef(false);
   const remoteMtime = useRef(0);
   const saveTimer   = useRef(null);
   const lastSavedMd = useRef('');
-  const flashTimer  = useRef(null);
-  const initializedRef = useRef(false);
-  const isInitialLoad  = useRef(true);
-  const onSelectRef = useRef(onSelect);
-  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  // YAML frontmatter (`---\n…\n---`) sliced off the top of the file before it
+  // reaches BlockNote. BlockNote's markdown round-trip is lossy and mangles
+  // frontmatter (bot-managed memory cards rely on it), so we keep the block
+  // verbatim here and re-prepend it on every save. The doc on disk stays
+  // byte-faithful in its frontmatter; only the human-edited body round-trips.
+  const frontmatterRef = useRef('');
+  const updateFlashTimer = useRef(null);
+  const hasInitializedRef = useRef(false);
+  const isInitialLoad = useRef(true);
 
+  // Cleanup all timers on unmount so stale saves don't fire after navigation.
   useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    if (flashTimer.current) clearTimeout(flashTimer.current);
+    if (saveTimer.current)        clearTimeout(saveTimer.current);
+    if (updateFlashTimer.current) clearTimeout(updateFlashTimer.current);
   }, []);
 
-  // Load file content (initial + on watcher events when the buffer is clean).
+  // Load file content into the editor (and on watcher events, if clean).
   useEffect(() => {
-    const abort = new AbortController();
+    const abortCtrl = new AbortController();
+
     const loadFile = async () => {
       try {
-        const resp = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`, { signal: abort.signal });
+        const resp = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`, { signal: abortCtrl.signal });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) { setStatus({ kind: 'error', error: data.error || `HTTP ${resp.status}` }); return; }
-        // Don't clobber unsaved local edits on a watcher refresh.
-        if (!isInitialLoad.current && dirtyRef.current) { remoteMtime.current = data.mtime ?? 0; return; }
+
+        if (!resp.ok) {
+          setStatus({ kind: 'error', error: data.error || `HTTP ${resp.status}` });
+          return;
+        }
+
+        // If we have unsaved local edits, don't clobber them on watcher refresh.
+        if (!isInitialLoad.current && dirtyRef.current) {
+          remoteMtime.current = data.mtime ?? 0;
+          return;
+        }
+
         const incoming = data.content || '';
         const changed = incoming !== lastSavedMd.current;
-        const wasInitialized = initializedRef.current;
-        if (abort.signal.aborted) return;
-        setDoc(incoming);
+        const wasInitialized = hasInitializedRef.current;
+
+        // Peel off frontmatter so BlockNote never sees (and never mangles) it.
+        const { frontmatter, body } = splitFrontmatter(incoming);
+        frontmatterRef.current = frontmatter;
+
+        const blocks = await editor.tryParseMarkdownToBlocks(body);
+        if (abortCtrl.signal.aborted) return;
+
+        editor.replaceBlocks(editor.document, blocks);
         lastSavedMd.current = incoming;
         remoteMtime.current = data.mtime ?? 0;
         isInitialLoad.current = false;
         setStatus({ kind: 'ok' });
+
+        // Flash only on watcher refresh, not on initial load
         if (wasInitialized && changed) {
           setExternalUpdate(true);
-          if (flashTimer.current) clearTimeout(flashTimer.current);
-          flashTimer.current = setTimeout(() => setExternalUpdate(false), 2400);
+          if (updateFlashTimer.current) clearTimeout(updateFlashTimer.current);
+          updateFlashTimer.current = setTimeout(() => setExternalUpdate(false), 2400);
         }
-        initializedRef.current = true;
+
+        hasInitializedRef.current = true;
       } catch (err) {
-        if (!abort.signal.aborted) setStatus({ kind: 'error', error: err.message });
+        if (!abortCtrl.signal.aborted) setStatus({ kind: 'error', error: err.message });
       }
     };
 
+    // Reset state for new file path
     isInitialLoad.current = true;
-    initializedRef.current = false;
+    hasInitializedRef.current = false;
     dirtyRef.current = false;
     setSavedAt(null);
     setExternalUpdate(false);
     setStatus({ kind: 'loading' });
-    if (flashTimer.current) clearTimeout(flashTimer.current);
-    if (saveTimer.current)  clearTimeout(saveTimer.current);
+    if (updateFlashTimer.current) clearTimeout(updateFlashTimer.current);
+    if (saveTimer.current)        clearTimeout(saveTimer.current);
+
     loadFile();
-    return () => abort.abort();
+
+    return () => { abortCtrl.abort(); };
   }, [path, fileEventNonce]);
 
-  const save = useCallback(async (md) => {
-    if (savingRef.current) { saveTimer.current = setTimeout(() => save(md), 200); return; }
+  // Debounced save on every change.
+  useEffect(() => {
+    if (status.kind !== 'ok') return;
+    const off = editor.onChange(async () => {
+      const body = await editor.blocksToMarkdownLossy(editor.document);
+      const md = frontmatterRef.current + body;        // re-attach frontmatter verbatim
+      if (md === lastSavedMd.current) return;          // no-op edit
+      dirtyRef.current = true;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => save(md), 600);
+    });
+    return off;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.kind, editor]);
+
+  async function save(md) {
+    if (savingRef.current) {
+      // Re-arm: queue another save once current finishes.
+      saveTimer.current = setTimeout(() => save(md), 200);
+      return;
+    }
     savingRef.current = true;
     try {
       const resp = await fetch('/api/files/write', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, content: md }),
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ path, content: md }),
       });
       if (resp.ok) {
-        const data = await resp.json().catch(() => ({}));
+        const data = await resp.json();
         lastSavedMd.current = md;
         dirtyRef.current = false;
         remoteMtime.current = data.mtime ?? 0;
@@ -151,59 +212,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen, onSe
     } finally {
       savingRef.current = false;
     }
-  }, [path]);
-
-  const onChange = useCallback((value) => {
-    setDoc(value);
-    if (value === lastSavedMd.current) return;   // no-op (e.g. external load echo)
-    dirtyRef.current = true;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => save(value), 600);
-  }, [save]);
-
-  // Editor extensions; rebuilt when the colour scheme flips so the theme's
-  // `dark` flag stays correct.
-  const extensions = useMemo(() => [
-    markdown({ base: markdownLanguage }),
-    EditorView.lineWrapping,
-    syntaxHighlighting(mdHighlight),
-    filePathPlugin,
-    EditorView.domEventHandlers({
-      mousedown: (e) => {
-        const el = e.target?.closest?.('.cm-filepath');
-        if (el && (e.metaKey || e.ctrlKey)) {
-          const p = el.getAttribute('data-filepath');
-          if (p) { onSelectRef.current?.(pathToSelection(p)); e.preventDefault(); return true; }
-        }
-        return false;
-      },
-    }),
-    EditorView.theme({
-      '&': { backgroundColor: 'transparent', color: 'var(--color-foreground)', fontSize: '14px' },
-      '&.cm-focused': { outline: 'none' },
-      '.cm-content': {
-        fontFamily: 'Inter, system-ui, sans-serif',
-        lineHeight: '1.7',
-        padding: '4px 0 64px',
-        caretColor: 'var(--color-foreground)',
-        maxWidth: '100%',
-      },
-      '.cm-scroller': { fontFamily: 'inherit', overflow: 'auto' },
-      '.cm-line': { padding: '0' },
-      '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-foreground)' },
-      '.cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--color-foreground) 12%, transparent) !important' },
-      '&.cm-focused .cm-selectionBackground': { backgroundColor: 'color-mix(in srgb, var(--color-foreground) 14%, transparent) !important' },
-      '.cm-filepath': {
-        color: 'var(--color-ring)',
-        textDecoration: 'underline',
-        textDecorationColor: 'color-mix(in srgb, var(--color-ring) 35%, transparent)',
-        textUnderlineOffset: '2px',
-        cursor: 'pointer',
-      },
-      '.cm-filepath:hover': { textDecorationColor: 'var(--color-ring)' },
-      '.cm-gutters': { display: 'none' },
-    }, { dark: resolvedTheme === 'dark' }),
-  ], [resolvedTheme]);
+  }
 
   const meta =
     status.kind === 'error'   ? <span className="text-destructive">Error: {status.error}</span> :
@@ -217,33 +226,56 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen, onSe
       <EditorHeader icon={FileText} title={path} meta={meta} sidebarOpen={sidebarOpen} />
       <div
         className={cn(
-          '@container/editor flex-1 min-h-0 overflow-hidden transition-shadow duration-700',
+          '@container/editor flex-1 overflow-auto transition-shadow duration-700',
           externalUpdate && 'ring-2 ring-emerald-500/40 ring-inset bg-emerald-500/[0.03]',
         )}
       >
         {status.kind !== 'error' && (
-          <div className="mx-auto h-full w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-3 sm:px-4">
-            <CodeMirror
-              value={doc}
-              onChange={onChange}
-              extensions={extensions}
-              theme="none"
-              height="100%"
-              basicSetup={{
-                lineNumbers: false,
-                foldGutter: false,
-                highlightActiveLine: false,
-                highlightActiveLineGutter: false,
-                autocompletion: false,
-                bracketMatching: false,
-              }}
-              className="h-full text-[14px]"
-            />
+          // Reading width scales with the actual centre-column width via a
+          // container query — no prop drilling for sidebar/chat state. With
+          // both side panels open the centre stays at the comfortable 3xl
+          // (~768px). One panel closed widens to 4xl; both closed unlocks
+          // 5xl so a full-screen markdown view stops feeling boxed-in.
+          // Mobile (<640px): drop wrapper to px-0 so all horizontal space
+          // goes to the BlockNote editor itself, which keeps just 8px of
+          // its own gutter (see markdown-editor.css mobile override).
+          <div className="mx-auto w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-0 sm:px-2 pb-12 pt-2">
+            <BlockNoteView
+              editor={editor}
+              theme={blockNoteTheme}
+              data-theming-css-variables-demo
+              data-color-scheme={resolvedTheme}
+              formattingToolbar={false}
+              filePanel={false}
+              slashMenu={false}
+            >
+              {/* Custom selection toolbar + embed panel + slash menu, all built
+                  from our own design-system primitives instead of @blocknote/shadcn. */}
+              <FormattingToolbarController formattingToolbar={EditorToolbar} />
+              <FilePanelController filePanel={EditorFilePanel} />
+              <SuggestionMenuController
+                triggerCharacter="/"
+                suggestionMenuComponent={EditorSlashMenu}
+                getItems={async (query) =>
+                  filterSuggestionItems(getDefaultReactSlashMenuItems(editor), query)
+                }
+              />
+            </BlockNoteView>
           </div>
         )}
       </div>
     </div>
   );
+}
+
+// Split a leading YAML frontmatter block off the top of a markdown file.
+// Only matches when the file STARTS with `---` on its own line and has a
+// matching closing `---` line. Returns the frontmatter (including its trailing
+// newline) and the remaining body. No frontmatter → ('', wholeText).
+function splitFrontmatter(text) {
+  const m = /^(---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$))/.exec(text);
+  if (!m) return { frontmatter: '', body: text };
+  return { frontmatter: m[1], body: text.slice(m[1].length) };
 }
 
 function UpdatedBadge() {

@@ -25,7 +25,7 @@ export default function EditorHeader({ icon: Icon, title, subtitle, meta, sideba
     <div
       className={cn('flex shrink-0', hasSubtitle ? 'flex-col py-3.5' : 'items-center py-3.5')}
       style={{
-        paddingLeft: sidebarOpen ? '24px' : '56px',
+        paddingLeft: sidebarOpen ? '24px' : '64px',
         minHeight: '60px',
         // Match the sidebar wrapper's width-animation curve so the title
         // slides over with the same rhythm instead of snapping when the

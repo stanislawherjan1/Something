@@ -56,7 +56,7 @@
   --destructive: #dc2626;
   --border: #e8e7e2;
   --input: #e8e7e2;
-  --ring: #d97706;
+  --ring: var(--foreground);   /* neutral, not amber */
 
   --chart-1: #d97706;
   --chart-2: #92400e;
@@ -110,7 +110,7 @@
   --destructive: #ef4444;
   --border: #303030;
   --input: #303030;
-  --ring: #f59e0b;
+  --ring: var(--foreground);   /* neutral, not amber */
 
   --chart-1: #f59e0b;
   --chart-2: #fbbf24;

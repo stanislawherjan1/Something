@@ -2,7 +2,9 @@ import { lazy, Suspense, useState, useEffect } from 'react';
 import { Menu, Folder, FileText } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { SkeletonEditorHeader, SkeletonText, SkeletonFolderGrid } from './SkeletonLoader.jsx';
+import { SkeletonEditorHeader, SkeletonLine, SkeletonFolderGrid } from './SkeletonLoader.jsx';
+import { FUNCTIONAL_PATHS } from './FileTree.jsx';
+import { useBranding } from './identity.jsx';
 import FileViewer         from './FileViewer.jsx';
 import ImageViewer        from './ImageViewer.jsx';
 import EditorHeader       from './EditorHeader.jsx';
@@ -68,8 +70,11 @@ export default function EditorPane({ selected, fileEventNonce, sidebarOpen, onEx
               opacity: 0, scale: 0.7,
               transition: { duration: 0.14, ease: [0.22, 1, 0.36, 1] },
             }}
-            className="absolute top-3 z-10 flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground/70 shadow-xs transition-colors hover:bg-sidebar-accent/40 hover:text-foreground/85"
-            style={{ left: '12px' }}
+            // Boxed hamburger (bordered tile, soft hover). Inset 14px on both
+            // top and left so the corner gap is balanced, and the top inset
+            // (60px row → 32px button → 14px) keeps it centred on the file name.
+            className="absolute top-3.5 z-10 flex size-8 items-center justify-center rounded-md border bg-background text-muted-foreground/70 shadow-xs transition-colors hover:bg-sidebar-accent/40 hover:text-foreground/85"
+            style={{ left: '14px' }}
           >
             <Menu className="size-4" strokeWidth={1.75} />
           </motion.button>
@@ -120,27 +125,80 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   return <EmptyState />;
 }
 
+// Document-shaped skeleton for the markdown editor: a title, a couple of
+// sections (heading + paragraph), laid out at the SAME reading width and left
+// gutter as the real editor content (max-w-3xl wrapper + the BlockNote 54px /
+// 16px-mobile inline gutter) so it doesn't jump when the editor mounts.
+function ParaSkeleton({ widths }) {
+  return (
+    <div className="space-y-2.5">
+      {widths.map((w, i) => <SkeletonLine key={i} width={w} height="13px" />)}
+    </div>
+  );
+}
+
 function LoadingState() {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <SkeletonEditorHeader />
-      <div className="flex-1 overflow-auto px-4 py-6">
-        <div className="mx-auto w-full max-w-3xl space-y-4">
-          {[...Array(6)].map((_, i) => (
-            <SkeletonText key={i} />
-          ))}
+      <div className="@container/editor flex-1 overflow-auto">
+        <div className="mx-auto w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-4 pt-7 sm:px-[62px]">
+          {/* H1 */}
+          <SkeletonLine width="46%" height="24px" className="mb-5" />
+          <ParaSkeleton widths={['100%', '97%', '92%', '64%']} />
+          {/* H2 */}
+          <SkeletonLine width="32%" height="17px" className="mt-9 mb-4" />
+          <ParaSkeleton widths={['98%', '100%', '88%']} />
+          {/* H2 */}
+          <SkeletonLine width="27%" height="17px" className="mt-9 mb-4" />
+          <ParaSkeleton widths={['95%', '99%', '72%']} />
         </div>
       </div>
     </div>
   );
 }
 
+// Centre-pane empty view. Detects a brand-new workspace (no user files) and
+// shows a warm first-run welcome; otherwise the plain "pick a file" prompt.
 function EmptyState() {
+  const branding = useBranding();
+  const bot = branding?.botDisplayName || 'the assistant';
+  const [fresh, setFresh] = useState(null);   // null = unknown, true = no files
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/files/tree')
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d) => {
+        if (cancelled) return;
+        const userFiles = (d.entries || []).filter((e) => !FUNCTIONAL_PATHS.has(e.name));
+        setFresh(userFiles.length === 0);
+      })
+      .catch(() => { if (!cancelled) setFresh(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="flex h-full items-center justify-center px-12 py-16">
-      <div className="flex max-w-md flex-col items-center gap-2 text-center">
-        <h2 className="text-base font-semibold tracking-tight text-foreground/85">Nothing open</h2>
-        <p className="text-sm text-muted-foreground/70">Pick a file or folder from the sidebar.</p>
+      <div className="flex max-w-md flex-col items-center gap-5 text-center">
+        <div className="flex size-16 items-center justify-center rounded-2xl border border-border/55 bg-muted/35 text-muted-foreground/55 shadow-xs">
+          <FileText className="size-7" strokeWidth={1.4} />
+        </div>
+        {fresh !== null && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[16px] font-semibold tracking-tight text-foreground/90">
+              {fresh ? 'Your workspace is ready' : 'Nothing open'}
+            </h2>
+            <p className="text-[13.5px] leading-relaxed text-muted-foreground/70">
+              {fresh ? (
+                <>No files yet — create your first note from the sidebar, or ask{' '}
+                  <span className="font-medium text-foreground/85">{bot}</span> in chat to draft one.</>
+              ) : (
+                'Select a file from the sidebar to start editing.'
+              )}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

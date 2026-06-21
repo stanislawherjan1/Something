@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
   Wrench, Plug, Clock, UsersRound, Inbox, Search,
+  FilePlus, FolderPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import WorkspaceHeader from './WorkspaceHeader.jsx';
@@ -40,6 +41,9 @@ export default function Sidebar({
   const [creating,      setCreating]      = useState(null);   // { kind: 'file'|'folder', parentPath: string } | null
   const [opError,       setOpError]       = useState(null);
   const [optimisticEntry, setOptimisticEntry] = useState(null);
+  // Whether the shared/team file root is empty — drives the always-visible
+  // create actions in the section header (the empty-state arrow points at them).
+  const [sharedEmpty,   setSharedEmpty]   = useState(false);
   const [expandedSections, setExpandedSections] = useState(() => {
     // Persist expanded/collapsed state in localStorage
     try {
@@ -157,6 +161,11 @@ export default function Sidebar({
           label={me?.teamMode ? 'Shared Files' : 'Files'}
           expanded={expandedSections.shared}
           onToggle={() => toggleSection('shared')}
+          onNewFile={() => { if (!expandedSections.shared) toggleSection('shared'); setCreating({ kind: 'file', parentPath: '' }); }}
+          onNewFolder={() => { if (!expandedSections.shared) toggleSection('shared'); setCreating({ kind: 'folder', parentPath: '' }); }}
+          // Exception to the hover-only rule: when the root is empty, keep the
+          // create actions visible so the empty-state arrow has a real target.
+          forceActions={sharedEmpty && expandedSections.shared}
         />
         {everExpanded.current.shared && (
           <div className={cn(!expandedSections.shared && 'hidden')}>
@@ -174,6 +183,7 @@ export default function Sidebar({
               fileEventNonce={fileEventNonce}
               isCreating={!!creating}
               optimisticEntry={optimisticEntry}
+              onEmptyChange={setSharedEmpty}
             />
           </div>
         )}
@@ -418,23 +428,48 @@ function Shortcuts({ selected, onSelect }) {
 // buttons target this section's root. The system-files toggle is rendered only
 // when onToggleHidden is supplied — the Sidebar passes it for the Workspace
 // header and only to admins.
-function FilesSectionHeader({ icon: Icon, label, expanded, onToggle }) {
+function FilesSectionHeader({ label, expanded, onToggle, onNewFile, onNewFolder, forceActions }) {
+  // The create actions are deliberately NOT a hover affordance — they surface
+  // ONLY in the empty-workspace scenario (forceActions), where the empty-state
+  // arrow points right at them. Everywhere else, file/folder creation lives in
+  // the row right-click menu.
+  return (
+    <div className="mt-3 flex h-9 items-center gap-0.5 rounded pr-1">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded pl-2.5 cursor-pointer hover:bg-sidebar-accent/30 transition-colors"
+      >
+        <ChevronRight
+          className={cn(
+            'size-3.5 shrink-0 transition-transform text-muted-foreground/50',
+            expanded && 'rotate-90'
+          )}
+          strokeWidth={2}
+        />
+        <span className="select-none text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/65">
+          {label}
+        </span>
+      </button>
+      {forceActions && (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {onNewFile && <SectionAction title="New file" icon={FilePlus} onClick={onNewFile} />}
+          {onNewFolder && <SectionAction title="New folder" icon={FolderPlus} onClick={onNewFolder} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionAction({ title, icon: Icon, onClick }) {
   return (
     <button
       type="button"
-      onClick={onToggle}
-      className="mt-3 pl-2.5 w-full h-9 flex items-center gap-1.5 cursor-pointer hover:bg-sidebar-accent/30 rounded transition-colors"
+      title={title}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="flex size-6 items-center justify-center rounded-md text-muted-foreground/55 transition-colors hover:bg-sidebar-accent/55 hover:text-foreground/80"
     >
-      <ChevronRight
-        className={cn(
-          'size-3.5 shrink-0 transition-transform text-muted-foreground/50',
-          expanded && 'rotate-90'
-        )}
-        strokeWidth={2}
-      />
-      <span className="select-none text-[10.5px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/65">
-        {label}
-      </span>
+      <Icon className="size-[14px]" strokeWidth={1.75} />
     </button>
   );
 }

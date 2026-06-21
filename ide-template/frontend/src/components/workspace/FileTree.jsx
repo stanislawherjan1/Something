@@ -31,7 +31,7 @@ export const FUNCTIONAL_PATHS = new Set(['Tasks.md', 'generated', '.reminders.js
 
 const DRAG_MIME = 'application/x-workspace-path';
 
-export default function FileTree({ rootPath = '', selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
+export default function FileTree({ rootPath = '', selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry, onEmptyChange }) {
   return (
     <div className="flex flex-col gap-px pt-0 pb-1">
       <DirNode
@@ -51,12 +51,13 @@ export default function FileTree({ rootPath = '', selected, onSelect, onRequestD
         fileEventNonce={fileEventNonce}
         isCreating={isCreating}
         optimisticEntry={optimisticEntry}
+        onEmptyChange={onEmptyChange}
       />
     </div>
   );
 }
 
-function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry }) {
+function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry, onEmptyChange }) {
   const [open, setOpen] = useState(initiallyOpen);
 
   // Auto-open when a create starts inside us so the new InlineCreateRow is
@@ -152,6 +153,14 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
     e => !(isProjectRoot && FUNCTIONAL_PATHS.has(e.name))
   );
 
+  // Report this section root's emptiness up to the sidebar, so the section
+  // header can force its create actions visible when there's nothing here yet
+  // (the "empty workspace" hint's arrow points straight at them).
+  const isEmptyHere = visibleEntries.length === 0;
+  useEffect(() => {
+    if (isSectionRoot && entries !== null) onEmptyChange?.(isEmptyHere);
+  }, [isSectionRoot, entries, isEmptyHere, onEmptyChange]);
+
   return (
     <div
       onDragOver={onDragOver}
@@ -206,9 +215,6 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
               botDisplayName={branding.botDisplayName}
               isCreating={isCreating}
             />
-          )}
-          {entries && visibleEntries.length === 0 && isSectionRoot && !isProjectRoot && creating?.parentPath !== path && (
-            <Hint depth={depth + 1}>No files here yet</Hint>
           )}
           {visibleEntries.map(e => {
             const fullPath = path ? `${path}/${e.name}` : e.name;
@@ -470,9 +476,9 @@ function RenameInput({ initial, type, onSubmit, onCancel }) {
 function EmptyWorkspaceHint({ botDisplayName, isCreating }) {
   if (isCreating) return null;
   return (
-    <div className="relative mt-20 pl-2.5 pr-4 flex flex-col items-start text-left w-full">
+    <div className="relative mt-20 pl-7 pr-4 flex flex-col items-start text-left w-full">
       {/* Solid graphite grey, thicker, and shorter hand-drawn arrow */}
-      <div className="absolute -top-[65px] right-11 text-muted-foreground pointer-events-none">
+      <div className="absolute -top-[65px] right-4 text-muted-foreground pointer-events-none">
         <svg width="60" height="60" viewBox="0 0 60 60" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
           <path d="M 15 50 C 35 50 50 35 50 10" />
           {/* Unified arrow head (grot) */}
