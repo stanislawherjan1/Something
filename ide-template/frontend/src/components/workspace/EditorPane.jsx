@@ -107,7 +107,7 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   );
   if (type === 'file' && MARKDOWN_EXT.test(path))        return (
     <Suspense fallback={<LoadingState />}>
-      <MarkdownEditor path={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />
+      <MarkdownEditor path={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />
     </Suspense>
   );
   if (type === 'file' && CSV_EXT.test(path))             return (
