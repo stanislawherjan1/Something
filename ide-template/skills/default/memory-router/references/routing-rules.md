@@ -7,7 +7,9 @@ Loaded by the `memory-router` skill when applying a routing decision. Keep this 
 When an `[ACTOR …]` line is present, the personal cards live in the CURRENT user's private memory:
 
 - **Private cards** (per-user): `USER_PROFILE`, `USER_PREFERENCES`, `USER_RELATIONSHIPS`, `USER_REFLECTIONS` → `memory/users/<actor-slug>/<CARD>.md`. Personal preferences + individual working style are ALWAYS private.
-- **Shared cards** (flat, team-wide): `RULES`, `AGENT_TOOLS`, `AGENT_IDENTITY`, `INDEX` → `memory/<CARD>.md`.
+- **Shared cards** (flat, team-wide): `RULES`, `AGENT_TOOLS`, `AGENT_IDENTITY`, `INDEX` (+ the generated `TEAM` roster) → `memory/<CARD>.md`.
+
+> **Carve-out — "how to reach/address me" is SHARED, even though it feels personal.** A person's **preferred language**, **preferred channel**, and **Telegram link** are *contact/relay metadata*: another teammate's bot needs them to message this person correctly, and it can NOT read this person's private memory. So they live in the shared **`TEAM` roster** (managed via `/api/team` + `/api/me`, surfaced in `memory/TEAM.md`) — NOT in private `USER_PREFERENCES`. The test below ("useful to a DIFFERENT teammate?") already classifies these as shared; don't be fooled that they're *about* one person. Genuinely private taste (how *you* like the bot to write for *you*) stays in `USER_PREFERENCES`.
 
 Every rule below applies to the **resolved** path: for a private card that's the actor's own file — never the shared root, never another teammate's `memory/users/<other-slug>/`. Solo workspace (no `[ACTOR]`) → all cards are flat `memory/`; ignore this section.
 

@@ -109,17 +109,50 @@ server-side on read, write, move, and delete — the UI just mirrors it.
 
 ## 5. Memory — Shared vs Yours
 
-Memory follows the same split:
+Memory splits the same way: `memory/<card>.md` is **shared** (team-wide, in
+everyone's prompt); `memory/users/<slug>/<card>.md` is one person's **private**
+memory. Solo workspaces are flat — everything in `memory/`, no split.
 
-- **Shared memory** — team-wide cards and topic pages (the agent's identity,
-  rules, the team directory, shared topics).
-- **Your memory** — each teammate's private cards under
-  `memory/users/<slug>/` (their profile, preferences, reflections, and their
-  own rolling conversation snapshots).
+**Baseline cards, by tier:**
 
-The Memory dashboard's graph reflects this: in team mode it shows a
-**Shared / Yours** filter, draws a loop around each cluster, and a teammate's
-private memory is typically its own island, not wired into the shared graph.
+| Card | Tier | Why |
+|------|------|-----|
+| `AGENT_IDENTITY`, `AGENT_TOOLS`, `RULES`, `INDEX` | **Shared** | The assistant's voice, tool gotchas, hard rules, nav root — same for everyone. |
+| `TEAM` (generated) | **Shared** | The roster: who's on the team + how to reach them (see §11). |
+| `USER_PROFILE`, `USER_PREFERENCES`, `USER_RELATIONSHIPS`, `USER_REFLECTIONS` | **Private** | About one person — who they are, how *they* like the bot to work, their people, their reflections. |
+| `RECENT_WEB`, `RECENT_TELEGRAM` | **Private** | Each person's own rolling conversation snapshot. |
+
+Topic pages (`memory/topics/<slug>.md`) are shared; a private card's overflow
+promotes to a **private** topic page under `memory/users/<slug>/topics/`.
+
+**What's loaded into the prompt:** the cached system-prefix loads the shared
+`AGENT_*` + `RULES` + `INDEX`, then the **current user's** `USER_PROFILE` +
+`USER_PREFERENCES` + recent snapshots from `memory/users/<slug>/` (team mode).
+`USER_RELATIONSHIPS` / `USER_REFLECTIONS` are stored private but recalled
+on demand, not in the prefix.
+
+**Deciding where a new fact goes** (the `memory-router` skill): ask **"would
+this be useful to a DIFFERENT teammate?"**
+
+- **Yes** → Shared (`memory/…`): company facts, project structure, shared
+  decisions, conventions, the agent's behaviour.
+- **No — it's about this person or their taste** → their private
+  `memory/users/<their-slug>/…`: personal preferences, individual working style,
+  private context.
+
+**The subtle case — contact/relay metadata is SHARED even though it feels
+personal.** A person's **preferred language**, **preferred channel**, and
+**Telegram link** are *how others reach them* — another teammate's bot needs
+them and can't read private memory — so they live in the shared **roster**
+(`memory/TEAM.md`, managed via `/api/team` + `/api/me`), NOT in private
+`USER_PREFERENCES`. The "useful to a different teammate?" test classifies them
+correctly; the trap is assuming "about one person ⇒ private."
+
+Never fold private memory into a shared card (it would surface in everyone's
+prompt), and never write into another teammate's private subtree (actor-scoped
+server-side). The Memory dashboard's graph mirrors all this — a **Shared /
+Yours** filter, a loop around each cluster, and a teammate's private memory
+typically its own island.
 
 ---
 
