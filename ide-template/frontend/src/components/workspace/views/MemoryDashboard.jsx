@@ -22,6 +22,26 @@ import { useBranding } from '../identity';
 // Lazy so the graph runtime isn't in the main bundle.
 const ForceGraph2D = lazy(() => import('react-force-graph-2d'));
 
+// A gentle d3-force that pulls every UN-PINNED node toward the origin,
+// proportional to its distance — the equivalent of forceX(0)+forceY(0).
+// This is the piece the layout was missing: a card with no links (no edge,
+// no tether) has nothing holding it, so charge repulsion alone flings it
+// off-screen. With this spring, charge pushes out / this pulls in, so a
+// link-less card settles in a tight ring right next to the connected cluster.
+// Written inline because d3-force isn't hoisted as a top-level module here.
+// Skips pinned nodes (fx/fy) so the filter-stability pins still win.
+function centeringForce(strength) {
+  let nodes = [];
+  function force(alpha) {
+    for (const n of nodes) {
+      if (n.fx == null && Number.isFinite(n.x)) n.vx -= n.x * strength * alpha;
+      if (n.fy == null && Number.isFinite(n.y)) n.vy -= n.y * strength * alpha;
+    }
+  }
+  force.initialize = (n) => { nodes = n; };
+  return force;
+}
+
 // Monochrome theme-aware palette. White-family in light mode (index pure
 // white, cards + topics are pre-blended solids approximating white at
 // 50% / 25% opacity over the light bg — so they read as progressively
@@ -219,15 +239,23 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Cap the charge repulsion range so clusters stay compact (belt-and-braces
-  // with the invisible tether that holds the disconnected "yours" island near
-  // the shared hub). Pinned positions make this mostly a no-op after first
-  // layout, but it keeps any drag-triggered reheat from flinging nodes.
+  // Force tuning. The CENTRING spring (centerPull) is the fix for link-less
+  // cards drifting off-screen: it pulls every un-pinned node toward the middle
+  // so isolated cards settle right next to the cluster instead of at infinity.
+  // Charge gets a capped, moderate repulsion so nodes don't overlap but can't
+  // fling either. We re-apply on every data change and reheat so the FIRST
+  // settle already happens with these forces (force-graph's initial warmup runs
+  // before this effect, so the reheat is what makes the opening layout compact).
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
     const charge = fg.d3Force('charge');
-    if (charge?.distanceMax) charge.distanceMax(140);
+    if (charge) {
+      charge.strength?.(-42);
+      charge.distanceMax?.(150);
+    }
+    fg.d3Force?.('centerPull', centeringForce(0.10));
+    fg.d3ReheatSimulation?.();
   }, [displayed, size.w]);
 
   // Re-centre the camera on whatever's visible whenever the scope filter
