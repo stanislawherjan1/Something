@@ -727,9 +727,13 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
               }
               const isLastAssistant = m.role === 'assistant' && i === messages.length - 1;
               const isEmptyStreaming = isLastAssistant && m.state === 'streaming' && !m.text;
-              // Chips render inline with the Thinking indicator while empty-streaming;
-              // once text starts flowing, they drop to a row below the bubble.
-              const showChipsBelow = isLastAssistant && !isEmptyStreaming && chips.length > 0;
+              // Once text is flowing, a single fixed-height "activity" slot sits
+              // below the bubble and shows EITHER the tool chips OR the typing
+              // dot. Keeping it one slot (same height + gap) means swapping
+              // dot↔chips doesn't shift the text above. (While empty-streaming
+              // the Thinking indicator lives inside the bubble instead.)
+              const showActivityBelow = isLastAssistant && !isEmptyStreaming
+                && (m.state === 'streaming' || chips.length > 0);
               // Retry resends the user message that preceded a failed assistant
               // turn — drops the error bubble + the original prompt, then re-sends.
               const canRetry = isLastAssistant && m.state === 'error' && !busy;
@@ -744,17 +748,17 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
               return (
                 <Fragment key={m.id}>
                   {dividerEl}
-                  <div className={cn(showChipsBelow && 'flex flex-col items-start gap-1.5')}>
+                  <div className={cn(showActivityBelow && 'flex flex-col items-start gap-1.5')}>
                     <ChatBubble
                       message={m}
                       chips={isEmptyStreaming ? chips : null}
-                      hasActiveChips={isLastAssistant && chips.length > 0}
+                      suppressInlineDot={showActivityBelow}
                       onRetry={onRetry}
                       onFileSelect={onFileSelect}
                     />
-                    {showChipsBelow && (
-                      <div className="px-1">
-                        <ToolChipRow chips={chips} />
+                    {showActivityBelow && (
+                      <div className="flex min-h-[24px] items-center px-1">
+                        {chips.length > 0 ? <ToolChipRow chips={chips} /> : <ActivityDot />}
                       </div>
                     )}
                   </div>
@@ -789,7 +793,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
  * assistant messages appear directly on the warm surface (no card/border) so
  * the conversation reads like typewritten prose.
  */
-function ChatBubble({ message, chips, hasActiveChips, onRetry, onFileSelect }) {
+function ChatBubble({ message, chips, suppressInlineDot, onRetry, onFileSelect }) {
   const isUser      = message.role === 'user';
   const isError     = message.state === 'error';
   const isInterrupted = message.state === 'interrupted';
@@ -868,10 +872,10 @@ function ChatBubble({ message, chips, hasActiveChips, onRetry, onFileSelect }) {
         ) : (
           <>
             <AssistantBody text={message.text} images={message.images} content={message.content} onFileSelect={onFileSelect} />
-            {/* Blinking dot signals "still typing". Suppress when a tool chip
-                is showing below the bubble — the chip's own spinner already
-                conveys "work in progress" and the dot becomes redundant. */}
-            {message.state === 'streaming' && !hasActiveChips && (
+            {/* Blinking "still typing" dot. Suppressed while the activity slot
+                below the bubble is showing (it carries the dot / chips there
+                instead) — keeps the typing cue in one place so nothing jumps. */}
+            {message.state === 'streaming' && !suppressInlineDot && (
               <span className="ml-1 inline-block size-2 rounded-full bg-foreground/55 align-middle animate-[cursor-blink_0.9s_steps(1)_infinite]" />
             )}
             {/* Interrupted-with-text marker — Phase 4 preserves the partial. */}
@@ -1318,6 +1322,15 @@ function formatDayLabel(d) {
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
   }
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+// The typing dot shown in the activity slot below a streaming bubble when no
+// tool chip is active — same slot + height as the chips, so swapping between
+// them never shifts the text.
+function ActivityDot() {
+  return (
+    <span className="inline-block size-2 rounded-full bg-foreground/45 animate-[cursor-blink_0.9s_steps(1)_infinite]" />
+  );
 }
 
 function ThinkingIndicator({ chips }) {
