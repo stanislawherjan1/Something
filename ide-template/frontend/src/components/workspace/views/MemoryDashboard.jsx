@@ -158,6 +158,15 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     const links = (showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki'))
       .filter(e => nodeIds.has(eid(e.source)) && nodeIds.has(eid(e.target)))
       .map(e => ({ ...e, source: eid(e.source), target: eid(e.target) }));
+    // Tether each disconnected scope cluster to the shared hub with an INVISIBLE
+    // link. With no real edge between clusters, charge alone flings the "yours"
+    // island to infinity; a tether present from the first layout keeps it near
+    // (charge still gives a sensible gap). Not rendered, not counted.
+    if (scopeFilter === 'all') {
+      const sharedHub = nodes.find(n => n.id === 'index') || nodes.find(n => (n.scope || 'shared') === 'shared');
+      const yoursHub = nodes.find(n => n.scope === 'yours');
+      if (sharedHub && yoursHub) links.push({ source: sharedHub.id, target: yoursHub.id, kind: 'tether' });
+    }
     const cache = posCacheRef.current;
     const cloned = nodes.map(n => {
       const c = cache.get(n.id);
@@ -210,28 +219,15 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Keep the two clusters from drifting apart: a mild pull toward the origin
-  // (custom force, no d3-force import) so Shared can't be dragged miles from
-  // Yours, and a capped repulsion range so distant nodes don't shove each other
-  // to infinity. Re-applied whenever the graph data swaps (filter changes).
+  // Cap the charge repulsion range so clusters stay compact (belt-and-braces
+  // with the invisible tether that holds the disconnected "yours" island near
+  // the shared hub). Pinned positions make this mostly a no-op after first
+  // layout, but it keeps any drag-triggered reheat from flinging nodes.
   useEffect(() => {
     const fg = graphRef.current;
-    if (!fg || !displayed) return;
-    let fnodes = [];
-    // Pull every node toward the centre; the pull grows with distance, so a
-    // DISCONNECTED cluster (no links holding it in) is reeled back near the
-    // shared cluster instead of being flung to the corners by raw charge.
-    const recenter = (alpha) => {
-      for (const n of fnodes) { n.vx -= n.x * 0.2 * alpha; n.vy -= n.y * 0.2 * alpha; }
-    };
-    recenter.initialize = (ns) => { fnodes = ns; };
-    fg.d3Force('recenter', recenter);
-    // Cap repulsion range so far-apart nodes don't keep shoving each other out.
+    if (!fg) return;
     const charge = fg.d3Force('charge');
-    if (charge?.distanceMax) charge.distanceMax(150);
-    // Forces are set after the initial warmup, so give the sim one gentle
-    // re-settle to actually apply them (pulls the stray clusters in).
-    fg.d3ReheatSimulation?.();
+    if (charge?.distanceMax) charge.distanceMax(140);
   }, [displayed, size.w]);
 
   // Re-centre the camera on whatever's visible whenever the scope filter
@@ -409,6 +405,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   }, []);
 
   const linkColour = useCallback((link) => {
+    if (link.kind === 'tether') return 'rgba(0,0,0,0)';   // invisible layout-only tether
     // Warm-neutral grays for edges — faintly off the slate-blue side, but
     // not actual brown. Recedes from the nodes so the eye follows shapes
     // first, then connections.
@@ -417,7 +414,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       : (isDark ? 'rgba(170,165,155,0.18)' : 'rgba(115,110,100,0.22)');
   }, [isDark]);
 
-  const linkWidth = useCallback((link) => link.kind === 'wiki' ? 1.4 : 0.6, []);
+  const linkWidth = useCallback((link) => (link.kind === 'tether' ? 0 : link.kind === 'wiki' ? 1.4 : 0.6), []);
 
   const ready = graph !== null;
   // Reflect what's actually on screen (after the Shared/Yours + wiki filters),

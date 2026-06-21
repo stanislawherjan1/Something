@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
   Wrench, Plug, Clock, UsersRound, Inbox, Search,
@@ -48,6 +48,13 @@ export default function Sidebar({
     } catch { return { shared: true, personal: true }; }
   });
   const { me } = useMe();   // { email, slug, role, displayName, isAdmin, personalRoot }
+
+  // Once a Files section has been expanded, keep its FileTree MOUNTED (just
+  // hidden via CSS when collapsed) so collapsing+re-expanding doesn't re-fetch
+  // and flash the skeleton every time. Lazy: not mounted until first opened.
+  const everExpanded = useRef({ shared: false, personal: false });
+  if (expandedSections.shared)   everExpanded.current.shared = true;
+  if (expandedSections.personal) everExpanded.current.personal = true;
 
   const handleDelete = useCallback(async ({ path }) => {
     setPendingDelete(null);
@@ -151,22 +158,24 @@ export default function Sidebar({
           expanded={expandedSections.shared}
           onToggle={() => toggleSection('shared')}
         />
-        {expandedSections.shared && (
-          <FileTree
-            rootPath=""
-            selected={selected}
-            onSelect={onSelect}
-            onRequestDelete={setPendingDelete}
-            onMove={handleMove}
-            onCreate={(parentPath, kind) => setCreating({ kind, parentPath })}
-            creating={creating}
-            onCreateSubmit={handleCreate}
-            onCreateCancel={() => setCreating(null)}
-            showHidden={showHidden}
-            fileEventNonce={fileEventNonce}
-            isCreating={!!creating}
-            optimisticEntry={optimisticEntry}
-          />
+        {everExpanded.current.shared && (
+          <div className={cn(!expandedSections.shared && 'hidden')}>
+            <FileTree
+              rootPath=""
+              selected={selected}
+              onSelect={onSelect}
+              onRequestDelete={setPendingDelete}
+              onMove={handleMove}
+              onCreate={(parentPath, kind) => setCreating({ kind, parentPath })}
+              creating={creating}
+              onCreateSubmit={handleCreate}
+              onCreateCancel={() => setCreating(null)}
+              showHidden={showHidden}
+              fileEventNonce={fileEventNonce}
+              isCreating={!!creating}
+              optimisticEntry={optimisticEntry}
+            />
+          </div>
         )}
 
         {me?.personalRoot && (
@@ -176,22 +185,24 @@ export default function Sidebar({
               expanded={expandedSections.personal}
               onToggle={() => toggleSection('personal')}
             />
-            {expandedSections.personal && (
-              <FileTree
-                rootPath={me.personalRoot}
-                selected={selected}
-                onSelect={onSelect}
-                onRequestDelete={setPendingDelete}
-                onMove={handleMove}
-                onCreate={(parentPath, kind) => setCreating({ kind, parentPath })}
-                creating={creating}
-                onCreateSubmit={handleCreate}
-                onCreateCancel={() => setCreating(null)}
-                showHidden={showHidden}
-                fileEventNonce={fileEventNonce}
-                isCreating={!!creating}
-                optimisticEntry={optimisticEntry}
-              />
+            {everExpanded.current.personal && (
+              <div className={cn(!expandedSections.personal && 'hidden')}>
+                <FileTree
+                  rootPath={me.personalRoot}
+                  selected={selected}
+                  onSelect={onSelect}
+                  onRequestDelete={setPendingDelete}
+                  onMove={handleMove}
+                  onCreate={(parentPath, kind) => setCreating({ kind, parentPath })}
+                  creating={creating}
+                  onCreateSubmit={handleCreate}
+                  onCreateCancel={() => setCreating(null)}
+                  showHidden={showHidden}
+                  fileEventNonce={fileEventNonce}
+                  isCreating={!!creating}
+                  optimisticEntry={optimisticEntry}
+                />
+              </div>
             )}
           </>
         )}

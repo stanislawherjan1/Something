@@ -1765,8 +1765,12 @@ start_bot_stack() {
     # Runs as coder (a workspace-group member); then we match .tasks.json to the
     # .reminders.json ownership model (group `workspace`, group-writable) so both
     # wsapi (the board API) and the tasks MCP can rewrite it on mutation.
+    # NOTE: use `runuser`, not `su coder -c` — in this non-interactive entrypoint
+    # context `su` hits PAM and fails with "Authentication failure" (the same
+    # reason the bootstrap-project su line above is effectively a no-op). runuser
+    # drops privileges as root without PAM auth.
     if [ -f /opt/ide/bootstrap/migrate-tasks.mjs ]; then
-        su coder -c "PROJECT_DIR='$PROJECT_DIR' node /opt/ide/bootstrap/migrate-tasks.mjs" \
+        runuser -u coder -- env PROJECT_DIR="$PROJECT_DIR" node /opt/ide/bootstrap/migrate-tasks.mjs \
             2>&1 | sed 's/^/[migrate-tasks] /' || true
         if [ -f "$PROJECT_DIR/.tasks.json" ]; then
             chgrp workspace "$PROJECT_DIR/.tasks.json" 2>/dev/null || true
