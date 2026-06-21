@@ -12,6 +12,10 @@ extensions/*/node_modules/
 frontend/node_modules
 .playwright-mcp/
 
+# Python bytecode cache — build artifact, never source (hooks/*.py compile here)
+__pycache__/
+*.pyc
+
 # Per-client branding lives in clients/<client>/overrides/public/ and
 # is copied into ide-template/frontend/public/ by the per-client
 # deploy wrapper. The template's public/ stays branding-neutral; any
