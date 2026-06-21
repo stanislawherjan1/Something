@@ -264,7 +264,27 @@ export default function filesRouter() {
         try { res.end(); } catch { /* already closed */ }
       });
       zip.pipe(res);
-      zip.directory(abs, baseName);
+      // Filtered recursive add — NOT zip.directory(), which walks the raw FS and
+      // would sweep in HARD_HIDDEN secrets and every OTHER teammate's private
+      // users/<slug>/ + memory/users/<slug>/ tree. Mirror /files/search: only
+      // entries listDir deems visible (drops HARD_HIDDEN + dotfiles) AND that
+      // actorCanAccess permits (drops cross-user + symlink-resolved escapes).
+      const rootRel = relPath.replace(/^\/+|\/+$/g, '');
+      const queue = [{ abs, rel: rootRel }];
+      while (queue.length) {
+        const cur = queue.shift();
+        let entries;
+        try { entries = listDir(cur.abs, { includeHidden: false }); } catch { continue; }
+        for (const e of entries) {
+          const childRel = cur.rel ? `${cur.rel}/${e.name}` : e.name;
+          const childAbs = resolveSafePath(childRel);
+          if (!childAbs || !actorCanAccess(childAbs, req)) continue;
+          const sub = rootRel ? childRel.slice(rootRel.length + 1) : childRel;
+          const inZip = `${baseName}/${sub}`;
+          if (e.type === 'dir') queue.push({ abs: childAbs, rel: childRel });
+          else zip.file(childAbs, { name: inZip });
+        }
+      }
       zip.finalize();
       return;
     }

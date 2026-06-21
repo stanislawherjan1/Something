@@ -232,6 +232,11 @@ def cmd_list(args) -> int:
 
 
 SLUG_RE = re.compile(r"^[a-z0-9-]+$")
+# Card names are bare identifiers (AGENT_IDENTITY, USER_PROFILE, RECENT_WEB, …)
+# or kebab topic slugs — NEVER a path. Validating this blocks a model-generated
+# proposal from smuggling `../` into `card` to escape memory/ and overwrite an
+# arbitrary file (RULES, .allowed-emails, another teammate's card).
+CARD_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def resolve_target(proposal: dict) -> tuple[Path, str | None]:
@@ -244,12 +249,20 @@ def resolve_target(proposal: dict) -> tuple[Path, str | None]:
     (refuse rather than risk a path escape).
     """
     card = proposal["card"]
+    if not isinstance(card, str) or not CARD_RE.match(card):
+        return MEMORY_DIR / "INVALID.md", f"proposal has invalid card name {card!r}"
     if proposal.get("scope") == "private":
         owner = proposal.get("owner", "")
         if not SLUG_RE.match(owner):
             return MEMORY_DIR / f"{card}.md", f"private proposal has invalid owner slug {owner!r}"
-        return MEMORY_DIR / "users" / owner / f"{card}.md", None
-    return MEMORY_DIR / f"{card}.md", None
+        path = MEMORY_DIR / "users" / owner / f"{card}.md"
+    else:
+        path = MEMORY_DIR / f"{card}.md"
+    # Belt-and-braces: the resolved path MUST stay inside memory/ — catches any
+    # traversal/symlink escape even if the regex above is somehow bypassed.
+    if not path.resolve().is_relative_to(MEMORY_DIR.resolve()):
+        return MEMORY_DIR / "INVALID.md", f"resolved card path escapes memory dir: {path}"
+    return path, None
 
 
 def cmd_apply(args) -> int:

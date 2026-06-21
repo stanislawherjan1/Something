@@ -326,10 +326,14 @@ export default function internalRouter() {
         // the frame (routeTelegramInbound admin-skips), so it needs no
         // tgMessageId reply-to anchor. AWAITED so we can fall back if offline.
         const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
-        const flat = (v) => String(v == null ? '' : v).replace(/[\n\r]+/g, ' ').trim();
+        // The body is teammate-controlled. It MUST be stripped of the frame
+        // delimiters too (| and ]) — otherwise a teammate can close this frame
+        // early with `]` and inject a SECOND forged `[RELAY from=ceo …]` into the
+        // operator's brain (impersonation / scope escalation). `kw` neutralises
+        // | ] CR LF; literal pipes/brackets in prose become spaces (rare, fine).
         const awaitMode = depth >= 2 ? 'none' : 'reply';
         const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
-          + `thread=${kw(destId)} chat_id=${kw(deliverTo.telegramChatId)} depth=${depth} await=${awaitMode} | ${flat(text)}]`;
+          + `thread=${kw(destId)} chat_id=${kw(deliverTo.telegramChatId)} depth=${depth} await=${awaitMode} | ${kw(text)}]`;
         const r = await injectBotFrame(frame);
         framedToBrain = !!r.injected;
         if (framedToBrain) {

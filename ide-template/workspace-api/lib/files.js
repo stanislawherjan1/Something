@@ -40,29 +40,36 @@ export function resolveSafePath(rel) {
   try { projectReal = realpathSync(projectAbs); }
   catch { projectReal = projectAbs; }
 
-  // Resolve symlinks if the file actually exists. Missing files are fine —
-  // create/write paths legitimately don't exist yet, and the parent dir
-  // realpath check still catches an attacker-planted symlink-as-parent.
-  try {
-    const real = realpathSync(abs);
+  // Canonicalize through symlinks, then RE-EXPRESS inside the lexical project
+  // dir. Two jobs: (a) reject escapes out of PROJECT_DIR, and (b) — critical in
+  // team mode — make a symlink that points at ANOTHER user's subtree resolve to
+  // that REAL location, so the downstream actor-scope check sees the true path
+  // instead of the in-scope-looking lexical one (the bug: a member planting
+  // `ln -s ../bob users/me/peek` then reading/writing it via the file API).
+  // Returning into the LEXICAL project space keeps callers consistent when
+  // PROJECT_DIR itself is a symlink (e.g. /tmp → /private/tmp on macOS).
+  const intoProject = (real) => {
     if (real !== projectReal && !real.startsWith(projectReal + sep)) return null;
+    return real === projectReal ? projectAbs : resolve(projectAbs, relative(projectReal, real));
+  };
+  try {
+    return intoProject(realpathSync(abs));
   } catch (err) {
     if (err.code !== 'ENOENT') return null;
-    // For not-yet-existing paths, realpath the deepest existing ancestor —
-    // catches a parent component like `safe/../link → /etc`.
+    // Not-yet-existing path (create/write): canonicalize the deepest existing
+    // ancestor (catches a symlinked parent component) + re-append the tail.
     let probe = dirname(abs);
-    while (probe !== projectAbs && probe.startsWith(projectAbs + sep)) {
+    while (true) {
+      if (probe === projectAbs || !probe.startsWith(projectAbs + sep)) return abs;
       try {
-        const realProbe = realpathSync(probe);
-        if (realProbe !== projectReal && !realProbe.startsWith(projectReal + sep)) return null;
-        break;
+        const base = intoProject(realpathSync(probe));
+        return base ? resolve(base, relative(probe, abs)) : null;
       } catch (e) {
         if (e.code !== 'ENOENT') return null;
         probe = dirname(probe);
       }
     }
   }
-  return abs;
 }
 
 /**

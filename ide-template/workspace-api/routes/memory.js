@@ -72,6 +72,21 @@ export default function memoryRouter() {
   // no USER_PROFILE, no RULES, no RECENT_TELEGRAM — while global-claude.md
   // told the model "you have these in your prefix, don't re-read" (gaslit).
   router.get('/memory/prefix', (req, res) => {
+    // raw=1 returns the FULL prefix BLOCK — in team mode that includes the
+    // primary admin's PRIVATE memory (USER_PROFILE / USER_PREFERENCES + recent
+    // web/telegram tails, loaded with actor = primary admin below). Only the
+    // in-container bot + pre-warm fetch it, over 127.0.0.1. A browser member
+    // reaches wsapi through the SEPARATE nginx container, so their peer is never
+    // loopback — gate raw on that to stop a non-admin reading the admin's
+    // private memory. The JSON diagnostics (no content) stay open for the
+    // AI-Settings dashboard.
+    const isRaw = req.query.raw === '1';
+    if (isRaw) {
+      const ip = req.socket?.remoteAddress || '';
+      if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
+        return res.status(403).json({ error: 'loopback only' });
+      }
+    }
     try {
       // This endpoint has no per-user identity (it's the bot/Telegram surface
       // + the pre-warm script). In team mode the personal cards (USER_PROFILE /
@@ -81,7 +96,7 @@ export default function memoryRouter() {
       // flat cards. Solo → undefined → flat load, unchanged.
       const actor = getTeamMode() ? primaryAdminSlug() : undefined;
       const result = buildCachedPrefix({ actor });
-      if (req.query.raw === '1') {
+      if (isRaw) {
         res.type('text/plain').send(result.block || '');
         return;
       }
