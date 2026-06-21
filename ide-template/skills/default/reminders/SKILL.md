@@ -6,11 +6,19 @@ allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp
 
 # Reminders Protocol
 
-## What a reminder is
+## What a reminder is — an action FOR YOU, by default
 
-A reminder is a **timed action that YOU (the bot) perform** — at the due time *you* do something: send a nudge, or carry out an action and deliver the result. It is **not** a to-do item parked on a board.
+A reminder is a **scheduled action that YOU (the bot) carry out** at the due time. The default is that *you do the thing and deliver the result* — NOT that you ping the user to go do it themselves.
 
-In team mode every reminder is **tied to a person** — by default the asker, optionally a teammate or everyone. Targeting someone means *at the due time you reach out to them* (notify them, or do something and hand them the result). It does **NOT** assign them a task or write anything to their `Tasks.md`. The reminder stays *your* scheduled job; the recipient is simply who it concerns. "Remind Jan about the deadline at 3pm" = *at 3pm, you ping Jan* — not "give Jan a to-do."
+"Remind me to check my email in 5 min", "set yourself a reminder to pull yesterday's numbers at 9", "every morning summarise my inbox" → these schedule **work for you**: at the due time you actually check the email / pull the numbers / summarise, then report what you found. Phrasings like "set *yourself* a reminder to…" make it doubly clear *you* are the actor. **Re-sending the title ("hey, check your email") instead of checking it is the failure mode** — it frustrated a real user who wanted the work done.
+
+A reminder is only a plain **nudge** when the thing is something **only the user can do** in the offline world — "call John", "take your meds", "leave for the airport". Then there's nothing for you to execute, so you relay it in your voice.
+
+> The test, at fire time: **can I do this with my tools? → yes → DO it and report. Only if it's genuinely human-only → relay a nudge.** When unsure, act.
+
+This is also what separates reminders from tasks: a **task** is the user's own to-do tracked on a board; a **reminder** is a timed job *the bot* runs (or, rarely, a nudge it relays).
+
+In team mode every reminder is **tied to a person** — by default the asker, optionally a teammate or everyone. Targeting someone means *at the due time you act for them / reach out to them* (run the job and hand them the result, or relay the nudge). It does **NOT** assign them a task or write anything to a board.
 
 ## Tasks vs Reminders — don't conflate them
 
@@ -40,9 +48,11 @@ Reminders fire via a PM2 background process that polls `.reminders.json` every 6
 
 Full trigger format, the action-vs-nudge test, channel routing, and the two delivery paths (live session vs offline fallback) → `references/delivery.md`. **Read it before handling a `[REMINDER ...]` trigger.**
 
-## After setting — confirm clearly
+## After setting — confirm clearly (and in the right frame)
 
-> "Reminder set for 15:00 UTC (17:00 Warsaw): 'Check Meta ads'.
-> ID: r_a1b2c3 — use this to cancel if needed."
+Confirm the **time** AND, for an action reminder, that **you'll do it** — not that you'll nag the user:
 
-Always echo both UTC and the user's local time when their timezone is known. For a **recurring** reminder, also state the cadence and the next fire — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday. ID: r_a1b2c3."
+- Action (Kind 1): *"Done — in 5 min I'll check your email and report back (09:35 Warsaw)."* — NOT "I'll remind you to check your email." You're the one acting.
+- Nudge (Kind 2): *"Done — I'll ping you to call John at 15:00 UTC (17:00 Warsaw)."*
+
+Always echo both UTC and the user's local time when their timezone is known, plus the ID for cancelling. For a **recurring** reminder, also state the cadence and the next fire — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday. ID: r_a1b2c3."

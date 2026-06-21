@@ -303,7 +303,7 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
 // ─── Row ──────────────────────────────────────────────────────────────────
 
 function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
-  const { email, role, addedAt, addedBy, avatarUrl, displayName } = entry;
+  const { email, role, addedAt, avatarUrl, displayName } = entry;
   const canRemove = canManage && !isMe && !isLastAdmin;
   return (
     <div className="flex h-full flex-col">
@@ -325,14 +325,14 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
         {addedAt && (
           <div className="mt-2.5 text-[11px] text-muted-foreground/55">
             invited {formatRelative(new Date(addedAt))}
-            {addedBy && addedBy !== 'bootstrap' && ` by ${addedBy}`}
           </div>
         )}
       </div>
 
-      {/* Footer - actions, mirrors the integration tile action row */}
-      {canManage && (
-        <div className="px-4 pb-4 pt-3.5">
+      {/* Footer - actions for admins; a same-height spacer for everyone else so
+          every card keeps the same height whether or not it has buttons. */}
+      <div className="px-4 pb-4 pt-3.5">
+        {canManage ? (
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -354,8 +354,10 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
               </button>
             )}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="h-8" aria-hidden />
+        )}
+      </div>
     </div>
   );
 }
