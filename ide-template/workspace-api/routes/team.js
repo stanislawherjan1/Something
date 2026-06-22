@@ -164,9 +164,9 @@ export default function teamRouter() {
   });
 
   router.post('/team/telegram-groups', requireAdmin, rateLimit, express.json({ limit: '2kb' }), (req, res) => {
-    const { chatId, title, beat, requireMention } = req.body || {};
+    const { chatId, title, beat, requireMention, language } = req.body || {};
     try {
-      const group = team.addGroup({ chatId, title, beat, requireMention, actor: req.actor });
+      const group = team.addGroup({ chatId, title, beat, requireMention, language, actor: req.actor });
       syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it
       res.status(201).json({ ok: true, group });
     } catch (err) {

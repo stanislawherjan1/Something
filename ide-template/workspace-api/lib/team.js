@@ -571,7 +571,7 @@ export function isAllowedGroup(chatId) {
  * (ambient — the whole point of group mode); `beat` is an optional operator
  * override that steers what the relevance watcher treats as on-beat.
  */
-export function addGroup({ chatId, title, requireMention, beat, actor } = {}) {
+export function addGroup({ chatId, title, requireMention, beat, language, actor } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) throw new Error('invalid group id (must be a negative integer)');
   const cfg = readConfig();
@@ -581,6 +581,9 @@ export function addGroup({ chatId, title, requireMention, beat, actor } = {}) {
     title:          title != null ? String(title).slice(0, 120) : (prev.title || ''),
     requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? false),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
+    // Optional per-group reply language (free text, e.g. "English", "Polish").
+    // Empty → the brain infers the language from each message, as in 1:1.
+    language:       language != null ? String(language).slice(0, 40) : (prev.language || ''),
     addedAt:        prev.addedAt || new Date().toISOString(),
     addedBy:        prev.addedBy || (actor ? normalize(actor) : ''),
     updatedAt:      new Date().toISOString(),

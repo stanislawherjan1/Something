@@ -40,7 +40,7 @@ import { injectBotFrame } from '../bot-inject.js';
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 
 const OBSERVE_ONLY      = process.env.GROUP_WATCHER_OBSERVE_ONLY === '1'; // default OFF — replies by default; set =1 to observe-only (tuning a new deploy)
-const QUIET_MS          = num('GROUP_WATCHER_QUIET_MS', 3000);
+const QUIET_MS          = num('GROUP_WATCHER_QUIET_MS', 5000);
 const MAX_BURST         = num('GROUP_WATCHER_MAX_BURST', 8);
 const MAX_WINDOW_MS     = num('GROUP_WATCHER_MAX_WINDOW_MS', 12000);
 // LIBERAL by design: the Haiku gate only drops obvious noise; the full brain is
@@ -119,6 +119,8 @@ const AUDIT_DIR = join(PROJECT_DIR, '.group-watcher');
 // ─── Module state ─────────────────────────────────────────────────────────────
 const buffers   = new Map();   // chat_id → { msgs:[], firstAt, timer }
 const chains    = new Map();   // chat_id → Promise (per-chat serialization)
+const composing = new Set();   // chat_ids with a turn in flight — new messages COALESCE
+                               // into one follow-up instead of each firing its own reply
 const seen      = new Set();   // `${chat_id}:${message_id}` dedup, bounded
 const SEEN_MAX  = 5000;
 // Per-group rolling conversation history (recent inbound + the bot's OWN sends),
@@ -384,16 +386,20 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
   const actor = (member && member.slug) || 'team';
   const senderName = (member && member.displayName) || clip(target.who || target.from_name || target.from_username || 'a teammate', NAME_CLAMP);
   const actorIsAdmin = !!(member && member.role === 'admin');
+  // Per-group reply language (operator-set on the group). Empty → infer per message.
+  const lang = group && group.language ? String(group.language).trim() : '';
+  const replyLang = lang || `${senderName}'s language`;
   const message = [
     'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). Recent conversation:',
     '----',
     window,
     '----',
     `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — files, memory, skills, integrations, reminders — and you may act, exactly as you would 1:1. Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group, so if a request needs PRIVATE/personal data, offer to do it in a DM instead.`,
+    lang ? `This group's language is ${lang} — reply in ${lang} whatever language a message happens to be written in.` : '',
     '',
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, your FIRST output must be exactly `[[SILENT]]` — immediately, before using any tool — and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
     '',
-    `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${senderName}'s language, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
+    `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
   ].join('\n');
   return {
     message,
@@ -587,6 +593,10 @@ async function flush(chatId) {
 }
 
 function scheduleFlush(chatId) {
+  // A turn is already composing for this chat → don't fire a second one. The
+  // messages stay buffered; runFlush re-schedules them as ONE follow-up when the
+  // in-flight turn finishes (so two quick messages can't become two replies).
+  if (composing.has(chatId)) return;
   const buf = buffers.get(chatId);
   if (!buf) return;
   clearTimeout(buf.timer);
@@ -604,7 +614,19 @@ function scheduleFlush(chatId) {
 // flag would be a check-then-act race across the await).
 function runFlush(chatId) {
   const prev = chains.get(chatId) || Promise.resolve();
-  const next = prev.then(() => flush(chatId)).catch(err => process.stderr.write(`[group-watcher] flush error: ${err.message}\n`));
+  const next = prev.then(async () => {
+    composing.add(chatId);
+    try { await flush(chatId); }
+    catch (err) { process.stderr.write(`[group-watcher] flush error: ${err.message}\n`); }
+    finally {
+      composing.delete(chatId);
+      // Messages that arrived DURING this turn were held (scheduleFlush no-op'd
+      // while composing) — handle them now as a single coalesced follow-up. The
+      // bot's just-sent reply is in history, so the brain continues rather than
+      // double-texting.
+      if (buffers.get(chatId)?.msgs.length) scheduleFlush(chatId);
+    }
+  });
   chains.set(chatId, next);
 }
 
