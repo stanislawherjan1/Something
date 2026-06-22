@@ -15,7 +15,7 @@ import * as runtime from '../lib/integrations/runtime.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
@@ -426,6 +426,30 @@ export default function internalRouter() {
     res.status(202).json({ ok: true });
     try { routeGroupMessage(req.body || {}); }
     catch (err) { process.stderr.write(`[internal] group-message failed: ${err.message}\n`); }
+  });
+
+  // The bot was ADDED to a Telegram group (server.ts Patch 4h posts this on
+  // my_chat_member). Auto-register IF the group's creator (or whoever added the
+  // bot) is a team-roster member — that's the trust gate ("only add the bot to
+  // groups your people own"). addGroup → CHANNELS card; restartBot re-seeds the
+  // group into access.json so the operator can reply into it from a DM; the
+  // [GROUP] inject tells the operator brain it just joined.
+  router.post('/internal/group-joined', loopbackOnly, (req, res) => {
+    res.status(202).json({ ok: true });
+    try {
+      const { chat_id, title, creator_id, added_by_id } = req.body || {};
+      const cid = chat_id != null ? String(chat_id).trim() : '';
+      if (!cid || isAllowedGroup(cid)) return;   // unknown id or already registered
+      const by = (creator_id && userByChatId(creator_id)) || (added_by_id && userByChatId(added_by_id)) || null;
+      if (!by) {
+        process.stderr.write(`[group-joined] ${cid} ("${title || ''}") — creator/adder not in roster; NOT auto-registering\n`);
+        return;
+      }
+      addGroup({ chatId: cid, title, actor: 'auto' });
+      runtime.restartBot().catch(() => {});   // re-seed access.json (reply-into-group)
+      injectBotFrame(`[GROUP chat_id=${cid} "${String(title || '').slice(0, 40)}" | auto-registered: ${by.displayName || by.slug} added me to this group, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
+      process.stderr.write(`[group-joined] auto-registered ${cid} ("${title || ''}") via ${by.slug}\n`);
+    } catch (err) { process.stderr.write(`[internal] group-joined failed: ${err.message}\n`); }
   });
 
   return router;

@@ -32,6 +32,12 @@ export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) 
   // everything else (the shared team space) → allow.
   const isUsersTree = parts[0] === USERS_DIR;                            // users/<slug>/…
   const isMemTree   = parts[0] === 'memory' && parts[1] === USERS_DIR;   // memory/users/<slug>/…
+  // Group-mode memory (memory/groups/<gid>/…) is the GROUP brain's working set,
+  // not a member-browsable space — deny it to every non-admin via the file API
+  // (admin already returned true above). The group brain itself has no file
+  // tools, so this only gates web members; it stops a teammate reading raw group
+  // transcripts/notes through /api/files.
+  if (parts[0] === 'memory' && parts[1] === 'groups') return false;
   if (!isUsersTree && !isMemTree) return true;
   if (!ownSlug) return false;                       // a private tree, but the actor has no slug
   return (isMemTree ? parts[2] : parts[1]) === ownSlug;

@@ -81,11 +81,30 @@ export async function syncTelegramAllowedIds() {
 }
 
 /**
+ * Apply a change to the GROUP registry to the live bot. bot.sh seeds access.json's
+ * `groups{}` from the .team-config.json registry at startup, and the plugin gates
+ * outbound replies on `access.groups`, so restarting the bot makes a newly
+ * registered group reply-able from the operator's DM. The registry itself is
+ * already written by team.addGroup/removeGroup; this just re-seeds + reloads.
+ * Fire-and-forget from the group routes. No-op when Telegram isn't active.
+ */
+export async function syncTelegramGroups() {
+  if (!telegramActive()) return { skipped: 'telegram not active' };
+  try {
+    const restartOk = await runtime.restartBot();
+    return { ok: true, restartOk };
+  } catch (err) {
+    process.stderr.write(`[telegram-sync] groups sync failed: ${err.message}\n`);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Send a plain-text message to a specific Telegram chat id from wsapi. Used by
  * the cross-surface relay to ping a teammate where they prefer to be reached.
  * Returns { ok, messageId } or { ok:false, error }. Never throws.
  */
-export async function sendTelegramMessage(chatId, text) {
+export async function sendTelegramMessage(chatId, text, { logKind } = {}) {
   if (!telegramActive()) return { ok: false, error: 'telegram not active' };
   const id = String(chatId == null ? '' : chatId).trim();
   if (!/^-?\d{4,20}$/.test(id)) return { ok: false, error: 'invalid chat id' };
@@ -109,11 +128,57 @@ export async function sendTelegramMessage(chatId, text) {
     const messageId = json.result?.message_id;
     // Record it in the bot's Telegram conversation log so its brain knows what
     // it relayed there (this send bypasses the bot's own outbound transformer).
-    logTelegramOutbound(id, body, messageId);
+    // EXCEPTION — a group-mode send (logKind:'group') must NEVER touch the
+    // operator's DM conversation log: recent-snapshot.js renders that log into
+    // the admin's PRIVATE RECENT_TELEGRAM with no chat_id filter, so a group
+    // answer (and the untrusted group text it echoes) would laundry into the
+    // operator brain's high-trust prefix = cross-surface prompt-injection. The
+    // group's own audit sink (.group-watcher/<gid>.jsonl) is its record instead.
+    if (logKind !== 'group') logTelegramOutbound(id, body, messageId);
     return { ok: true, messageId };
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+/**
+ * Send a chat action (e.g. 'typing') so Telegram shows "<bot> is typing…" while a
+ * long turn runs — the natural, non-repetitive "working on it" signal (vs spamming
+ * a fixed "checking…" message). Expires after ~5s, so callers re-send to keep it
+ * alive. Best-effort; never throws.
+ */
+export async function sendChatAction(chatId, action = 'typing') {
+  if (!telegramActive()) return { ok: false };
+  const id = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(id)) return { ok: false };
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return { ok: false };
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: id, action }),
+    });
+    return { ok: true };
+  } catch { return { ok: false }; }
+}
+
+// The bot's own Telegram user id (via getMe), cached. Group mode needs it to
+// drop the bot's OWN group sends before they re-enter the relevance watcher and
+// trigger a self-reply loop (dedup on message_id can't catch a new outbound id).
+let _botUserId = null;
+export async function getBotUserId() {
+  if (_botUserId) return _botUserId;
+  if (!telegramActive()) return null;
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return null;
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    const json = await resp.json().catch(() => ({}));
+    if (json.ok && json.result?.id != null) { _botUserId = String(json.result.id); return _botUserId; }
+  } catch { /* network — caller retries later */ }
+  return null;
 }
 
 // Dedup recently-processed inbound Telegram message ids (the bot middleware may

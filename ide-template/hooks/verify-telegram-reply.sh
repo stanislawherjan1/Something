@@ -98,7 +98,7 @@ fi
 # Without this whitelist the hook blocked every internal-trigger turn,
 # claude retried, hook blocked again — infinite loop until tmux was killed.
 # Caught 2026-06-05 on canary right after first deploy.
-if echo "$LAST_USER" | grep -qE '^\[(REMINDER|REPO_AUDIT|MEMORY_INDEX|BACKUP|REFLECT_LEARNINGS|REFLECT_ORGANIZER|REFLECT_SUMMARY|SUGGESTIONS_CLEANUP|TMP_CLEANUP|CAPABILITY_TOUR|TASTE_RECALL)'; then
+if echo "$LAST_USER" | grep -qE '^\[(REMINDER|REPO_AUDIT|MEMORY_INDEX|BACKUP|REFLECT_LEARNINGS|REFLECT_ORGANIZER|REFLECT_SUMMARY|SUGGESTIONS_CLEANUP|TMP_CLEANUP|CAPABILITY_TOUR|TASTE_RECALL|GROUP)'; then
     log "system trigger ([${LAST_USER:1:25}...]), exit 0"
     exit 0
 fi

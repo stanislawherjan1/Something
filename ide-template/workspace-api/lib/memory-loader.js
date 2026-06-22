@@ -37,8 +37,8 @@
  * cache once + read many times.
  */
 
-import { existsSync, readFileSync, statSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, statSync, mkdirSync, renameSync, unlinkSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { USERS_DIR } from './scope-rule.js';
 
@@ -49,6 +49,10 @@ const LOAD_ORDER = [
   { id: 'AGENT_TOOLS',      path: 'AGENT_TOOLS.md' },
   { id: 'RULES',            path: 'RULES.md' },
   { id: 'INDEX',            path: 'INDEX.md' },
+  // The Telegram GROUPS the bot is in + who's in them. Shared, auto-maintained by
+  // team.js writeChannelsCard(). Both brains load it → the operator knows which
+  // groups exist (and their chat_ids, so it can reply into one from a DM).
+  { id: 'CHANNELS',         path: 'CHANNELS.md' },
   { id: 'USER_PROFILE',     path: 'USER_PROFILE.md' },
   { id: 'USER_PREFERENCES', path: 'USER_PREFERENCES.md' },
   // Rolling snapshots of the most recent conversation on each channel.
@@ -574,6 +578,67 @@ export function buildCachedPrefix(opts = {}) {
     sources,
     approxTokens: approxTokens(block),
   };
+}
+
+/**
+ * SHARED-ONLY prefix for the Telegram GROUP brain (group mode). Builds the
+ * cached prefix with NO actor AND with the entire USER_TIER force-excluded.
+ *
+ * Both are load-bearing: with no actor, USER_TIER cards would otherwise load
+ * from the FLAT memory/ files — which in a solo or un-migrated install still
+ * hold the operator's private data (only adoptSolo/migrateDefaultMemory empties
+ * them after team adoption). Excluding USER_PROFILE/USER_PREFERENCES/
+ * RECENT_TELEGRAM/RECENT_WEB guarantees the group brain sees ONLY shared cards,
+ * never anyone's private memory. This is the STRUCTURAL privacy boundary for
+ * group mode — the group-brain guard test asserts no USER_TIER id reaches here.
+ * NEVER replace this with GET /api/memory/prefix?raw=1: that route resolves
+ * actor=primaryAdminSlug() and loads the admin's PRIVATE cards (RECENT_TELEGRAM
+ * is literally the operator's DMs), and the loopback guard doesn't help because
+ * wsapi calls itself from 127.0.0.1.
+ */
+export function buildTeamPrefix(opts = {}) {
+  const extra = Array.isArray(opts.excludeIds) ? opts.excludeIds : [];
+  return buildCachedPrefix({
+    ...opts,
+    actor: undefined,
+    excludeIds: [...USER_TIER, ...extra],
+  });
+}
+
+/**
+ * SHARED-ONLY group memory for the group brain — markdown under
+ * memory/groups/<gid>/ for the group the watcher is answering in. Safety:
+ *  - gid must match /^-?\d{4,20}$/ (a Telegram chat-id shape: no '/' or '.', so
+ *    it can never traverse out of the groups dir);
+ *  - the resolved dir must stay under memory/groups/ (defensive containment);
+ *  - any file whose id is in USER_TIER is skipped, so a stray USER_PROFILE.md
+ *    dropped under a group dir can never mount private content.
+ * scope-rule.js denies non-admin web members this tree separately. Returns the
+ * concatenated card text, or '' (empty / invalid gid / absent). Never throws.
+ */
+export function loadGroupMemory(gid) {
+  try {
+    const id = String(gid == null ? '' : gid).trim();
+    if (!/^-?\d{4,20}$/.test(id)) return '';
+    const base = join(memoryDirFor(), 'groups');
+    const dir = join(base, id);
+    if (resolve(dir) !== join(resolve(base), id)) return '';   // containment (defensive; regex already blocks traversal)
+    if (!existsSync(dir)) return '';
+    const parts = [];
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.md')) continue;
+      const cardId = f.slice(0, -3);
+      if (USER_TIER.has(cardId)) continue;     // never mount a private-tier card from a group dir
+      const abs = join(dir, f);
+      try {
+        if (statSync(abs).isFile()) {
+          const body = readCardBody(abs);
+          if (body) parts.push(`## GROUP/${cardId}\n\n${body}`);
+        }
+      } catch { /* skip unreadable */ }
+    }
+    return parts.join('\n\n---\n\n');
+  } catch { return ''; }
 }
 
 /**

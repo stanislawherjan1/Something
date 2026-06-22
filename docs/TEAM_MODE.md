@@ -4,7 +4,8 @@ Team mode turns a single-user workspace into a **collaborative** one: several
 people sign in with their Google accounts, each gets a private space alongside
 the shared one, and the assistant can route reminders, tasks, and messages to
 specific teammates. This document covers the whole system — modes, roster,
-files, memory, reminders, tasks, cross-surface relay, and the privacy model.
+files, memory, reminders, tasks, cross-surface relay, Telegram group mode, and
+the privacy model.
 
 > Solo workspaces are unaffected: with team mode **off** there are no roles, no
 > Workspace/Personal split, and reminders/tasks keep their single-user shape.
@@ -118,7 +119,7 @@ memory. Solo workspaces are flat — everything in `memory/`, no split.
 | Card | Tier | Why |
 |------|------|-----|
 | `AGENT_IDENTITY`, `AGENT_TOOLS`, `RULES`, `INDEX` | **Shared** | The assistant's voice, tool gotchas, hard rules, nav root — same for everyone. |
-| `TEAM` (generated) | **Shared** | The roster: who's on the team + how to reach them (see §11). |
+| `TEAM` (generated) | **Shared** | The roster: who's on the team + how to reach them (see §12). |
 | `USER_PROFILE`, `USER_PREFERENCES`, `USER_RELATIONSHIPS`, `USER_REFLECTIONS` | **Private** | About one person — who they are, how *they* like the bot to work, their people, their reflections. |
 | `RECENT_WEB`, `RECENT_TELEGRAM` | **Private** | Each person's own rolling conversation snapshot. |
 
@@ -232,7 +233,95 @@ surface is roster-level and visible.
 
 ---
 
-## 10. Privacy model
+## 10. Telegram group mode
+
+Beyond per-user DM linking (§9), the assistant can live **inside a team's Telegram
+group** and take part like a teammate — reading every message and **deciding for
+itself** when to chime in. No `@mention` is required; it judges relevance from the
+conversation, in any language.
+
+### Admission — registered groups
+
+The bot only acts in a **registered** group: an entry under `groups` in
+`.team-config.json`, keyed by the group's chat id.
+
+```json
+"groups": { "-100…": { "title": "…", "requireMention": false, "beat": "", "members": { "<tg_id>": "<name>" } } }
+```
+
+Being *added* to a Telegram group ≠ being *registered*. Telegram lets anyone add
+the bot to any group; registration is the explicit "this group is ours, take part
+here" record. In an **unregistered** group the bot is a silent member — the watcher
+bails on the first message (`isAllowedGroup` is false) and only notes the chat id
+to the operator (throttled). Two ways a group gets registered:
+
+- **Auto** — when a **roster member** creates the group or adds the bot, the
+  `my_chat_member` update → `POST /internal/group-joined` checks the creator/adder
+  against the roster and, on a match, calls `addGroup` (+ re-seeds the bot's reply
+  allow-list + notifies the operator). If neither creator nor adder is on the
+  roster, it does **not** register.
+- **Manual** — an admin via `POST /api/team/telegram-groups { chatId, title }`.
+
+Admission keys on **who added the bot**, not who is in the group. Corollary: if a
+teammate adds the bot to a group of outsiders, it registers and becomes active
+there — so registering a group is a deliberate "these people are us" decision (the
+admin's responsibility, §11).
+
+### The two-stage decision
+
+Every message in a registered group runs a cheap gate, then (maybe) the full brain:
+
+1. **Relevance gate** (Haiku, `group-watcher.js`) — a liberal, language-agnostic
+   pre-filter that judges *in context* (the recent thread, including the bot's own
+   prior replies), never the last line alone. It drops only obvious noise (a bare
+   reaction, two people clearly talking to each other); when unsure, it passes. A
+   direct address — `@mention`, a reply to the bot, or the bot's **name** (incl.
+   inflected forms) — bypasses the gate outright.
+2. **The brain** — on a pass, the **full assistant** answers via the same engine as
+   web/1:1 (`runClaudeTurn`), as `actor='team'`. It has the complete 1:1 toolset —
+   shared files, shared memory, skills, integrations, reminders — and may act. It
+   is the real judge: if it has nothing useful to add it stays **silent** (no
+   message, no "typing…"). The cheap gate is deliberately permissive precisely
+   because the brain makes the final call.
+
+### Behaviour
+
+- **Per-member identity** — the sender is resolved by their Telegram id against the
+  roster, so the bot talks to the actual person (their name, their scope), not a
+  generic "team" labelled with a raw Telegram handle. An unknown sender falls back
+  to a shared, non-admin `team` actor.
+- **Typing & pacing** — Telegram's native "typing…" appears only once the brain
+  commits to replying (a silent verdict stays invisible). For a turn that needs
+  real work the brain can fire a short, natural heads-up first and its full answer
+  after — two messages — instead of leaving the group on "typing…" for minutes.
+- **Cross-surface awareness** — every group turn (the incoming message **and** the
+  bot's own reply) is injected into the operator's assistant session as a
+  `[GROUP …]` frame — the same primitive as a fired reminder — so the operator, in
+  their DM, stays aware of group activity and can even reply **into** the group.
+  Group sends never pollute the operator's private `RECENT_TELEGRAM`.
+
+### Scope & privacy
+
+The group brain runs as `actor='team'` — **shared scope only**. Scope-guard fences
+it out of every member's private `memory/users/<slug>/` tree, so a group reply can
+never surface one person's private memory. Its own working notes live under
+`memory/groups/<id>/` (admin-only via the file API). Replies are public to the
+whole group, so the brain offers a DM for anything that needs private/personal
+data. Security rests on **admission** (registration), not on filtering message
+content: once a group is registered, messages from anyone in it are treated as the
+team's.
+
+### Tuning
+
+`GROUP_WATCHER_OBSERVE_ONLY=1` flips the watcher to **observe-only** (logs every
+decision, sends nothing) — useful on a fresh deployment to watch the gate before it
+speaks. Default is off: the bot replies. The threshold, debounce, context size,
+per-turn timeout, and message-parts cap are env-overridable and documented inline
+in `group-watcher.js`.
+
+---
+
+## 11. Privacy model
 
 **Default to the shared space — collaboration, not secrecy.** Most questions
 about a teammate ("did X finish the analysis?", "where's the report?") are really
@@ -247,7 +336,7 @@ though it can **relay** a question straight to that teammate.
 
 ---
 
-## 11. Reference
+## 12. Reference
 
 ### Data files (project root)
 
@@ -255,9 +344,11 @@ though it can **relay** a question straight to that teammate.
 |------|----------|
 | `.allowed-emails.json` | Roster: email, role, slug, displayName, telegram contact. |
 | `.allowed-emails.audit.log` | Append-only roster change log. |
-| `.team-config.json` | Solo vs collaborative flag. |
+| `.team-config.json` | Solo vs collaborative flag **+ registered Telegram groups** (`groups`). |
 | `users/<slug>/…` | Each teammate's personal files. |
 | `memory/users/<slug>/…` | Each teammate's private memory cards. |
+| `memory/groups/<id>/…` | A registered group's brain working notes (admin-only via the file API). |
+| `memory/CHANNELS.md` | Generated shared card: the registered groups + their members (see §10). |
 
 All of the above are workspace-managed state: hidden from the normal file tree
 and excluded from Drive sync.
@@ -268,10 +359,13 @@ and excluded from Drive sync.
 |------|-------|
 | `GET /api/me` | Caller identity + mode. |
 | `GET/POST/PATCH/DELETE /api/team`, `PUT /api/team/mode` | Roster + mode (admin-gated writes). |
+| `GET/POST/DELETE /api/team/telegram-groups` | Registered Telegram groups (admin-gated). |
 | `GET /api/reminders`, `POST /api/reminders/cancel` | Actor-scoped reminder board. |
 | `GET/POST/PATCH /api/tasks` | Shared task board. |
 | `GET /internal/roster` | Loopback — roster for the reminder/tasks MCP name→slug resolution. |
 | `POST /internal/reminder-deliver` | Loopback — fan-out of a fired reminder to teammates. |
+| `POST /internal/group-message` | Loopback — a diverted group message into the relevance watcher. |
+| `POST /internal/group-joined` | Loopback — bot added to a group → roster-gated auto-register. |
 
 ### Related skills
 

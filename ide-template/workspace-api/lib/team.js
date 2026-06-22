@@ -588,6 +588,7 @@ export function addGroup({ chatId, title, requireMention, beat, actor } = {}) {
   cfg.updatedAt = new Date().toISOString();
   writeConfig(cfg);
   appendAudit('group_add', actor || '', { chatId: id });
+  writeChannelsCard();
   return getGroup(id);
 }
 
@@ -601,7 +602,74 @@ export function removeGroup(chatId, actor) {
   cfg.updatedAt = new Date().toISOString();
   writeConfig(cfg);
   appendAudit('group_remove', actor || '', { chatId: id });
+  writeChannelsCard();
   return true;
+}
+
+/**
+ * Record a member SEEN in a group (from a group message): from_id → display name.
+ * Lightweight, persisted into the group's `members` map; writes only on change so
+ * a busy group doesn't thrash the config. Feeds the shared CHANNELS card so the
+ * bot knows who's in each group. No-op if the group isn't registered.
+ */
+export function recordGroupMember(chatId, fromId, name) {
+  const id = normalizeGroupId(chatId);
+  const fid = String(fromId == null ? '' : fromId).trim();
+  if (!id || !/^\d{4,20}$/.test(fid)) return false;
+  const cfg = readConfig();
+  if (!cfg.groups || !cfg.groups[id]) return false;
+  const g = cfg.groups[id];
+  if (!g.members || typeof g.members !== 'object') g.members = {};
+  const nm = name ? String(name).slice(0, 60) : (g.members[fid] || fid);
+  if (g.members[fid] === nm) return false;   // unchanged — skip the write
+  g.members[fid] = nm;
+  cfg.updatedAt = new Date().toISOString();
+  writeConfig(cfg);
+  writeChannelsCard();
+  return true;
+}
+
+const CHANNELS_CARD = join(PROJECT_DIR, 'memory', 'CHANNELS.md');
+
+/**
+ * Write the shared `memory/CHANNELS.md` card from the group registry — the
+ * Telegram groups the bot is in, their chat_ids, and the members seen in each.
+ * BOTH brains load it (it's in LOAD_ORDER, shared tier), so the operator knows
+ * which groups exist and their chat_ids — enough to reply into one from a DM.
+ * Auto-maintained on add/remove/member-seen; never hand-edited. Idempotent.
+ */
+export function writeChannelsCard() {
+  try {
+    const groups = listGroups();
+    const head = `---
+card: CHANNELS
+purpose: The Telegram GROUPS this assistant is in + who's in them + their chat_ids. Auto-maintained by workspace-api — do NOT hand-edit.
+write_when: a group is registered/removed, or a new member is seen in a group. Never written by the agent.
+---
+
+# CHANNELS — Telegram groups I'm in
+
+`;
+    let body;
+    if (!groups.length) {
+      body = "_Not in any Telegram group yet._\n";
+    } else {
+      body = groups.map(g => {
+        const members = g.members && typeof g.members === 'object' ? Object.values(g.members) : [];
+        const mlist = members.length ? members.join(', ') : '(no members seen yet)';
+        return `## ${g.title || 'Untitled group'}\n- chat_id: \`${g.chatId}\` (use this with the Telegram reply tool to post here)\n- members seen: ${mlist}\n`;
+      }).join('\n');
+    }
+    const content = head + body;
+    const tmp = CHANNELS_CARD + '.tmp';
+    writeFileSync(tmp, content, { mode: 0o660 });
+    try { chmodSync(tmp, 0o660); } catch {}
+    renameSync(tmp, CHANNELS_CARD);
+    return true;
+  } catch (err) {
+    process.stderr.write(`[team] writeChannelsCard failed: ${err.message}\n`);
+    return false;
+  }
 }
 
 const TEAM_ROSTER = join(PROJECT_DIR, 'memory', 'TEAM.md');

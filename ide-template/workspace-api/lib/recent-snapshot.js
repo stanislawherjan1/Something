@@ -196,6 +196,14 @@ do_not_write_here: Don't add observations or summaries. This is the raw transcri
 
 // Render the full snapshot file (header + tail body) for a set of messages.
 function renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt) {
+  // Group mode: a group send/receipt must NEVER render into the operator's
+  // PRIVATE RECENT_TELEGRAM. Group chat ids are negative; drop them from the
+  // telegram tail (belt-and-suspenders — sendTelegramMessage already skips the
+  // DM log for logKind:'group', this also catches any stray group entry that
+  // pre-dates the fix or arrives via another path).
+  if (channel === 'telegram') {
+    messages = messages.filter(m => !String(m.chat_id == null ? '' : m.chat_id).startsWith('-'));
+  }
   const head = buildHeader(cfg, messages.length, updatedAt);
   let body;
   if (messages.length === 0) {

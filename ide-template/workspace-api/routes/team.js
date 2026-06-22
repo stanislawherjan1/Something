@@ -21,7 +21,7 @@ import express from 'express';
 import * as team from '../lib/team.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
 import { avatarUrl } from '../lib/user-avatars.js';
-import { syncTelegramAllowedIds } from '../lib/integrations/telegram-sync.js';
+import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -167,6 +167,7 @@ export default function teamRouter() {
     const { chatId, title, beat, requireMention } = req.body || {};
     try {
       const group = team.addGroup({ chatId, title, beat, requireMention, actor: req.actor });
+      syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it
       res.status(201).json({ ok: true, group });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -176,6 +177,7 @@ export default function teamRouter() {
   router.delete('/team/telegram-groups/:chatId', requireAdmin, rateLimit, (req, res) => {
     const removed = team.removeGroup(req.params.chatId, req.actor);
     if (!removed) return res.status(404).json({ error: 'group not allow-listed' });
+    syncTelegramGroups().catch(() => {});
     res.json({ ok: true, removed: req.params.chatId });
   });
 

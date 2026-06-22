@@ -124,11 +124,29 @@ if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
     ALL_IDS="${TELEGRAM_ADMIN_CHAT_ID:-},${TELEGRAM_ALLOWED_IDS:-}"
     IDS_JSON=$(echo "$ALL_IDS" | tr ',' '\n' | grep -v '^$' | awk '!seen[$0]++' \
                | sed 's/^/"/;s/$/"/' | paste -sd ',' -)
+    # Seed access.json's groups{} from the GROUP registry (.team-config.json), so
+    # the plugin's outbound gate (assertAllowedChat → access.groups) lets the
+    # operator brain REPLY into a group the bot is in, from a DM. Patch 4f still
+    # diverts inbound group messages to the watcher; this only opens the OUTBOUND
+    # path for already-registered groups. Re-seeded on every bot start (a group
+    # add/remove triggers a restart via syncTelegramGroups).
+    GROUPS_JSON=$(python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('${PROJECT_DIR}/.team-config.json'))
+    g = cfg.get('groups', {}) or {}
+    out = {gid: {'requireMention': bool(v.get('requireMention', False)), 'allowFrom': []}
+           for gid, v in g.items() if isinstance(v, dict)}
+    sys.stdout.write(json.dumps(out))
+except Exception:
+    sys.stdout.write('{}')
+" 2>/dev/null)
+    [ -z "$GROUPS_JSON" ] && GROUPS_JSON='{}'
     cat > "$CLAUDE_CONFIG_DIR/channels/telegram/access.json" <<EOF
 {
   "dmPolicy": "pairing",
   "allowFrom": [${IDS_JSON}],
-  "groups": {},
+  "groups": ${GROUPS_JSON},
   "pending": {}
 }
 EOF
@@ -627,6 +645,53 @@ if tg_group_marker not in content:
 else:
     print('[bot] telegram group diversion: already patched')
 
+# ── Patch 4h: auto-register a group on my_chat_member ──────────────────
+# When the bot is ADDED to a group, POST {chat_id,title,creator_id,added_by_id}
+# to wsapi /internal/group-joined, which auto-registers it IF the creator/adder is
+# a team-roster member (the trust gate). grammy auto-derives allowed_updates from
+# registered handlers, so adding bot.on('my_chat_member') is enough to receive it.
+tg_join_marker = '// CC-BOT-PATCH: group auto-register'
+if tg_join_marker not in content:
+    join_inject = (
+        '\n// ' + tg_join_marker + '\n'
+        'bot.on("my_chat_member", async (ctx) => {\n'
+        '  try {\n'
+        '    const chat = ctx.chat;\n'
+        '    if (!chat || (chat.type !== "group" && chat.type !== "supergroup")) return;\n'
+        '    const ns = ctx.myChatMember?.new_chat_member?.status;\n'
+        '    if (ns !== "member" && ns !== "administrator") return;\n'
+        '    let creatorId = null;\n'
+        '    try {\n'
+        '      const admins = await ctx.api.getChatAdministrators(chat.id);\n'
+        '      const owner = admins.find((a) => a.status === "creator");\n'
+        '      if (owner && owner.user && owner.user.id != null) creatorId = String(owner.user.id);\n'
+        '    } catch (_) {}\n'
+        '    const payload = JSON.stringify({\n'
+        '      chat_id: String(chat.id),\n'
+        '      title: chat.title ?? null,\n'
+        '      creator_id: creatorId,\n'
+        '      added_by_id: ctx.myChatMember?.from?.id != null ? String(ctx.myChatMember.from.id) : null,\n'
+        '    });\n'
+        '    await Promise.race([\n'
+        '      fetch("http://127.0.0.1:3001/api/internal/group-joined", {\n'
+        '        method: "POST", headers: { "Content-Type": "application/json" }, body: payload,\n'
+        '      }).catch(() => {}),\n'
+        '      new Promise((r) => setTimeout(r, 2500)),\n'
+        '    ]);\n'
+        '  } catch (_) { /* swallow */ }\n'
+        '});\n'
+    )
+    pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
+    new_content, n = pattern.subn(r'\1' + join_inject, content, count=1)
+    if n > 0:
+        content = new_content
+        changed = True
+        print('[bot] group auto-register: patched')
+    else:
+        print('[bot] WARNING: group auto-register pattern (const bot = new Bot) not found')
+else:
+    print('[bot] group auto-register: already patched')
+
 # ── Patch 4 (continued): outbound API transformer ─────────────────────
 # grammy's bot.api.config.use(transformer) wraps EVERY API call. We
 # log only user-facing send* methods (sendMessage / sendPhoto /
@@ -719,6 +784,46 @@ if pid_lock_marker not in content:
         print('[bot] WARNING: pid-lock guard pattern not found (upstream server.ts may have changed)')
 else:
     print('[bot] pid-lock guard: already patched')
+
+# ── Patch 4g: continuous "typing…" in 1:1 ──────────────────────────────
+# The plugin fires sendChatAction('typing') ONCE on inbound; Telegram expires it
+# after ~5s, so a long (tool-using) turn shows no "typing…" for most of its run.
+# Refresh it on an interval from the inbound message until the reply goes out (or
+# a 3-min safety cap). __startTyping replaces the one-shot send; __stopTyping
+# fires as the reply chunks go out in the `reply` tool handler.
+typing_marker = '// CC-BOT-PATCH: continuous typing'
+if typing_marker not in content:
+    helpers = (
+        '\n// ' + typing_marker + '\n'
+        'const __typingTimers = new Map();\n'
+        'function __stopTyping(cid) {\n'
+        '  const t = __typingTimers.get(String(cid));\n'
+        '  if (t) { clearInterval(t.iv); clearTimeout(t.to); __typingTimers.delete(String(cid)); }\n'
+        '}\n'
+        'function __startTyping(cid) {\n'
+        '  __stopTyping(cid);\n'
+        '  void bot.api.sendChatAction(cid, "typing").catch(() => {});\n'
+        '  const iv = setInterval(() => { void bot.api.sendChatAction(cid, "typing").catch(() => {}); }, 4500);\n'
+        '  const to = setTimeout(() => __stopTyping(cid), 180000);\n'
+        '  __typingTimers.set(String(cid), { iv, to });\n'
+        '}\n'
+    )
+    n1 = n2 = n3 = 0
+    pat = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
+    content, n1 = pat.subn(r'\1' + helpers, content, count=1)
+    one_shot = "void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})"
+    if one_shot in content:
+        content = content.replace(one_shot, '__startTyping(chat_id)', 1); n2 = 1
+    stop_anchor = 'const chunks = chunk(text, limit, mode)'
+    if stop_anchor in content:
+        content = content.replace(stop_anchor, '__stopTyping(chat_id)\n        ' + stop_anchor, 1); n3 = 1
+    if n1 and n2 and n3:
+        changed = True
+        print('[bot] continuous typing: patched')
+    else:
+        print(f'[bot] WARNING: continuous typing patch incomplete (helpers={n1} start={n2} stop={n3})')
+else:
+    print('[bot] continuous typing: already patched')
 
 # ── Patch 5: /restart slash command + Telegram slash menu ──────────────
 # Operator-only command that exits the bot cleanly. PM2 sees the exit and
