@@ -529,6 +529,81 @@ export function setTeamMode(enabled, actor) {
   return cfg.teamMode;
 }
 
+// ─── Telegram group registry (group mode) ────────────────────────────────────
+// Which Telegram GROUP chats the assistant is active in (ambient relevance
+// watcher → isolated group brain). Stored under the team config's `groups` key,
+// NOT the member allowlist: group membership is the access boundary, not a
+// per-sender list (operator decision — the bot only joins the team's own group).
+// A group id is a NEGATIVE integer (supergroups are -100…); normalizeGroupId is
+// deliberately SEPARATE from normalizeChatId (positive-only, guards the DM
+// fan-out invariant — see its comment). Design: docs/future-plans/TELEGRAM_GROUP_MODE.md
+function normalizeGroupId(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return /^-\d{6,20}$/.test(s) ? s : null;
+}
+
+/** All allow-listed groups as [{ chatId, title, requireMention, beat, addedAt, addedBy }]. */
+export function listGroups() {
+  const cfg = readConfig();
+  const g = (cfg && typeof cfg.groups === 'object' && cfg.groups) ? cfg.groups : {};
+  return Object.entries(g)
+    .filter(([chatId]) => normalizeGroupId(chatId))
+    .map(([chatId, v]) => ({ chatId, ...(v && typeof v === 'object' ? v : {}) }));
+}
+
+/** Config for one group, or null if not allow-listed. */
+export function getGroup(chatId) {
+  const id = normalizeGroupId(chatId);
+  if (!id) return null;
+  const cfg = readConfig();
+  const v = cfg.groups && cfg.groups[id];
+  return v && typeof v === 'object' ? { chatId: id, ...v } : null;
+}
+
+/** Is this group allow-listed (the assistant may operate in it)? */
+export function isAllowedGroup(chatId) {
+  return getGroup(chatId) !== null;
+}
+
+/**
+ * Add / update an allow-listed group. `requireMention` defaults to FALSE
+ * (ambient — the whole point of group mode); `beat` is an optional operator
+ * override that steers what the relevance watcher treats as on-beat.
+ */
+export function addGroup({ chatId, title, requireMention, beat, actor } = {}) {
+  const id = normalizeGroupId(chatId);
+  if (!id) throw new Error('invalid group id (must be a negative integer)');
+  const cfg = readConfig();
+  if (!cfg.groups || typeof cfg.groups !== 'object') cfg.groups = {};
+  const prev = cfg.groups[id] && typeof cfg.groups[id] === 'object' ? cfg.groups[id] : {};
+  cfg.groups[id] = {
+    title:          title != null ? String(title).slice(0, 120) : (prev.title || ''),
+    requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? false),
+    beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
+    addedAt:        prev.addedAt || new Date().toISOString(),
+    addedBy:        prev.addedBy || (actor ? normalize(actor) : ''),
+    updatedAt:      new Date().toISOString(),
+  };
+  cfg.updatedAt = new Date().toISOString();
+  writeConfig(cfg);
+  appendAudit('group_add', actor || '', { chatId: id });
+  return getGroup(id);
+}
+
+/** Remove an allow-listed group. Returns true if it existed. */
+export function removeGroup(chatId, actor) {
+  const id = normalizeGroupId(chatId);
+  if (!id) return false;
+  const cfg = readConfig();
+  if (!cfg.groups || !cfg.groups[id]) return false;
+  delete cfg.groups[id];
+  cfg.updatedAt = new Date().toISOString();
+  writeConfig(cfg);
+  appendAudit('group_remove', actor || '', { chatId: id });
+  return true;
+}
+
 const TEAM_ROSTER = join(PROJECT_DIR, 'memory', 'TEAM.md');
 
 /**

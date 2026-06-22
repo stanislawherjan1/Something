@@ -559,6 +559,74 @@ if tg_relay_marker not in content:
 else:
     print('[bot] telegram inbound relay routing: already patched')
 
+# ── Patch 4f: GROUP message diversion (separate bot.use, own marker) ───
+# Group mode (docs/future-plans/TELEGRAM_GROUP_MODE.md). Diverts EVERY
+# group/supergroup message to wsapi /internal/group-message (the ambient
+# relevance watcher) and returns WITHOUT next() — so the operator brain, the
+# logger (Patch 4) and the relay (Patch 4e) NEVER see group traffic. DMs are
+# untouched (await next()). Applied AFTER Patch 4e so its block lands closest to
+# the `const bot = new Bot` anchor and therefore registers FIRST in grammy
+# middleware order (group is swallowed before 4e POSTs a negative chat_id to
+# telegram-inbound). As the very first bot.use it runs before the plugin's own
+# access gate, so the allow-list lives in wsapi (.team-config.json), not
+# access.json — and Telegram still only DELIVERS non-mention group messages when
+# BotFather privacy mode is OFF (runbook). Awaited but capped at 1.5s, swallowed.
+tg_group_marker = '// CC-BOT-PATCH: telegram group message diversion'
+if tg_group_marker not in content:
+    group_inject = (
+        '\n// ' + tg_group_marker + '\n'
+        'bot.use(async (ctx, next) => {\n'
+        '  const ctype = ctx.chat?.type;\n'
+        '  if (ctype !== "group" && ctype !== "supergroup") { await next(); return; }\n'
+        '  try {\n'
+        '    const gm = ctx.message;\n'
+        '    const gtext = gm?.text ?? gm?.caption ?? null;\n'
+        '    if (gtext) {\n'
+        '      const meId = ctx.me?.id;\n'
+        '      const meName = ctx.me?.username ? ("@" + ctx.me.username) : null;\n'
+        '      let mentioned = false;\n'
+        '      try {\n'
+        '        const ents = gm?.entities ?? [];\n'
+        '        for (const e of ents) {\n'
+        '          if (e.type === "text_mention" && e.user?.id === meId) { mentioned = true; break; }\n'
+        '          if (e.type === "mention" && meName && gtext.substr(e.offset, e.length) === meName) { mentioned = true; break; }\n'
+        '        }\n'
+        '      } catch (_) { /* entity scan best-effort */ }\n'
+        '      const replyToBot = gm?.reply_to_message?.from?.id != null && gm.reply_to_message.from.id === meId;\n'
+        '      const payload = JSON.stringify({\n'
+        '        chat_id: ctx.chat?.id != null ? String(ctx.chat.id) : null,\n'
+        '        chat_title: ctx.chat?.title ?? null,\n'
+        '        message_id: gm?.message_id ?? null,\n'
+        '        text: gtext,\n'
+        '        from_id: ctx.from?.id != null ? String(ctx.from.id) : null,\n'
+        '        from_username: ctx.from?.username ?? null,\n'
+        '        from_name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") || null,\n'
+        '        reply_to_message_id: gm?.reply_to_message?.message_id ?? null,\n'
+        '        is_mention: mentioned,\n'
+        '        is_reply_to_bot: replyToBot,\n'
+        '      });\n'
+        '      await Promise.race([\n'
+        '        fetch("http://127.0.0.1:3001/api/internal/group-message", {\n'
+        '          method: "POST", headers: { "Content-Type": "application/json" }, body: payload,\n'
+        '        }).catch(() => {}),\n'
+        '        new Promise((res) => setTimeout(res, 1500)),\n'
+        '      ]);\n'
+        '    }\n'
+        '  } catch (_) { /* swallow */ }\n'
+        '  return;   // group traffic handled by the watcher — never reaches the operator brain\n'
+        '});\n'
+    )
+    pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
+    new_content, n = pattern.subn(r'\1' + group_inject, content, count=1)
+    if n > 0:
+        content = new_content
+        changed = True
+        print('[bot] telegram group diversion: patched')
+    else:
+        print('[bot] WARNING: telegram group-diversion pattern (const bot = new Bot) not found')
+else:
+    print('[bot] telegram group diversion: already patched')
+
 # ── Patch 4 (continued): outbound API transformer ─────────────────────
 # grammy's bot.api.config.use(transformer) wraps EVERY API call. We
 # log only user-facing send* methods (sendMessage / sendPhoto /

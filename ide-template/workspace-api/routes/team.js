@@ -153,5 +153,31 @@ export default function teamRouter() {
     }
   });
 
+  // ── Group mode: which Telegram GROUPS the assistant is active in ────────────
+  // The relevance watcher allow-lists on this registry (.team-config.json). No
+  // bot restart needed: server.ts Patch 4f diverts ALL group traffic regardless
+  // of access.json, and the watcher reads the config fresh per message.
+  // (Telegram still only DELIVERS untagged group messages with BotFather privacy
+  // mode OFF — that's an out-of-band one-time setup, see the group-mode runbook.)
+  router.get('/team/telegram-groups', requireAdmin, (_req, res) => {
+    res.json({ ok: true, groups: team.listGroups() });
+  });
+
+  router.post('/team/telegram-groups', requireAdmin, rateLimit, express.json({ limit: '2kb' }), (req, res) => {
+    const { chatId, title, beat, requireMention } = req.body || {};
+    try {
+      const group = team.addGroup({ chatId, title, beat, requireMention, actor: req.actor });
+      res.status(201).json({ ok: true, group });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  router.delete('/team/telegram-groups/:chatId', requireAdmin, rateLimit, (req, res) => {
+    const removed = team.removeGroup(req.params.chatId, req.actor);
+    if (!removed) return res.status(404).json({ error: 'group not allow-listed' });
+    res.json({ ok: true, removed: req.params.chatId });
+  });
+
   return router;
 }

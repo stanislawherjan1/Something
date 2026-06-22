@@ -17,6 +17,7 @@ import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/s
 import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
+import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
@@ -414,6 +415,17 @@ export default function internalRouter() {
       process.stderr.write(`[internal] telegram-inbound failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
+  });
+
+  // Group-mode inbound. server.ts Patch 4f diverts every GROUP/supergroup message
+  // here (and returns WITHOUT next(), so the operator brain never sees group
+  // traffic). routeGroupMessage allow-lists, dedups, buffers and gates via the
+  // relevance watcher — Phase 1 is OBSERVE-ONLY (logs a decision, never sends).
+  // ACK immediately and never block the plugin's middleware on our work.
+  router.post('/internal/group-message', loopbackOnly, (req, res) => {
+    res.status(202).json({ ok: true });
+    try { routeGroupMessage(req.body || {}); }
+    catch (err) { process.stderr.write(`[internal] group-message failed: ${err.message}\n`); }
   });
 
   return router;
