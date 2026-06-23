@@ -209,14 +209,6 @@
           "type":        "text",
           "placeholder": "123456789",
           "helper":      "Your Telegram numeric user ID. Send /start to @userinfobot to see it."
-        },
-        {
-          "name":        "TELEGRAM_ALLOWED_IDS",
-          "label":       "Additional allowed IDs (optional)",
-          "type":        "text",
-          "optional":    true,
-          "placeholder": "234567890,345678901",
-          "helper":      "Comma-separated user IDs that can also chat with the bot. Leave empty for admin-only."
         }
       ],
       "steps": [

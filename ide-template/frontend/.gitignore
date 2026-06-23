@@ -16,6 +16,13 @@ dist-ssr
 # Nothing here ships to production; vite.config.js handles its absence gracefully.
 dev-mock/
 
+# Standalone AI-Settings/Team preview harness — stubs the backend, references
+# local-only avatar photos. Dev-only; never shipped, kept out of the repo.
+/mockup.html
+/src/mockup.jsx
+/public/avatars/person-*.jpg
+/public/avatars/*.svg
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -22,6 +22,7 @@ import * as team from '../lib/team.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
+import { listUnregistered } from '../lib/integrations/group-watcher.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -68,10 +69,11 @@ export default function teamRouter() {
     const viewerIsAdmin = req.actor ? team.isAdmin(req.actor) : false;
     const viewerEmail = String(req.actor || '').toLowerCase();
     const entries = team.list().map(e => {
-      const row = { ...e, avatarUrl: avatarUrl(e.slug) };
-      // A Telegram chat id is a private contact handle: only an admin, or the
-      // owner of the row, sees the actual value. `preferredSurface` stays
-      // visible (it's roster-level info, not a handle).
+      // `telegramLinked` is roster-level info (who's reachable on Telegram) and
+      // is visible to EVERYONE, so members can see each other's channels.
+      // The raw chat id is a private contact handle, so only an admin or the
+      // row's owner sees the actual value. `preferredSurface` stays visible too.
+      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId };
       if (!viewerIsAdmin && e.email !== viewerEmail) row.telegramChatId = null;
       return row;
     });
@@ -159,8 +161,21 @@ export default function teamRouter() {
   // of access.json, and the watcher reads the config fresh per message.
   // (Telegram still only DELIVERS untagged group messages with BotFather privacy
   // mode OFF — that's an out-of-band one-time setup, see the group-mode runbook.)
-  router.get('/team/telegram-groups', requireAdmin, (_req, res) => {
-    res.json({ ok: true, groups: team.listGroups() });
+  // Telegram is an admin-only surface (the AI-Settings tile is hidden from
+  // members and TelegramDashboard refuses to render for them). We still answer
+  // 200 for any authenticated teammate so the UI can read `canEdit`, but the
+  // registry itself — group titles + member handles — is only returned to
+  // admins. Writes below stay requireAdmin. nginx already gated /api/*.
+  router.get('/team/telegram-groups', (req, res) => {
+    if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+    const canEdit = team.isAdmin(req.actor);
+    res.json({ ok: true, groups: canEdit ? team.listGroups() : [], canEdit });
+  });
+
+  // Groups the bot is IN but NOT registered yet — admin-only; powers the one-click
+  // "register" affordance in the UI. Static path, no collision with :chatId below.
+  router.get('/team/telegram-groups/pending', requireAdmin, (_req, res) => {
+    res.json({ ok: true, pending: listUnregistered() });
   });
 
   router.post('/team/telegram-groups', requireAdmin, rateLimit, express.json({ limit: '2kb' }), (req, res) => {

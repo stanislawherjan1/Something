@@ -34,6 +34,7 @@ const VIEW_ROUTES = [
   { path: '/team',         selected: { path: '.claude/team',       type: 'team' } },
   { path: '/ai',           selected: { path: '.claude',            type: 'dashboard' } },
   { path: '/memory',       selected: { path: 'memory',             type: 'memory' } },
+  { path: '/telegram',     selected: { path: '.claude/telegram',   type: 'telegram' } },
   { path: '/notifications',selected: { path: '.notifications',     type: 'notifications' } },
 ];
 
@@ -646,7 +647,7 @@ function Step({ n, children }) {
 // Segmented control for the preferred relay surface.
 function SurfacePicker({ value, onChange }) {
   const options = [
-    { value: 'both',     label: 'Web UI + Telegram' },
+    { value: 'both',     label: 'Both' },
     { value: 'telegram', label: 'Telegram' },
     { value: 'web',      label: 'Web UI' },
   ];

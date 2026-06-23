@@ -166,12 +166,26 @@ const deframe = (s, clamp = TEXT_CLAMP) => clip(s, clamp).replace(/[[\]|]/g, ' '
 // so the operator can register it (POST /api/team/telegram-groups). Throttled to
 // once per 10 min per group. Resolves the bootstrap chicken-and-egg (you need the
 // negative id to register, but nothing logs until registered).
-const unregLog = new Map();
+const unregLog = new Map();   // chatId → { title, ts (last seen), loggedAt }
 function noteUnregistered(chatId, title) {
   const now = Date.now();
-  if (unregLog.has(chatId) && now - unregLog.get(chatId) < 600_000) return;
-  unregLog.set(chatId, now);
+  const prev = unregLog.get(chatId) || {};
+  // Throttle only the LOG line (10 min); always refresh title + last-seen so the
+  // /pending API and its "register" button stay current.
+  const loggedAt = prev.loggedAt && now - prev.loggedAt < 600_000 ? prev.loggedAt : now;
+  unregLog.set(chatId, { title: title || prev.title || '', ts: now, loggedAt });
+  if (loggedAt !== now) return;
   process.stderr.write(`[group-watcher] message from UNREGISTERED group ${chatId}${title ? ` ("${clip(title, 60)}")` : ''} — register it via POST /api/team/telegram-groups to enable the watcher\n`);
+}
+
+// Groups the bot is IN but that aren't registered — recent ones (seen < 24h), so
+// the UI can offer a one-click "register". Powers GET /api/team/telegram-groups/pending.
+export function listUnregistered() {
+  const now = Date.now();
+  return [...unregLog.entries()]
+    .filter(([, v]) => now - v.ts < 24 * 3600_000)
+    .map(([chatId, v]) => ({ chatId, title: v.title || '', lastSeen: new Date(v.ts).toISOString() }))
+    .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
 }
 
 function rememberSeen(key) {

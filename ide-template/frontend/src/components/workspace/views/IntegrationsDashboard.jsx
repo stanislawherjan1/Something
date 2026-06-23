@@ -121,7 +121,9 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   const [removing, setRemoving]     = useState(null);
   const [settingsFor, setSettingsFor] = useState(null);
 
-  const integrations = useMemo(() => data?.integrations || [], [data]);
+  // Telegram is configured in AI Settings (its own tile), not here — exclude it
+  // from the Integrations catalog so it isn't set up in two places.
+  const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram'), [data]);
   // Sync URL → activating state. When ?activate=<id> changes, find the
   // matching integration tile and open the activation modal on it.
   useEffect(() => {
@@ -1004,7 +1006,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
 
 // ─── Activate Modal ────────────────────────────────────────────────────────
 
-function ActivateModal({ integration, onClose, onSuccess }) {
+export function ActivateModal({ integration, onClose, onSuccess }) {
   const branding = useBranding();
   // Step interpolation context — supports {{botDisplayName}}, {{botName}},
   // {{title}}, {{botAvatarUrl}}, {{logoUrl}}, {{iconUrl}} in step.title /
@@ -1623,7 +1625,10 @@ function PermissionRow({ field, value, onChange, disabled }) {
   );
 }
 
-function RemoveDialog({ integration, onClose, onSuccess }) {
+// `title`/`body`/`confirmLabel`/`busyLabel`/`doneLabel` are optional copy
+// overrides — defaults keep the Integrations "Remove" wording; AI-Settings
+// Telegram reuses this dialog with "Disconnect" wording.
+export function RemoveDialog({ integration, onClose, onSuccess, title, body, confirmLabel, busyLabel, doneLabel }) {
   const [phase, setPhase] = useState('idle');
   const [restartFailed, setRestartFailed] = useState(false);
   const [error, setError] = useState(null);
@@ -1653,9 +1658,9 @@ function RemoveDialog({ integration, onClose, onSuccess }) {
             <Trash2 className="size-4 text-destructive" strokeWidth={2} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-semibold text-foreground">Remove {integration.label}?</div>
+            <div className="text-[16px] font-semibold text-foreground">{title || `Remove ${integration.label}?`}</div>
             <div className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
-              This deactivates the integration and erases the stored credentials. To use it again, you'll need to enter a new key.
+              {body || "This deactivates the integration and erases the stored credentials. To use it again, you'll need to enter a new key."}
             </div>
             {error && (
               <div className="mt-4 rounded border border-destructive/25 bg-destructive/[0.04] px-3 py-2 text-[12px] text-destructive">
@@ -1685,12 +1690,12 @@ function RemoveDialog({ integration, onClose, onSuccess }) {
             >
               {(phase === 'saving' || phase === 'restarting') && <Loader2 className="size-3.5 animate-spin" />}
               {phase === 'saving'
-                ? 'Removing…'
+                ? (busyLabel || 'Removing…')
                 : phase === 'restarting'
                   ? 'Restarting bot…'
                   : phase === 'done'
-                    ? (restartFailed ? 'Removed' : 'Done')
-                    : 'Remove'}
+                    ? (restartFailed ? (doneLabel || 'Removed') : 'Done')
+                    : (confirmLabel || 'Remove')}
             </button>
           </div>
         </div>
@@ -1701,7 +1706,7 @@ function RemoveDialog({ integration, onClose, onSuccess }) {
 
 // ─── Modal shell ───────────────────────────────────────────────────────────
 
-function ModalShell({ children, onClose, ariaLabel }) {
+export function ModalShell({ children, onClose, ariaLabel }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);

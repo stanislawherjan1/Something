@@ -584,6 +584,9 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
     language:       language != null ? String(language).slice(0, 40) : (prev.language || ''),
+    // Preserve the seen-members map across edits (e.g. a language change) —
+    // it's populated by recordGroupMember and must survive an upsert.
+    members:        (prev.members && typeof prev.members === 'object') ? prev.members : {},
     addedAt:        prev.addedAt || new Date().toISOString(),
     addedBy:        prev.addedBy || (actor ? normalize(actor) : ''),
     updatedAt:      new Date().toISOString(),

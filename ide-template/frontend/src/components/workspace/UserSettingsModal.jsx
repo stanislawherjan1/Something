@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Loader2, Upload, Trash2, AlertTriangle } from 'lucide-react';
-import { mutate } from '@/lib/useApi';
+import { mutate, useApi } from '@/lib/useApi';
 
 /**
  * UserSettingsModal — a user edits their OWN profile: display name + avatar.
@@ -17,6 +17,14 @@ export default function UserSettingsModal({ me, onClose }) {
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState(null);
+  // Self-service cross-surface contact + reply language (PATCH /api/me).
+  const [lang, setLang]       = useState(me?.preferredLanguage || '');
+  const [chatId, setChatId]   = useState(me?.telegramChatId || '');
+  const [surface, setSurface] = useState(me?.preferredSurface || 'both');
+
+  // The Telegram block only appears when the channel is actually active.
+  const integ = useApi('/api/integrations');
+  const tgActive = !!(integ.data?.integrations || []).find(i => i.id === 'telegram')?.active;
 
   // Revoke the preview object URL on replace + unmount (no blob leak).
   useEffect(() => {
@@ -59,14 +67,25 @@ export default function UserSettingsModal({ me, onClose }) {
         const r = await fetch('/api/me/avatar', { method: 'DELETE' });
         if (!r.ok && r.status !== 404) throw new Error(`Couldn't remove avatar (${r.status})`);
       }
-      const trimmed = displayName.trim();
-      if (trimmed && trimmed !== me?.displayName) {
+      // One PATCH for every changed profile field (name, language, and — when
+      // Telegram is active — chat id + preferred reach surface).
+      const patch = {};
+      const tn = displayName.trim();
+      if (tn && tn !== (me?.displayName || '')) patch.displayName = tn;
+      const tl = lang.trim();
+      if (tl !== (me?.preferredLanguage || '')) patch.preferredLanguage = tl;
+      if (tgActive) {
+        const tc = chatId.trim();
+        if (tc !== (me?.telegramChatId || '')) patch.telegramChatId = tc;
+        if (surface !== (me?.preferredSurface || 'both')) patch.preferredSurface = surface;
+      }
+      if (Object.keys(patch).length) {
         const r = await fetch('/api/me', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName: trimmed }),
+          body: JSON.stringify(patch),
         });
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Name update failed (${r.status})`);
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Update failed (${r.status})`);
       }
       // Refetch + push fresh data so mounted views (UserMenu, Team list) update
       // immediately — invalidate() alone marks stale but doesn't refetch hooks
@@ -147,6 +166,18 @@ export default function UserSettingsModal({ me, onClose }) {
             <span className="text-[11px] text-muted-foreground/65">{me?.email}</span>
           </label>
 
+          {/* Preferred language */}
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">Preferred language</span>
+            <input
+              type="text" value={lang} maxLength={40}
+              onChange={(e) => setLang(e.target.value)}
+              placeholder="e.g. English (blank = auto)"
+              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
+            />
+            <span className="text-[11px] text-muted-foreground/65">How the assistant replies to you. Blank = it mirrors your language.</span>
+          </label>
+
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
@@ -167,6 +198,29 @@ export default function UserSettingsModal({ me, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Segmented control for the preferred reach surface (mirrors WorkspacePage's).
+function SurfacePicker({ value, onChange }) {
+  const options = [
+    { value: 'both',     label: 'Both' },
+    { value: 'telegram', label: 'Telegram' },
+    { value: 'web',      label: 'Web UI' },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value} type="button" onClick={() => onChange(opt.value)}
+            className={`rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors ${active ? 'bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-muted-foreground/75 hover:text-foreground/90'}`}>
+            {opt.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

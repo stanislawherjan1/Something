@@ -319,20 +319,21 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
           <span className="truncate">{displayName || email.split('@')[0]}</span>
           <ChannelIcons entry={entry} />
         </div>
-        <div className="mt-1.5 truncate text-[12.5px] text-muted-foreground/70">
-          {email}
+        <div className="mt-1.5 flex items-baseline justify-between gap-2">
+          <span className="truncate text-[12.5px] text-muted-foreground/70">{email}</span>
+          {addedAt && (
+            <span className="shrink-0 text-[10px] text-muted-foreground/40">
+              invited {formatRelative(new Date(addedAt))}
+            </span>
+          )}
         </div>
-        {addedAt && (
-          <div className="mt-2.5 text-[11px] text-muted-foreground/55">
-            invited {formatRelative(new Date(addedAt))}
-          </div>
-        )}
       </div>
 
-      {/* Footer - actions for admins; a same-height spacer for everyone else so
-          every card keeps the same height whether or not it has buttons. */}
-      <div className="px-4 pb-4 pt-3.5">
-        {canManage ? (
+      {/* Footer - actions for admins only. Members have nothing to do here, so
+          the card just closes with a little padding instead of reserving empty
+          button space. */}
+      {canManage ? (
+        <div className="px-4 pb-4 pt-3.5">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -354,10 +355,10 @@ function TeamRow({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
               </button>
             )}
           </div>
-        ) : (
-          <div className="h-8" aria-hidden />
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="pb-4" aria-hidden />
+      )}
     </div>
   );
 }
@@ -401,7 +402,9 @@ function RoleBadge({ role }) {
 // (everyone signs into the workspace); Telegram only when linked. The preferred
 // surface gets a subtle accent so it reads as "primary".
 function ChannelIcons({ entry }) {
-  const linked  = !!entry.telegramChatId;
+  // `telegramLinked` is exposed to all viewers (members included); the raw chat
+  // id is masked for non-admins, so prefer the flag and fall back to the id.
+  const linked  = entry.telegramLinked ?? !!entry.telegramChatId;
   const surface = entry.preferredSurface;
   const webPrimary = surface === 'web' || surface === 'both' || !linked;
   const tgPrimary  = linked && (surface === 'telegram' || surface === 'both');
@@ -503,8 +506,6 @@ function RolePicker({ value, onChange, disabled }) {
 
 function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
   const [role, setRole]       = useState(entry.role || 'member');
-  const [chatId, setChatId]   = useState(entry.telegramChatId || '');
-  const [lang, setLang]       = useState(entry.preferredLanguage || '');
   const [busy, setBusy]       = useState(false);
   const [error, setError]     = useState(null);
 
@@ -518,10 +519,6 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
     try {
       const patch = {};
       if (!roleLocked && role !== entry.role) patch.role = role;
-      const nextChat = chatId.trim();
-      if (nextChat !== (entry.telegramChatId || '')) patch.telegramChatId = nextChat;
-      const nextLang = lang.trim();
-      if (nextLang !== (entry.preferredLanguage || '')) patch.preferredLanguage = nextLang;
       if (Object.keys(patch).length === 0) { onClose(); return; }
       const resp = await fetch(`/api/team/${encodeURIComponent(entry.email)}`, {
         method:  'PATCH',
@@ -573,34 +570,6 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
               </span>
             )}
           </div>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
-              Telegram chat id
-            </span>
-            <input
-              value={chatId}
-              onChange={(e) => setChatId(e.target.value)}
-              placeholder="e.g. 123456789"
-              inputMode="numeric"
-              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75">
-              Preferred language
-            </span>
-            <input
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              placeholder="e.g. Polish, English"
-              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
-            />
-            <span className="text-[11.5px] text-muted-foreground/65">
-              Shared with the team so teammates&apos; assistants relay to {name} in their language.
-            </span>
-          </label>
 
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">

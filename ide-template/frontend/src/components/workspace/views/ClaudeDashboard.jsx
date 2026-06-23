@@ -2,14 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Hexagon, ChevronLeft, ChevronRight, Save, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Brain,
+  Brain, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
 import { useApi } from '@/lib/useApi';
+import useMe from '../useMe.js';
 import { Skeleton, SkeletonTile } from '@/components/ui/Skeleton';
 import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } from '../RestartBanners';
+import { ActivateModal } from './IntegrationsDashboard.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const PRESET_AVATARS = Array.from({ length: 16 }, (_, i) => ({
@@ -23,6 +25,15 @@ const inputCls = cn(
   'transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10',
 );
 
+// Shown in a modal footer in place of Save when the viewer isn't an admin.
+function ReadOnlyNote() {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/60">
+      <Lock className="size-3" /> Read-only — admins manage AI settings
+    </span>
+  );
+}
+
 /* ─── Dashboard ─────────────────────────────────────────────────────────── */
 
 export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect }) {
@@ -30,6 +41,11 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
 
   // Branding comes from the global BrandingProvider (single fetch, cached).
   const branding = useBranding();
+
+  // AI Settings is edit-by-admin; everyone else sees it read-only. The server
+  // already 403s the writes — this gates the UI to match.
+  const { me } = useMe();
+  const isAdmin = !!me?.isAdmin;
 
   // Setup status (hasClaudeToken, claudeTokenSetAt, ...) — SWR-cached so
   // tab switches don't show a "loading" flash. Background revalidates on
@@ -39,6 +55,10 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   // Memory preview — how many of the 7 cards are seeded + cache floor state.
   // Cheap call (loader builds the prefix from disk; ≤ 30 KB markdown).
   const memory = useApi('/api/memory/prefix');
+
+  // Telegram — connection state (from the integrations catalog) + group count.
+  const tg = useApi('/api/team/telegram-groups');
+  const integrations = useApi('/api/integrations');
 
   // True only on first ever mount before the first fetch lands. Subsequent
   // tab switches reuse the cached state and skip the skeleton.
@@ -61,6 +81,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     label: botName || 'Bot',
     description: 'Avatar and display name for your assistant.',
     active: !!botName,
+    alwaysOn: true,
     credential: null,
     activatedAt: null,
   };
@@ -69,7 +90,8 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     logo: <IconLogo icon={BookOpen} />,
     label: 'Instructions',
     description: 'Behaviour rules and persona defined in CLAUDE.md.',
-    active: false,
+    active: true,
+    alwaysOn: true,
     credential: null,
     activatedAt: null,
   };
@@ -97,9 +119,26 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     logo: <IconLogo icon={Brain} />,
     label: 'Memory',
     description: memoryDescription,
-    active: cardsPresent > 0,
+    active: true,
+    alwaysOn: true,
     credential: null,
     activatedAt: null,
+  };
+
+  // Telegram channel — registered groups + (later) token & per-user links.
+  const tgCount = tg.data?.groups?.length || 0;
+  const tgIntegration = (integrations.data?.integrations || []).find(i => i.id === 'telegram') || null;
+  const tgConnected = !!tgIntegration?.active;
+  const telegramTile = {
+    id: 'telegram',
+    logo: <TelegramLogoBox />,
+    label: 'Telegram',
+    description: tgConnected
+      ? (tgCount ? `Active in ${tgCount} group${tgCount > 1 ? 's' : ''} · per-user links` : 'Channel connected · groups & per-user links')
+      : 'The bot\'s Telegram channel — connect it to get started.',
+    active: tgConnected,
+    credential: tgConnected ? `••••${tgIntegration?.credentialSummary?.last4 || ''}` : null,
+    activatedAt: tgConnected ? (tgIntegration?.activatedAt || null) : null,
   };
 
   return (
@@ -121,30 +160,59 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
           ) : (
             <>
               <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                <SettingTile tile={botTile} onOpen={() => setOpen('bot')} />
-                <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} />
+                <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />
+                <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />
               </div>
               <SettingTile
                 tile={memoryTile}
                 onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}
+                canEdit={isAdmin}
               />
-              <SettingTile tile={claudeTile} onOpen={() => setOpen('claude')} />
+              {/* Claude (API token) and Telegram expose credentials, so they're
+                  admin-only — members see just the three default-on tiles above. */}
+              {isAdmin && (
+                <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                  <SettingTile tile={claudeTile} onOpen={() => setOpen('claude')} canEdit={isAdmin} />
+                  <SettingTile
+                    tile={telegramTile}
+                    onOpen={() => tgConnected
+                      ? onSelect && onSelect({ path: '.claude/telegram', type: 'telegram' })
+                      : setOpen('telegram-setup')}
+                    canEdit={isAdmin}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>
       </div>
 
-      {open === 'bot'          && <BotModal branding={branding} onClose={close} />}
-      {open === 'instructions' && <InstructionsModal fileEventNonce={fileEventNonce} onClose={close} />}
-      {open === 'claude'       && <ClaudeModal initialStatus={status.data?.state} onClose={close} />}
+      {open === 'bot'          && <BotModal branding={branding} onClose={close} canEdit={isAdmin} />}
+      {open === 'instructions' && <InstructionsModal fileEventNonce={fileEventNonce} onClose={close} canEdit={isAdmin} />}
+      {open === 'claude'       && <ClaudeModal initialStatus={status.data?.state} onClose={close} canEdit={isAdmin} />}
+      {open === 'telegram-setup' && tgIntegration && (
+        <ActivateModal
+          integration={tgIntegration}
+          onClose={() => setOpen(null)}
+          onSuccess={() => { setOpen(null); integrations.reload(); tg.reload(); }}
+        />
+      )}
     </div>
   );
 }
 
 /* ─── Tile — mirrors IntegrationTile exactly ────────────────────────────── */
 
-function SettingTile({ tile, onOpen }) {
-  const { logo, label, description, active, credential, activatedAt } = tile;
+function SettingTile({ tile, onOpen, canEdit = true }) {
+  const { logo, label, description, active, credential, activatedAt, alwaysOn } = tile;
+  // Only Claude + Telegram can be "not set up" (no token / not connected). The rest
+  // are default-on: no active pill, and the button always reads "Configure".
+  const configured = alwaysOn || active;
+  const showPill = active && !alwaysOn;
+  // Read-only viewers (non-admins) can only inspect — surface that as "View"
+  // rather than "Configure"/"Set up". Only admins ever see the primary CTA.
+  const needsSetup = canEdit && !configured;
+  const ctaLabel = !canEdit ? 'View' : configured ? 'Configure' : 'Set up';
 
   return (
     <div className={cn(
@@ -154,7 +222,7 @@ function SettingTile({ tile, onOpen }) {
       {/* Header — logo + status pill */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
         {logo}
-        {active && (
+        {showPill && (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
             Active
@@ -190,13 +258,13 @@ function SettingTile({ tile, onOpen }) {
           onClick={onOpen}
           className={cn(
             'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all active:scale-[0.98]',
-            active
-              ? 'bg-muted/40 text-muted-foreground/75 hover:bg-muted/55 hover:text-foreground/90'
-              : 'bg-foreground text-background hover:opacity-95',
+            needsSetup
+              ? 'bg-foreground text-background hover:opacity-95'
+              : 'bg-muted/40 text-muted-foreground/75 hover:bg-muted/55 hover:text-foreground/90',
           )}
         >
-          {active ? 'Configure' : 'Set up'}
-          {!active && <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />}
+          {ctaLabel}
+          {needsSetup && <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />}
         </button>
       </div>
     </div>
@@ -229,6 +297,14 @@ function AnthropicLogoBox() {
   return (
     <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
       <img src={`${BASE}/integrations/claude.svg`} alt="" className="size-7 object-contain" />
+    </div>
+  );
+}
+
+function TelegramLogoBox() {
+  return (
+    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
+      <img src={`${BASE}/integrations/telegram.svg`} alt="" className="size-7 object-contain" />
     </div>
   );
 }
@@ -285,7 +361,7 @@ async function apiWrite(url, opts = {}) {
 
 /* ─── Bot modal ─────────────────────────────────────────────────────────── */
 
-function BotModal({ branding, onClose }) {
+function BotModal({ branding, onClose, canEdit = true }) {
   const initialIdx = (() => {
     const url = branding?.botAvatarUrl;
     if (!url) return 0;
@@ -365,11 +441,13 @@ function BotModal({ branding, onClose }) {
             className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">
             Cancel
           </button>
-          <button type="button" onClick={save} disabled={busy || !botName.trim()}
-            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5" strokeWidth={2.5} /> : <Save className="size-3.5" strokeWidth={2} />}
-            {busy ? 'Saving…' : saved ? 'Saved' : 'Save'}
-          </button>
+          {canEdit ? (
+            <button type="button" onClick={save} disabled={busy || !botName.trim()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5" strokeWidth={2.5} /> : <Save className="size-3.5" strokeWidth={2} />}
+              {busy ? 'Saving…' : saved ? 'Saved' : 'Save'}
+            </button>
+          ) : <ReadOnlyNote />}
         </div>
       </div>
     </ModalShell>
@@ -378,7 +456,7 @@ function BotModal({ branding, onClose }) {
 
 /* ─── Instructions modal ────────────────────────────────────────────────── */
 
-function InstructionsModal({ fileEventNonce, onClose }) {
+function InstructionsModal({ fileEventNonce, onClose, canEdit = true }) {
   const [path, setPath]         = useState('.claude/CLAUDE.md');
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
@@ -488,11 +566,13 @@ function InstructionsModal({ fileEventNonce, onClose }) {
               className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
               Close
             </button>
-            <button type="button" onClick={save} disabled={!dirty || saving}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" strokeWidth={2} />}
-              {saving ? 'Saving…' : 'Save'}
-            </button>
+            {canEdit ? (
+              <button type="button" onClick={save} disabled={!dirty || saving}
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" strokeWidth={2} />}
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            ) : <ReadOnlyNote />}
           </div>
         </div>
       </div>
@@ -502,7 +582,7 @@ function InstructionsModal({ fileEventNonce, onClose }) {
 
 /* ─── Claude token modal ────────────────────────────────────────────────── */
 
-function ClaudeModal({ initialStatus, onClose }) {
+function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
   // Active view shows status + Remove button. Replace mode is opt-in: the
   // "Replace token" button switches the modal into the form view, mirroring
   // how IntegrationsDashboard handles credential rotation (remove → activate).
@@ -656,20 +736,24 @@ function ClaudeModal({ initialStatus, onClose }) {
 
         {showView ? (
           <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
-            <button type="button" onClick={remove} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" strokeWidth={2} />}
-              Remove
-            </button>
+            {canEdit ? (
+              <button type="button" onClick={remove} disabled={busy}
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" strokeWidth={2} />}
+                Remove
+              </button>
+            ) : <ReadOnlyNote />}
             <div className="flex items-center gap-2">
               <button type="button" onClick={onClose}
                 className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
                 Close
               </button>
-              <button type="button" onClick={() => setMode('edit')}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
-                Replace
-              </button>
+              {canEdit && (
+                <button type="button" onClick={() => setMode('edit')}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
+                  Replace
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -678,21 +762,23 @@ function ClaudeModal({ initialStatus, onClose }) {
               className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
               Cancel
             </button>
-            <button type="button" onClick={save} disabled={busy || !token.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-              {phase === 'saving' || phase === 'restarting'
-                ? <Loader2 className="size-3.5 animate-spin" />
-                : phase === 'done'
-                  ? <Check className="size-3.5" strokeWidth={2.5} />
-                  : <Save className="size-3.5" strokeWidth={2} />}
-              {phase === 'saving'
-                ? 'Saving…'
-                : phase === 'restarting'
-                  ? 'Restarting bot…'
+            {canEdit ? (
+              <button type="button" onClick={save} disabled={busy || !token.trim()}
+                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+                {phase === 'saving' || phase === 'restarting'
+                  ? <Loader2 className="size-3.5 animate-spin" />
                   : phase === 'done'
-                    ? (restartFailed ? 'Saved' : 'Done')
-                    : 'Save'}
-            </button>
+                    ? <Check className="size-3.5" strokeWidth={2.5} />
+                    : <Save className="size-3.5" strokeWidth={2} />}
+                {phase === 'saving'
+                  ? 'Saving…'
+                  : phase === 'restarting'
+                    ? 'Restarting bot…'
+                    : phase === 'done'
+                      ? (restartFailed ? 'Saved' : 'Done')
+                      : 'Save'}
+              </button>
+            ) : <ReadOnlyNote />}
           </div>
         )}
       </div>
