@@ -97,10 +97,11 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 
 ## Talk to them anywhere
 
-Your coworker is one mind with two front doors: a **Telegram** DM and the **web workspace chat**. Same name, same memory, same context, whichever you reach for.
+Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, and the **team Telegram groups** it's part of. Same name, same memory, same context, whichever you reach for.
 
-- **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
+- **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
+- **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into — never barging in on its own.
 
 It's all connected. What you said on Telegram is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 
