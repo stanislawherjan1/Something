@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
+import useMe from '../useMe.js';
 import { SkeletonCardGrid } from '@/components/ui/Skeleton';
 import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } from '../RestartBanners';
 
@@ -111,6 +112,10 @@ const CATEGORY_LABELS = {
 
 export default function IntegrationsDashboard({ sidebarOpen }) {
   const { botDisplayName } = useBranding();
+  // Integrations are admin-managed; everyone else sees them read-only (the
+  // server 403s the writes — this gates the UI to match).
+  const { me } = useMe();
+  const isAdmin = !!me?.isAdmin;
   const { data, loading, error, reload: reloadApi } = useApi('/api/integrations');
   // `?activate=<integration-id>` opens the activation modal — works for
   // deep links + browser-back closes the modal + the bot's first-mention
@@ -129,8 +134,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   useEffect(() => {
     if (!activateId) { setActivating(null); return; }
     const match = integrations.find(i => i.id === activateId);
-    if (match) setActivating(match);
-  }, [activateId, integrations]);
+    if (match && isAdmin) setActivating(match);   // members can't activate
+  }, [activateId, integrations, isAdmin]);
 
   const openActivate = useCallback((integration) => {
     const next = new URLSearchParams(searchParams);
@@ -238,6 +243,12 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
             Connect external services so the assistant can use them on your behalf. In case of any questions, message {botDisplayName}.
           </p>
+          {!isAdmin && (
+            <div className="flex max-w-2xl items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-4 py-2.5 text-[12.5px] text-muted-foreground/80">
+              <Lock className="size-3.5 shrink-0" strokeWidth={1.75} />
+              Read-only — your workspace admins manage integrations.
+            </div>
+          )}
           {isInitialLoad && <SkeletonCardGrid count={6} />}
 
           {error && !data && (
@@ -281,6 +292,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                         <IntegrationTile
                           integration={integration}
                           ready={ready}
+                          canManage={isAdmin}
                           onActivate={() => openActivate(integration)}
                           onRemove={() => setRemoving(integration)}
                           onSettings={() => setSettingsFor(integration)}
@@ -317,6 +329,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                   items={filtered}
                   totalAvailable={catalog.length}
                   ready={ready}
+                  canManage={isAdmin}
                   onActivate={openActivate}
                   onRemove={(i) => setRemoving(i)}
                   onSettings={(i) => setSettingsFor(i)}
@@ -403,7 +416,7 @@ function Tabs({ value, onChange, items }) {
 
 function Marketplace({
   facets, category, onCategory, query, onQuery,
-  items, ready, onActivate, onRemove, onSettings,
+  items, ready, canManage, onActivate, onRemove, onSettings,
 }) {
   const filtered = items.length;
   // The filter context for the empty-state message — distinguish "no
@@ -478,6 +491,7 @@ function Marketplace({
               <IntegrationTile
                 integration={integration}
                 ready={ready}
+                canManage={canManage}
                 onActivate={() => onActivate(integration)}
                 onRemove={() => onRemove(integration)}
                 onSettings={() => onSettings(integration)}
@@ -512,7 +526,7 @@ function Marketplace({
 
 // ─── Tile ──────────────────────────────────────────────────────────────────
 
-function IntegrationTile({ integration, ready, onActivate, onRemove, onSettings }) {
+function IntegrationTile({ integration, ready, canManage = true, onActivate, onRemove, onSettings }) {
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
@@ -569,9 +583,17 @@ function IntegrationTile({ integration, ready, onActivate, onRemove, onSettings 
         )}
       </div>
 
-      {/* Footer — action */}
+      {/* Footer — action (read-only for non-admins) */}
       <div className="px-4 pb-4 pt-3.5">
-        {isActive ? (
+        {!canManage ? (
+          <button
+            type="button" disabled
+            className="inline-flex w-full cursor-default items-center justify-center gap-1.5 rounded-md border border-border/40 bg-muted/20 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
+          >
+            <Lock className="size-3.5" strokeWidth={1.75} />
+            {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
+          </button>
+        ) : isActive ? (
           <div className="flex items-center gap-2">
             {hasSettings && (
               <button
