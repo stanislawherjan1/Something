@@ -982,46 +982,20 @@
       "id":          "substack",
       "label":       "Substack",
       "logo":        "/integrations/substack.svg",
-      "description": "Read posts, look up authors, follow Notes — works with no credentials. Toggle write access on to also publish posts, comment, restack, and read paid subscriptions.",
+      "description": "Read public Substack content — list a publication's archive, read posts, look up authors, and follow Notes. No credentials needed; read-only.",
       "category":    "content",
-      "fields": [
-        {
-          "name":           "SUBSTACK_WRITE",
-          "label":          "Allow publishing & write actions",
-          "type":           "select",
-          "globalForMulti": true,
-          "default":        "no",
-          "options": [
-            { "value": "no",  "label": "No — read-only (default)" },
-            { "value": "yes", "label": "Yes — publish, Notes, comments, paid posts" }
-          ],
-          "helper":         "Reading public posts always works. Turn this on to also let the bot publish on your behalf — requires a session cookie below."
-        },
-        {
-          "name":        "SUBSTACK_SID",
-          "label":       "Session cookie (substack.sid)",
-          "type":        "secret",
-          "showIf":      { "SUBSTACK_WRITE": "yes" },
-          "placeholder": "s%3A... (long URL-encoded string)",
-          "helper":      "DevTools → Application → Cookies → substack.com → copy the `substack.sid` value."
-        }
-      ],
+      "fields": [],
       "steps": [
         {
-          "title": "Read-only? Just hit Activate",
-          "body":  "Leave the toggle off and click Activate — that's it. The bot can immediately read any public Substack post, list a publication's archive, look up authors, and follow Notes."
-        },
-        {
-          "title": "Want to publish too? Get a session cookie",
-          "body":  "1. Log in to [substack.com](https://substack.com) in your browser (Substack uses magic-link email — no password).\n\n2. Open **DevTools** (F12 or Cmd+Opt+I) → **Application** tab → **Cookies** → `https://substack.com`.\n\n3. Find the row named `substack.sid` and copy its **Value** (long string starting with `s%3A`).\n\n4. Toggle write access on, paste the cookie, hit Activate. It stays valid for months — only expires if you change your password or sign out everywhere."
+          "title": "Just hit Activate",
+          "body":  "No credentials needed — click Activate. The bot can then read any public Substack post, list a publication's archive, look up authors, and follow Notes. A `substack-research` skill installs automatically to help find and synthesise posts."
         }
       ],
       "mcp": {
         "command": "node",
         "args":    ["{appsDir}/substack-mcp/index.js"],
-        "envMap":  { "SUBSTACK_SID": "SUBSTACK_SID" },
         "name":    "substack",
-        "allowedHosts": ["substack.com"]
+        "allowedHosts": ["substack.com", "*.substack.com"]
       }
     }
   ]

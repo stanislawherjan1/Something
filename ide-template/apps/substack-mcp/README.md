@@ -1,52 +1,38 @@
 # substack-mcp
 
-MCP server for Substack. Two tiers:
-
-- **Read-only** (default, no credentials): list archives, read public posts,
-  search across Substack, look up authors, list comments.
-- **Authenticated** (paste `substack.sid` session cookie in Integrations →
-  Substack → Settings): publish posts, post Notes, comment, restack, plus
-  read paid posts you subscribe to.
+Read-only MCP server for Substack. **No credentials** — it only reads public
+content. Activating the integration also installs a `substack-research` skill
+that teaches the assistant how to find and synthesise posts.
 
 ## Tools
 
-| Tool | Auth | Notes |
-|---|---|---|
-| `read_publication_archive` | no | accepts slug / custom domain / URL |
-| `read_post`                | no | paid posts require subscriber cookie |
-| `get_author`               | no | profile + publications + external links |
-| `list_recent_notes`        | no | Notes (short posts) by author |
-| `list_comments`            | no | public posts |
-| `publish_post`             | **yes** | draft → prepublish → publish |
-| `post_note`                | **yes** | Substack Notes (short posts) |
-| `comment_on_post`          | **yes** | |
-| `restack_post`             | **yes** | with optional comment |
+| Tool | Notes |
+|---|---|
+| `read_publication_archive` | recent posts; accepts slug / custom domain / URL |
+| `read_post`                | full post by URL (public content only) |
+| `get_author`               | profile + publications + external links |
+| `list_recent_notes`        | Notes (short posts) by author |
+| `list_comments`            | comments on a public post |
 
-There's no public search API on Substack — for "find posts about X" use the
-Grok integration with web search, or scrape via the Notes feed of a curator.
+There's **no public search API** on Substack. To "find posts about X", use a
+web-search integration (e.g. Grok) to surface candidate Substack URLs, then
+read them with these tools — see the `substack-research` skill.
 
-## Auth
+## Egress
 
-Substack has no developer OAuth. The single session cookie `substack.sid`
-acts as full account credential and is long-lived (rotates only on password
-change or "sign out everywhere").
-
-To get it: log in to substack.com in a browser, open DevTools → Application
-→ Cookies → `substack.com` → copy the `substack.sid` value.
-
-Paste into the workspace IDE: Integrations → Substack → Settings.
+The host allow-list must cover both `substack.com` (author/profile/Notes
+endpoints) **and** `*.substack.com` (publication subdomains for archive /
+posts / comments). Custom-domain publications (e.g. `noahpinion.blog`) can't
+be statically allow-listed, so they aren't reachable through the proxy.
 
 ## Caveats
 
 - **Unofficial endpoints.** Substack's only official API (since Apr 2026)
-  returns LinkedIn-keyed profile metadata only. Every endpoint this MCP
-  uses is one the Substack website itself calls; they can change without
-  notice.
-- **ToS.** The Substack Acceptable Use Policy prohibits scraping and
-  automated access. Enforcement risk for personal/own-publication use is
-  low; for products aggregating other publications it is real.
-- **Cookie = full account.** A leaked `substack.sid` lets anyone act as
-  your account. Stored encrypted in the workspace store; never logged.
+  returns LinkedIn-keyed profile metadata only. Every endpoint this MCP uses
+  is one the Substack website itself calls; they can change without notice.
+- **ToS.** The Substack Acceptable Use Policy prohibits scraping and automated
+  access. Enforcement risk for reading public posts is low, but real for
+  products that aggregate other publications at scale.
 
 ## Endpoint reference
 
@@ -55,13 +41,7 @@ Verified live May 2026. Subject to change.
 ```
 GET  {pub}.substack.com/api/v1/archive?sort=new&limit=&offset=
 GET  {pub}.substack.com/api/v1/posts/{slug}
-GET  substack.com/api/v1/user/{handle}/public_profile
-GET  substack.com/api/v1/reader/feed/profile/{user_id}
 GET  {pub}.substack.com/api/v1/post/{id}/comments
-POST {pub}.substack.com/api/v1/drafts                  (auth)
-POST {pub}.substack.com/api/v1/drafts/{id}/prepublish  (auth)
-POST {pub}.substack.com/api/v1/drafts/{id}/publish     (auth)
-POST substack.com/api/v1/comment/feed                  (auth, Notes)
-POST {pub}.substack.com/api/v1/post/{id}/comment       (auth)
-POST {pub}.substack.com/api/v1/post/{id}/restack       (auth)
+GET  substack.com/api/v1/user/{handle}/public_profile
+GET  substack.com/api/v1/reader/feed/profile/{user_id}    (Notes feed)
 ```

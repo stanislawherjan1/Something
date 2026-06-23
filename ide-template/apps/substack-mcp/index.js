@@ -1,23 +1,16 @@
 /**
- * Substack MCP — read public posts + (with session cookie) publish, Notes,
- * comments, read paid content.
+ * Substack MCP — read-only.
  *
- * Two tiers, single MCP:
- *   - Read-only (no creds):  read_archive, read_post, search_posts,
- *                            get_author, list_comments
- *   - Write + paid (cookie): publish_post, post_note, comment_on_post,
- *                            restack_post + paid bodies in read_post
- *
- * Tier is decided at startup by presence of process.env.SUBSTACK_SID. If
- * absent, write tools still appear in the tool list but return a friendly
- * "Connect your account in Integrations → Substack" error — gives the user
- * (and Claude) a single clean signal instead of a missing-tool 404.
+ * Reads public Substack content with NO credentials: list a publication's
+ * archive, read a post, look up an author, follow Notes, list comments.
+ * There is no write tier and no session cookie — publishing/commenting were
+ * intentionally dropped (see git history) to keep this a zero-credential,
+ * low-risk reader.
  *
  * Substack has no official API for posts. We hit the same unauthenticated
- * `/api/v1/*` endpoints the website itself uses; with a substack.sid
- * cookie we get the same write surface the web editor uses. Both paths
- * technically violate Substack ToS (Acceptable Use § scraping); enforcement
- * risk for personal/own-publication use is low.
+ * `/api/v1/*` endpoints the website itself uses. This technically brushes
+ * Substack ToS (Acceptable Use § scraping); enforcement risk for reading
+ * public posts is low, but the endpoints are unofficial and can change.
  *
  * Endpoint reference (verified live May 2026 via curl):
  *   GET  {pub}.substack.com/api/v1/archive?sort=new&limit=&offset=
@@ -25,44 +18,29 @@
  *   GET  {pub}.substack.com/api/v1/post/{id}/comments
  *   GET  substack.com/api/v1/user/{handle}/public_profile
  *   GET  substack.com/api/v1/reader/feed/profile/{user_id}    (Notes feed)
- *   POST {pub}.substack.com/api/v1/drafts
- *   POST {pub}.substack.com/api/v1/drafts/{id}/prepublish
- *   POST {pub}.substack.com/api/v1/drafts/{id}/publish
- *   POST substack.com/api/v1/comment/feed                      (Notes post)
- *   POST {pub}.substack.com/api/v1/post/{id}/comment
  *
- * NOTE: There's no public search endpoint on Substack's JSON API in 2026.
- * Discovery is through RSS / archive / author profile lookups.
+ * Egress: the host allow-list must cover `substack.com` AND `*.substack.com`
+ * (publication subdomains). Custom-domain publications (e.g. noahpinion.blog)
+ * can't be statically allow-listed and won't be reachable through the proxy.
  *
- * Auth: single `substack.sid` cookie (long-lived; rotates only on
- * password change / "sign out everywhere"). On any 401 we surface a
- * clear "session expired — re-paste cookie in Integrations" message.
+ * NOTE: there is no public search endpoint on Substack's JSON API. Discovery
+ * is via known publication/author lookups (or a web-search integration that
+ * surfaces Substack URLs, which these tools then read) — see the
+ * `substack-research` skill.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { loadCredentials } from '../_shared/broker-client.js';
 
-await loadCredentials();
+const UA = 'substack-mcp/2.0 (+https://github.com/anthropics/claude-code)';
 
-const SID = (process.env.SUBSTACK_SID || '').trim();
-const HAS_AUTH = SID.length > 0;
-const UA = 'substack-mcp/1.0 (+https://github.com/anthropics/claude-code)';
+// ─── HTTP helper ───────────────────────────────────────────────────────────
 
-// ─── HTTP helpers ──────────────────────────────────────────────────────────
-
-function authHeaders() {
-  const h = {
-    'User-Agent': UA,
-    'Accept':     'application/json',
-  };
-  if (HAS_AUTH) h.Cookie = `substack.sid=${SID}`;
-  return h;
-}
+const HEADERS = { 'User-Agent': UA, 'Accept': 'application/json' };
 
 async function httpGet(url) {
-  let resp = await fetch(url, { headers: authHeaders() });
+  let resp = await fetch(url, { headers: HEADERS });
 
   // Custom-domain Substacks often canonicalise on `www.` and 404 on the
   // bare host (noahpinion.blog → www.noahpinion.blog). If we hit 404 on a
@@ -76,40 +54,13 @@ async function httpGet(url) {
         !u.hostname.endsWith('substack.com');
       if (isBareCustom) {
         u.hostname = `www.${u.hostname}`;
-        resp = await fetch(u.toString(), { headers: authHeaders() });
+        resp = await fetch(u.toString(), { headers: HEADERS });
       }
     } catch { /* malformed URL, fall through to error path */ }
   }
 
   if (resp.status === 401 || resp.status === 403) {
-    throw new Error(
-      HAS_AUTH
-        ? 'Substack session expired or rejected. Re-paste substack.sid in Integrations → Substack → Settings.'
-        : 'This resource requires a connected account. Add your session cookie in Integrations → Substack → Settings.',
-    );
-  }
-  if (!resp.ok) {
-    let detail = '';
-    try { detail = (await resp.text()).slice(0, 400); } catch {}
-    throw new Error(`Substack ${resp.status} ${resp.statusText} for ${url}: ${detail}`);
-  }
-  return resp.json();
-}
-
-async function httpPost(url, body) {
-  if (!HAS_AUTH) {
-    throw new Error('This tool requires a connected account. Add your session cookie in Integrations → Substack → Settings.');
-  }
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (resp.status === 401 || resp.status === 403) {
-    throw new Error('Substack session expired or rejected. Re-paste substack.sid in Integrations → Substack → Settings.');
+    throw new Error('This Substack resource is not public (it may be subscriber-only). This integration only reads public content.');
   }
   if (!resp.ok) {
     let detail = '';
@@ -229,9 +180,7 @@ async function readPost({ url }) {
     body_text:    body_html ? stripHtml(body_html) : null,
     truncated,
     paywalled_message: truncated
-      ? (HAS_AUTH
-          ? 'This post is paid and your account does not have access to it.'
-          : 'This is a paid post. Connect a subscriber cookie in Integrations → Substack to read it.')
+      ? 'This is a paid/subscriber-only post; only public content is available to this integration.'
       : null,
   };
 }
@@ -265,7 +214,7 @@ async function listRecentNotes({ handle, limit }) {
   if (!userId) throw new Error(`Could not resolve handle "${handle}" to a user id.`);
 
   const data = await httpGet(`https://substack.com/api/v1/reader/feed/profile/${userId}`);
-  const items = data.items || data.notes || data || [];
+  const items = Array.isArray(data) ? data : (data.items || data.notes || []);
   return items.slice(0, limit || 20).map(item => {
     const c = item.comment || item.context?.comment || item;
     return {
@@ -286,7 +235,7 @@ async function listComments({ url, limit }) {
   const postId = post.id;
   if (!postId) throw new Error('Could not resolve post id.');
   const data = await httpGet(`${origin}/api/v1/post/${postId}/comments?limit=${Math.min(limit || 30, 100)}`);
-  const items = data.comments || data || [];
+  const items = Array.isArray(data) ? data : (data.comments || []);
   return items.map(c => ({
     id:        c.id,
     author:    c.name || c.author?.name,
@@ -297,88 +246,9 @@ async function listComments({ url, limit }) {
   }));
 }
 
-// ─── Write tools (require SID) ─────────────────────────────────────────────
-
-async function publishPost({ publication, title, subtitle, body_html, audience }) {
-  const origin = publicationOrigin(publication);
-  const aud = ['everyone', 'only_paid', 'only_free', 'founding'].includes(audience) ? audience : 'everyone';
-
-  // 1. create draft
-  const draft = await httpPost(`${origin}/api/v1/drafts`, {
-    draft_title:    title,
-    draft_subtitle: subtitle || '',
-    draft_body:     body_html,
-    audience:       aud,
-    type:           'newsletter',
-  });
-  const draftId = draft.id;
-  if (!draftId) throw new Error('Draft creation returned no id.');
-
-  // 2. prepublish (validates)
-  await httpPost(`${origin}/api/v1/drafts/${draftId}/prepublish`, {});
-
-  // 3. publish
-  const published = await httpPost(`${origin}/api/v1/drafts/${draftId}/publish`, {
-    send: true,
-    share_automatically: false,
-  });
-
-  return {
-    ok:        true,
-    post_url:  published.canonical_url || published.url,
-    post_id:   published.id,
-    audience:  aud,
-    title,
-  };
-}
-
-async function postNote({ text }) {
-  // Substack Notes API. Endpoint shape may evolve — the wire body matches
-  // what the web client sends as of May 2026.
-  const data = await httpPost('https://substack.com/api/v1/comment/feed', {
-    bodyJson: {
-      type: 'doc',
-      content: [{
-        type: 'paragraph',
-        content: [{ type: 'text', text }],
-      }],
-    },
-    tabId:        'for-you',
-    surface:      'feed',
-    replyMinimumRole: 'everyone',
-  });
-  return {
-    ok:       true,
-    note_id:  data.id,
-    url:      data.url || null,
-  };
-}
-
-async function commentOnPost({ url, text }) {
-  const { origin, slug } = parsePostUrl(url);
-  const post = await httpGet(`${origin}/api/v1/posts/${encodeURIComponent(slug)}`);
-  const postId = post.id;
-  if (!postId) throw new Error('Could not resolve post id.');
-  const data = await httpPost(`${origin}/api/v1/post/${postId}/comment`, {
-    body: text,
-  });
-  return { ok: true, comment_id: data.id, post_url: post.canonical_url };
-}
-
-async function restackPost({ url, comment }) {
-  const { origin, slug } = parsePostUrl(url);
-  const post = await httpGet(`${origin}/api/v1/posts/${encodeURIComponent(slug)}`);
-  const postId = post.id;
-  if (!postId) throw new Error('Could not resolve post id.');
-  const data = await httpPost(`${origin}/api/v1/post/${postId}/restack`, {
-    body: comment || '',
-  });
-  return { ok: true, restack_id: data.id };
-}
-
 // ─── Tool definitions ──────────────────────────────────────────────────────
 
-const READ_TOOLS = [
+const TOOLS = [
   {
     name: 'read_publication_archive',
     description: 'List recent posts from a Substack publication. Works without authentication for any public publication. Use this to monitor a specific author or pull a recent-posts list for a research synthesis.',
@@ -398,7 +268,7 @@ const READ_TOOLS = [
   },
   {
     name: 'read_post',
-    description: 'Read the full content of a single Substack post by URL. Returns title, body as HTML and plain text, audience flag, and a paywall message if the post is subscriber-only and you do not have access.',
+    description: 'Read the full content of a single public Substack post by URL. Returns title, body as HTML and plain text, audience flag, and a note if the post is subscriber-only (only public content is available).',
     inputSchema: {
       type: 'object',
       required: ['url'],
@@ -444,65 +314,6 @@ const READ_TOOLS = [
   },
 ];
 
-const WRITE_TOOLS = [
-  {
-    name: 'publish_post',
-    description: 'Publish a new post to one of your Substack publications. Three-step internal flow (draft → prepublish → publish). Requires a connected account.',
-    inputSchema: {
-      type: 'object',
-      required: ['publication', 'title', 'body_html'],
-      properties: {
-        publication: { type: 'string', description: 'Your publication (slug, custom domain, or full URL).' },
-        title:       { type: 'string', description: 'Post title.' },
-        subtitle:    { type: 'string', description: 'Optional subtitle/dek.' },
-        body_html:   { type: 'string', description: 'Post body as HTML. Paragraphs as <p>...</p>, headings as <h2>...</h2>, etc.' },
-        audience:    {
-          type: 'string',
-          enum: ['everyone', 'only_paid', 'only_free', 'founding'],
-          description: 'Who can read this post. Default: everyone.',
-        },
-      },
-    },
-  },
-  {
-    name: 'post_note',
-    description: 'Post a Substack Note (short post, similar to a tweet). Requires a connected account.',
-    inputSchema: {
-      type: 'object',
-      required: ['text'],
-      properties: {
-        text: { type: 'string', description: 'Note body (plain text; Substack handles linkification).' },
-      },
-    },
-  },
-  {
-    name: 'comment_on_post',
-    description: 'Post a comment on any Substack post you can access. Requires a connected account.',
-    inputSchema: {
-      type: 'object',
-      required: ['url', 'text'],
-      properties: {
-        url:  { type: 'string', description: 'Post URL.' },
-        text: { type: 'string', description: 'Comment body.' },
-      },
-    },
-  },
-  {
-    name: 'restack_post',
-    description: 'Restack a post to your followers (Substack equivalent of a retweet/quote). Requires a connected account.',
-    inputSchema: {
-      type: 'object',
-      required: ['url'],
-      properties: {
-        url:     { type: 'string', description: 'Post URL.' },
-        comment: { type: 'string', description: 'Optional comment to attach.' },
-      },
-    },
-  },
-];
-
-const TOOLS = [...READ_TOOLS, ...WRITE_TOOLS];
-
 // ─── MCP wiring ────────────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -511,14 +322,10 @@ const HANDLERS = {
   get_author:               getAuthor,
   list_recent_notes:        listRecentNotes,
   list_comments:            listComments,
-  publish_post:             publishPost,
-  post_note:                postNote,
-  comment_on_post:          commentOnPost,
-  restack_post:             restackPost,
 };
 
 const server = new Server(
-  { name: 'substack', version: '1.0.0' },
+  { name: 'substack', version: '2.0.0' },
   { capabilities: { tools: {} } },
 );
 
@@ -540,4 +347,4 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write(`[substack-mcp] ready (${HAS_AUTH ? 'connected account' : 'read-only'})\n`);
+process.stderr.write('[substack-mcp] ready (read-only)\n');

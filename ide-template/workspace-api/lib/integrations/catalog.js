@@ -24,8 +24,10 @@ let cached = null;
 function validateEntry(i) {
   if (!i.id || typeof i.id !== 'string') throw new Error('integration missing id');
   if (i.comingSoon) return;
-  if (!Array.isArray(i.fields) || i.fields.length === 0) {
-    throw new Error(`integration ${i.id} must declare fields[] (or be marked comingSoon)`);
+  // `fields[]` is required as an array but MAY be empty: a credential-less,
+  // read-only integration (e.g. Substack) activates with no inputs at all.
+  if (!Array.isArray(i.fields)) {
+    throw new Error(`integration ${i.id} must declare a fields[] array (empty is allowed for a credential-less integration)`);
   }
   for (const f of i.fields) {
     if (!f.name || !f.label) throw new Error(`integration ${i.id} field missing name/label`);

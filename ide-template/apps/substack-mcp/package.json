@@ -1,8 +1,8 @@
 {
   "name": "substack-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
-  "description": "MCP server for Substack — read public posts, search, author profiles; optional session cookie unlocks publishing, Notes, paid content.",
+  "description": "MCP server for Substack — read-only. Public posts, publication archives, author profiles, Notes, and comments. No credentials.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

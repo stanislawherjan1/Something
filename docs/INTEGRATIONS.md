@@ -25,7 +25,7 @@ this table mirrors it.
 | **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation) |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
-| **Substack** | Read posts, look up authors, follow Notes — no credentials needed; optional write |
+| **Substack** | Read posts, archives, authors, Notes, comments — no credentials needed; read-only |
 | **X (twitterapi.io)** | Read tweets, profiles, replies, followers, mentions |
 | **Grok (xAI)** | Live X + web search — real-time takes, breaking news, fact-checks |
 | **OpenAI (GPT)** | Ask GPT models (gpt-5, gpt-4.1, o-series) for second opinions |
