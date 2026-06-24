@@ -589,6 +589,21 @@ else:
 # access gate, so the allow-list lives in wsapi (.team-config.json), not
 # access.json — and Telegram still only DELIVERS non-mention group messages when
 # BotFather privacy mode is OFF (runbook). Awaited but capped at 1.5s, swallowed.
+# Strip-and-reapply (v3 convention — see the restart-command patch below): wipe any
+# previously-injected group block so a BODY change (here: forwarding photo_file_id for
+# group images) actually takes effect even on a PERSISTED /home/bot plugin where the
+# marker is already present. Without this, an "already patched" cache pins the OLD
+# text-only body forever (caught 2026-06-24: deployed the image fix but the bot kept
+# replying "nothing attached"). Anchored on the marker + the unique trailing comment —
+# NOT brace-counting, because the bot.use(...) block nests too deep for that.
+group_existing_pattern = re.compile(
+    r'\n?// CC-BOT-PATCH: telegram group message diversion\n.*?// group traffic handled by the watcher[^\n]*\n\}\);\n',
+    re.DOTALL,
+)
+if group_existing_pattern.search(content):
+    content = group_existing_pattern.sub('', content)
+    changed = True
+    print('[bot] telegram group diversion: stripped stale block (reapplying current body)')
 tg_group_marker = '// CC-BOT-PATCH: telegram group message diversion'
 if tg_group_marker not in content:
     group_inject = (
@@ -599,7 +614,13 @@ if tg_group_marker not in content:
         '  try {\n'
         '    const gm = ctx.message;\n'
         '    const gtext = gm?.text ?? gm?.caption ?? null;\n'
-        '    if (gtext) {\n'
+        '    let photoFileId = null;\n'
+        '    try {\n'
+        '      const ph = gm?.photo;\n'
+        '      if (Array.isArray(ph) && ph.length) photoFileId = ph[ph.length - 1].file_id;\n'
+        '      else if (gm?.document && typeof gm.document.mime_type === "string" && gm.document.mime_type.indexOf("image/") === 0) photoFileId = gm.document.file_id;\n'
+        '    } catch (_) { /* no photo on this message */ }\n'
+        '    if (gtext || photoFileId) {\n'
         '      const meId = ctx.me?.id;\n'
         '      const meName = ctx.me?.username ? ("@" + ctx.me.username) : null;\n'
         '      let mentioned = false;\n'
@@ -616,6 +637,7 @@ if tg_group_marker not in content:
         '        chat_title: ctx.chat?.title ?? null,\n'
         '        message_id: gm?.message_id ?? null,\n'
         '        text: gtext,\n'
+        '        photo_file_id: photoFileId,\n'
         '        from_id: ctx.from?.id != null ? String(ctx.from.id) : null,\n'
         '        from_username: ctx.from?.username ?? null,\n'
         '        from_name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") || null,\n'

@@ -181,6 +181,39 @@ export async function getBotUserId() {
   return null;
 }
 
+// ─── File download (group-mode images) ─────────────────────────────────────────
+// Download a Telegram file (e.g. a group photo) by file_id, via the Bot API. Two
+// hops: getFile → file_path, then GET https://api.telegram.org/file/bot<token>/<path>.
+// api.telegram.org is on the egress base allowlist (same host as sendMessage), so
+// both hops reach out. Capped so a malicious/huge file can't OOM the small VPS.
+// Returns { ok, buffer, ext } or { ok:false, error }. Never throws.
+const MAX_TG_FILE_BYTES = 20 * 1024 * 1024;   // 20 MB — Telegram photo sizes are well under this
+export async function downloadTelegramFile(fileId) {
+  if (!telegramActive()) return { ok: false, error: 'telegram not active' };
+  const fid = String(fileId == null ? '' : fileId).trim();
+  if (!fid) return { ok: false, error: 'no file id' };
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return { ok: false, error: 'no bot token' };
+  try {
+    const metaResp = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fid)}`);
+    const meta = await metaResp.json().catch(() => ({}));
+    if (!metaResp.ok || !meta.ok || !meta.result?.file_path) {
+      return { ok: false, error: `getFile ${metaResp.status}: ${JSON.stringify(meta).slice(0, 160)}` };
+    }
+    const filePath = meta.result.file_path;                       // e.g. "photos/file_12.jpg"
+    const ext = (String(filePath).match(/\.([A-Za-z0-9]{1,5})$/)?.[1] || 'jpg').toLowerCase();
+    const fileResp = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`);
+    if (!fileResp.ok) return { ok: false, error: `file download ${fileResp.status}` };
+    const buf = Buffer.from(await fileResp.arrayBuffer());
+    if (!buf.length) return { ok: false, error: 'empty file' };
+    if (buf.length > MAX_TG_FILE_BYTES) return { ok: false, error: `file too large (${buf.length} bytes)` };
+    return { ok: true, buffer: buf, ext };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 // Dedup recently-processed inbound Telegram message ids (the bot middleware may
 // retry). Small bounded set — replay protection, not durable state.
 const _recentInbound = new Set();

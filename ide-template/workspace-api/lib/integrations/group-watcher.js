@@ -24,7 +24,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -32,7 +32,7 @@ import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
 import { isAllowedGroup, getGroup, userByChatId, recordGroupMember } from '../team.js';
 import { activeIds } from './store.js';
-import { sendTelegramMessage, getBotUserId, sendChatAction } from './telegram-sync.js';
+import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
 import { injectBotFrame } from '../bot-inject.js';
 
@@ -201,6 +201,31 @@ function audit(line) {
   } catch { /* audit is best-effort */ }
   // Also surface a concise line for live tailing during Phase-1 tuning.
   process.stderr.write(`[group-watcher] ${line.decision || '?'} chat=${line.chat_id} conf=${line.confidence ?? '-'} beat=${line.beat || '-'} reason=${line.reason_enum || '-'}\n`);
+}
+
+// ─── Group image fetch ────────────────────────────────────────────────────────
+// Download the target message's Telegram photo to a brain-readable file and return
+// its ABSOLUTE path, so groupTurnParams can tell the brain to Read it — the same
+// file-path pattern the web chat uses for attachments (lib/attachments.js): wsapi
+// writes under PROJECT_DIR, the brain (same runClaudeTurn engine) reads it. Called
+// ONLY once we've decided to answer, so gate-dropped images cost nothing. Best-effort:
+// any failure → null and the turn proceeds text-only (exactly the prior behaviour).
+const GROUP_ATTACH_DIR = join(PROJECT_DIR, '.group-attachments');
+async function fetchGroupImage(chatId, target) {
+  if (!target || !target.photo_file_id) return null;
+  try {
+    const dl = await downloadTelegramFile(target.photo_file_id);
+    if (!dl.ok || !dl.buffer) { process.stderr.write(`[group-watcher] image download failed: ${dl.error}\n`); return null; }
+    const gid = String(chatId).replace(/[^\d-]/g, '') || 'unknown';
+    const dir = join(GROUP_ATTACH_DIR, gid);
+    mkdirSync(dir, { recursive: true, mode: 0o770 });
+    const abs = join(dir, `${String(target.message_id).replace(/[^\w-]/g, '_')}.${dl.ext || 'jpg'}`);
+    writeFileSync(abs, dl.buffer);
+    return abs;
+  } catch (err) {
+    process.stderr.write(`[group-watcher] image save failed: ${err.message}\n`);
+    return null;
+  }
 }
 
 /**
@@ -414,6 +439,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, your FIRST output must be exactly `[[SILENT]]` — immediately, before using any tool — and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
+    target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
   ].join('\n');
   return {
     message,
@@ -554,6 +580,11 @@ async function flush(chatId) {
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'ignore', beat, confidence, reason_enum: 'flood-capped', preview: clip(target.text, 120) });
   }
   inflight += 1;
+  // Target carries a photo → fetch it NOW (only on a positive verdict, so gate-dropped
+  // images cost nothing): sets target.imagePath, which groupTurnParams hands to Read.
+  if (target.photo_file_id && !target.imagePath) {
+    target.imagePath = await fetchGroupImage(chatId, target);
+  }
   let reply;
   try { reply = await groupCompose(group, hist, target); }
   catch (err) { reply = { ok: false, error: err.message }; }
@@ -660,13 +691,16 @@ export function routeGroupMessage(payload = {}) {
     if (mid && seen.has(key)) return { ok: true, decision: 'ignore', reason_enum: 'duplicate' };
     if (mid) rememberSeen(key);
 
-    const text = typeof payload.text === 'string' ? payload.text : (typeof payload.caption === 'string' ? payload.caption : '');
+    const photoFileId = payload.photo_file_id != null ? String(payload.photo_file_id) : '';
+    let text = typeof payload.text === 'string' ? payload.text : (typeof payload.caption === 'string' ? payload.caption : '');
+    if (!text && photoFileId) text = '[sent an image]';   // bare photo → signal for the gate/history; the brain SEES the file at compose time
     let teammate = false;
     try { teammate = !!userByChatId(payload.from_id); } catch { teammate = false; }
 
     const msg = {
       message_id: mid || `n${Date.now()}`,
       text,
+      photo_file_id: photoFileId || null,
       from_id: payload.from_id != null ? String(payload.from_id) : '',
       from_name: payload.from_name || '',
       from_username: payload.from_username || '',
