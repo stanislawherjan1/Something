@@ -90,7 +90,11 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 ## Demo
 
 <p align="center">
-  <img src="assets/workspace.png" alt="The web workspace: file vault, markdown editor, embedded chat" width="820" />
+ 
+
+https://github.com/user-attachments/assets/dbdf7444-ad67-4ff0-8a46-033cf2ce3271
+
+
 </p>
 
 <br/>
