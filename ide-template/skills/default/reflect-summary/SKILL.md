@@ -1,6 +1,6 @@
 ---
 name: reflect-summary
-description: Generate a short title and 2–3 sentence summary for a closed conversation thread. Run by the workspace-api as a post-session reflect-bot via `POST /api/threads/:id/reflect/summary`. NOT user-facing — never invoked by the chat agent. Tier 0 auto-apply (silent, pure metadata).
+description: Generate a short title + 2–3 sentence summary (plus entities/decisions/open_items) for a FINISHED conversation thread → a verdict card. Run server-side by the workspace-api reflect-summary engine (lib/reflect-summary.js), fired by the idle sweep (recent-snapshot monitor → /api/internal/reflect-summary) over web chat sessions + the Telegram idle burst. NOT user-facing — never invoked by the chat agent. The verdict cards feed the memory graph + the reflect-distill consolidator.
 allowed-tools: Read
 ---
 

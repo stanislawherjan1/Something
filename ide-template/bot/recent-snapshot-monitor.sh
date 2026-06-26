@@ -38,4 +38,21 @@ while true; do
         # response so the operator can see which one + when.
         log "refresh: $response"
     fi
+
+    # Sweep idle threads → verdict cards (P4 Track B / reflect-summary). Same idle
+    # cadence; server-side single-flight + dedup + per-tick cap make calling it
+    # every tick safe. A sweep that summarises several threads spawns short
+    # claude -p runs, so allow a generous timeout. Log only when it wrote one.
+    sweep=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/reflect-sweep" 2>/dev/null) || true
+    if echo "$sweep" | grep -qE '"written":[1-9]'; then
+        log "reflect-sweep: $sweep"
+    fi
+
+    # Distil durable conclusions from recent verdicts → 7-card proposals
+    # (_drafts → /memory review). Self-rate-limited (~12h) + single-flight
+    # server-side, so calling every tick is a cheap no-op until it's due.
+    distill=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/reflect-distill" 2>/dev/null) || true
+    if echo "$distill" | grep -qE '"proposals":[1-9]'; then
+        log "reflect-distill: $distill"
+    fi
 done

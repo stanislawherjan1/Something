@@ -18,6 +18,8 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
+import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
+import { distillVerdicts } from '../lib/reflect-distill.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
@@ -450,6 +452,50 @@ export default function internalRouter() {
       injectBotFrame(`[GROUP chat_id=${cid} "${String(title || '').slice(0, 40)}" | auto-registered: ${by.displayName || by.slug} added me to this group, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
       process.stderr.write(`[group-joined] auto-registered ${cid} ("${title || ''}") via ${by.slug}\n`);
     } catch (err) { process.stderr.write(`[internal] group-joined failed: ${err.message}\n`); }
+  });
+
+  // Reflect-summary (P4 Track B): summarise a FINISHED thread → verdict card
+  // (memory/threads/<id>.md, surfaced as a thread node + cross-thread `entities:`
+  // edges in the memory graph). The idle trigger posts here on session close;
+  // also the manual entry point for testing. Awaits the LLM (Haiku, a few s) so
+  // the caller gets the result. loopback only.
+  router.post('/internal/reflect-summary', loopbackOnly, async (req, res) => {
+    try {
+      const { threadId, transcript, scope, owner } = req.body || {};
+      const r = await summarizeThread({ threadId, transcript, forceScope: scope || null, forceOwner: owner || null });
+      return res.status(r.ok ? 200 : 422).json(r);
+    } catch (err) {
+      process.stderr.write(`[internal] reflect-summary failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Reflect-sweep: find idle threads (web sessions + the Telegram burst that just
+  // went quiet) and summarise any lacking an up-to-date verdict card. The
+  // recent-snapshot monitor calls this every tick; server-side single-flight +
+  // dedup + a per-tick cap make frequent calls safe. loopback only.
+  router.post('/internal/reflect-sweep', loopbackOnly, async (req, res) => {
+    try {
+      const r = await sweepIdleThreads(req.body || {});
+      return res.json(r);
+    } catch (err) {
+      process.stderr.write(`[internal] reflect-sweep failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Reflect-distill: read recent thread verdicts → propose DURABLE 7-card updates
+  // (via reflect-apply.py → _drafts → /memory review). Self-rate-limited (~12h) +
+  // single-flight; the monitor calls it every tick (cheap no-op until due). Pass
+  // {"force":true} to bypass the rate-limit (manual/testing). loopback only.
+  router.post('/internal/reflect-distill', loopbackOnly, async (req, res) => {
+    try {
+      const r = await distillVerdicts(req.body || {});
+      return res.json(r);
+    } catch (err) {
+      process.stderr.write(`[internal] reflect-distill failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
   });
 
   return router;
