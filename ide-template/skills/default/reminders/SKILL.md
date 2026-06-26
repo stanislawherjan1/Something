@@ -24,11 +24,11 @@ In team mode every reminder is **tied to a person** — by default the asker, op
 
 | What the user means | System |
 |---|---|
-| "I need to do X" / "add X to the list" — a to-do, no fire time | **Tasks.md** (task-management skill) |
+| "I need to do X" / "add X to the list" — a to-do, no fire time | **the task board** (task-management skill) |
 | "At \<time\>, remind/notify \<someone\> about X" — a timed action | **set_reminder** (this skill) |
 
 - **No time mentioned → it's a task, not a reminder.**
-- **A reminder aimed at a teammate is still a reminder** — you deliver it at the fire time. Never turn "remind Jan at 3" into a `Tasks.md` entry Jan owns, and don't promote a Tasks.md item into a reminder unless the user gives a fire time.
+- **A reminder aimed at a teammate is still a reminder** — you deliver it at the fire time. Never turn "remind Jan at 3" into a task board entry Jan owns, and don't promote a task board item into a reminder unless the user gives a fire time.
 
 ## Who it's for (team mode)
 

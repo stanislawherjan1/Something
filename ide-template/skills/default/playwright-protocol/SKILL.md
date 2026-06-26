@@ -10,7 +10,7 @@ This skill defines the rules for using Playwright for browser automation, intera
 
 ## Use the configured MCP only — never reinstall
 
-Browser automation goes **exclusively** through the `mcp__playwright__*` tools. The Playwright MCP is wired up in `.claude.json` at container build time with Chromium pre-installed in the image.
+Browser automation goes **exclusively** through the `mcp__playwright__*` tools. The Playwright MCP is patched into `.claude.json` at container start (runtime, by `entrypoint.sh`) with Chromium pre-installed in the image.
 
 You **must not**:
 - Run `npx playwright install` (any variant)
@@ -54,6 +54,10 @@ This is almost always a stale `SingletonLock` symlink left behind by a Chrome th
 To recover, ask the operator (or do it yourself if you have shell access):
 ```bash
 find /home/coder -name 'Singleton*' -type l -delete
+# The LIVE user-data-dir is /tmp/playwright-mcp-data — clear its lock too:
+find /tmp/playwright-mcp-data -name 'Singleton*' -delete 2>/dev/null
+# If a lock is still stuck, remove the whole data dir (it's recreated on next launch):
+rm -rf /tmp/playwright-mcp-data
 ```
 
 Then retry. The container `entrypoint.sh` already clears these locks at startup, so a bot restart also fixes it. Do not invent explanations involving "shared MCP server" or "another instance opened the browser" — that's not how this stack works.

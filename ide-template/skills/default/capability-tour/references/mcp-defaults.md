@@ -45,6 +45,6 @@ Want me to demo any of these on a real example? Just say "show me X".
 
 ## Filter rules
 
-Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`. Those are plumbing, not features.
+Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features.
 
 `workspace-api` IS user-facing (memory_grep is the tool the model uses for "search what we know about X") — keep in the tour.

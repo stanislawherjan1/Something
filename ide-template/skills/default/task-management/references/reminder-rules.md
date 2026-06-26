@@ -19,7 +19,7 @@ If the task has a blocker: ask "When should I remind you about this blocker?" th
 
 ## When moving In Progress → Done
 
-1. `update_task { id, status: "done" }` — the completion date is stamped automatically.
+1. `PATCH /api/tasks/<id> -d '{"status":"done"}'` — the completion date is stamped automatically.
 2. `list_reminders` → find any reminder whose message contains the task title → `cancel_reminder`.
 3. Never delete the task — `done` is the archive.
 

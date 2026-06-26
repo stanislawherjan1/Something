@@ -85,7 +85,7 @@ All times are UTC. **Tell the user this.** If they say "9am", clarify: "9am UTC,
 
 ## Who it's for — `recipient` (team mode)
 
-`recipient` decides **who you notify / act for** when the reminder fires. It does **not** make anyone "own a task" — reminders never touch a teammate's `Tasks.md`. Targeting Jan means *at the due time you reach out to Jan* (a nudge, or an action delivered to him).
+`recipient` decides **who you notify / act for** when the reminder fires. It does **not** make anyone "own a task" — reminders never touch a teammate's task board. Targeting Jan means *at the due time you reach out to Jan* (a nudge, or an action delivered to him).
 
 - **Default = the asker.** Omit `recipient` (or pass `"me"`) for a normal self-reminder — `"remind me to call Cass"`.
 - **Named teammates →** resolve each name to its roster **slug**, pass the array: `"recipient": ["jan","kasia"]`. Never display names, never emails.

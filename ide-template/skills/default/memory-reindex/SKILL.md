@@ -54,7 +54,7 @@ Memory reindex: N new files indexed. All good 👌
 
 - Binary files (images, archives, PDFs) — no extractable text-topic keywords
 - `.session-handoff.md` — overwritten every session, indexing it just creates churn
-- `Tasks.md`, `Pending Reminders.md` — change constantly, indexing them once is enough
+- `.tasks.json`, `Pending Reminders.md` — change constantly, indexing them once is enough
 - `.env`, `.env.*`, `accounts.json` — credentials. Never read these from any skill.
 
 ## Why this exists

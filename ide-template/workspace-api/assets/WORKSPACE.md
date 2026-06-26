@@ -11,7 +11,7 @@ This is not a chatbot. It's an **agent that lives inside a workspace**.
 
 The chatbot model — ask a question, get an answer, the answer evaporates — is the wrong frame. A chatbot has no continuity, no growing knowledge of the user's business, no tools, no place to put what it learns. After 100 conversations it knows exactly as much about you as after the first one.
 
-This platform inverts that. Every conversation happens *inside* a project repository the user owns. The assistant has hands on real tools (Shopify, Meta, Google Ads, GA4, email, image generation, e-signature, web search…) and it has a place to write things down — `Tasks.md`, the daily journal at `${BOT_NAME}/YYYY-MM-DD/`, the user's growing folder structure for briefs, research, decisions, outputs. None of that is throwaway. Every saved file is visible to the assistant in every future conversation.
+This platform inverts that. Every conversation happens *inside* a project repository the user owns. The assistant has hands on real tools (Shopify, Meta, Google Ads, GA4, email, image generation, e-signature, web search…) and it has a place to write things down — a structured **task board** (the Tasks shortcut), a daily journal at `${BOT_NAME}/YYYY-MM-DD/`, the user's growing folder structure for briefs, research, decisions, outputs. None of that is throwaway. Every saved file is visible to the assistant in every future conversation.
 
 **Context compounds.** Week one the assistant knows what the user typed. Week four it has read every brief, indexed every decision, watched the folder structure evolve from `Inbox/` chaos into the user's own taxonomy (`Brand/`, `Marketing/`, `Products/`, whatever fits). By week twelve the assistant answers "what should we do about Q3?" with the user's own past reasoning surfaced — because the user's manifesto is in `CLAUDE.md`, the relevant briefs are indexed in the memory graph, and the bot's last twelve session notes link them together.
 
@@ -65,7 +65,7 @@ The editor pane routes to different views depending on what's selected:
 |---|---|
 | Markdown / text file | **MarkdownEditor** — BlockNote WYSIWYG editor |
 | Image file | **ImageViewer** |
-| `Tasks.md` | **KanbanView** — columns = `##` headings, cards = `###` items |
+| **Tasks** shortcut | **KanbanView** — the structured board (Backlog / In Progress / Done), backed by `/api/tasks` |
 | `generated/` folder | **GalleryView** — image grid |
 | AI Settings shortcut | **ClaudeDashboard** |
 | Team shortcut | **TeamDashboard** |
@@ -116,7 +116,7 @@ Branding (workspace name, bot name, avatar, personality) is configured via the *
 When the container starts for the first time AND `~/project/.claude/CLAUDE.md` doesn't already exist (i.e. this isn't a legacy migration), `bootstrap-project.sh` scaffolds:
 
 - **Folder structure** — `Inbox/` (universal drawer), `Research/` (references), `${BOT_NAME}/` (bot's daily journal root)
-- **Project files** — `README.md`, `Tasks.md` from English templates
+- **Project files** — `README.md` from an English template (the task board is the structured `.tasks.json` via `/api/tasks` — not a Markdown file, so nothing to seed)
 - **System reminders** — three weekly recurring reminders seeded into `.reminders.json` (see "System rituals" below)
 - A `.bootstrapped` flag so the script never runs twice
 
@@ -144,7 +144,7 @@ These skills are baked into every container and available in every session out o
 
 | Skill | Trigger | Purpose |
 |---|---|---|
-| `task-management` | "add task", "to do" | Maintains `Tasks.md` Backlog/In Progress/Done |
+| `task-management` | "add task", "to do" | Maintains the structured task board via `/api/tasks` (Backlog / In Progress / Done) |
 | `reminders` | "remind me at X" | Wraps `set_reminder` MCP for time-based alerts |
 | `project-backup` | "back up", `[BACKUP_TRIGGER]` | Tar.gz snapshot via Telegram |
 | `playwright-protocol` | browser automation requests | Best practices for Playwright MCP usage |

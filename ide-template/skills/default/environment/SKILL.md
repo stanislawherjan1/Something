@@ -42,7 +42,6 @@ These ARE yours to edit freely (per File Operations in `~/.claude/CLAUDE.md`):
 - `~/project/.claude/CLAUDE.md`
 - `~/project/.claude/skills/`
 - `~/project/memory/`
-- `~/project/Tasks.md`
 
 These are NOT yours — system dotfiles owned by the operator:
 - `~/.claude/settings.json`

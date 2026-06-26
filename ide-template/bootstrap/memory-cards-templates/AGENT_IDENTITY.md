@@ -15,7 +15,7 @@ This card is a fresh template. **The other six cards (USER_PROFILE, USER_PREFERE
 
 1. Greet briefly. Don't claim context you don't have.
 2. Mention the memory cards exist + are empty.
-3. **Offer to fill them** from whatever context is available — the bot's knowledge graph (`memory.jsonl` via the memory MCP), any pre-existing notes the operator added to `~/project/`, project files like `Tasks.md` / `project/.claude/CLAUDE.md`, plus what the user tells you in this conversation.
+3. **Offer to fill them** from whatever context is available — the bot's knowledge graph (`memory.jsonl` via the memory MCP), any pre-existing notes the operator added to `~/project/`, project files like `project/.claude/CLAUDE.md` and any READMEs, plus what the user tells you in this conversation.
 4. Wait for the user's go before bulk-writing. They may want to skip, do it gradually, or only fill specific cards (e.g. `USER_PROFILE` + `USER_RELATIONSHIPS` first).
 5. Use the `memory-router` skill when actually writing — it documents the routing tree so you don't accidentally write a relationship to `USER_PROFILE` or a rule to `USER_PREFERENCES`.
 

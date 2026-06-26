@@ -6,7 +6,7 @@ allowed-tools: Read, Bash, Write, mcp__memory__create_entities, mcp__memory__add
 
 # File Placement Protocol
 
-You are about to save content to a file. Before calling Write, decide WHERE that file goes. **Don't dump in `~/project/` root** unless the file is explicitly project-level (`CLAUDE.md`, `README.md`, `Tasks.md`).
+You are about to save content to a file. Before calling Write, decide WHERE that file goes. **Don't dump in `~/project/` root** unless the file is explicitly project-level (`CLAUDE.md`, `README.md`).
 
 ## Step 0 — Shared or private? (team workspace)
 
@@ -26,7 +26,7 @@ Solo workspace (no `[ACTOR]` / no `users/` split) → ignore this; one flat tree
 ✅ "Save this conversation"
 
 ❌ "Save it to `<folder>/<file>.md`" — explicit path, just write
-❌ "Update `Tasks.md`" — file exists, just edit
+❌ "Update `CLAUDE.md`" — file exists, just edit
 
 ## Step 1 — read the rulebook
 

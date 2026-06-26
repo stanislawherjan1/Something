@@ -7,7 +7,7 @@ allowed-tools: mcp__gtasks__list_task_lists, mcp__gtasks__list_tasks, mcp__gtask
 
 # Google Tasks Protocol
 
-Google Tasks is the user's personal todo list — separate from the project's `Tasks.md` which is shared. Don't conflate. When the user says "add to my Google tasks" or pastes a Tasks reference, this is the right MCP.
+Google Tasks is the user's personal todo list — separate from the project task board which is shared. Don't conflate. When the user says "add to my Google tasks" or pastes a Tasks reference, this is the right MCP.
 
 ## Pre-flight
 
@@ -44,5 +44,5 @@ To uncomplete: `{ status: "needsAction" }` — the MCP also clears `completed` a
 
 - **Confirm writes**, especially deletes (no recovery).
 - **`due` is date-only** — don't try to encode times. If the user said "remind me at 3pm", Tasks isn't the right place; use the reminder MCP instead.
-- **"My Google Tasks" ≠ project Tasks.md** — don't sync between them automatically. Ask which the user means if ambiguous.
+- **"My Google Tasks" ≠ project task board** — don't sync between them automatically. Ask which the user means if ambiguous.
 - **Wrong scope?** Re-activate Google Workspace to refresh the token.

@@ -98,5 +98,5 @@ Rough size hint: if a section is over ~50 lines or contains a table with >10 row
 ## Numbers (Anthropic guide)
 
 - Skill body cap: <5000 words (rough — past that, the body itself crowds out reasoning capacity)
-- Enabled skill ceiling per workspace: 20–50 (we deploy 16 defaults + up to 20 conditionally-installed integration skills = max 36, on the upper half but in budget)
+- Enabled skill ceiling per workspace: 20–50 (we deploy 19 defaults + up to 20 conditionally-installed integration skills = max 39, on the upper half but in budget)
 - Description max: 1024 chars

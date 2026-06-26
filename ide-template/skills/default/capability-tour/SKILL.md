@@ -13,7 +13,7 @@ Non-technical users often don't know what's wired up. Even technical users forge
 ```bash
 python3 -c "
 import json
-with open('/home/coder/.claude.json') as f:
+with open('/home/bot/.claude.json') as f:
     cfg = json.load(f)
 servers = cfg.get('mcpServers', {})
 for name in sorted(servers.keys()):
@@ -21,7 +21,7 @@ for name in sorted(servers.keys()):
 "
 ```
 
-Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`. Those are plumbing, not features.
+Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features. (`workspace-api` stays — `memory_grep` is a real capability.)
 
 ## Step 2 — read the user's own description
 
@@ -53,7 +53,7 @@ If Step 3 found gaps (configured-but-undocumented or documented-but-deactivated)
 
 **Manual** — user asks "what can you do", "show me your tools", etc. Run full Step 1–5.
 
-**Post-activation surfacing** — when you notice (during normal session work) that `~/.claude.json` mcpServers contains an entry that wasn't there last session AND isn't documented in CLAUDE.md Context, mention ONCE at a natural break in conversation:
+**Post-activation surfacing** — when you notice (during normal session work) that `/home/bot/.claude.json` mcpServers contains an entry that wasn't there last session AND isn't documented in CLAUDE.md Context, mention ONCE at a natural break in conversation:
 ```
 Heads up — I see <integration> was added today. If you want, I can run a mini-tour or help describe it in CLAUDE.md Context. Or skip it and continue what we were doing.
 ```

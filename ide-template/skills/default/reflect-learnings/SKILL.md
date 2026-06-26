@@ -1,7 +1,7 @@
 ---
 name: reflect-learnings
 description: Memory consolidation — propose additions to the 7 memory cards based on recent conversation. Output is ALWAYS a JSON proposal list that the apply-script (/opt/ide/hooks/reflect-apply.py) converts to a `memory/_drafts/learnings-YYYY-MM-DD.md` review file. Proposals NEVER apply directly; operator approves via `/memory review` and `/memory approve <id>` on Telegram. Triggered by `[REFLECT_LEARNINGS_TRIGGER]` (daily reminder + idle-detection from recent-snapshot monitor) or manually via "reflect on learnings", "consolidate memory", "review what we learned".
-allowed-tools: Read, Write, mcp__memory__search_nodes, mcp__memory__create_entities, mcp__memory__add_observations
+allowed-tools: Read, Write
 ---
 
 # Reflect-bot: memory consolidation with operator approval

@@ -1,6 +1,7 @@
 # Task fields, assignment & priority definitions
 
-Tasks are structured records on the board (managed via the tasks MCP), not
+Tasks are structured records on the board — managed via the workspace API at
+`http://localhost:3001/api/tasks` (curl; there are no `mcp__tasks__*` tools), not
 Markdown. Each task has these fields:
 
 | Field | Meaning |

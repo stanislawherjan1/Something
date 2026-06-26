@@ -6,6 +6,8 @@ allowed-tools: Bash
 
 # Project Backup Protocol
 
+> Durable/disaster-recovery backups run server-side (daily restic → B2, see `scripts/restic-backup.sh`). This skill is the on-demand "send me a snapshot now" path.
+
 Creates a compressed `.tar.gz` of `~/project`, checks size against Telegram's limit, sends, then cleans up.
 
 Safety rules, the always-on exclude list, the 50 MB Telegram limit, and the after-sending report template all live in `references/rules.md` — read it before running.

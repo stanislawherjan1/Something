@@ -65,7 +65,7 @@ Every card opens with a YAML frontmatter block that's the operational directive 
 - **Project work** (a specific task, a research note, a draft) → `project/documents/` with `YYYY-MM-DD_*.md`
 - **Ephemeral scratch** (mid-session reasoning, one-off computations) → `project/session/` (TTL ~14 days)
 - **Workflow recipes** (how to do X end-to-end) → `project/.claude/skills/<name>/`
-- **Structured graph data** (entities/relations the bot will query programmatically) → `mcp__memory__create_entities` (writes to `~/.claude/memory.jsonl`)
+- **Structured graph data** (entities/relations the bot will query programmatically) → `mcp__memory__create_entities` (writes to `~/.claude/memory.jsonl` in solo/admin mode; in team mode the KG file is per-user at `memory/users/<slug>/kg.jsonl`)
 
 The 7 cards are the **stable, narrative core**. Everything else is supporting material.
 

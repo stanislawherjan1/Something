@@ -15,7 +15,7 @@ find ~/project -maxdepth 1 -mindepth 1 \( -type f -o -type d \) \
 
 ```bash
 find ~/project -maxdepth 1 -type f \
-  ! -name 'CLAUDE.md' ! -name 'README.md' ! -name 'Tasks.md' \
+  ! -name 'CLAUDE.md' ! -name 'README.md' \
   ! -name 'Pending Reminders.md' ! -name '.session-handoff.md' \
   ! -name '.reminders.json' ! -name '.branding.json' \
   ! -name '.allowed-emails.json' ! -name '.platform.*' \
