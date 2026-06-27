@@ -51,18 +51,30 @@ function settleLayout(nodes, links) {
 // black, cards + topics increasingly blended toward the dark bg). A
 // subtle stroke gives each node definition even when the fill blends
 // heavily with the bg.
+// Monochrome warm-gray family (light) / warm-dark family (dark). Node KIND is
+// told apart by SHAPE, not hue: concept = rounded square, everything else = a
+// circle. So the palette stays a single tonal ramp; concept just borrows a warm
+// shade in the same family rather than a new colour.
 const LIGHT_PALETTE = {
-  index: { fill: '#fefdfa', stroke: 'rgba(40,35,28,0.55)', label: 'INDEX' }, // off-white, faint warm
-  card:  { fill: '#f2f0ea', stroke: 'rgba(40,35,28,0.26)', label: 'Card'  }, // soft warm gray-100
-  topic: { fill: '#e4e0d6', stroke: 'rgba(40,35,28,0.18)', label: 'Topic' }, // soft warm gray-200
+  index:   { fill: '#fefdfa', stroke: 'rgba(40,35,28,0.55)', label: 'INDEX'   }, // off-white, faint warm
+  card:    { fill: '#f2f0ea', stroke: 'rgba(40,35,28,0.26)', label: 'Card'    }, // soft warm gray-100
+  concept: { fill: '#ece8df', stroke: 'rgba(40,35,28,0.34)', label: 'Concept' }, // warm gray — SQUARE shape sets it apart
+  topic:   { fill: '#e4e0d6', stroke: 'rgba(40,35,28,0.18)', label: 'Topic'   }, // soft warm gray-200
+  thread:  { fill: '#dcd7cc', stroke: 'rgba(40,35,28,0.16)', label: 'Thread'  }, // warm gray-300, small
 };
 const DARK_PALETTE = {
-  index: { fill: '#0e0d0c', stroke: 'rgba(232,228,218,0.55)', label: 'INDEX' }, // near-black, faint warm
-  card:  { fill: '#1a1917', stroke: 'rgba(232,228,218,0.26)', label: 'Card'  }, // soft warm dark
-  topic: { fill: '#26241f', stroke: 'rgba(232,228,218,0.18)', label: 'Topic' }, // soft warm darker
+  index:   { fill: '#0e0d0c', stroke: 'rgba(232,228,218,0.55)', label: 'INDEX'   }, // near-black, faint warm
+  card:    { fill: '#1a1917', stroke: 'rgba(232,228,218,0.26)', label: 'Card'    }, // soft warm dark
+  concept: { fill: '#211e1a', stroke: 'rgba(232,228,218,0.34)', label: 'Concept' }, // warm dark — SQUARE shape sets it apart
+  topic:   { fill: '#26241f', stroke: 'rgba(232,228,218,0.18)', label: 'Topic'   }, // soft warm darker
+  thread:  { fill: '#201e1a', stroke: 'rgba(232,228,218,0.16)', label: 'Thread'  }, // warm dark, small
 };
 
-const NODE_RADIUS = { index: 9, card: 6.5, topic: 4.5 };
+// Concept is sized between card and index — it's the durable knowledge node;
+// its radius additionally grows with graph degree (see drawNode) so a "ripe",
+// heavily-linked concept reads as a bigger square hub. Thread (verdict) nodes
+// are small circles.
+const NODE_RADIUS = { index: 9, card: 6.5, concept: 6, topic: 4.5, thread: 4 };
 
 // Per-user ('yours') node ids are prefixed `yours:` to stay unique in the
 // graph; strip it for any user-facing label.
@@ -225,6 +237,20 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     return m;
   }, [displayed, query]);
 
+  // Node degree (undirected) over the displayed edges — used to grow a concept
+  // node's radius with how densely it's linked, so a heavily-referenced (ripe)
+  // concept reads as a hub. Cheap: memory graphs are ≤ a few hundred edges.
+  const degreeMap = useMemo(() => {
+    const d = new Map();
+    for (const e of (displayed?.edges || [])) {
+      const s = typeof e.source === 'object' ? e.source.id : e.source;
+      const t = typeof e.target === 'object' ? e.target.id : e.target;
+      d.set(s, (d.get(s) || 0) + 1);
+      d.set(t, (d.get(t) || 0) + 1);
+    }
+    return d;
+  }, [displayed]);
+
   // Mirror live state into refs for the per-frame loop renderer.
   useEffect(() => { displayedRef.current = displayed; }, [displayed]);
   useEffect(() => { scopeFilterRef.current = scopeFilter; }, [scopeFilter]);
@@ -274,28 +300,52 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       posCacheRef.current.set(node.id, { x: node.x, y: node.y });
     }
     const colour = NODE_COLOURS[node.kind] || NODE_COLOURS.topic;
-    const radius = NODE_RADIUS[node.kind] || 5;
+    let radius = NODE_RADIUS[node.kind] || 5;
+    // A concept grows with its link degree (capped) — a ripe, heavily-referenced
+    // entity reads as a hub. A synthetic concept (heat ≥ threshold but no page on
+    // disk yet) is sized by its heat instead, and rendered hollow/dashed below.
+    if (node.kind === 'concept') {
+      const deg = node.synthetic ? (node.heat || 0) : (degreeMap.get(node.id) || 0);
+      radius = Math.min(11, 6 + deg * 0.7);
+    }
     const isMatch = matchSet.size > 0 && matchSet.has(node.id);
     const dimmed = matchSet.size > 0 && !isMatch;
+    const isConcept = node.kind === 'concept';
+
+    // Concept nodes are rounded SQUARES; every other kind is a circle. This is
+    // the primary visual differentiator for the knowledge layer (shape, not hue).
+    const tracePath = (r) => {
+      ctx.beginPath();
+      if (isConcept) {
+        const s = r * 1.8;   // square side tuned to read as the same visual weight as a circle of radius r
+        roundRectPath(ctx, node.x - s / 2, node.y - s / 2, s, s, Math.max(0.8, r * 0.38));
+      } else {
+        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+      }
+    };
 
     // Halo on matched nodes — helps the eye lock on after typing a query.
     if (isMatch) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, radius + 4, 0, 2 * Math.PI, false);
+      tracePath(radius + 4);
       ctx.globalAlpha = 0.2;
       ctx.fillStyle = colour.fill;
       ctx.fill();
       ctx.globalAlpha = 1;
     }
 
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+    const isSynthetic = isConcept && node.synthetic;
+    tracePath(radius);
     ctx.fillStyle = dimmed ? '#94a3b8' : colour.fill;
-    ctx.globalAlpha = dimmed ? 0.4 : 1;
+    // A page-less (synthetic) concept renders hollow — it's a slug that's hot
+    // enough to promote but has no page yet.
+    ctx.globalAlpha = dimmed ? 0.4 : (isSynthetic ? 0.18 : 1);
     ctx.fill();
     ctx.lineWidth = 1.25 / globalScale;
+    if (isSynthetic) ctx.setLineDash([3 / globalScale, 2 / globalScale]);
     ctx.strokeStyle = dimmed ? '#475569' : colour.stroke;
+    ctx.globalAlpha = dimmed ? 0.4 : (isSynthetic ? 0.85 : 1);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     // Clusters are framed by a single loop drawn behind them
@@ -312,7 +362,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       const label = cleanId(node.id);
       ctx.fillText(label, node.x, node.y + radius + 2.5);
     }
-  }, [matchSet, isDark]);
+  }, [matchSet, isDark, degreeMap]);
 
   // Draw a soft loop around each scope's cluster, with a badge floating above it:
   // a round profile picture over "Yours", a rounded-square org logo over "Shared".
@@ -673,9 +723,10 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
           )}
         </div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
-          <Legend fill={NODE_COLOURS.index.fill} stroke={NODE_COLOURS.index.stroke} label="INDEX" />
-          <Legend fill={NODE_COLOURS.card.fill}  stroke={NODE_COLOURS.card.stroke}  label="Card"  />
-          <Legend fill={NODE_COLOURS.topic.fill} stroke={NODE_COLOURS.topic.stroke} label="Topic" />
+          <Legend fill={NODE_COLOURS.index.fill}   stroke={NODE_COLOURS.index.stroke}   label="INDEX"   />
+          <Legend fill={NODE_COLOURS.card.fill}    stroke={NODE_COLOURS.card.stroke}    label="Card"    />
+          <Legend fill={NODE_COLOURS.concept.fill} stroke={NODE_COLOURS.concept.stroke} label="Concept" square />
+          <Legend fill={NODE_COLOURS.topic.fill}   stroke={NODE_COLOURS.topic.stroke}   label="Topic"   />
         </div>
       </div>
 
@@ -686,13 +737,13 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   );
 }
 
-function Legend({ fill, stroke, label }) {
+function Legend({ fill, stroke, label, square }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-[3px] text-[10.5px] font-medium text-foreground/75"
     >
       <span
-        className="inline-block size-2 rounded-full"
+        className={cn('inline-block size-2', square ? 'rounded-[2px]' : 'rounded-full')}
         style={{ background: fill, boxShadow: stroke ? `inset 0 0 0 1px ${stroke}` : undefined }}
       />
       {label}
@@ -700,7 +751,7 @@ function Legend({ fill, stroke, label }) {
   );
 }
 
-const KIND_LABEL = { index: 'Index', card: 'Card', topic: 'Topic' };
+const KIND_LABEL = { index: 'Index', card: 'Card', concept: 'Concept', topic: 'Topic', thread: 'Thread' };
 
 // Curated one-line "what this card is for" descriptions — same role as a
 // skill's frontmatter `description:` field. Used by the hover tooltip

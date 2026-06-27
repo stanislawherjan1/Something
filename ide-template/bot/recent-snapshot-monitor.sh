@@ -55,4 +55,12 @@ while true; do
     if echo "$distill" | grep -qE '"proposals":[1-9]'; then
         log "reflect-distill: $distill"
     fi
+
+    # Health-check the shared memory wiki → advisory findings → _drafts
+    # (memory/LINT.md). Self-rate-limited (~24h) + single-flight server-side, so
+    # calling every tick is a cheap no-op until due. Log only when it flags one.
+    lint=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/memory-lint" 2>/dev/null) || true
+    if echo "$lint" | grep -qE '"proposals":[1-9]'; then
+        log "memory-lint: $lint"
+    fi
 done

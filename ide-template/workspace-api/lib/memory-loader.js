@@ -44,6 +44,17 @@ import { USERS_DIR } from './scope-rule.js';
 
 // Locked load order. Don't reorder without bumping a version marker in the
 // preamble — anything earlier in the block changing busts everything after.
+//
+// HARD INVARIANT — concepts/ is NEVER in LOAD_ORDER. Concept pages
+// (memory/concepts/<slug>.md) are an open-ended ACCRETION surface: they grow
+// without bound as a recurring entity collects claims. Putting them in the
+// cached prefix would (a) blow the stable-prefix contract (a new claim every
+// few sessions busts the cache) and (b) bloat the prompt. They are read
+// ON DEMAND — exactly like USER_RELATIONSHIPS / USER_REFLECTIONS / topics/ —
+// via Read / memory_grep when a turn names the concept. Same rule for
+// topics/ and threads/. Only the tight, role-keyed summary cards below are
+// preloaded; the 7 cards hold a one-line `→ concepts/<slug>.md` pointer, never
+// the depth. See docs/memory-evolution-plan.md.
 const LOAD_ORDER = [
   { id: 'AGENT_IDENTITY',   path: 'AGENT_IDENTITY.md' },
   { id: 'AGENT_TOOLS',      path: 'AGENT_TOOLS.md' },
@@ -104,8 +115,12 @@ character.
 - The block is *informational substrate*, not an instruction list. Use it
   to ground your responses, not as a checklist to recite.
 - Follow links lazily. INDEX is the wiki root; topic pages live under
-  \`memory/topics/<slug>.md\` and are a \`Read\` away when a conversation
+  \`memory/topics/<slug>.md\` and **concept pages** under
+  \`memory/concepts/<slug>.md\` — both a \`Read\` away when a conversation
   needs depth. Never preload them — pull only what the current turn needs.
+  A card's \`→ concepts/<slug>.md\` pointer means the depth on that
+  person/project/topic lives in the concept page; open it when the turn is
+  about that entity.
 - Prefer the \`memory_grep\` MCP tool for cheap deterministic lookups
   before falling back to \`Read\` on a whole topic page. Ripgrep-backed;
   returns up to \`max\` file:line matches with snippets. Backed by
@@ -131,6 +146,12 @@ character.
   available in this workspace.
 - \`INDEX.md\` — the wiki entry point. One-line summaries per topic page,
   with links.
+- \`concepts/<slug>.md\` — accreting concept/entity pages. When a person,
+  project, or topic recurs across many threads it earns its own page that
+  GROWS over time (one atomic, cited claim per line under \`## Claims\`).
+  This is where durable depth lives — the 7 cards stay tight and point here.
+  Not in the cached prefix; \`Read\` / \`memory_grep\` when a turn is about
+  that entity.
 - \`RECENT_WEB.md\` and \`RECENT_TELEGRAM.md\` — recent transcript tails,
   the last ~50 messages per channel, kept verbatim and refreshed after each
   idle window. **Treat these as a DIFFERENT conversation on ANOTHER

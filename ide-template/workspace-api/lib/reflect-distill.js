@@ -26,6 +26,7 @@ import { join } from 'node:path';
 
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
+import { computeConceptHeat } from './memory-graph.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 const MODEL          = process.env.REFLECT_DISTILL_MODEL || 'claude-haiku-4-5';
@@ -36,10 +37,19 @@ const MAX_VERDICTS   = num('REFLECT_DISTILL_MAX', 20);
 const INTERVAL_MS    = num('REFLECT_DISTILL_INTERVAL_HOURS', 12) * 3600 * 1000;
 const TIMEOUT        = num('REFLECT_DISTILL_TIMEOUT_MS', 90000);
 const REFLECT_APPLY  = process.env.REFLECT_APPLY_PY || '/opt/ide/hooks/reflect-apply.py';
+// Concept emergence: a slug must recur across ≥ CONCEPT_HEAT distinct verdict
+// threads to earn a concept page (squeeze-point). CONCEPT_MAX caps how many new
+// claims one distill cycle proposes, so a chatty week can't flood /memory review.
+// Mirrors CONCEPT_HEAT in lib/memory-graph.js — keep in sync.
+const CONCEPT_HEAT   = Math.max(1, num('REFLECT_CONCEPT_HEAT', 3));
+const CONCEPT_MAX    = Math.max(1, num('REFLECT_CONCEPT_MAX', 6));
 
 let _distilling = false;
 
-const SYSTEM = [
+// Card distillation prompt (pass 1). Runs over the FULL verdict digest (shared +
+// each teammate's private verdicts) because a private USER_* card legitimately
+// needs the owner's private threads. Outputs ONLY the `proposals` bucket.
+const SYSTEM_CARDS = [
   'You consolidate a team\'s LONG-TERM memory. INPUT: recent conversation-thread VERDICTS (already summarised + tagged with entities/decisions). OUTPUT: a JSON list of proposed additions to the 7 memory cards — ONLY durable facts worth keeping forever. Ephemeral one-offs (a single folder created, a transient task, a one-time lookup) yield NOTHING — skip them. Under-propose: an empty list is the common, correct answer.',
   '',
   'Output ONE JSON object and NOTHING else (no preamble, no fences):',
@@ -59,6 +69,20 @@ const SYSTEM = [
   'scope/owner (TEAM MODE): every USER_* proposal MUST carry "scope":"private" + "owner":"<slug>" — use the verdict\'s stated owner. Shared cards (RULES/AGENT_*) → "scope":"shared" or omit. If you cannot attribute a fact to a specific person, SKIP it — never guess an owner.',
   '',
   'Most verdicts yield nothing durable. {"proposals":[]} is correct most of the time. Quality over quantity.',
+].join('\n');
+
+// Concept distillation prompt (pass 2). Runs over a SHARED-ONLY digest (private
+// verdicts are NEVER in its context) so a team-visible concept page can never be
+// sourced from a teammate's private thread. Outputs ONLY `concept_proposals`.
+const SYSTEM_CONCEPTS = [
+  'You maintain CONCEPT PAGES — accreting, team-SHARED notes about recurring entities (a project, client, or recurring topic). INPUT: recent SHARED conversation-thread verdicts + a CONCEPTS IN PLAY list (the eligible slugs + each one\'s EXISTING claims). OUTPUT: a JSON list of new atomic claims.',
+  '',
+  'Output ONE JSON object and NOTHING else (no preamble, no fences):',
+  '{"concept_proposals":[{"slug":"acme","claim":"Renews its contract annually in Q3","confidence":0.85,"rationale":"threads [2],[4]"}]}',
+  '',
+  'Rules: (a) ONLY use a slug that appears verbatim in CONCEPTS IN PLAY — NEVER invent one. (b) Propose AT MOST ONE new claim per slug, and ONLY if the verdicts add something NOT already covered by its existing claims — NOOP a restatement (emit nothing). (c) Atomic: one self-contained fact per claim, durable (true beyond this week); no transient task state, no leading dash. (d) confidence ≥ 0.7 or skip. (e) The page is TEAM-SHARED and read by EVERY teammate — never put a private, sensitive, or personal detail in a claim; if a fact feels personal to one person, it does NOT belong here. (f) No code fences or backticks in a claim.',
+  '',
+  'Most cycles yield nothing. {"concept_proposals":[]} is correct most of the time. Quality over quantity.',
 ].join('\n');
 
 // Parse a verdict card (YAML frontmatter + ## Outcome / ## Decisions made body).
@@ -126,7 +150,7 @@ function renderDigest(verdicts) {
   }).join('\n\n');
 }
 
-function parseProposals(text) {
+function parseDistillOutput(text) {
   if (!text) return null;
   let s = String(text);
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -135,12 +159,97 @@ function parseProposals(text) {
   if (!m) return null;
   try {
     const o = JSON.parse(m[0]);
-    if (o && Array.isArray(o.proposals)) return o.proposals;
+    if (!o || typeof o !== 'object') return null;
+    const proposals = Array.isArray(o.proposals) ? o.proposals : [];
+    const conceptProposals = Array.isArray(o.concept_proposals) ? o.concept_proposals : [];
+    // At least one recognised key must be present, else treat as unparseable
+    // (an LLM that "replied" to the transcript instead of emitting the schema).
+    if (!('proposals' in o) && !('concept_proposals' in o)) return null;
+    return { proposals, conceptProposals };
   } catch { /* unparseable */ }
   return null;
 }
 
-function runDistillLLM(digest) {
+const CONCEPT_SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
+// A concept slug must also clear a noise floor (mirrors MIN_BARE_NAME_LEN in
+// memory-graph.js): ≥ 2 chars and not purely numeric, so a stray entity like
+// 'a' or '42' is never promoted to a first-class concept page.
+function isConceptSlug(s) {
+  return CONCEPT_SLUG_RE.test(s) && s.length >= 2 && !/^\d+$/.test(s);
+}
+
+// Read the current `## Claims` body of a concept page (for the dedup-hint +
+// to confirm whether the page already exists). '' when absent.
+function readConceptClaims(slug) {
+  const base = process.env.PROJECT_DIR || PROJECT_DIR;
+  try {
+    const body = readFileSync(join(base, 'memory', 'concepts', `${slug}.md`), 'utf8');
+    const m = body.match(/^##\s*Claims\s*\n([\s\S]*?)(?:\n##\s|$)/im);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+}
+
+// Which recurring slugs are eligible for a concept claim THIS cycle: present in
+// the recent SHARED window AND hot enough (≥ CONCEPT_HEAT distinct threads).
+// v1 is SHARED-only — private-owner concepts are deferred (no leak path).
+function eligibleConcepts(verdicts) {
+  const heat = computeConceptHeat();                      // shared threads, all-time
+  const inWindow = new Set();
+  for (const v of verdicts) {
+    if (v.owner) continue;                                // shared verdicts only
+    for (const e of v.entities) {
+      const s = String(e).toLowerCase().trim();
+      if (isConceptSlug(s)) inWindow.add(s);
+    }
+  }
+  return [...inWindow]
+    .filter(s => (heat[s] || 0) >= CONCEPT_HEAT)
+    .map(s => ({ slug: s, heat: heat[s], claims: readConceptClaims(s) }));
+}
+
+// Render the CONCEPTS IN PLAY block the LLM dedups against. '' → no concepts.
+function renderConceptBlock(eligible) {
+  if (!eligible.length) return '';
+  const lines = eligible.map(c => {
+    const head = `- ${c.slug} (in ${c.heat} threads)`;
+    const claims = c.claims
+      ? '\n    existing claims:\n' + c.claims.split('\n').map(l => `      ${l.trim()}`).join('\n')
+      : '\n    existing claims: (none yet — new page)';
+    return head + claims;
+  });
+  return `\nCONCEPTS IN PLAY (propose at most one NEW atomic claim each, only if not already covered):\n${lines.join('\n')}\n`;
+}
+
+// Convert one LLM concept_proposal into the standard proposal shape consumed by
+// reflect-apply.py (kind:"concept" → memory/concepts/<slug>.md, append a claim).
+// Returns null for a malformed/ineligible item. v1: shared scope only.
+function conceptToProposal(cp, eligibleSlugs) {
+  const slug = String(cp && cp.slug || '').toLowerCase().trim();
+  if (!isConceptSlug(slug) || !eligibleSlugs.has(slug)) return null;
+  // The claim is durable, team-SHARED text. Neutralise code fences/backticks
+  // (they'd corrupt the draft ``` content block on re-parse) and cap length.
+  const claim = String(cp.claim || '')
+    .trim().replace(/^[-*]\s+/, '').replace(/`+/g, "'").replace(/\s+/g, ' ').slice(0, 280);
+  if (!claim) return null;
+  const date = new Date().toISOString().slice(0, 10);
+  // Provenance written into the page is STRUCTURED — never the model's free text
+  // (which could echo a private/client detail into a shared page). The model's
+  // rationale stays in the proposal's rationale field (operator-review only).
+  const src = String(cp.rationale || '').replace(/`+/g, "'").replace(/\s+/g, ' ').trim().slice(0, 80);
+  return {
+    kind: 'concept',
+    card: slug,                       // the slug; reflect-apply validates with SLUG_RE
+    section: 'Claims',
+    action: 'append',
+    content: `- ${claim}  [Source: distilled ${date}]`,
+    confidence: Number(cp.confidence) || 0,
+    scope: 'shared',
+    owner: '',
+    rationale: `concept ${slug}${src ? `: ${src}` : ''}`,
+  };
+}
+
+function runLLM(system, userMessage) {
   return new Promise((resolve) => {
     const env = { ...process.env };
     if (!env.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
@@ -151,22 +260,22 @@ function runDistillLLM(digest) {
     try {
       proc = spawn(CLAUDE_BIN, [
         '-p', '--dangerously-skip-permissions', '--strict-mcp-config', '--no-session-persistence',
-        '--model', MODEL, '--append-system-prompt', SYSTEM, '--output-format', 'text',
+        '--model', MODEL, '--append-system-prompt', system, '--output-format', 'text',
       ], { stdio: ['pipe', 'pipe', 'pipe'], env, cwd: tmpdir() });
     } catch (err) { return resolve({ ok: false, error: `spawn: ${err.message}` }); }
     let out = '', done = false;
     const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
     const timer = setTimeout(() => finish({ ok: false, error: 'timeout' }), TIMEOUT);
-    proc.stdin.write(`RECENT THREAD VERDICTS:\n----\n${digest}\n----\nPropose durable memory-card additions (or {"proposals":[]} if nothing is durable).`);
+    proc.stdin.write(userMessage);
     proc.stdin.end();
     proc.stdout.on('data', (c) => { out += c.toString('utf8'); });
     proc.stderr.on('data', (c) => process.stderr.write(`[reflect-distill/llm] ${c.toString('utf8')}`));
     proc.on('error', (err) => finish({ ok: false, error: err.message }));
     proc.on('close', (code) => {
       if (code !== 0) return finish({ ok: false, error: `exit ${code}` });
-      const proposals = parseProposals(out);
-      if (!proposals) return finish({ ok: false, error: 'unparseable proposals' });
-      finish({ ok: true, proposals });
+      const parsed = parseDistillOutput(out);
+      if (!parsed) return finish({ ok: false, error: 'unparseable output' });
+      finish({ ok: true, proposals: parsed.proposals, conceptProposals: parsed.conceptProposals });
     });
   });
 }
@@ -219,16 +328,42 @@ export async function distillVerdicts({ force = false } = {}) {
   try {
     const verdicts = readRecentDurableVerdicts();
     stampDistill();   // stamp even on empty, so we don't re-scan every tick
-    if (!verdicts.length) return { ok: true, verdicts: 0, proposals: 0 };
+    if (!verdicts.length) return { ok: true, verdicts: 0, proposals: 0, concepts: 0 };
 
-    const res = await runDistillLLM(renderDigest(verdicts));
-    if (!res.ok) { process.stderr.write(`[reflect-distill] LLM failed: ${res.error}\n`); return { ok: false, error: res.error }; }
-    const proposals = res.proposals;
-    if (!proposals.length) { process.stderr.write(`[reflect-distill] ${verdicts.length} verdict(s) → 0 durable proposals\n`); return { ok: true, verdicts: verdicts.length, proposals: 0 }; }
+    // PASS 1 — the 7 cards. Runs over the FULL digest (private verdicts included,
+    // because a private USER_* card legitimately needs its owner's threads).
+    const cardRes = await runLLM(SYSTEM_CARDS,
+      `RECENT THREAD VERDICTS:\n----\n${renderDigest(verdicts)}\n----\nPropose durable 7-card additions (or {"proposals":[]} if nothing is durable).`);
+    if (!cardRes.ok) { process.stderr.write(`[reflect-distill] card LLM failed: ${cardRes.error}\n`); return { ok: false, error: cardRes.error }; }
+    // `kind` is SERVER-controlled: strip any model-set kind so a card-bucket item
+    // can NEVER masquerade as a concept proposal and bypass the heat gate below.
+    const cardProposals = (cardRes.proposals || []).map(({ kind, ...rest }) => rest);
+
+    // PASS 2 — concept pages. Runs over a SHARED-ONLY digest (private verdict
+    // bodies are NEVER in its context) so a team-visible concept page can never be
+    // sourced from a teammate's private thread. Only fires when a slug is hot.
+    const eligible = eligibleConcepts(verdicts);
+    const eligibleSlugs = new Set(eligible.map(c => c.slug));
+    let conceptProposals = [];
+    if (eligible.length) {
+      const sharedDigest = renderDigest(verdicts.filter(v => !v.owner));
+      const cRes = await runLLM(SYSTEM_CONCEPTS,
+        `SHARED THREAD VERDICTS:\n----\n${sharedDigest}\n----\n${renderConceptBlock(eligible)}\nPropose new concept claims (or {"concept_proposals":[]} if nothing is durable).`);
+      if (!cRes.ok) { process.stderr.write(`[reflect-distill] concept LLM failed: ${cRes.error}\n`); }
+      else {
+        conceptProposals = (cRes.conceptProposals || [])
+          .map(cp => conceptToProposal(cp, eligibleSlugs))
+          .filter(Boolean)
+          .slice(0, CONCEPT_MAX);
+      }
+    }
+
+    const proposals = [...cardProposals, ...conceptProposals];
+    if (!proposals.length) { process.stderr.write(`[reflect-distill] ${verdicts.length} verdict(s) → 0 durable proposals\n`); return { ok: true, verdicts: verdicts.length, proposals: 0, concepts: 0 }; }
 
     const ing = await ingestProposals(proposals);
-    process.stderr.write(`[reflect-distill] ${verdicts.length} verdict(s) → ${proposals.length} proposal(s) → _drafts (${ing.ok ? ing.out : 'ingest FAILED: ' + ing.error})\n`);
-    return { ok: true, verdicts: verdicts.length, proposals: proposals.length, ingest: ing.ok ? ing.out : ing.error };
+    process.stderr.write(`[reflect-distill] ${verdicts.length} verdict(s) → ${cardProposals.length} card + ${conceptProposals.length} concept proposal(s) → _drafts (${ing.ok ? ing.out : 'ingest FAILED: ' + ing.error})\n`);
+    return { ok: true, verdicts: verdicts.length, proposals: proposals.length, concepts: conceptProposals.length, ingest: ing.ok ? ing.out : ing.error };
   } finally {
     _distilling = false;
   }

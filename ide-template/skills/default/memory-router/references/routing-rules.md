@@ -36,24 +36,53 @@ When the new fact contradicts an existing entry on the same card:
 | AGENT_IDENTITY | Reconcile into one voice. Don't keep contradictory traits. |
 | AGENT_TOOLS | Per-tool: replace within section when a gotcha is superseded. |
 
-## Card overflow → topic page promotion
+## Depth doesn't live on cards — it accretes on concept pages
 
-If the fact would push the target card past ~60 lines, **propose a promotion** instead of cramming the card:
+Cards are **tight summary surfaces**, not containers. When depth on a recurring
+person/project/topic outgrows a card line, it belongs on a **concept page**
+(`memory/concepts/<slug>.md`) — an accreting list of atomic, cited claims under
+`## Claims`. The card keeps a one-line pointer, never the depth:
 
-1. Pick a slug for the new topic page (e.g. `sam` for the long-form Sam dossier).
-2. Move the existing section content into `project/memory/topics/<slug>.md` (keep the same shape; this is a free-form long-form page). **Team mode:** if the overflowing card is **private** (a USER_* card under `memory/users/<actor>/`), the topic page is private too → `memory/users/<actor>/topics/<slug>.md`. Never promote a teammate's private content into the shared `memory/topics/`.
-3. Leave a short pointer in the original card:
+```
+## Sam (cofounder)
+→ concepts/sam.md
+- Direct, Polish
+```
 
-   ```
-   ## Sam (cofounder)
-   → Full context: topics/sam.md
-   - Direct, Polish
-   - Recurring themes: pricing, churn
-   ```
+**Emergence is heat-driven, not a line-count.** A slug earns a concept page once
+it recurs across **≥ `REFLECT_CONCEPT_HEAT` (default 3) distinct verdict
+threads** — a computable squeeze-point. Two ways a page is born:
 
-4. Add a one-line entry under `## Topics` in `memory/INDEX.md`. **Team mode:** for a private topic page, add the pointer to the actor's private index `memory/users/<actor>/INDEX.md` (create if absent), NOT the shared `memory/INDEX.md` — the shared index is loaded into every teammate's prompt, so a private topic title there is a leak.
+1. **Automatic (the common path).** `reflect-distill` watches verdict-card
+   `entities:` heat and proposes the page + its first claims through the normal
+   `_drafts → /memory review` approval flow. You don't have to do anything — the
+   operator approves and the page appears.
+2. **By hand (when you feel the squeeze mid-turn).** If you're about to cram a
+   third or fourth durable fact about the same entity onto a card, create
+   `memory/concepts/<slug>.md` instead (frontmatter `kind: concept` + a
+   `## Claims` list), move the depth there, and leave the card pointer above.
+   One atomic, cited claim per line: `- <claim>  [Source: who, channel, date]`.
 
-Cards stay summary surfaces; topic pages absorb the depth. The agent's session-start load reads INDEX + RULES + USER_PROFILE + USER_PREFERENCES (the USER_* cards from the current user's `memory/users/<slug>/` in team mode) — topic pages are loaded lazily when the conversation demands.
+**Never delete a claim — strike it** `~~…~~ (retired YYYY-MM-DD)` when superseded
+(invalidate-don't-delete; the graph thins the edge, history stays legible).
+
+**Team mode — scope follows the entity.** A concept built from **shared** verdicts
+is shared (`memory/concepts/<slug>.md`). A concept that is **private** to one
+teammate (their personal context) is private → `memory/users/<actor>/concepts/<slug>.md`,
+and its index pointer goes in that actor's private `INDEX.md`, NOT the shared one
+(the shared index loads into every teammate's prompt — a private title there is a
+leak). If you cannot attribute a concept to a scope, leave it on the card; never
+guess.
+
+> **Concept page vs topic page.** A `concepts/<slug>.md` is an *accreting,
+> machine-fed claim list* (atomic + cited, grows via distill). A `topics/<slug>.md`
+> is a *hand-authored long-form narrative*. Prefer a concept page for a recurring
+> entity that collects discrete facts; reach for a topic page only when you're
+> writing prose. Don't create both for the same slug — pick one home.
+
+Cards stay summary surfaces; concept (and topic) pages absorb the depth, loaded
+lazily when the conversation names that entity. They are **never** in the cached
+prefix.
 
 ## Confidence guardrail (ambiguous routing)
 

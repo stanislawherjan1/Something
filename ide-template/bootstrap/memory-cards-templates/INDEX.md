@@ -4,7 +4,7 @@ purpose: Wiki-style entry point for memory. The agent loads this FIRST on sessio
 write_when: A new card, topic page, pattern, or verdict card is created — keep this index in sync so the agent can route lookups without scanning the filesystem.
 write_how: One line per entry, grouped by section. Don't summarise the full body — describe what's in the linked file in 6–12 words. Newer entries go to the bottom of their section; entries are removed (not archived) when the linked file is deleted.
 do_not_write_here: full content of any topic (lives in `topics/<slug>.md`); rules (lives in `RULES.md`); the agent's own character (`AGENT_IDENTITY.md`). INDEX is *signposts only*.
-conflict: never two lines for the same target — if a topic page is split or merged, update the entry in place. Keep section order stable (Cards → Topics → Patterns → Threads → Documents).
+conflict: never two lines for the same target — if a topic page is split or merged, update the entry in place. Keep section order stable (Cards → Topics → Concepts → Patterns → Threads → Documents).
 ---
 
 # Memory index
@@ -46,6 +46,7 @@ falling back to `Read` on a whole topic page.
 | Past failure mode for a task type       | `patterns/<task-type>.md`                       |
 | Outcome of a prior thread               | `threads/<thread-id>.md`                        |
 | Long-form context on a project          | `topics/<slug>.md`                              |
+| Accreting facts on a recurring entity   | `concepts/<slug>.md`                            |
 | Specific fact, but unsure which file    | `memory_grep` over `memory/`                    |
 
 If `memory_grep` returns nothing for a query the user clearly expects to be in
@@ -86,6 +87,24 @@ warrants its own surface. Don't seed empty topic pages.
 -->
 
 (none yet — `memory/topics/` will fill as the project grows)
+
+## Concepts (accreting entity/topic pages, follow as needed)
+
+<!--
+Per-concept pages live under concepts/<slug>.md. Unlike a topic page (hand-
+authored prose), a concept page is an ACCRETING list of atomic, cited claims
+under `## Claims` about a recurring person/project/topic. They emerge
+automatically: once a slug recurs across ≥3 verdict threads, reflect-distill
+proposes the page + its first claims via /memory review. Cards keep a tight
+`→ concepts/<slug>.md` pointer; the depth lives here. Loaded on demand, never
+in the cached prefix.
+
+Add entries here in the form (the approval flow that creates the page adds the
+line — keep it in sync):
+  - [Slug](concepts/<slug>.md) — one-line description (6–12 words, no preamble)
+-->
+
+(none yet — `memory/concepts/` fills as recurring entities cross the heat threshold)
 
 ## Patterns — taste-memory (avoid-this examples)
 
@@ -157,10 +176,15 @@ The cards + topics + patterns in this directory are one layer of memory among se
 
 ## Convention reminders (read these once; they apply forever)
 
-- **Cards stay tight.** If a section on a card grows past ~60 lines,
-  promote it to `topics/<slug>.md` and leave a pointer line on the card.
-  The pointer line is what reflect-learnings + the agent's session-start
-  load expect to see.
+- **Cards stay tight; depth accretes on concept pages.** Cards are summary
+  surfaces, not containers. When durable facts about one recurring
+  person/project/topic pile onto a card, move the depth to a **concept page**
+  `concepts/<slug>.md` (an accreting `## Claims` list — one atomic, cited
+  claim per line) and leave a `→ concepts/<slug>.md` pointer on the card.
+  Concept pages emerge automatically once a slug recurs across ≥3 verdict
+  threads (`reflect-distill` proposes them via `/memory review`); you can also
+  create one by hand when you feel the squeeze. The pointer line is what the
+  reflect bots + the session-start load expect to see.
 - **Topics are write-by-hand** (or by reflect bots on Tier 3 review).
   Don't seed empty topic pages — they pollute the index and lie about
   coverage.
@@ -195,7 +219,8 @@ The cards + topics + patterns in this directory are one layer of memory among se
 │   ├── USER_REFLECTIONS.md       ← on-demand `Read`
 │   ├── AGENT_IDENTITY.md         ← cached
 │   ├── AGENT_TOOLS.md            ← cached
-│   ├── topics/<slug>.md          ← on-demand `Read`
+│   ├── topics/<slug>.md          ← on-demand `Read` (hand-authored prose)
+│   ├── concepts/<slug>.md        ← on-demand `Read` (accreting cited claims)
 │   ├── patterns/<task-type>.md   ← loaded by taste-recall when relevant
 │   └── threads/<thread-id>.md    ← on-demand or via overseer scan
 ├── documents/<project>/…         ← free-form artifacts (Read on demand)

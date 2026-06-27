@@ -20,6 +20,7 @@ import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/t
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
 import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
 import { distillVerdicts } from '../lib/reflect-distill.js';
+import { lintMemory } from '../lib/memory-lint.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp } from './docs-comments-login.js';
 
@@ -494,6 +495,20 @@ export default function internalRouter() {
       return res.json(r);
     } catch (err) {
       process.stderr.write(`[internal] reflect-distill failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Memory-lint: health-check the shared wiki → advisory findings → _drafts
+  // (via reflect-apply.py → /memory review). Self-rate-limited (~24h, heaviest
+  // reflect call) + single-flight; the monitor calls it every tick (cheap no-op
+  // until due). Pass {"force":true} to bypass the rate-limit. loopback only.
+  router.post('/internal/memory-lint', loopbackOnly, async (req, res) => {
+    try {
+      const r = await lintMemory(req.body || {});
+      return res.json(r);
+    } catch (err) {
+      process.stderr.write(`[internal] memory-lint failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

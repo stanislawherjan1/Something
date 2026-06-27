@@ -116,6 +116,9 @@ def parse_proposal_blocks(draft_text: str) -> list[dict]:
         proposals.append({
             "id": pid,
             "card": meta.get("card", ""),
+            # "concept" routes to memory/concepts/<slug>.md (the accreting
+            # entity layer); empty/anything else routes to a canonical card.
+            "kind": meta.get("kind", ""),
             "section": meta.get("section", ""),
             "action": meta.get("action", "append"),
             "field": meta.get("field", ""),
@@ -140,6 +143,8 @@ def render_proposal(pid: str, p: dict) -> str:
         f"**section:** {p.get('section', '')}",
         f"**action:** {p.get('action', 'append')}",
     ]
+    if p.get("kind"):
+        lines.append(f"**kind:** {p['kind']}")
     if p.get("field"):
         lines.append(f"**field:** {p['field']}")
     if p.get("scope"):
@@ -221,7 +226,13 @@ def cmd_list(args) -> int:
                 summary = (p["rationale"][:60] + "…") if len(p["rationale"]) > 60 else p["rationale"]
                 # Show whose private card a proposal targets, so the operator
                 # reviewing on Telegram knows it's <owner>'s private memory.
-                card_label = f"{p['card']} (→{p['owner']})" if p.get("scope") == "private" and p.get("owner") else p["card"]
+                # Concept proposals are labelled concept:<slug> so they're
+                # distinguishable from canonical-card writes at a glance.
+                owner_sfx = f" (→{p['owner']})" if p.get("scope") == "private" and p.get("owner") else ""
+                if p.get("kind") == "concept":
+                    card_label = f"concept:{p['card']}{owner_sfx}"
+                else:
+                    card_label = f"{p['card']}{owner_sfx}"
                 pending.append(f"{p['id']} | {card_label} | {p['confidence']:.2f} | {summary}")
     if not pending:
         print("(No pending proposals.)")
@@ -239,22 +250,92 @@ SLUG_RE = re.compile(r"^[a-z0-9-]+$")
 CARD_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def resolve_target(proposal: dict) -> tuple[Path, str | None]:
-    """Resolve a proposal to its canonical card path.
+def seed_concept_page(slug: str) -> str:
+    """Initial body for a brand-new concept page: frontmatter + an empty
+    `## Claims` section that apply_action(append) then writes the first claim
+    into. Concept pages are the accreting entity layer — one atomic, cited
+    claim per line; superseded claims are struck, never deleted."""
+    title = slug.replace("-", " ").title()
+    today = dt.date.today().isoformat()
+    return (
+        "---\n"
+        f"title: {title}\n"
+        "kind: concept\n"
+        f"created: {today}\n"
+        f"purpose: Accreting claims about {title}. One atomic, cited claim per line; strike superseded claims, never delete.\n"
+        "---\n\n"
+        f"Accreting claims about **{title}**. Each line is one atomic, cited assertion.\n\n"
+        "## Claims\n"
+    )
 
-    Team mode: a private proposal (scope=private + a valid owner slug) targets
-    memory/users/<owner>/<card>.md — that teammate's private card. Anything else
-    (scope=shared, or no scope = solo/legacy) targets the flat memory/<card>.md.
-    Returns (path, error) — error is a string if the owner slug is malformed
-    (refuse rather than risk a path escape).
+
+def seed_lint_page() -> str:
+    """Initial body for memory/LINT.md — the append-only advisory log the
+    memory-lint health-check writes findings into. Non-destructive: findings are
+    observations the operator acts on; nothing here mutates a fact."""
+    today = dt.date.today().isoformat()
+    return (
+        "---\n"
+        "card: LINT\n"
+        "kind: lint\n"
+        f"created: {today}\n"
+        "purpose: Memory health findings (contradictions, stale claims, orphan/missing concept pages, index drift) proposed by the memory-lint pass. Advisory only — review and act, then strike the finding.\n"
+        "---\n\n"
+        "# Memory health — lint findings\n\n"
+        "Append-only advisory log. Each finding names the issue + the files involved. "
+        "Resolve it by hand, then strike the line `~~…~~ (resolved YYYY-MM-DD)`.\n\n"
+        "## Findings\n"
+    )
+
+
+def resolve_target(proposal: dict) -> tuple[Path, str | None]:
+    """Resolve a proposal to its target file path.
+
+    kind="lint": a memory-health advisory — always the fixed shared file
+    memory/LINT.md (the `card`/`slug` field is ignored). Append-only.
+
+    kind="concept": the `card` field is a SLUG; the target is the accreting
+    concept page memory/concepts/<slug>.md (shared) or, for a private concept,
+    memory/users/<owner>/concepts/<slug>.md. Validated slug-only (SLUG_RE) — a
+    slug, NEVER a path; a malformed owner hard-fails (no silent shared fallback,
+    which could leak a private fact).
+
+    Otherwise (a canonical card): a private proposal (scope=private + a valid
+    owner slug) targets memory/users/<owner>/<card>.md — that teammate's private
+    card. Anything else (scope=shared, or no scope = solo/legacy) targets the
+    flat memory/<card>.md.
+
+    Returns (path, error) — error is a string if validation fails (refuse rather
+    than risk a path escape).
     """
     card = proposal["card"]
+    if proposal.get("kind") == "lint":
+        path = MEMORY_DIR / "LINT.md"
+        if not path.resolve().is_relative_to(MEMORY_DIR.resolve()):
+            return MEMORY_DIR / "INVALID.md", f"resolved lint path escapes memory dir: {path}"
+        return path, None
+    if proposal.get("kind") == "concept":
+        slug = card
+        if not isinstance(slug, str) or not SLUG_RE.match(slug):
+            return MEMORY_DIR / "INVALID.md", f"concept proposal has invalid slug {slug!r}"
+        if proposal.get("scope") == "private":
+            owner = proposal.get("owner", "")
+            if not SLUG_RE.match(owner):
+                return MEMORY_DIR / "INVALID.md", f"private concept has invalid owner slug {owner!r}"
+            path = MEMORY_DIR / "users" / owner / "concepts" / f"{slug}.md"
+        else:
+            path = MEMORY_DIR / "concepts" / f"{slug}.md"
+        if not path.resolve().is_relative_to(MEMORY_DIR.resolve()):
+            return MEMORY_DIR / "INVALID.md", f"resolved concept path escapes memory dir: {path}"
+        return path, None
     if not isinstance(card, str) or not CARD_RE.match(card):
         return MEMORY_DIR / "INVALID.md", f"proposal has invalid card name {card!r}"
     if proposal.get("scope") == "private":
         owner = proposal.get("owner", "")
         if not SLUG_RE.match(owner):
-            return MEMORY_DIR / f"{card}.md", f"private proposal has invalid owner slug {owner!r}"
+            # Hard-fail — never fall back to the SHARED memory/<card>.md path, which
+            # would route a fact the model marked PRIVATE into the team-wide tree.
+            return MEMORY_DIR / "INVALID.md", f"private proposal has invalid owner slug {owner!r}"
         path = MEMORY_DIR / "users" / owner / f"{card}.md"
     else:
         path = MEMORY_DIR / f"{card}.md"
@@ -287,8 +368,19 @@ def cmd_apply(args) -> int:
         return 1
 
     is_private = proposal.get("scope") == "private"
+    is_concept = proposal.get("kind") == "concept"
+    is_lint = proposal.get("kind") == "lint"
     if target.exists():
         before = target.read_text()
+    elif is_lint:
+        # First lint finding — seed the advisory log (## Findings section).
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = seed_lint_page()
+    elif is_concept:
+        # First claim about this entity — seed the concept page (frontmatter +
+        # an empty ## Claims section the append then writes into).
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = seed_concept_page(target.stem)
     elif is_private:
         # First write to a teammate's private card — seed it (append actions
         # create the section from empty; the dir may not be bootstrapped yet).
@@ -313,6 +405,7 @@ def cmd_apply(args) -> int:
         "action": "apply",
         "proposal_id": pid,
         "card": proposal["card"],
+        "kind": proposal.get("kind", ""),
         "scope": proposal.get("scope", ""),
         "owner": proposal.get("owner", ""),
         "section": proposal["section"],

@@ -3,10 +3,19 @@
  * ready for the dashboard's React force-directed renderer (P3.03).
  *
  * Node kinds:
- *   - card   → one of the seven canonical cards (RULES, USER_*, AGENT_*)
- *   - index  → memory/INDEX.md (wiki root, slightly bigger)
- *   - topic  → memory/topics/<slug>.md
- *   - thread → memory/threads/<id>.md  (verdict cards, P4 Track B)
+ *   - card    → one of the seven canonical cards (RULES, USER_*, AGENT_*)
+ *   - index   → memory/INDEX.md (wiki root, slightly bigger)
+ *   - topic   → memory/topics/<slug>.md
+ *   - thread  → memory/threads/<id>.md  (verdict cards, P4 Track B)
+ *   - concept → memory/concepts/<slug>.md  (accreting entity/concept pages —
+ *               the durable, citable surface a recurring `entities:` slug earns
+ *               once it crosses the squeeze-point heat threshold). A concept
+ *               node may be SYNTHETIC (`synthetic:true`): a slug that recurs
+ *               across ≥ CONCEPT_HEAT verdict threads but has no page on disk
+ *               YET — rendered so its cross-thread edges resolve instead of
+ *               dangling, and so the dashboard shows the cluster ripe for
+ *               promotion. See lib/reflect-distill.js (concept proposals) and
+ *               docs/memory-evolution-plan.md.
  *
  * Edges are computed by scanning each file's body for:
  *   - [[wiki-link]]  — produces a 'wiki' edge (strong stroke in the UI)
@@ -19,8 +28,10 @@
  * entities, so when entity X resurfaces in thread B, the overseer can
  * pull the verdict instead of re-reading the whole transcript."
  *
- * Cheap: memory/ is ≤ ~30 files in practice. We re-scan on every call;
- * if it ever shows up in profiles we can cache by (file, mtime).
+ * Cost: we re-scan on every call. The bare-name pass is bounded to ~O(files) —
+ * it runs only FROM the bounded card/topic/INDEX nodes, never from the unbounded
+ * thread/concept accretion surfaces (see the edge loop). If the wiki grows large
+ * enough that even node enumeration shows up in profiles, cache by (file, mtime).
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -31,9 +42,19 @@ import { USERS_DIR } from './scope-rule.js';
 // Resolved lazily so env-var overrides + hermetic tests work without
 // re-importing the module. Production picks up PROJECT_DIR once at boot
 // and the values stay constant; the function calls are negligible.
-function memoryDir()  { return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory'); }
-function topicsDir()  { return join(memoryDir(), 'topics'); }
-function threadsDir() { return join(memoryDir(), 'threads'); }
+function memoryDir()   { return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory'); }
+function topicsDir()   { return join(memoryDir(), 'topics'); }
+function threadsDir()  { return join(memoryDir(), 'threads'); }
+function conceptsDir() { return join(memoryDir(), 'concepts'); }
+
+// Squeeze-point threshold: a slug must recur across at least this many DISTINCT
+// verdict threads before it earns a concept page (and before a synthetic
+// placeholder node is rendered for it). Mirrors REFLECT_CONCEPT_HEAT in
+// lib/reflect-distill.js — keep the two in sync.
+const CONCEPT_HEAT = (() => {
+  const v = Number(process.env.REFLECT_CONCEPT_HEAT);
+  return Number.isFinite(v) && v >= 1 ? v : 3;
+})();
 
 const CANONICAL_CARDS = new Set([
   'RULES',
@@ -123,17 +144,19 @@ function enumerateMemoryFiles(actorSlug) {
   };
 
   // Shared (flat) tree — team-wide.
-  pushDir(memDir,       { rootCards: true, relPrefix: 'memory/',        scope: 'shared' });
-  pushDir(topicsDir(),  { kind: 'topic',  relPrefix: 'memory/topics/',  scope: 'shared' });
-  pushDir(threadsDir(), { kind: 'thread', relPrefix: 'memory/threads/', scope: 'shared' });
+  pushDir(memDir,        { rootCards: true,  relPrefix: 'memory/',         scope: 'shared' });
+  pushDir(topicsDir(),   { kind: 'topic',    relPrefix: 'memory/topics/',   scope: 'shared' });
+  pushDir(threadsDir(),  { kind: 'thread',   relPrefix: 'memory/threads/',  scope: 'shared' });
+  pushDir(conceptsDir(), { kind: 'concept',  relPrefix: 'memory/concepts/', scope: 'shared' });
 
   // The current actor's OWN private tree (team mode). Never another user's.
   if (actorSlug && /^[a-z0-9-]+$/.test(actorSlug)) {
     const ud = join(memDir, USERS_DIR, actorSlug);
     const pfx = `memory/users/${actorSlug}/`;
-    pushDir(ud,                  { rootCards: true, relPrefix: pfx,             scope: 'yours', idPrefix: 'yours:' });
-    pushDir(join(ud, 'topics'),  { kind: 'topic',  relPrefix: `${pfx}topics/`,  scope: 'yours', idPrefix: 'yours:' });
-    pushDir(join(ud, 'threads'), { kind: 'thread', relPrefix: `${pfx}threads/`, scope: 'yours', idPrefix: 'yours:' });
+    pushDir(ud,                   { rootCards: true, relPrefix: pfx,               scope: 'yours', idPrefix: 'yours:' });
+    pushDir(join(ud, 'topics'),   { kind: 'topic',   relPrefix: `${pfx}topics/`,   scope: 'yours', idPrefix: 'yours:' });
+    pushDir(join(ud, 'threads'),  { kind: 'thread',  relPrefix: `${pfx}threads/`,  scope: 'yours', idPrefix: 'yours:' });
+    pushDir(join(ud, 'concepts'), { kind: 'concept', relPrefix: `${pfx}concepts/`, scope: 'yours', idPrefix: 'yours:' });
   }
 
   return out;
@@ -200,6 +223,46 @@ function parseEntitiesFromFrontmatter(body) {
 }
 
 /**
+ * Count how many DISTINCT verdict threads name each entity slug — the "heat"
+ * (in-degree) signal that drives concept emergence. A slug that recurs across
+ * ≥ CONCEPT_HEAT threads has crossed a computable squeeze-point and earns a
+ * first-class concept page (proposed by reflect-distill, operator-approved).
+ *
+ * Pure read over the verdict-card trees. `owner` selects which tree:
+ *   - owner = null (default)  → the SHARED threads (memory/threads/). This is the
+ *     team-wide heat used by the v1 distiller, which only proposes SHARED concept
+ *     pages (a shared verdict's entities are already team-visible — promoting one
+ *     to a shared page leaks nothing new).
+ *   - owner = '<slug>'        → that teammate's PRIVATE threads
+ *     (memory/users/<slug>/threads/). For forward-compat (per-owner private
+ *     concepts); not yet emitted by the distiller.
+ *
+ * Returns a plain object { <slug>: <distinct-thread-count> }. Counting is
+ * distinct-per-thread (a slug named twice in one verdict counts once).
+ */
+export function computeConceptHeat(owner = null) {
+  const counts = Object.create(null);
+  let dir;
+  if (owner === null) {
+    dir = threadsDir();
+  } else if (typeof owner === 'string' && /^[a-z0-9-]+$/.test(owner)) {
+    dir = join(memoryDir(), USERS_DIR, owner, 'threads');
+  } else {
+    return counts;   // malformed owner → empty, never a path escape
+  }
+  let files;
+  try { files = readdirSync(dir).filter(f => /\.md$/i.test(f)); } catch { return counts; }
+  for (const f of files) {
+    const body = readBody(join(dir, f));
+    if (!body) continue;
+    for (const ent of new Set(parseEntitiesFromFrontmatter(body))) {
+      counts[ent] = (counts[ent] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+/**
  * Build the memory graph. Pure read; no writes. Returns:
  *   {
  *     nodes: [{ id, kind, name, relPath, preview, size? }],
@@ -230,6 +293,43 @@ export function buildMemoryGraph(actorSlug = null) {
   // Read all bodies once.
   const bodies = new Map(); // id → body
   for (const f of files) bodies.set(f.id, readBody(f.absPath));
+
+  // Phase-0 graph honesty: a verdict's `entities:` edge can only land on a node
+  // that EXISTS — otherwise addEdge drops it and the cross-thread link dangles
+  // against nothing. For a slug that has recurred across ≥ CONCEPT_HEAT distinct
+  // verdict threads but has no concept page on disk yet, synthesise a placeholder
+  // concept node so (a) those edges resolve, and (b) the dashboard surfaces the
+  // cluster ripe for promotion. reflect-distill later promotes the slug to a real
+  // page (operator-approved); until then the node carries `synthetic:true`.
+  const synthHeat = new Map();   // candidate placeholder id → distinct-thread count
+  for (const f of files) {
+    if (f.kind !== 'thread') continue;
+    const seen = new Set();
+    for (const ent of parseEntitiesFromFrontmatter(bodies.get(f.id) || '')) {
+      // Clean slug + a noise floor (mirrors MIN_BARE_NAME_LEN / reflect-distill's
+      // isConceptSlug): ≥ 2 chars, not purely numeric — so 'q3' is fine but a
+      // stray 'a' / '42' is never promoted to a first-class concept node.
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(ent) || ent.length < 2 || /^\d+$/.test(ent)) continue;
+      if (resolveTarget(f.scope, ent)) continue;          // already a real node
+      const id = f.scope === 'yours' ? `yours:${ent}` : ent;
+      if (byId.has(id) || seen.has(id)) continue;         // distinct per thread
+      seen.add(id);
+      synthHeat.set(id, (synthHeat.get(id) || 0) + 1);
+    }
+  }
+  const synthNodes = [];
+  for (const [id, count] of synthHeat) {
+    if (count < CONCEPT_HEAT) continue;
+    const baseStem = id.replace(/^yours:/, '');
+    const node = {
+      id, baseStem, kind: 'concept',
+      scope: id.startsWith('yours:') ? 'yours' : 'shared',
+      name: `${baseStem}.md`, absPath: null, relPath: null,
+      synthetic: true, heat: count,
+    };
+    byId.set(id, node);
+    synthNodes.push(node);
+  }
 
   // For wiki-link matching: extract `[[target]]` payloads per source file.
   // For bare-name matching: scan the lower-cased body for each known file's
@@ -272,15 +372,24 @@ export function buildMemoryGraph(actorSlug = null) {
     // referenced via a wiki-link (it's already in the graph as a strong
     // edge; piling on a bare-edge between the same pair would just thicken
     // the visual without adding information).
-    for (const tgt of files) {
-      if (tgt.id === src.id) continue;
-      if (tgt.baseStem.length < MIN_BARE_NAME_LEN) continue;
-      const t = resolveTarget(src.scope, tgt.baseStem);
-      if (!t || t === src.id) continue;
-      // Honour the wiki-deduplication rule above.
-      if (edgeMap.has(edgeKey(src.id, t, 'wiki'))) continue;
-      if (lower.includes(tgt.baseStem)) {
-        addEdge(src.id, t, 'bare');
+    //
+    // This inner loop is O(files) per source. We do NOT run it FROM a thread or
+    // concept node: those are the UNBOUNDED accretion surfaces (verdict cards +
+    // concept pages grow without limit), so running the scan from them would make
+    // the whole pass O(files²) as the wiki grows — and a bare-name edge out of a
+    // verdict/claim list is low-signal noise anyway. Bounded sources (cards,
+    // topics, INDEX) still emit bare edges, keeping the pass ~O(files).
+    if (src.kind !== 'thread' && src.kind !== 'concept') {
+      for (const tgt of files) {
+        if (tgt.id === src.id) continue;
+        if (tgt.baseStem.length < MIN_BARE_NAME_LEN) continue;
+        const t = resolveTarget(src.scope, tgt.baseStem);
+        if (!t || t === src.id) continue;
+        // Honour the wiki-deduplication rule above.
+        if (edgeMap.has(edgeKey(src.id, t, 'wiki'))) continue;
+        if (lower.includes(tgt.baseStem)) {
+          addEdge(src.id, t, 'bare');
+        }
       }
     }
   }
@@ -298,6 +407,21 @@ export function buildMemoryGraph(actorSlug = null) {
       purpose: parsePurposeFromFrontmatter(body),
     };
   });
+
+  // Synthetic placeholder concepts (heat ≥ CONCEPT_HEAT, no page yet).
+  for (const s of synthNodes) {
+    nodes.push({
+      id: s.id,
+      kind: 'concept',
+      scope: s.scope,
+      name: s.name,
+      relPath: null,
+      preview: `Emerging concept — named in ${s.heat} verdict threads, no page yet.`,
+      purpose: '',
+      synthetic: true,
+      heat: s.heat,
+    });
+  }
 
   return {
     nodes,
