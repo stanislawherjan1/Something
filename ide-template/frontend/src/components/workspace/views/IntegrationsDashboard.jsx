@@ -883,6 +883,24 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
   const [vncUrl, setVncUrl] = useState(null);
   const [error, setError] = useState(null);
   const [iframeLoading, setIframeLoading] = useState(true);
+  // Live session validity from the keep-alive probe (GET /status sessionValid):
+  // true = refreshed, false = EXPIRED (needs interactive re-login), null = unknown
+  // (no probe yet). "Connected ✓" alone lies — the saved value stays 'ok' even
+  // after Google expires the browser session. This surfaces the real state.
+  const [sessionValid, setSessionValid] = useState(null);
+
+  useEffect(() => {
+    if (value !== 'ok') { setSessionValid(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/integrations/docs-comments/status', { credentials: 'include' });
+        const d = await r.json().catch(() => ({}));
+        if (!cancelled) setSessionValid(typeof d.sessionValid === 'boolean' ? d.sessionValid : null);
+      } catch { if (!cancelled) setSessionValid(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [value]);
 
   // The backend returns terse codes; turn them into something the operator can act on.
   const friendlyError = (msg) => {
@@ -931,6 +949,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
     setOpen(false);
     setVncUrl(null);
     onChange('ok');
+    setSessionValid(true);   // just logged in — clear any stale "expired" until the next probe
     setBusy(false);
   };
 
@@ -957,7 +976,10 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
         >
           {busy ? 'Starting…' : value === 'ok' ? 'Reconnect to Google' : 'Connect to Google'}
         </button>
-        {!busy && value === 'ok' && (
+        {!busy && value === 'ok' && sessionValid === false && (
+          <span className="text-[12px] font-medium text-amber-600/90 dark:text-amber-400/90">⚠ Session expired — click Reconnect</span>
+        )}
+        {!busy && value === 'ok' && sessionValid !== false && (
           <span className="text-[12px] font-medium text-emerald-600/90 dark:text-emerald-400/90">Connected ✓</span>
         )}
         {!busy && value !== 'ok' && (

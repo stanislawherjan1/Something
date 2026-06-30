@@ -22,7 +22,7 @@ import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
 import { distillVerdicts } from '../lib/reflect-distill.js';
 import { lintMemory } from '../lib/memory-lint.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
-import { ensureBrowserForMcp } from './docs-comments-login.js';
+import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -108,6 +108,20 @@ export default function internalRouter() {
       return res.json(await ensureBrowserForMcp());
     } catch (err) {
       process.stderr.write(`[internal] docs-comments ensure failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // docs-comments session-probe sink: the keep-alive process (PM2
+  // <bot>-docs-keepalive) reports each refresh verdict here so /status can show
+  // honest session validity (vs the old process-alive=connected lie). loopback only.
+  router.post('/internal/docs-comments/session-probe', loopbackOnly, (req, res) => {
+    try {
+      const { valid, host } = req.body || {};
+      recordSessionState({ valid: !!valid, host: typeof host === 'string' ? host : '' });
+      return res.json({ ok: true });
+    } catch (err) {
+      process.stderr.write(`[internal] docs-comments session-probe failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
