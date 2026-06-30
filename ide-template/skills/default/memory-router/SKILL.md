@@ -1,6 +1,6 @@
 ---
 name: memory-router
-description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS) or to documents/ / session/ / skills/. In a team workspace it also decides Shared vs Private — personal cards (profile, preferences, relationships, reflections) route to the CURRENT user's private memory at memory/users/<slug>/, shared facts to the flat memory/ root. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
+description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS), an accreting concept page (concepts/<slug>.md, for a recurring entity's growing facts), or to documents/ / session/ / skills/. In a team workspace it also decides Shared vs Private — personal cards (profile, preferences, relationships, reflections) route to the CURRENT user's private memory at memory/users/<slug>/, shared facts to the flat memory/ root. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
 allowed-tools: Read, Edit, Write
 ---
 
@@ -35,7 +35,7 @@ Walk these in order. **Stop at the first match.**
    → `memory/USER_PREFERENCES.md` **[private — ALWAYS]** — in team mode `memory/users/<their-slug>/USER_PREFERENCES.md`. One line per preference. Replace when a preference is updated. Never put one person's preference in the shared root — it would steer every teammate's turns.
 
 4. **Person** — anyone whose context will recur (colleague, family, client, friend). Includes the person's role, communication preference, things to avoid, recurring themes.
-   → `memory/USER_RELATIONSHIPS.md` **[private]** — in team mode `memory/users/<their-slug>/USER_RELATIONSHIPS.md`. Append a new `## Name (Role)` section if the person is new; tighten within their section if they exist. Long-form dossiers go in `users/<their-slug>/documents/relationships/<person-slug>/` (note: `<their-slug>` = the actor, `<person-slug>` = the person described) — link from the card when relevant. **Carve-out:** a genuinely shared team contact (a client the whole team deals with) may go Shared — gate on the "useful to a DIFFERENT teammate?" test.
+   → `memory/USER_RELATIONSHIPS.md` **[private]** — in team mode `memory/users/<their-slug>/USER_RELATIONSHIPS.md`. Append a new `## Name (Role)` section if the person is new; tighten within their section if they exist. When their durable facts start to accrete past a line or two, move the depth to a **concept page** `concepts/<their-slug>.md` and leave the card section a `→ concepts/<their-slug>.md` pointer (see "Accreting depth" below). Link from the card when relevant. **Carve-out:** a genuinely shared team contact (a client the whole team deals with) may go Shared — gate on the "useful to a DIFFERENT teammate?" test.
 
 5. **Self-introspection** — the user noting a pattern about themselves (energy, mood, productivity, tendency).
    → `memory/USER_REFLECTIONS.md` **[private — strictly]** — in team mode `memory/users/<their-slug>/USER_REFLECTIONS.md`. Append dated entry. Newer on top. This is the most personal card; never shared.
@@ -55,11 +55,33 @@ Walk these in order. **Stop at the first match.**
 10. **Ephemeral / scratch** — mid-task reasoning, a one-off computation, draft that won't survive past this conversation.
     → `project/session/<filename>.md`. Session has TTL ~14 days; the bot may purge stale entries.
 
+## Accreting depth → concept pages (`concepts/<slug>.md`)
+
+The cards above are tight **summary** surfaces, not containers. When durable facts
+about ONE recurring entity (a client, project, or person) start piling up, the
+DEPTH belongs on a **concept page** — `memory/concepts/<slug>.md`, an accreting
+`## Claims` list (one atomic, cited claim per line) — and the card keeps a single
+`→ concepts/<slug>.md` pointer. This sits ON TOP of the tree: route the one-line
+SUMMARY to its card (a person → USER_RELATIONSHIPS, a tool → AGENT_TOOLS), but put
+the growing detail on the concept page. Concept page = accreting facts;
+`topics/<slug>.md` = hand-written long-form prose; pick one home per slug, never both.
+
+**You usually don't do this by hand.** The `reflect-distill` pass watches recurring
+entities and automatically proposes a concept page + its first claims once a slug
+recurs across ≥ 3 verdict threads, routed through the normal `/memory review`
+approval — so concept pages accrete on their own. Create one by hand ONLY when
+you're mid-conversation and about to cram a 3rd/4th durable fact about the same
+entity onto a card: make `concepts/<slug>.md` (frontmatter `kind: concept` + a
+`## Claims` list), move the depth there, leave the card pointer. **Team mode:** a
+private entity's concept page is private (`memory/users/<actor>/concepts/<slug>.md`)
+and its index pointer goes in the actor's private INDEX — never put private depth in
+shared `concepts/`. Full procedure + scope rules: references/routing-rules.md.
+
 ## Mechanical rules + overflow + conflict resolution
 
 See [references/routing-rules.md](references/routing-rules.md) for:
 - Per-write mechanical rules (one fact per line, citation format, retire-don't-delete, frontmatter preservation, drift check)
-- Card overflow → topic page promotion procedure (when a card crosses ~60 lines)
+- Depth accretion → concept-page emergence (heat-driven auto + by-hand), card-keeps-a-pointer discipline, scope rules
 - Per-card conflict resolution (newer-wins / replace / append per card semantics)
 - Ambiguous-routing confidence guardrail
 

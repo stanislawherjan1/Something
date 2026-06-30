@@ -1,6 +1,6 @@
 ---
 name: memory-cards
-description: Stable 7-card memory model (USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS, RULES). Read all seven at session start to ground responses in the user's profile, preferences, relationships, agent identity, available tools, and hard rules. Write back here when the user shares a fact, preference, or rule worth remembering — `memory-router` skill picks the destination card.
+description: Stable 7-card memory model (USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS, RULES) — the tight, role-keyed SUMMARY surfaces. Read all seven at session start to ground responses in the user's profile, preferences, relationships, agent identity, available tools, and hard rules. Write back here when the user shares a fact, preference, or rule worth remembering — `memory-router` skill picks the destination card. Depth about a recurring entity accretes on a concept page (concepts/<slug>.md), not crammed onto a card.
 allowed-tools: Read, Edit, Write
 ---
 
@@ -17,6 +17,27 @@ The bot keeps a small, stable knowledge base of **seven cards**. Content evolves
 | `AGENT_IDENTITY.md` | The agent's character — voice, mood, default disposition. Owned by the agent, refined over time. | shared |
 | `AGENT_TOOLS.md` | Tools, accounts, integrations the agent has access to in this workspace, plus per-tool gotchas learnt the hard way | shared |
 | `RULES.md` | Hard rules — never/always commitments. Tightly worded. The bot reads these last; they override everything else when in conflict. | shared |
+
+## The cards are summaries — depth lives on concept pages
+
+The 7 cards are **fixed, tight summary surfaces**, not containers. They hold WHO
+the user is, their preferences, the people/tools/rules — one terse line each. When
+durable facts about ONE **recurring entity** (a client, project, or person) start
+to accrete, the depth does NOT pile onto a card — it goes on a **concept page**:
+
+| Layer | Holds | Grows? | Written by |
+|---|---|---|---|
+| **7 cards** | role-keyed summary facts (a person's one-liner, a preference, a rule) | no — stays tight | bot (via `memory-router`) + distiller, operator-approved |
+| **`concepts/<slug>.md`** | an accreting `## Claims` list — every durable fact about one entity, atomic + cited | yes, unbounded | **mostly automatic** (`reflect-distill` proposes once a slug recurs across ≥3 verdict threads → `/memory review`); bot by hand when it feels the squeeze |
+| **`topics/<slug>.md`** | hand-written long-form prose / narrative on a subject | yes | bot by hand |
+| **`documents/…`** | full artifacts (briefs, research, drafts) | — | bot / `file-placement` |
+
+A card keeps a one-line `→ concepts/<slug>.md` pointer; the concept page absorbs
+the detail. Pick ONE home per slug — a concept page (accreting facts) OR a topic
+page (prose), never both. Concept pages are NOT in the cached prefix — `Read` /
+`memory_grep` them on demand when a turn is about that entity. `memory-router`
+owns the routing call; see its `references/routing-rules.md` for the full
+procedure (heat-driven emergence, by-hand creation, team-mode scope).
 
 ## Where the cards live — solo vs team
 
@@ -62,6 +83,7 @@ Every card opens with a YAML frontmatter block that's the operational directive 
 
 ## When to NOT use memory cards
 
+- **Accreting depth about a recurring entity** (a client/project/person whose durable facts keep growing) → a **concept page** `memory/concepts/<slug>.md` (the card keeps a one-line `→ concepts/<slug>.md` pointer). Mostly created automatically by `reflect-distill`; see the table above.
 - **Project work** (a specific task, a research note, a draft) → `project/documents/` with `YYYY-MM-DD_*.md`
 - **Ephemeral scratch** (mid-session reasoning, one-off computations) → `project/session/` (TTL ~14 days)
 - **Workflow recipes** (how to do X end-to-end) → `project/.claude/skills/<name>/`
