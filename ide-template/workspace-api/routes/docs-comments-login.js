@@ -35,7 +35,7 @@
 
 import { Router } from 'express';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readdirSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, mkdirSync, unlinkSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { createConnection } from 'node:net';
 import { request as httpRequest } from 'node:http';
@@ -45,6 +45,10 @@ import { syncMcpServers } from '../lib/integrations/runtime.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
 
 const PROFILE_DIR        = '/var/wsapi-store/docs-comments-profile';
+// Last keep-alive probe result (written by recordSessionState from the
+// loopback /internal/docs-comments/session-probe endpoint; read by /status so
+// the UI can show honest "session expired" state instead of a fake "connected").
+const SESSION_STATE_FILE = '/var/wsapi-store/docs-comments-session.json';
 const NOVNC_DIR          = '/usr/share/novnc';
 const CHROMIUM_BIN       = '/opt/playwright-browsers/chromium-1223/chrome-linux64/chrome';
 const DISPLAY_NUM        = ':99';
@@ -71,6 +75,30 @@ function browserAlive() { return !!browser && isAlive(browser.chromium) && isAli
 function profileHasSession() {
   return existsSync(join(PROFILE_DIR, 'Default', 'Cookies'))
       || existsSync(join(PROFILE_DIR, 'Default', 'Network', 'Cookies'));
+}
+
+// Persist the latest keep-alive probe verdict (called from the loopback
+// /internal/docs-comments/session-probe endpoint). tmp+rename is atomic on the
+// same fs so a concurrent /status read never sees a half-written file. Never throws.
+export function recordSessionState({ valid, host }) {
+  try {
+    const tmp = `${SESSION_STATE_FILE}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ valid: !!valid, host: host || '', checkedAt: Date.now() }), { mode: 0o640 });
+    renameSync(tmp, SESSION_STATE_FILE);
+  } catch (err) {
+    process.stderr.write(`[docs-comments-login] recordSessionState failed: ${err.message}\n`);
+  }
+}
+
+// Read the last probe verdict for /status. Returns null when no probe has run
+// yet (keep-alive not deployed, or browser only just came up) — callers treat
+// null as "unknown", NOT "expired", so a fresh install never shows a false alarm.
+function readSessionState() {
+  try {
+    const s = JSON.parse(readFileSync(SESSION_STATE_FILE, 'utf8'));
+    if (s && typeof s.valid === 'boolean') return s;
+  } catch { /* missing / unparseable → unknown */ }
+  return null;
 }
 
 // Shared precondition for every silent (viewer-less) relaunch (boot + MCP heal).
@@ -380,11 +408,18 @@ export default function docsCommentsLoginRouter() {
 
   router.get('/status', (_req, res) => {
     const profileFiles = existsSync(PROFILE_DIR) ? readdirSync(PROFILE_DIR).length : 0;
+    // Honest session state from the keep-alive probe: process-alive (browserAlive)
+    // and profile-exists do NOT mean the Google login is still valid. sessionValid
+    // is the probe verdict — true (refreshed), false (expired → needs re-login),
+    // or null (unknown: no probe yet). The UI shows "⚠ session expired" on false.
+    const probe = readSessionState();
     res.json({
       sessionActive:     !!viewer,          // a login viewer is up right now
       browserAlive:      browserAlive(),    // the persistent browser is running
       profileExists:     profileFiles > 0,
       integrationActive: isActive('docs-comments'),
+      sessionValid:      probe ? probe.valid : null,   // true | false | null(unknown)
+      sessionCheckedAt:  probe ? probe.checkedAt : null,
     });
   });
 

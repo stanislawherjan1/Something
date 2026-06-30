@@ -109,6 +109,32 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
     {
+      // docs-comments session keep-alive — every ~6h drives the persistent
+      // Google-Docs login browser (over CDP, like the MCP) to docs.google.com so
+      // Google never expires the idle session. Without this the live session went
+      // stale after ~1-2 weeks of no comments while every health check still said
+      // "connected" (process alive ≠ logged in), forcing a manual re-login. Now
+      // it's connect-once-and-forget; the probe also reports session validity to
+      // wsapi for honest UI state. Attaches to an existing browser (connectOverCDP)
+      // so it needs only playwright-core (resolved from the app's node_modules),
+      // not a Chromium binary; when docs-comments is inactive the browser is down,
+      // CDP is unreachable, and each tick is a cheap no-op. Plain node (coder) —
+      // CDP is localhost-open to in-container procs (same trust as the MCP) and
+      // state is reported over loopback, so no privileged uid is needed.
+      name: `${BOT}-docs-keepalive`,
+      script: '/opt/ide/apps/docs-comments-mcp/keepalive.mjs',
+      cwd: '/opt/ide/apps/docs-comments-mcp',
+      interpreter: 'node',
+      max_restarts: 50,
+      min_uptime: '60s',
+      restart_delay: 30000,
+      max_memory_restart: '300M',
+      error_file: `${HOME}/.${BOT}/${BOT}-docs-keepalive-error.log`,
+      out_file:   `${HOME}/.${BOT}/${BOT}-docs-keepalive-out.log`,
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
+    {
       // Workspace API — wraps `claude -p` with SSE for the web chat panel.
       // Listens on :3001 inside the container; nginx (frontend service)
       // auth-gates and reverse-proxies /api/* here.
