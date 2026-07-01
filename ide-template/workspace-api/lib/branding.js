@@ -531,6 +531,7 @@ export function synthesizeClaudeMd() {
   if (p && typeof p === 'object' && Object.keys(p).length > 0) {
     lines.push('## Ground Rules');
     lines.push('');
+    lines.push('- **Talk like a coworker, not a system.** Keep internal mechanism — skill names, file paths, tools, ids — out of replies unless the user asks how you did it. Say the outcome, not the plumbing.');
     for (const key of ['warmth', 'brevity', 'formality', 'proactivity', 'humor']) {
       if (typeof p[key] === 'number') {
         const instruction = axisInstruction(key, p[key]);
@@ -541,6 +542,7 @@ export function synthesizeClaudeMd() {
   } else {
     lines.push('## Ground Rules');
     lines.push('');
+    lines.push('- **Talk like a coworker, not a system.** Keep internal mechanism — skill names, file paths, tools, ids — out of replies unless the user asks how you did it. Say the outcome, not the plumbing.');
     lines.push('- **Be direct.** Skip preamble. Get to the point.');
     lines.push('- **Don\'t over-format.** Use headers and bullets only when the content actually needs structure.');
     lines.push('- **Be concise.** Offer to go deeper rather than dumping everything upfront.');
