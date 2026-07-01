@@ -22,7 +22,7 @@ Don't invent folders the user hasn't created.
 
 ## Three branches after reading the shape
 
-**A. Obvious match** → save without asking. State the destination in the reply ("Saved to `<folder>/<file>.md`").
+**A. Obvious match** → save without asking. Confirm in plain language ("Saved it to your Reports folder — the June weekly"). On the **web** you may name the file as a backticked workspace-relative path (`Reports/q3.md`) since the UI turns it into a clickable link; on Telegram, just say where it went and never paste the raw path.
 
 **B. Two reasonable destinations OR no clear match** → ask **one** short question, then wait:
 - "Brief — should it go in `<folder-A>/` or `<folder-B>/`?"

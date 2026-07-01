@@ -1,6 +1,6 @@
 ---
 name: reflect-learnings
-description: Memory consolidation — propose additions to the 7 memory cards based on recent conversation. Output is ALWAYS a JSON proposal list that the apply-script (/opt/ide/hooks/reflect-apply.py) converts to a `memory/_drafts/learnings-YYYY-MM-DD.md` review file. Proposals NEVER apply directly; operator approves via `/memory review` and `/memory approve <id>` on Telegram. Triggered by `[REFLECT_LEARNINGS_TRIGGER]` (daily reminder + idle-detection from recent-snapshot monitor) or manually via "reflect on learnings", "consolidate memory", "review what we learned".
+description: Memory consolidation — propose additions to the 7 memory cards based on recent conversation. Output is ALWAYS a JSON proposal list that the apply-script (/opt/ide/hooks/reflect-apply.py) converts to a `memory/_drafts/learnings-YYYY-MM-DD.md` review file. Proposals NEVER apply directly; operator approves via `/memory review` and `/memory approve <id>` on Telegram. Triggered by `[REFLECT_LEARNINGS_TRIGGER]` (daily reminder) or manually via "reflect on learnings", "consolidate memory", "review what we learned".
 allowed-tools: Read, Write
 ---
 
@@ -22,7 +22,6 @@ In a team workspace the personal cards belong to ONE teammate. Each USER_* learn
 ## When this skill fires
 
 - `[REFLECT_LEARNINGS_TRIGGER]` arrives (daily reminder, see global-claude.md Periodic Self-Audit Triggers table)
-- recent-snapshot monitor detects IDLE on web or Telegram channel and triggers reflect (workspace-api hook)
 - User says "reflect on learnings", "consolidate memory", "review what we learned"
 
 ## The 7 memory cards

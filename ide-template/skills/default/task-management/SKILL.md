@@ -44,6 +44,8 @@ pre-migration leftover — ignore it; the board is the API.
 `completed` (auto-stamped when status → `done`, cleared when moved back — **never
 set it yourself**). Full field + writing guidance → `references/templates.md`.
 
+**Talk about tasks by the board, not the tool.** The MCP calls, the task `id`s, and the status tokens (`in_progress`) are internal. Say *"moved it to In Progress and gave it to Jan"* or *"added it to the backlog"* — never *"PATCHed the task"*, *"called move_task"*, an id, or an endpoint. The user thinks in the board's plain columns.
+
 ## Tasks vs Reminders
 
 | What the user means | System |

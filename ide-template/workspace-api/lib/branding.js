@@ -531,6 +531,7 @@ export function synthesizeClaudeMd() {
   if (p && typeof p === 'object' && Object.keys(p).length > 0) {
     lines.push('## Ground Rules');
     lines.push('');
+    lines.push('- **Talk like a coworker, not a system.** Keep internal mechanism — skill names, file paths, tools, ids — out of replies unless the user asks how you did it. Say the outcome, not the plumbing.');
     for (const key of ['warmth', 'brevity', 'formality', 'proactivity', 'humor']) {
       if (typeof p[key] === 'number') {
         const instruction = axisInstruction(key, p[key]);
@@ -541,29 +542,15 @@ export function synthesizeClaudeMd() {
   } else {
     lines.push('## Ground Rules');
     lines.push('');
+    lines.push('- **Talk like a coworker, not a system.** Keep internal mechanism — skill names, file paths, tools, ids — out of replies unless the user asks how you did it. Say the outcome, not the plumbing.');
     lines.push('- **Be direct.** Skip preamble. Get to the point.');
     lines.push('- **Don\'t over-format.** Use headers and bullets only when the content actually needs structure.');
     lines.push('- **Be concise.** Offer to go deeper rather than dumping everything upfront.');
     lines.push('');
   }
 
-  // Workspace context
-  lines.push('## Workspace');
-  lines.push('');
-  lines.push(`You are working inside the **${resolved.title}** workspace environment.`);
-  lines.push('You have access to the project files, a terminal, and the full chat history.');
-  lines.push('This is a real working environment — act accordingly.');
-  lines.push('');
-
-  // File handling
-  lines.push('## Files');
-  lines.push('');
-  lines.push('Never rename existing files or folders unless explicitly asked.');
-  lines.push('When saving notes or summaries, always write to a `.md` file — never paste into chat only.');
-  lines.push('Always tell the user where you saved something.');
-  lines.push('');
-
-  // Reference to UI docs
+  // Reference to UI docs — workspace/file rules live in the always-on prefix +
+  // global-claude.md; the project file stays the per-client persona surface only.
   lines.push('## UI Reference');
   lines.push('');
   lines.push('See `.claude/WORKSPACE.md` for a full description of the workspace UI — sidebar, editor pane, chat panel, AI Settings, Skills, Integrations, and key file locations.');
