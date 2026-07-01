@@ -1,9 +1,12 @@
 #!/bin/bash
 # post-write-memory.sh — PostToolUse hook that fires after Write/Edit
-# operations targeting `<PROJECT_DIR>/memory/`. Sends a Telegram
-# notification to the operator with what was just written so they can
-# spot wrong / mis-routed writes in seconds (vs hours later via the
-# memory dashboard).
+# operations targeting `<PROJECT_DIR>/memory/`. The memory WRITE itself
+# already happened silently in the background; this hook only emits an
+# ambient "heads-up" so the operator can spot a wrong / mis-routed write
+# and /correct it. By default it goes to the WEB dashboard's notifications
+# (the AI-Settings memory graph already reflects the write too) — NOT the
+# Telegram chat, which made every routine save spam the conversation.
+# Set MEMORY_WRITE_NOTIFY=telegram|both|off to change the target.
 #
 # Wiring: registered in ~/.claude/settings.json under
 # hooks.PostToolUse[matcher=Write|Edit]. CC pipes a JSON payload on
@@ -21,7 +24,18 @@ set -e
 
 PROJECT_DIR="${PROJECT_DIR:-/home/coder/project}"
 MEMORY_DIR="$PROJECT_DIR/memory"
-NOTIFY_SCRIPT="${NOTIFY_SCRIPT:-/opt/ide/bot-notify.sh}"
+# Where the memory-write FYI goes. The WRITE itself already happened silently;
+# this is only a "heads-up so you can /correct a mis-route" signal. Default is
+# WEB (ambient in the workspace dashboard's notifications + the AI-Settings
+# memory graph) so it never spams the Telegram chat. Override per client:
+#   MEMORY_WRITE_NOTIFY = web (default) | telegram | both | off
+# off = fully silent; review writes on demand in the memory graph / .activity.jsonl.
+NOTIFY_TARGET="${MEMORY_WRITE_NOTIFY:-web}"
+TG_NOTIFY="${NOTIFY_SCRIPT:-/opt/ide/bot-notify.sh}"
+WEB_NOTIFY="${WEB_NOTIFY_SCRIPT:-/opt/ide/web-notify.sh}"
+
+# Fully silent → skip all the payload parsing too.
+[ "$NOTIFY_TARGET" = "off" ] && exit 0
 
 # Read JSON payload from stdin. CC PostToolUse passes the tool call
 # context as JSON; we want tool_name and tool_input.file_path (Write)
@@ -74,9 +88,13 @@ fi
 [ -z "$PREVIEW" ] && PREVIEW="(content not extracted from hook payload)"
 [ ${#PREVIEW} -ge 200 ] && PREVIEW="${PREVIEW}…"
 
-# Compose notification. Plain text — bot-notify.sh wraps in markdown
-# already, and these write-bodies often contain markdown that would
-# escape badly if double-wrapped.
+# Title + body for the web notification (web-notify.sh JSON-encodes, so no
+# markdown-fence escaping needed). The single-string form is kept for the
+# Telegram path (bot-notify.sh wraps in markdown).
+TITLE="Memory write: $TOOL_NAME → $REL_PATH"
+BODY="$PREVIEW
+
+To correct: edit $REL_PATH manually, or send /correct <note> if this was a verification-failure pattern."
 MESSAGE="Memory write: $TOOL_NAME → $REL_PATH
 
 \`\`\`
@@ -85,16 +103,17 @@ $PREVIEW
 
 To correct: edit $REL_PATH manually, or send /correct <note> if this was a verification-failure pattern."
 
-# Fire-and-forget. Don't block the turn even if Telegram is down —
-# the model has already made the write; the user can still see it in
-# the memory dashboard if the notification fails.
-#
-# Run in background with hard 5s timeout so this hook NEVER blocks
-# claude's turn finalization. Claude's PostToolUse spec waits for
-# the hook process to exit; backgrounding + disown means we return
-# immediately while the curl to Telegram runs detached. The 5s
-# timeout protects against zombie children if Telegram API hangs.
-( timeout 5 "$NOTIFY_SCRIPT" "$MESSAGE" >/dev/null 2>&1 ) &
-disown 2>/dev/null || true
+# Fire-and-forget, each path backgrounded with a hard 5s timeout so this hook
+# NEVER blocks claude's turn finalization (PostToolUse waits for the process to
+# exit; backgrounding + disown returns immediately). The model already made the
+# write; a notify outage just means it's visible in the memory graph instead.
+notify_web()      { ( timeout 5 "$WEB_NOTIFY" "$TITLE" "$BODY" memory >/dev/null 2>&1 ) & disown 2>/dev/null || true; }
+notify_telegram() { ( timeout 5 "$TG_NOTIFY" "$MESSAGE"          >/dev/null 2>&1 ) & disown 2>/dev/null || true; }
+
+case "$NOTIFY_TARGET" in
+    telegram) notify_telegram ;;
+    both)     notify_web; notify_telegram ;;
+    web|*)    notify_web ;;   # default: ambient web, no Telegram spam
+esac
 
 exit 0
