@@ -74,6 +74,8 @@ Load when applying a routing decision. Skip when the decision tree above resolve
 
 ## Output shape
 
+**This is an internal handoff — never show it to the user.** The SCOPE / ROUTE / ACTION / SOURCE lines below, the card names, and the paths are how you decide where to write; the user sees only a plain one-liner ("got it, I'll remember that" / "noted"). Don't say "routed to USER_PROFILE.md" or name the card/skill/path unless they ask where you keep it.
+
 The skill doesn't write the file directly — it returns the routing decision so the agent uses normal `Edit` / `Write` tools to apply it. The `ROUTE` is the **fully-resolved path** (with the `memory/users/<slug>/` prefix already applied in team mode), and `SCOPE` records the Shared/Private call. Skill output to the agent looks like:
 
 ```

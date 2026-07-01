@@ -17,6 +17,8 @@ Tasks live in a structured store the workspace board reads/writes. **You manage 
 
 A task has: `title`, `description`, `status` (backlog / in_progress / done), `owner` (a teammate slug or none), `priority` (high / medium / low), `deadline` (YYYY-MM-DD or none). Moving a task to `done` stamps the completion date automatically — you never set it by hand.
 
+**Talk about tasks by the board, not the tool.** The MCP calls, the task `id`s, and the status tokens (`in_progress`) are internal. Say *"moved it to In Progress and gave it to Jan"* or *"added it to the backlog"* — never *"PATCHed the task"*, *"called move_task"*, an id, or an endpoint. The user thinks in the board's plain columns.
+
 ## Tasks vs Reminders
 
 | What the user means | System |

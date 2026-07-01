@@ -52,7 +52,7 @@ Full trigger format, the action-vs-nudge test, channel routing, and the two deli
 
 Confirm the **time** AND, for an action reminder, that **you'll do it** — not that you'll nag the user:
 
-- Action (Kind 1): *"Done — in 5 min I'll check your email and report back (09:35 Warsaw)."* — NOT "I'll remind you to check your email." You're the one acting.
-- Nudge (Kind 2): *"Done — I'll ping you to call John at 15:00 UTC (17:00 Warsaw)."*
+- Action (Kind 1): *"Done — in 5 min I'll check your email and report back (around 09:35)."* — NOT "I'll remind you to check your email." You're the one acting.
+- Nudge (Kind 2): *"Done — I'll ping you to call John at 17:00."*
 
-Always echo both UTC and the user's local time when their timezone is known, plus the ID for cancelling. For a **recurring** reminder, also state the cadence and the next fire — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday. ID: r_a1b2c3."
+State the time in the user's **local** time (add UTC only if it removes real ambiguity — e.g. a cross-timezone reminder). For a **recurring** one, add the cadence + next fire in plain words — *"every Mon/Wed/Fri at 11:00, next this Friday."* **Don't volunteer the reminder id** — it's an internal cancel handle, not something the user asked to see; surface it only if they ask to cancel or ask for it. "Just say the word to move or drop it" is enough.
