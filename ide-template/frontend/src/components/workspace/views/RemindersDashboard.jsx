@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, PauseCircle } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -365,14 +365,18 @@ function RecipientBadge({ reminder, people = {}, me = null }) {
 function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
   const [open, setOpen] = useState(false);
   const due = new Date(reminder.due);
-  const overdue = due < new Date();
+  // A paused (disabled) reminder stays in the list but will NOT fire — surface
+  // that honestly instead of rendering it like an active one (its due-time would
+  // otherwise show an alarming red "overdue" for something that's intentionally off).
+  const paused = reminder.status === 'disabled' || reminder.status === 'paused';
+  const overdue = due < new Date() && !paused;
   const { title, description } = displayParts(reminder);
   const recurLabel = formatRecurrence(reminder);
   const channel = (reminder.channel || 'all').toLowerCase();
   const toggle = () => setOpen((o) => !o);
 
   return (
-    <div className="group overflow-hidden rounded-md border border-border/60 bg-card">
+    <div className={cn('group overflow-hidden rounded-md border border-border/60 bg-card', paused && 'opacity-60')}>
       <div className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/20">
         {/* Click the task (avatar + title + repeat badge) to reveal the description. */}
         <div
@@ -390,6 +394,16 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
             <span className="min-w-0 truncate text-[13.5px] font-medium leading-snug text-foreground">
               {title}
             </span>
+            {/* Paused badge — a disabled reminder won't fire; say so plainly. */}
+            {paused && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium text-amber-600/90 dark:text-amber-400/90"
+                title="Paused — this reminder won't fire until it's resumed"
+              >
+                <PauseCircle className="size-2.5" strokeWidth={2} />
+                Paused
+              </span>
+            )}
             {/* Repeat badge right after the title. */}
             {recurLabel && (
               <InfoTip label={recurLabel}>
