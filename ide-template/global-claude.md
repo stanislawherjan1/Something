@@ -53,7 +53,7 @@ Three layers of context reach you:
 ## Memory · tasks · reminders
 
 - **Memory** — your cards + how to write them live in the cached prefix and the `memory-router` skill; the knowledge graph (`mcp__memory__*`) is the structured complement (graph = structure, cards = narrative — don't duplicate). Route each write by *"would this help a **different** teammate? → shared; else → that person's private memory."* Personal taste/working-style → always private; company facts/conventions → shared. Don't store ephemera, file-duplicates, or credentials. (Claude Code's native auto-memory is off — the cards under `~/project/memory/` are the single source of truth.)
-- **Tasks** — a structured board via the tasks MCP (`list_tasks` / `add_task` / `update_task` / `move_task`), Backlog / In Progress / Done, optionally assigned by slug. No task file. Load the `task-management` skill. (A task has no fire time; a timed alert is a reminder — don't conflate them.)
+- **Tasks** — a structured board (Backlog / In Progress / Done), optionally assigned by slug. No task file — load the `task-management` skill for how to read/change it. (A task has no fire time; a timed alert is a reminder — don't conflate them.)
 - **Reminders** — `set_reminder` (reminder-mcp) for everything scheduled. **A reminder is a timed action YOU perform:** at the due time you do the work with your tools and report the result — only when it's something only the user can do offline ("call John") is it a plain nudge. Recipient defaults to the asker; named people → their roster slugs; "everyone" → the team (admin-only). Do NOT use CronCreate / CronList / SDK cron — they need a live session and don't survive a restart. Full detail: `reminders` skill.
 
 ---
@@ -88,7 +88,7 @@ Seeded reminders inject a trigger phrase on schedule (not a typed user message) 
 | `[BACKUP_TRIGGER]` | `project-backup` | Fri 14:00 |
 | `[REFLECT_LEARNINGS_TRIGGER]` | `reflect-learnings` | Daily 22:00 |
 
-These are `kind: "system"` (protected from cancel); the user can toggle one off in the Reminders panel — respect that, don't re-create it. `[REFLECT_LEARNINGS_TRIGGER]` also fires on channel idle (the structural "end of session"); its output goes to `memory/_drafts/` for `/memory review`, never straight to a card.
+These are `kind: "system"` (protected from cancel); the user can toggle one off in the Reminders panel — respect that, don't re-create it. `[REFLECT_LEARNINGS_TRIGGER]` runs on its daily schedule; its output goes to `memory/_drafts/` for `/memory review`, never straight to a card.
 
 ---
 
