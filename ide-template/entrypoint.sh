@@ -1778,7 +1778,7 @@ start_bot_stack() {
         fi
     fi
 
-    pm2 start /home/coder/ecosystem.config.js --only "${BOT_NAME},${BOT_NAME}-reminders,${BOT_NAME}-snapshot,${BOT_NAME}-browser-watchdog" \
+    pm2 start /home/coder/ecosystem.config.js --only "${BOT_NAME},${BOT_NAME}-reminders,${BOT_NAME}-snapshot,${BOT_NAME}-browser-watchdog,${BOT_NAME}-docs-keepalive" \
         2>&1 || echo "[entrypoint] WARNING: ${BOT_NAME} failed to start"
     pm2 save 2>/dev/null || true
 }
