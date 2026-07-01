@@ -278,8 +278,9 @@ scp apps/openai-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/openai-mcp/" |
 # shipped to every client like any other MCP. (Reply/resolve/delete live in
 # gdocs-mcp over the Drive API; this MCP only does the anchored add.)
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/docs-comments-mcp'"
-scp apps/docs-comments-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
-scp apps/docs-comments-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+scp apps/docs-comments-mcp/index.js      "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+scp apps/docs-comments-mcp/package.json  "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+scp apps/docs-comments-mcp/keepalive.mjs "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
 
 # Generic operator-only catalog-fragment mechanism. No integration uses it
 # today (docs-comments is now in the main catalog), but the hook stays for any
