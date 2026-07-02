@@ -107,6 +107,28 @@ echo -e "${CYAN}Container: $IDE_NAME${NC}"
 echo -e "${CYAN}Bot:       ${BOT_NAME:-none}${NC}"
 echo ""
 
+# ─── Step 0: Preflight + server converge ─────────────────────────────────────
+# Preflight fails fast (<10s) on anything that would otherwise kill the deploy
+# minutes into the build: SSH auth, DNS→IP mismatch (TLS provisioning), full
+# remote disk, dirty working tree (deploys ship the working tree). Exit 2 =
+# fix the reported issue and re-run; always safe to retry.
+# Converge then brings the server to baseline (docker, ufw, swap, fail2ban,
+# auto security patches, key-only sshd, login alerts) — idempotent, a no-op
+# on an already-converged host. This replaces the old "remember to run
+# scripts/harden-server.sh once" step, so fresh AND existing clients get the
+# baseline (e.g. build swap) on every deploy.
+# Escape hatches: SKIP_PREFLIGHT=1 / SKIP_ENSURE=1 (debugging only).
+if [ "${SKIP_PREFLIGHT:-0}" != "1" ]; then
+    echo -e "${GREEN}[0/5] Preflight checks...${NC}"
+    "$THIS_DIR/../bin/preflight.sh" || exit 2
+    echo ""
+fi
+if [ "${SKIP_ENSURE:-0}" != "1" ]; then
+    echo -e "${GREEN}[0b/5] Converging server baseline...${NC}"
+    "$THIS_DIR/../bin/ensure-server.sh" || exit 2
+    echo ""
+fi
+
 # ─── Forward shared OAuth from admin.env to remote .env ─────────────────────
 # admin.env is sourced *locally* above, but `docker compose up` runs on the
 # remote host and only sees `${REMOTE_PATH}/.env`. Without this hop, the
@@ -466,9 +488,13 @@ case "$DEPLOY_TARGET" in
     *)            BUILD_TARGETS="$DEPLOY_TARGET" ;;
 esac
 
+ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build --no-cache $BUILD_TARGETS" || exit 1
+# Prune AFTER the build, not before: pruning first leaves this build's own
+# dangling layers on disk until the NEXT deploy — on a 38G VPS that's the
+# difference between a stable ~x% floor and creeping toward disk-full.
+# (Running containers/images in use are never pruned.)
 echo -e "${CYAN}  Pruning unused Docker layers to free disk space...${NC}"
 ssh "$HETZNER_HOST" "docker system prune -f" || true
-ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build --no-cache $BUILD_TARGETS" || exit 1
 echo -e "${GREEN}Images built${NC}"
 echo ""
 

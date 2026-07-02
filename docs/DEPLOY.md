@@ -381,6 +381,10 @@ Look for `status: online` and `restarts < 3` (a healthy bot has near-zero restar
 
 ## Step 5 — Firewall check (critical)
 
+> `deploy.sh` converges the firewall automatically on every deploy
+> (`bin/ensure-server.sh`, step `[0b/5]`) — this manual check is a
+> belt-and-suspenders verification, not a setup step.
+
 ```bash
 ssh root@<SERVER_IP>
 netstat -tulpn | grep -E ':8080|:3002'

@@ -124,7 +124,7 @@ dig +short ide.clientname.com
 
 If empty, wait a minute and retry. If still empty after 5 min, the record didn't save — recheck the provider.
 
-## B3. Server bootstrap (Docker + UFW)
+## B3. Verify SSH access
 
 Now that the server is up and the SSH key is on it (from B1 step 6):
 
@@ -135,15 +135,12 @@ ssh -o StrictHostKeyChecking=no root@<SERVER_IP> 'echo connected'
 
 If you get `Permission denied (publickey)`, your SSH key wasn't added at server creation. In Hetzner panel: server → Security → SSH Keys → Assign your key → recreate the server (or use Hetzner's web console to add the key manually).
 
-Once SSH works, install Docker and configure the firewall:
-
-```bash
-ssh root@<SERVER_IP> "curl -fsSL https://get.docker.com | sh"
-ssh root@<SERVER_IP> "ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp \
-  && ufw deny 8080 && ufw deny 3002 && ufw --force enable"
-```
-
-Verify: `ssh root@<SERVER_IP> 'docker --version && ufw status'` — Docker prints a version, UFW shows active.
+That's the whole step. Docker, the firewall (UFW), build swap, fail2ban,
+automatic security patches, and key-only SSH are all installed/converged
+automatically by `deploy.sh` (step `[0b/5]`, `bin/ensure-server.sh`) on every
+deploy — there is no separate "bootstrap" or "hardening" command to remember.
+Set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ADMIN_CHAT_ID` in the client `.env` if
+you also want a Telegram alert on every SSH login to the server.
 
 ## B4. Create the client directory
 
@@ -165,6 +162,10 @@ The directory name **becomes** `IDE_NAME` and `REMOTE_PATH` (e.g. `clientname-id
 This appends `https://ide.clientname.com/auth/callback` to the shared OAuth app's authorized list. End-user's first Google sign-in won't work without it.
 
 If you skipped A2 (no `gcloud`): do it manually — GCP Console → APIs & Services → Credentials → your OAuth client → Authorized redirect URIs → ADD URI.
+
+Either way, you can't silently get this wrong any more: `deploy.sh`'s
+preflight (`bin/preflight.sh`, check `oauth`) probes Google and fails the
+deploy with a fix hint if the URI isn't registered or the Client ID is wrong.
 
 ## B6. Fill in `.env` — 3 fields
 
@@ -190,8 +191,14 @@ That's all. `bin/bootstrap-client-env.sh` (called automatically by `deploy.sh`) 
 The wrapper:
 1. Calls `bootstrap-client-env.sh` (fills missing env fields)
 2. Uploads `.env` to the server via `scp`
-3. SSHs into the server, builds the Docker images, swaps containers
-4. Waits for the health check
+3. Runs preflight checks (`bin/preflight.sh`) — SSH auth, DNS→IP, remote disk
+   space, clean working tree. Fails fast with a fix hint instead of dying
+   minutes into the build.
+4. Converges the server baseline (`bin/ensure-server.sh`) — Docker, UFW, swap,
+   fail2ban, security auto-patches, key-only SSH. Idempotent, ~no-op when
+   already converged.
+5. SSHs into the server, builds the Docker images, swaps containers
+6. Waits for the health check
 
 Expected output ends with `Deploy successful! Bot is healthy.` (Bot won't be online yet — it needs a Claude token, which the end-user pastes in the wizard. The auth-service + frontend are up.)
 
