@@ -30,9 +30,9 @@ import { tmpdir } from 'node:os';
 
 import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
-import { isAllowedGroup, getGroup, userByChatId, recordGroupMember } from '../team.js';
+import { isAllowedGroup, getGroup, userByChatId, recordGroupMember, addGroup } from '../team.js';
 import { activeIds } from './store.js';
-import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile } from './telegram-sync.js';
+import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
 import { injectBotFrame } from '../bot-inject.js';
 
@@ -186,6 +186,35 @@ export function listUnregistered() {
     .filter(([, v]) => now - v.ts < 24 * 3600_000)
     .map(([chatId, v]) => ({ chatId, title: v.title || '', lastSeen: new Date(v.ts).toISOString() }))
     .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
+}
+
+// ─── Retroactive self-registration ────────────────────────────────────────────
+// The my_chat_member join event only auto-registers a group when the bot is
+// polling (with the handler in place) at the exact moment it's added. A deferred
+// bot (no token yet), a poll gap, or a plugin-patch regression loses the event
+// forever — and with it the group: every message then drops as UNREGISTERED with
+// no recovery path. So on traffic from an unregistered group, re-run the SAME
+// trust gate retroactively: ask the Bot API who created the group and register
+// iff that creator is a roster member. Throttled per group; fire-and-forget.
+const retroTried = new Map();                            // chatId → last attempt ms
+const RETRO_RETRY_MS = num('GROUP_RETRO_RETRY_MS', 5 * 60_000);
+
+async function maybeRetroRegister(chatId, payload) {
+  const now = Date.now();
+  if (now - (retroTried.get(chatId) || 0) < RETRO_RETRY_MS) return;
+  retroTried.set(chatId, now);
+
+  const admins = await getChatAdministrators(chatId);
+  const owner = Array.isArray(admins) ? admins.find((a) => a && a.status === 'creator') : null;
+  const by = owner?.user?.id != null ? userByChatId(String(owner.user.id)) : null;
+  if (!by) return;   // creator not on the roster — the trust gate; stays unregistered (pending list)
+
+  const title = payload.chat_title || '';
+  addGroup({ chatId, title, actor: 'auto' });
+  process.stderr.write(`[group-watcher] retro-registered group ${chatId}${title ? ` ("${clip(title, 60)}")` : ''} — creator ${by.slug} is on the roster\n`);
+  syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it from a DM
+  injectBotFrame(`[GROUP chat_id=${chatId} "${clip(title, 40)}" | auto-registered: created by ${by.displayName || by.slug}, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
+  routeGroupMessage(payload);   // re-route the message that triggered the check, so the FIRST message already gets considered
 }
 
 function rememberSeen(key) {
@@ -684,7 +713,11 @@ export function routeGroupMessage(payload = {}) {
     ensureSelfId();   // resolve the bot's own user id (getMe) so self-sends are dropped + sends can enable
     const chatId = payload.chat_id != null ? String(payload.chat_id).trim() : '';
     if (!chatId) return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' };
-    if (!isAllowedGroup(chatId)) { noteUnregistered(chatId, payload.chat_title); return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' }; }
+    if (!isAllowedGroup(chatId)) {
+      noteUnregistered(chatId, payload.chat_title);
+      maybeRetroRegister(chatId, payload).catch((err) => process.stderr.write(`[group-watcher] retro-register failed: ${err.message}\n`));
+      return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' };
+    }
 
     const mid = payload.message_id != null ? String(payload.message_id) : '';
     const key = `${chatId}:${mid}`;

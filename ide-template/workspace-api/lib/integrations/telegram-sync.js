@@ -100,6 +100,36 @@ export async function syncTelegramGroups() {
 }
 
 /**
+ * Fetch a group's admin list straight from the Bot API (the bot must be in the
+ * group). Used by the watcher's retroactive registration to find the group's
+ * creator when the my_chat_member join event was never processed (deferred bot,
+ * poll gap). Returns the raw admins array, or null on any failure. Never throws.
+ */
+export async function getChatAdministrators(chatId) {
+  if (!telegramActive()) return null;
+  const id = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(id)) return null;
+
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return null;
+
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/getChatAdministrators`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: id }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok || !Array.isArray(json.result)) return null;
+    return json.result;
+  } catch (err) {
+    process.stderr.write(`[telegram-sync] getChatAdministrators failed: ${err.message}\n`);
+    return null;
+  }
+}
+
+/**
  * Send a plain-text message to a specific Telegram chat id from wsapi. Used by
  * the cross-surface relay to ping a teammate where they prefer to be reached.
  * Returns { ok, messageId } or { ok:false, error }. Never throws.
