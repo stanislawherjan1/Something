@@ -35,3 +35,7 @@ docs/postmortems/
 # any future operator-only integration (docs-comments is now a tracked,
 # ship-to-everyone integration and no longer uses this path).
 ide-template/workspace-api/integrations.catalog.local.json
+
+# internal design/analysis notes — keep local, not in the public repo
+ide-template/docs/human-voice-and-claude-md.md
+ide-template/docs/memory-evolution-plan.md
