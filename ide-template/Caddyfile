@@ -1,3 +1,12 @@
+# ─── www → apex redirect ─────────────────────────────────────────────────────
+# Caddy auto-provisions the cert for the www host once `www` resolves to this
+# server (add a `www` CNAME → apex at the DNS provider). Harmless for a client
+# with no www DNS record: the apex block below has its own cert and is
+# unaffected — Caddy just can't obtain the (unused) www cert.
+www.{$FRONTEND_DOMAIN} {
+    redir https://{$FRONTEND_DOMAIN}{uri} permanent
+}
+
 {$FRONTEND_DOMAIN} {
     log {
         output stdout
