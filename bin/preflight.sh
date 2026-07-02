@@ -16,7 +16,8 @@
 #            the end-user hits it at first sign-in
 #   disk     remote root filesystem has room for a build (warn ≥75%, fail ≥90%)
 #   git      working tree is clean — deploys ship the working tree, so
-#            uncommitted local edits would reach production (warn)
+#            uncommitted local edits would reach production (FAIL; ship
+#            deliberately with ALLOW_DIRTY=1, recorded in the manifest)
 #   docker   docker present on the server (warn — ensure-server.sh installs it)
 #
 # Usage:
@@ -217,7 +218,15 @@ else
     dirty="$(git -C "$REPO_ROOT" status --porcelain -- ide-template scripts 2>/dev/null | head -5 || true)"
     if [ -n "$dirty" ]; then
         commit="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
-        record git warn dirty_worktree false "uncommitted changes in ide-template/ or scripts/ will ship (HEAD=$commit) — commit first, or proceed deliberately"
+        # Deploys ship the working tree — uncommitted edits reaching production
+        # untracked is exactly how debug code ends up on client VPSes. Blocking
+        # by default; ALLOW_DIRTY=1 ships deliberately (stamped dirty=true in
+        # the deploy manifest).
+        if [ "${ALLOW_DIRTY:-0}" = "1" ]; then
+            record git warn dirty_worktree false "uncommitted changes will ship (ALLOW_DIRTY=1, HEAD=$commit) — manifest will record dirty=true"
+        else
+            record git fail dirty_worktree true "uncommitted changes in ide-template/ or scripts/ would ship (HEAD=$commit) — commit first, or re-run with ALLOW_DIRTY=1 to ship deliberately"
+        fi
     else
         commit="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
         record git ok "" false "working tree clean, deploying HEAD=$commit"

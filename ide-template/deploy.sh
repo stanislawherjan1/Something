@@ -97,6 +97,11 @@ BOT_DISPLAY="$(echo "${BOT_NAME:-bot}" | awk '{print toupper(substr($0,1,1)) sub
 
 DEPLOY_TARGET="${1:-all}"
 
+# Non-fatal problems accumulate here instead of scrolling past as one-line
+# warnings; a deploy that "succeeded" with a broken OAuth forward or a stale
+# Caddy config is NOT a success — we finish all steps, then fail loudly.
+DEPLOY_ERRORS=()
+
 echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║    ${IDE_NAME} — Zero-Downtime Deployment${NC}"
 echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
@@ -158,6 +163,7 @@ REMOTE_FORWARD
         echo -e "${CYAN}  Forwarded shared OAuth from clients/admin.env → $REMOTE_PATH/.env${NC}"
     else
         echo -e "${RED}  WARNING: couldn't push admin.env OAuth to remote .env${NC}"
+        DEPLOY_ERRORS+=("OAuth forward failed — auth-service may boot with empty GOOGLE_CLIENT_ID (502 at /auth/google)")
     fi
 fi
 
@@ -580,10 +586,13 @@ echo ""
 # committed but Caddy was running on a 3-week-old config without it. Hot
 # reload is no-downtime; if it fails (Caddyfile parse error etc.) the old
 # config keeps serving — Caddy doesn't drop traffic.
-ssh "$HETZNER_HOST" "docker exec '${IDE_NAME}-caddy' caddy reload --config /etc/caddy/Caddyfile" \
-    > /dev/null 2>&1 \
-    && echo -e "${GREEN}  Caddy reloaded (picked up Caddyfile changes)${NC}" \
-    || echo -e "${YELLOW}  WARN: Caddy reload failed — old config still serving. Check 'docker logs ${IDE_NAME}-caddy'${NC}"
+if ssh "$HETZNER_HOST" "docker exec '${IDE_NAME}-caddy' caddy reload --config /etc/caddy/Caddyfile" \
+    > /dev/null 2>&1; then
+    echo -e "${GREEN}  Caddy reloaded (picked up Caddyfile changes)${NC}"
+else
+    echo -e "${YELLOW}  WARN: Caddy reload failed — old config still serving. Check 'docker logs ${IDE_NAME}-caddy'${NC}"
+    DEPLOY_ERRORS+=("Caddy reload failed — Caddyfile changes (headers/TLS/routes) are NOT live")
+fi
 echo ""
 
 # ─── Step 5: Health check ───────────────────────────────────────────────────
@@ -659,6 +668,49 @@ if [ "$HEALTHY" = true ]; then
             curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
                 -d chat_id="$TELEGRAM_ADMIN_CHAT_ID" \
                 -d text="⚠️ *${BOT_DISPLAY}* | Deploy complete BUT ${BOT_NAME} crashlooping (${TARGET_LABEL}). Check pm2 logs." \
+                -d parse_mode="Markdown" > /dev/null 2>&1
+        fi
+        exit 1
+    fi
+
+    # ── Version manifest ──────────────────────────────────────────────────
+    # Stamped ONLY on a fully verified deploy (health + bot stability).
+    # scripts/verify-drift.sh reads this from every client to answer "which
+    # client runs which commit" without SSH-archaeology.
+    GIT_COMMIT="$(git -C "$THIS_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
+    GIT_REF="$(git -C "$THIS_DIR/.." rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    GIT_DIRTY=false
+    git -C "$THIS_DIR/.." diff --quiet HEAD 2>/dev/null || GIT_DIRTY=true
+    if ssh "$HETZNER_HOST" "cat > '$REMOTE_PATH/.deploy-manifest.json'" <<MANIFEST
+{
+  "ide_name": "$IDE_NAME",
+  "git_commit": "$GIT_COMMIT",
+  "git_ref": "$GIT_REF",
+  "git_dirty": $GIT_DIRTY,
+  "deploy_target": "$DEPLOY_TARGET",
+  "deployed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+MANIFEST
+    then
+        echo -e "${CYAN}  Version manifest stamped (${GIT_COMMIT:0:7}, dirty=$GIT_DIRTY)${NC}"
+    else
+        DEPLOY_ERRORS+=("could not write .deploy-manifest.json — verify-drift.sh will report no-manifest")
+    fi
+
+    # ── Error gate ────────────────────────────────────────────────────────
+    # Everything ran to completion, but "completed" ≠ "succeeded" if any
+    # step degraded along the way.
+    if [ ${#DEPLOY_ERRORS[@]} -gt 0 ]; then
+        echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  Deploy COMPLETED WITH ERRORS — container is up, but:${NC}"
+        for e in "${DEPLOY_ERRORS[@]}"; do
+            echo -e "${YELLOW}║   - $e${NC}"
+        done
+        echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+        if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_ADMIN_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d chat_id="$TELEGRAM_ADMIN_CHAT_ID" \
+                -d text="⚠️ *${BOT_DISPLAY}* | Deploy completed WITH ${#DEPLOY_ERRORS[@]} error(s) — check the deploy log." \
                 -d parse_mode="Markdown" > /dev/null 2>&1
         fi
         exit 1
