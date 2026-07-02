@@ -184,7 +184,20 @@ IFS= read -r _ <"$TTY" || true
 say ""; hr
 say "${BOLD}Step 0/4 — Google sign-in${NC}"
 say "Something uses Google for login. You'll need a Google Cloud OAuth 2.0 app."
-say "${DIM}How to create one: ${QUICK_START_URL}#google-oauth${NC}"
+say "This is the fiddliest step — do it in your browser now (~5 min):"
+say ""
+say "  ${CYAN}1.${NC} Create a project:      ${BOLD}https://console.cloud.google.com/projectcreate${NC}"
+say "  ${CYAN}2.${NC} Consent screen:        ${BOLD}https://console.cloud.google.com/auth/branding${NC}"
+say "     ${DIM}App name + your email, audience: External.${NC}"
+say "  ${CYAN}3.${NC} ${YELLOW}Publish the app${NC} (Audience page → 'Publish app' → In production)."
+say "     ${DIM}Left in 'Testing', everyone except allow-listed test users gets${NC}"
+say "     ${DIM}'access blocked' at login — the #2 support issue. No review is${NC}"
+say "     ${DIM}needed for basic email/profile scopes.${NC}"
+say "  ${CYAN}4.${NC} Create the client:     ${BOLD}https://console.cloud.google.com/auth/clients/create${NC}"
+say "     ${DIM}Type: Web application. Leave redirect URIs EMPTY for now —${NC}"
+say "     ${DIM}I'll hand you the exact URI later and verify it before deploying.${NC}"
+say ""
+say "${DIM}Step-by-step with screenshots: ${QUICK_START_URL}#google-oauth${NC}"
 say ""
 
 ADMIN_ENV="clients/admin.env"
@@ -354,21 +367,32 @@ while :; do
     warn "Expected a bare domain like workspace.mycompany.com (no https://, no path)."
 done
 
-# DNS pre-check — warn on mismatch, never abort. Only meaningful when the
-# server address is an IP we can compare against.
+# DNS pre-check — like the OAuth check, this is a fix-and-recheck LOOP, not a
+# warn-and-continue: TLS provisioning hard-fails at deploy time if the record
+# isn't live, so waiting 60s here beats failing 10 minutes in. Only meaningful
+# when the server address is an IP we can compare against.
 if [ "$HAVE_DIG" -eq 1 ] && printf '%s' "$SERVER_HOST" | grep -qE '^[0-9]+(\.[0-9]+){3}$'; then
-    info "Checking DNS for $FRONTEND_DOMAIN ..."
-    resolved="$(dig +short A "$FRONTEND_DOMAIN" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$' | head -1 || true)"
-    if [ -z "$resolved" ]; then
-        warn "$FRONTEND_DOMAIN doesn't resolve yet."
-        say  "  Add a DNS A record: ${BOLD}$FRONTEND_DOMAIN → $SERVER_HOST${NC}, then wait a minute."
-        say  "  TLS provisioning fails if DNS isn't live at deploy time."
-    elif [ "$resolved" != "$SERVER_HOST" ]; then
-        warn "$FRONTEND_DOMAIN points to $resolved, not your server ($SERVER_HOST)."
-        say  "  Update the A record to ${BOLD}$SERVER_HOST${NC} or the cert won't issue."
-    else
-        ok "DNS for $FRONTEND_DOMAIN points to $SERVER_HOST."
-    fi
+    while :; do
+        info "Checking DNS for $FRONTEND_DOMAIN ..."
+        resolved="$(dig +short A "$FRONTEND_DOMAIN" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$' | head -1 || true)"
+        if [ "$resolved" = "$SERVER_HOST" ]; then
+            ok "DNS for $FRONTEND_DOMAIN points to $SERVER_HOST."
+            break
+        fi
+        if [ -z "$resolved" ]; then
+            warn "$FRONTEND_DOMAIN doesn't resolve yet."
+            say  "  In your domain provider's DNS panel, add an A record:"
+            say  "    ${BOLD}$FRONTEND_DOMAIN → $SERVER_HOST${NC}"
+            say  "  ${DIM}(Cloudflare: proxy OFF / 'DNS only'. Propagation is usually <1 min.)${NC}"
+        else
+            warn "$FRONTEND_DOMAIN points to $resolved, not your server ($SERVER_HOST)."
+            say  "  Update the A record to ${BOLD}$SERVER_HOST${NC} — the TLS cert won't issue otherwise."
+        fi
+        if ! confirm "Record added/fixed? Press Enter to re-check (or 'n' to continue anyway)" yes; then
+            warn "Continuing with unverified DNS — the deploy's preflight will re-check and stop if it's still wrong."
+            break
+        fi
+    done
 else
     say "${DIM}(Skipping DNS pre-check — install 'dig' or use an IP server address to enable it.)${NC}"
 fi
@@ -446,30 +470,64 @@ if ! bin/bootstrap-client-env.sh "$ENV_FILE"; then
     exit 1
 fi
 
-# --- Register the OAuth redirect URI (best effort) -------------------------
-# add-redirect-uri.sh needs gcloud + GOOGLE_OAUTH_PROJECT_ID. Most operators
-# add the callback URL by hand in the Google console instead (the Quick Start
-# walks through it), so a missing prerequisite here is a note, not a failure.
+# --- Register + VERIFY the OAuth redirect URI -------------------------------
+# Registration: automatic when gcloud + project id are available, manual (in
+# the browser, guided) otherwise. Verification: an unauthenticated probe of
+# Google's authorize endpoint — the response body distinguishes "URI not
+# registered" (redirect_uri_mismatch) from "bad client id" from "all good",
+# so the user finds out NOW, not at their first sign-in after deploy.
 say ""
+CALLBACK_URI="https://$FRONTEND_DOMAIN/auth/callback"
+CID="$(grep -E '^GOOGLE_CLIENT_ID=' "$ADMIN_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+
+# → 0 registered · 1 uri-not-registered · 2 bad client id · 3 inconclusive
+verify_oauth_redirect() {
+    local body
+    body="$(curl -sSL --max-time 8 "https://accounts.google.com/o/oauth2/v2/auth?client_id=${CID}&redirect_uri=https%3A%2F%2F${FRONTEND_DOMAIN}%2Fauth%2Fcallback&response_type=code&scope=openid%20email" 2>/dev/null || true)"
+    [ -z "$body" ] && return 3
+    printf '%s' "$body" | grep -q "redirect_uri_mismatch" && return 1
+    printf '%s' "$body" | grep -qi "invalid_client\|OAuth client was not found" && return 2
+    return 0
+}
+
 ADMIN_PROJECT_ID=""
 [ -f "$ADMIN_ENV" ] && ADMIN_PROJECT_ID="$(grep -E '^GOOGLE_OAUTH_PROJECT_ID=' "$ADMIN_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
 if [ "$HAVE_GCLOUD" -eq 1 ] && [ -n "$ADMIN_PROJECT_ID" ] && [ "$HAVE_PYTHON" -eq 1 ]; then
     info "Registering OAuth redirect URI for $FRONTEND_DOMAIN ..."
-    if bin/add-redirect-uri.sh "$FRONTEND_DOMAIN"; then
-        ok "Redirect URI registered."
-    else
-        warn "Couldn't register the redirect URI automatically."
-        say  "  Add it by hand in the Google console:"
-        say  "    Authorized redirect URI → ${BOLD}https://$FRONTEND_DOMAIN/auth/callback${NC}"
-    fi
-else
-    say  "${RED}${BOLD}ACTION REQUIRED — add this redirect URI before you log in:${NC}"
-    say  "    ${BOLD}https://$FRONTEND_DOMAIN/auth/callback${NC}"
-    say  "  Without it, the first Google sign-in fails with ${BOLD}redirect_uri_mismatch${NC}."
-    say  "  Where: ${CYAN}https://console.cloud.google.com${NC} → APIs & Services →"
-    say  "         Credentials → your OAuth client → Authorized redirect URIs → ADD URI."
-    say  "  ${DIM}Step-by-step: ${QUICK_START_URL}#google-oauth${NC}"
+    bin/add-redirect-uri.sh "$FRONTEND_DOMAIN" >/dev/null 2>&1 || true
 fi
+
+while :; do
+    info "Verifying the OAuth setup with Google ..."
+    verify_oauth_redirect; RC=$?
+    case "$RC" in
+        0)  ok "Google confirms: client valid, $CALLBACK_URI registered."
+            break ;;
+        1)  warn "The redirect URI isn't registered yet."
+            say  "  In the Google console, open your OAuth client:"
+            say  "    ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
+            say  "  Under ${BOLD}Authorized redirect URIs → Add URI${NC}, paste exactly:"
+            say  "    ${BOLD}$CALLBACK_URI${NC}"
+            say  "  ${DIM}(no trailing slash) → Save. Google needs a few seconds to apply it.${NC}"
+            if confirm "Done? Press Enter to re-check (or 'n' to continue without verifying)" yes; then
+                continue
+            else
+                warn "Continuing unverified — first sign-in will fail with redirect_uri_mismatch until the URI is added."
+                break
+            fi ;;
+        2)  warn "Google rejected the Client ID from $ADMIN_ENV."
+            say  "  Compare it against ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
+            say  "  and fix $ADMIN_ENV, then re-check."
+            if confirm "Fixed? Press Enter to re-check (or 'n' to continue anyway)" yes; then
+                CID="$(grep -E '^GOOGLE_CLIENT_ID=' "$ADMIN_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+                continue
+            else
+                break
+            fi ;;
+        *)  warn "Couldn't reach Google to verify (network?). Continuing — deploy preflight re-checks this."
+            break ;;
+    esac
+done
 
 # --- Ensure Docker is present on the server ---------------------------------
 # deploy.sh runs `docker compose` on the server but doesn't install Docker.
@@ -500,7 +558,14 @@ fi
 # --- Deploy ----------------------------------------------------------------
 say ""; hr
 info "Deploying — building on the server and swapping in the new containers."
-say "${DIM}This usually takes a few minutes on the first run.${NC}"
+say ""
+say "${BOLD}What to expect:${NC}"
+say "  • First it runs quick preflight checks — if one fails, you'll get a"
+say "    specific fix hint; fix it and re-run, nothing is half-done."
+say "  • Then the server gets its baseline (firewall, swap, security patches)."
+say "  • Then the build: ${BOLD}5–15 minutes${NC} and a WALL of scrolling Docker text."
+say "    ${DIM}That's normal — it's not stuck and nothing is wrong. Good time for${NC}"
+say "    ${DIM}a coffee; don't close the terminal. A health check runs at the end.${NC}"
 say ""
 
 # </dev/null so deploy.sh's own ssh/scp calls don't read this (possibly piped)
