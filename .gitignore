@@ -39,3 +39,6 @@ ide-template/workspace-api/integrations.catalog.local.json
 # internal design/analysis notes — the whole ide-template/docs/ is a local
 # scratch pad (product docs live in the root docs/). Kept out of the public repo.
 ide-template/docs/
+
+# Remotion demo-video template — local video-making tooling, not a repo artifact
+demo-video/
