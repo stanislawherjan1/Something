@@ -36,6 +36,6 @@ docs/postmortems/
 # ship-to-everyone integration and no longer uses this path).
 ide-template/workspace-api/integrations.catalog.local.json
 
-# internal design/analysis notes — keep local, not in the public repo
-ide-template/docs/human-voice-and-claude-md.md
-ide-template/docs/memory-evolution-plan.md
+# internal design/analysis notes — the whole ide-template/docs/ is a local
+# scratch pad (product docs live in the root docs/). Kept out of the public repo.
+ide-template/docs/
