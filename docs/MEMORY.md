@@ -26,6 +26,8 @@ project/memory/
 ├── AGENT_TOOLS.md            ← per-tool gotchas for active integrations
 ├── RECENT_WEB.md             ← auto: rolling snapshot of recent web-chat turns
 ├── RECENT_TELEGRAM.md        ← auto: rolling snapshot of recent Telegram exchanges
+├── concepts/
+│   └── <slug>.md             ← auto: accreting, cited claims about a recurring entity
 ├── topics/
 │   ├── ABOUT.md              ← what kind of content lives here
 │   └── <slug>.md             ← per-topic long-form (e.g. sam.md, q3-okrs.md)
@@ -79,6 +81,16 @@ The Telegram side's prefix is **static for the tmux session lifetime**. The bot'
 Topics live under `memory/topics/<slug>.md`. They are not preloaded — the bot reads them when a turn needs depth (the user mentions a person, project, or recurring theme).
 
 The `memory-router` skill enforces the routing rule: facts go to cards, longer narratives to topics. If a section on a card grows past ~60 lines, `reflect-organizer` proposes a promotion to `topics/<slug>.md` with a pointer line back on the card.
+
+### Concept pages (accreting entity memory)
+
+Concept pages live under `memory/concepts/<slug>.md` — one accreting page per recurring entity (a client, project, or person). Each is a `## Claims` list: one atomic, cited claim per line, frontmatter `kind: concept`. Unlike a card (a tight summary) or a topic page (hand-written long-form prose), a concept page **grows on its own** as the same entity keeps coming up.
+
+They emerge automatically. The `reflect-distill` pass watches the entities named across recent verdict threads; once a slug recurs across ≥ 3 distinct threads (`REFLECT_CONCEPT_HEAT`), it proposes a concept page + its first claims through the normal `/memory review` approval — so depth accretes without hand-authoring. The one-line summary still routes to its card (a person → `USER_RELATIONSHIPS`, a tool → `AGENT_TOOLS`); the card keeps a single `→ concepts/<slug>.md` pointer while the growing detail lives on the page. Pick one home per slug: `concepts/` (accreting claims) or `topics/` (long-form prose), never both.
+
+**Team mode is privacy-isolated.** A shared entity's page is shared (`memory/concepts/<slug>.md`); a private entity's page is per-owner (`memory/users/<owner>/concepts/<slug>.md`) and is derived **only from that person's own threads** — the distiller runs a separate pass per owner, so one teammate's private detail never leaks into a shared page or another person's.
+
+A `memory-lint` health-check (surfaced via `/memory review`) flags advisory issues on the concept/wiki tree — orphaned pages, stale pointers, duplicate slugs.
 
 ### Pattern cards (taste-memory)
 
@@ -170,6 +182,7 @@ Memory is one layer among several. Each has a different job — don't duplicate.
 |---------------------------------------|-----------------------------------------------------|--------------------------------------------------------------|
 | **Memory cards** (`memory/*.md`)      | `<project>/memory/`                                 | Curated facts loaded into the cached system-prompt prefix. Tight, terse. |
 | **Topic pages**                       | `<project>/memory/topics/<slug>.md`                 | Long-form companion to a card section. Read on demand.       |
+| **Concept pages**                     | `<project>/memory/concepts/<slug>.md`               | Accreting, cited claims about a recurring entity. Auto-proposed by `reflect-distill`; read on demand. |
 | **Pattern cards**                     | `<project>/memory/patterns/<slug>.md`               | Anti-patterns. Loaded by `taste-recall` at session start.    |
 | **Rolling snapshots**                 | `<project>/memory/RECENT_{WEB,TELEGRAM}.md`         | Last ≈50 messages per channel. Auto-maintained.              |
 | **Knowledge graph**                   | `~/.claude/memory.jsonl` (memory MCP)               | Structured entities + relations + observations.              |
@@ -184,6 +197,7 @@ Routing rule of thumb:
 - *A one-off task you don't want to lose* → Pending Reminders.
 - *The most recent few exchanges* → `RECENT_*.md` (auto — never write there yourself).
 - *Long-form context on a person, project, or theme* → topic page.
+- *Growing, cited detail about ONE recurring entity (auto-accretes)* → concept page.
 
 When in doubt the bot loads `memory-router`, which documents the decision tree as a skill.
 
@@ -253,7 +267,7 @@ Under `ide-template/skills/default/`:
 
 ### First-run bootstrap
 
-A fresh workspace seeds the templates with empty bodies. The bot reads `AGENT_IDENTITY.md`'s "Bootstrap (first-run only)" section and, on the user's first turn, offers to populate cards from prior context (knowledge graph, prior session notes, project files like `Tasks.md`, the current conversation). The user OKs which cards to fill; the bot uses `memory-router` to route writes to the right card.
+A fresh workspace seeds the templates with empty bodies. The bot reads `AGENT_IDENTITY.md`'s "Bootstrap (first-run only)" section and, on the user's first turn, offers to populate cards from prior context (knowledge graph, prior session notes, project files, the current conversation). The user OKs which cards to fill; the bot uses `memory-router` to route writes to the right card.
 
 The bootstrap section self-deletes once any card is meaningfully populated.
 

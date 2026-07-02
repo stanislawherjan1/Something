@@ -99,7 +99,7 @@ ide-template/skills/
 │   ├── repo-audit/                 ← weekly structure review
 │   ├── security/                   ← untrusted-content discipline (5 rules)
 │   ├── skill-authoring/            ← how to write a new SKILL.md (reference + 3 examples)
-│   ├── task-management/            ← Tasks.md curator
+│   ├── task-management/            ← structured task board (HTTP API, no Tasks.md)
 │   └── taste-recall/               ← loads anti-pattern memory at session start
 │
 └── optional/                       ← installed conditionally per active integration
