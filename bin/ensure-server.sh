@@ -92,8 +92,11 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r\t'
 # mis-parses heredocs inside double-quoted command substitutions.
 TMP_OUT="$(mktemp "${TMPDIR:-/tmp}/ensure-server.XXXXXX")"
 trap 'rm -f "$TMP_OUT"' EXIT
+# NO -n here: the remote script arrives via stdin (heredoc). With -n, stdin
+# is /dev/null, remote `bash -s` reads EOF, does NOTHING and exits 0 — a
+# silent full-converge skip (caught on the first canary run, 2026-07-02).
 # shellcheck disable=SC2086
-ssh -n $SSH_BASE_OPTS "$HETZNER_HOST" \
+ssh $SSH_BASE_OPTS "$HETZNER_HOST" \
     "_TB=$(printf '%q' "${TELEGRAM_BOT_TOKEN:-}") \
      _TC=$(printf '%q' "${TELEGRAM_ADMIN_CHAT_ID:-}") \
      _IDE=$(printf '%q' "${IDE_NAME:-}") \
@@ -232,7 +235,11 @@ apply_setting() {
     tkey="$(echo "$key" | tr 'A-Z' 'a-z')"
     [ "$tkey" = "challengeresponseauthentication" ] && tkey="kbdinteractiveauthentication"
     current="$(sshd -T 2>/dev/null | awk -v k="$tkey" '$1==k {print $2; exit}')"
+    # sshd -T prints the legacy synonym for prohibit-password.
+    [ "$current" = "without-password" ] && current="prohibit-password"
     if [ "$current" = "$(echo "$value" | tr 'A-Z' 'a-z')" ]; then return 0; fi
+    # First modification this run → keep a restore point.
+    [ "$SSHD_CHANGED" -eq 0 ] && cp -a "$SSHD_CONFIG" "${SSHD_CONFIG}.ensure-bak"
     if grep -qE "^\s*#?\s*${key}\s" "$SSHD_CONFIG"; then
         sed -i "s/^\s*#\?\s*${key}\s.*/${key} ${value}/" "$SSHD_CONFIG"
     else
@@ -247,10 +254,18 @@ apply_setting "UsePAM"                          "yes"
 apply_setting "ClientAliveInterval"             "120"
 apply_setting "ClientAliveCountMax"             "5"
 if [ "$SSHD_CHANGED" -eq 1 ]; then
-    if sshd -t 2>/dev/null && systemctl restart sshd >/dev/null 2>&1; then
+    if ! sshd -t 2>/dev/null; then
+        # Invalid result must never stay on disk (a reboot would lock us out).
+        cp -a "${SSHD_CONFIG}.ensure-bak" "$SSHD_CONFIG"
+        echo "::phase sshd fail new config failed sshd -t — previous sshd_config restored, nothing applied"
+    # Debian/Ubuntu name the unit ssh.service, RHEL-likes sshd.service — try
+    # both. reload-or-restart re-reads config without dropping live sessions.
+    elif systemctl reload-or-restart ssh >/dev/null 2>&1 \
+      || systemctl reload-or-restart sshd >/dev/null 2>&1; then
+        rm -f "${SSHD_CONFIG}.ensure-bak"
         echo "::phase sshd changed key-only auth enforced, idle timeout set"
     else
-        echo "::phase sshd fail sshd config invalid or restart failed — NOT applied; check 'sshd -t' on the server"
+        echo "::phase sshd fail config written and valid but ssh service reload failed — run 'systemctl reload ssh' on the server"
     fi
 else
     echo "::phase sshd ok key-only auth already enforced"
@@ -328,6 +343,19 @@ while IFS= read -r line; do
             ;;
     esac
 done <<< "$REMOTE_OUT"
+
+# Zero phases parsed = the remote script never ran (transport problem) —
+# NEVER report that as success.
+if [ ${#NAMES[@]} -eq 0 ]; then
+    if [ "$JSON" -eq 1 ]; then
+        printf '{"ok":false,"phases":[{"name":"transport","status":"fail","detail":"%s"}]}\n' \
+            "$(json_escape "remote script produced no phase output (ssh rc=$SSH_RC): $(printf '%s' "$REMOTE_OUT" | head -c 300)")"
+    else
+        printf "${RED}ensure-server: remote script produced no phase output (ssh rc=%s) — converge did NOT run.${NC}\n" "$SSH_RC" >&2
+        printf '%s\n' "$REMOTE_OUT" | head -5 >&2
+    fi
+    exit 2
+fi
 
 OK=1
 [ "$HAS_FAIL" -eq 1 ] && OK=0
