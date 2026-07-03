@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
+import * as integrationsStore from './integrations/store.js';
 
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
@@ -416,6 +417,18 @@ export function setProfile(email, { displayName }) {
  * the surface is mirrored into the TEAM roster so the bot knows where to reach
  * them. Returns the updated enriched member.
  */
+/**
+ * The operator's chat id from the Telegram ACTIVATION (TELEGRAM_ADMIN_CHAT_ID).
+ * bot.sh unions it into the bot's allowFrom on every start, so roster edits can
+ * never revoke it. Null when Telegram isn't active / no id / store unreadable.
+ */
+export function operatorChatId() {
+  try {
+    if (!integrationsStore.isActive('telegram')) return null;
+    return normalizeChatId(integrationsStore.decryptFor('telegram')?.TELEGRAM_ADMIN_CHAT_ID);
+  } catch { return null; }
+}
+
 export function setTelegram(email, { chatId, preferredSurface, preferredLanguage } = {}, actor) {
   const e = normalize(email);
   const entries = readRaw();
@@ -429,6 +442,14 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
       throw new Error('Telegram chat id must be a positive integer (your DM with the bot, e.g. 123456789).');
     }
     patch.telegramChatId = cleared ? null : normalizeChatId(chatId);
+    // The operator id can't be unlinked or swapped from the roster: the bot
+    // would keep answering it anyway (allowFrom union above), so the panel
+    // would show "Not connected" while DMs still work — a lie. Rotating the
+    // Telegram integration is the one honest way to change the operator id.
+    const prevId = normalizeChatId(entries[idx].telegramChatId);
+    if (prevId && prevId !== patch.telegramChatId && prevId === operatorChatId()) {
+      throw new Error('This id comes from the Telegram activation — the bot always answers the operator, so it can\'t be unlinked here. To change it, rotate the Telegram integration.');
+    }
     // A chat id maps to ONE person: reject linking one that another teammate
     // already holds (otherwise inbound routing is ambiguous + outbound double-
     // delivers). No name in the error — don't reveal who holds it.

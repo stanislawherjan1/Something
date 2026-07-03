@@ -30,9 +30,9 @@ import { tmpdir } from 'node:os';
 
 import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
-import { isAllowedGroup, getGroup, userByChatId, recordGroupMember } from '../team.js';
+import { isAllowedGroup, getGroup, userByChatId, recordGroupMember, addGroup } from '../team.js';
 import { activeIds } from './store.js';
-import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile } from './telegram-sync.js';
+import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
 import { injectBotFrame } from '../bot-inject.js';
 
@@ -188,6 +188,35 @@ export function listUnregistered() {
     .sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : -1));
 }
 
+// ─── Retroactive self-registration ────────────────────────────────────────────
+// The my_chat_member join event only auto-registers a group when the bot is
+// polling (with the handler in place) at the exact moment it's added. A deferred
+// bot (no token yet), a poll gap, or a plugin-patch regression loses the event
+// forever — and with it the group: every message then drops as UNREGISTERED with
+// no recovery path. So on traffic from an unregistered group, re-run the SAME
+// trust gate retroactively: ask the Bot API who created the group and register
+// iff that creator is a roster member. Throttled per group; fire-and-forget.
+const retroTried = new Map();                            // chatId → last attempt ms
+const RETRO_RETRY_MS = num('GROUP_RETRO_RETRY_MS', 5 * 60_000);
+
+async function maybeRetroRegister(chatId, payload) {
+  const now = Date.now();
+  if (now - (retroTried.get(chatId) || 0) < RETRO_RETRY_MS) return;
+  retroTried.set(chatId, now);
+
+  const admins = await getChatAdministrators(chatId);
+  const owner = Array.isArray(admins) ? admins.find((a) => a && a.status === 'creator') : null;
+  const by = owner?.user?.id != null ? userByChatId(String(owner.user.id)) : null;
+  if (!by) return;   // creator not on the roster — the trust gate; stays unregistered (pending list)
+
+  const title = payload.chat_title || '';
+  addGroup({ chatId, title, actor: 'auto' });
+  process.stderr.write(`[group-watcher] retro-registered group ${chatId}${title ? ` ("${clip(title, 60)}")` : ''} — creator ${by.slug} is on the roster\n`);
+  syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it from a DM
+  injectBotFrame(`[GROUP chat_id=${chatId} "${clip(title, 40)}" | auto-registered: created by ${by.displayName || by.slug}, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
+  routeGroupMessage(payload);   // re-route the message that triggered the check, so the FIRST message already gets considered
+}
+
 function rememberSeen(key) {
   seen.add(key);
   if (seen.size > SEEN_MAX) { const first = seen.values().next().value; seen.delete(first); }
@@ -224,6 +253,62 @@ async function fetchGroupImage(chatId, target) {
     return abs;
   } catch (err) {
     process.stderr.write(`[group-watcher] image save failed: ${err.message}\n`);
+    return null;
+  }
+}
+
+// ─── Non-image attachments (documents, voice, audio, video, stickers) ─────────
+// Patch 4f forwards a DM-style AttachmentMeta for anything that isn't a photo.
+// Everything uploader-controlled (filename, title) is sanitized before it can
+// reach the history or the brain frame — same threat model as deframe().
+function parseAttachment(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const kind = String(raw.kind || '');
+  const fileId = raw.file_id != null ? String(raw.file_id) : '';
+  if (!kind || !fileId) return null;
+  return {
+    kind,
+    file_id: fileId,
+    mime: raw.mime != null ? String(raw.mime).slice(0, 80) : '',
+    name: raw.name != null ? String(raw.name).replace(/[\[\]<>|\r\n]/g, '_').slice(0, 80) : '',
+    emoji: raw.emoji != null ? String(raw.emoji).replace(/[\[\]<>|\r\n]/g, '').slice(0, 8) : '',
+    size: Number.isFinite(Number(raw.size)) ? Number(raw.size) : null,
+  };
+}
+
+function attachmentMarker(att) {
+  if (!att) return '';
+  switch (att.kind) {
+    case 'document':   return `[sent a file${att.name ? `: ${att.name}` : ''}]`;
+    case 'voice':      return '[sent a voice message]';
+    case 'audio':      return `[sent an audio file${att.name ? `: ${att.name}` : ''}]`;
+    case 'video':      return '[sent a video]';
+    case 'video_note': return '[sent a video note]';
+    case 'sticker':    return `[sticker${att.emoji ? ` ${att.emoji}` : ''}]`;
+    default:           return '[sent an attachment]';
+  }
+}
+
+// Same pattern as fetchGroupImage for a document (PDF, CSV, …): download only on
+// a positive verdict, save under .group-attachments, return the absolute path for
+// the brain to Read. ONLY `document` kind is fetched — voice/audio/video can't be
+// consumed by the brain anyway, so they stay marker-only in the history.
+async function fetchGroupDocument(chatId, target) {
+  const att = target && target.attachment;
+  if (!att || att.kind !== 'document' || !att.file_id) return null;
+  try {
+    const dl = await downloadTelegramFile(att.file_id);
+    if (!dl.ok || !dl.buffer) { process.stderr.write(`[group-watcher] document download failed: ${dl.error}\n`); return null; }
+    const gid = String(chatId).replace(/[^\d-]/g, '') || 'unknown';
+    const dir = join(GROUP_ATTACH_DIR, gid);
+    mkdirSync(dir, { recursive: true, mode: 0o770 });
+    const base = String(att.name || '').replace(/[^\w.-]/g, '_').replace(/^\.+/, '').slice(0, 60);
+    const suffix = base && /\.[A-Za-z0-9]{1,5}$/.test(base) ? base : `${base || 'file'}.${dl.ext || 'bin'}`;
+    const abs = join(dir, `${String(target.message_id).replace(/[^\w-]/g, '_')}-${suffix}`);
+    writeFileSync(abs, dl.buffer);
+    return abs;
+  } catch (err) {
+    process.stderr.write(`[group-watcher] document save failed: ${err.message}\n`);
     return null;
   }
 }
@@ -440,6 +525,8 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
     target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
+    target && target.docPath ? `\n\nThe "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
+    target && target.attachment && !target.docPath && target.attachment.kind !== 'sticker' ? `\n\nThe "← NEW" message carries a ${target.attachment.kind.replace('_', ' ')} attachment you CANNOT open (no way to listen/watch, or the download failed). Don't pretend otherwise — if its content matters, say so and ask for the gist as text.` : '',
   ].join('\n');
   return {
     message,
@@ -585,6 +672,10 @@ async function flush(chatId) {
   if (target.photo_file_id && !target.imagePath) {
     target.imagePath = await fetchGroupImage(chatId, target);
   }
+  // Same for a document attachment (PDF, CSV, …) — the brain Reads it.
+  if (target.attachment && target.attachment.kind === 'document' && !target.docPath) {
+    target.docPath = await fetchGroupDocument(chatId, target);
+  }
   let reply;
   try { reply = await groupCompose(group, hist, target); }
   catch (err) { reply = { ok: false, error: err.message }; }
@@ -684,7 +775,11 @@ export function routeGroupMessage(payload = {}) {
     ensureSelfId();   // resolve the bot's own user id (getMe) so self-sends are dropped + sends can enable
     const chatId = payload.chat_id != null ? String(payload.chat_id).trim() : '';
     if (!chatId) return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' };
-    if (!isAllowedGroup(chatId)) { noteUnregistered(chatId, payload.chat_title); return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' }; }
+    if (!isAllowedGroup(chatId)) {
+      noteUnregistered(chatId, payload.chat_title);
+      maybeRetroRegister(chatId, payload).catch((err) => process.stderr.write(`[group-watcher] retro-register failed: ${err.message}\n`));
+      return { ok: true, decision: 'ignore', reason_enum: 'not-allowed' };
+    }
 
     const mid = payload.message_id != null ? String(payload.message_id) : '';
     const key = `${chatId}:${mid}`;
@@ -692,8 +787,14 @@ export function routeGroupMessage(payload = {}) {
     if (mid) rememberSeen(key);
 
     const photoFileId = payload.photo_file_id != null ? String(payload.photo_file_id) : '';
+    const attachment = parseAttachment(payload.attachment);
     let text = typeof payload.text === 'string' ? payload.text : (typeof payload.caption === 'string' ? payload.caption : '');
     if (!text && photoFileId) text = '[sent an image]';   // bare photo → signal for the gate/history; the brain SEES the file at compose time
+    // Non-image attachment → append a DM-style marker so the gate, the history
+    // and the brain all know the message carried a file even when there's a
+    // caption; documents additionally get downloaded at compose time.
+    const attMarker = attachmentMarker(attachment);
+    if (attMarker) text = text ? `${text} ${attMarker}` : attMarker;
     let teammate = false;
     try { teammate = !!userByChatId(payload.from_id); } catch { teammate = false; }
 
@@ -701,6 +802,7 @@ export function routeGroupMessage(payload = {}) {
       message_id: mid || `n${Date.now()}`,
       text,
       photo_file_id: photoFileId || null,
+      attachment,
       from_id: payload.from_id != null ? String(payload.from_id) : '',
       from_name: payload.from_name || '',
       from_username: payload.from_username || '',

@@ -17,7 +17,7 @@ Skip when the user is technical (operator, dev, anyone who naturally uses CLI/fi
 ## Rules to apply
 
 - **Don't ask where to save things.** Decide based on context and `file-placement` skill. Tell them where it went after the fact, in plain language ("saved to Reports → June Weekly").
-- **Acknowledge before long work.** For anything taking more than a few seconds, send a quick "Robię, wracam za moment" first so they know you're working on it.
+- **Acknowledge before long work.** For anything taking more than a few seconds, send a quick "On it — back in a moment" (in the user's language) first so they know you're working on it.
 - **Match their language.** If they switch mid-conversation (PL ↔ EN), follow.
 - **Check context proactively.** Before starting work on a topic they bring up: `memory_grep` (cards / topics / threads), then `search_nodes` (KG entities), then file scan. Surface relevant prior research without being asked.
 - **Batch incoming, batch outgoing.** If they send multiple messages in a row, wait until they're done before responding with one consolidated reply.

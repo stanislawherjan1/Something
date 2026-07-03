@@ -70,7 +70,10 @@ export async function syncTelegramAllowedIds() {
   try {
     const ids = telegramAllowedIds();
     const joined = ids.join(',') || NO_IDS_SENTINEL;
-    store.update('telegram', { fields: { TELEGRAM_ALLOWED_IDS: joined } });
+    // updateInternal, not update(): TELEGRAM_ALLOWED_IDS is no longer a catalog
+    // field (the roster owns the list since the settings panel), and update()
+    // silently drops non-catalog names → "no recognised fields" → sync dead.
+    store.updateInternal('telegram', { TELEGRAM_ALLOWED_IDS: joined });
     runtime.applyFiles('telegram');           // → {home}/.{bot}/integrations.env
     const restartOk = await runtime.restartBot();
     return { ok: true, count: ids.length, restartOk };
@@ -96,6 +99,36 @@ export async function syncTelegramGroups() {
   } catch (err) {
     process.stderr.write(`[telegram-sync] groups sync failed: ${err.message}\n`);
     return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Fetch a group's admin list straight from the Bot API (the bot must be in the
+ * group). Used by the watcher's retroactive registration to find the group's
+ * creator when the my_chat_member join event was never processed (deferred bot,
+ * poll gap). Returns the raw admins array, or null on any failure. Never throws.
+ */
+export async function getChatAdministrators(chatId) {
+  if (!telegramActive()) return null;
+  const id = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(id)) return null;
+
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return null;
+
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/getChatAdministrators`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: id }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok || !Array.isArray(json.result)) return null;
+    return json.result;
+  } catch (err) {
+    process.stderr.write(`[telegram-sync] getChatAdministrators failed: ${err.message}\n`);
+    return null;
   }
 }
 

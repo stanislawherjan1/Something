@@ -142,9 +142,14 @@ except Exception:
     sys.stdout.write('{}')
 " 2>/dev/null)
     [ -z "$GROUPS_JSON" ] && GROUPS_JSON='{}'
+    # dmPolicy "allowlist", NOT the plugin default "pairing": access is managed
+    # from the workspace UI (team roster → TELEGRAM_ALLOWED_IDS → allowFrom), so
+    # the pairing prompt ("run /telegram:access pair …" — an operator-side Claude
+    # Code command) would only ever reach STRANGERS and roster members whose id
+    # isn't linked yet; both should get silence, not instructions they can't use.
     cat > "$CLAUDE_CONFIG_DIR/channels/telegram/access.json" <<EOF
 {
-  "dmPolicy": "pairing",
+  "dmPolicy": "allowlist",
   "allowFrom": [${IDS_JSON}],
   "groups": ${GROUPS_JSON},
   "pending": {}
@@ -611,6 +616,12 @@ if tg_group_marker not in content:
         'bot.use(async (ctx, next) => {\n'
         '  const ctype = ctx.chat?.type;\n'
         '  if (ctype !== "group" && ctype !== "supergroup") { await next(); return; }\n'
+        '  // my_chat_member (the bot being added to / removed from the group) must\n'
+        '  // pass through to the auto-register handler (Patch 4h). This block is\n'
+        '  // stripped + re-injected at the anchor on every reapply, so it can end up\n'
+        '  // ABOVE 4h in middleware order — swallowing here would eat the join event\n'
+        '  // and the group would never self-register.\n'
+        '  if (ctx.myChatMember) { await next(); return; }\n'
         '  try {\n'
         '    const gm = ctx.message;\n'
         '    const gtext = gm?.text ?? gm?.caption ?? null;\n'
@@ -620,7 +631,21 @@ if tg_group_marker not in content:
         '      if (Array.isArray(ph) && ph.length) photoFileId = ph[ph.length - 1].file_id;\n'
         '      else if (gm?.document && typeof gm.document.mime_type === "string" && gm.document.mime_type.indexOf("image/") === 0) photoFileId = gm.document.file_id;\n'
         '    } catch (_) { /* no photo on this message */ }\n'
-        '    if (gtext || photoFileId) {\n'
+        '    // Non-image attachments — mirror the DM AttachmentMeta shape (kind/\n'
+        '    // file_id/size/mime/name) so the watcher can log, classify and (for\n'
+        '    // documents) hand the file to the group brain. GIF "animations" also\n'
+        '    // carry .document, so the document branch covers them.\n'
+        '    let attachment = null;\n'
+        '    try {\n'
+        '      const att = (k, f, extra) => (f && f.file_id ? { kind: k, file_id: f.file_id, size: f.file_size ?? null, ...extra } : null);\n'
+        '      if (gm?.document && !photoFileId) attachment = att("document", gm.document, { mime: gm.document.mime_type ?? null, name: gm.document.file_name ?? null });\n'
+        '      else if (gm?.voice) attachment = att("voice", gm.voice, { mime: gm.voice.mime_type ?? null });\n'
+        '      else if (gm?.audio) attachment = att("audio", gm.audio, { mime: gm.audio.mime_type ?? null, name: gm.audio.file_name ?? gm.audio.title ?? null });\n'
+        '      else if (gm?.video_note) attachment = att("video_note", gm.video_note, {});\n'
+        '      else if (gm?.video) attachment = att("video", gm.video, { mime: gm.video.mime_type ?? null, name: gm.video.file_name ?? null });\n'
+        '      else if (gm?.sticker) attachment = att("sticker", gm.sticker, { emoji: gm.sticker.emoji ?? null });\n'
+        '    } catch (_) { /* attachment scan best-effort */ }\n'
+        '    if (gtext || photoFileId || attachment) {\n'
         '      const meId = ctx.me?.id;\n'
         '      const meName = ctx.me?.username ? ("@" + ctx.me.username) : null;\n'
         '      let mentioned = false;\n'
@@ -638,6 +663,7 @@ if tg_group_marker not in content:
         '        message_id: gm?.message_id ?? null,\n'
         '        text: gtext,\n'
         '        photo_file_id: photoFileId,\n'
+        '        attachment: attachment,\n'
         '        from_id: ctx.from?.id != null ? String(ctx.from.id) : null,\n'
         '        from_username: ctx.from?.username ?? null,\n'
         '        from_name: [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ") || null,\n'
@@ -915,7 +941,7 @@ restart_inject = (
     '  const __adminChatId: string = String(process.env.TELEGRAM_ADMIN_CHAT_ID || "");\n'
     '  bot.command("restart", async (ctx) => {\n'
     '    if (!__adminChatId || String(ctx.chat?.id) !== __adminChatId) return;\n'
-    '    try { await ctx.reply("🔄 Restartuję — wracam za chwilę."); } catch (_) {}\n'
+    '    try { await ctx.reply("🔄 Restarting — back in a moment."); } catch (_) {}\n'
     '    // process.exit(0) only kills THIS plugin sub-process — claude\n'
     '    // (our parent) survives, tmux session stays alive, bot.sh\n'
     '    // does not exit, PM2 does not restart. We need claude itself\n'

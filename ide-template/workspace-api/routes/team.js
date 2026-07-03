@@ -68,12 +68,16 @@ export default function teamRouter() {
   router.get('/team', (req, res) => {
     const viewerIsAdmin = req.actor ? team.isAdmin(req.actor) : false;
     const viewerEmail = String(req.actor || '').toLowerCase();
+    // The member linked to the ACTIVATION admin chat id can't be unlinked from
+    // the roster (bot.sh unions that id into allowFrom regardless) — flag the
+    // row so the UI says so instead of offering an Unlink that would 400.
+    const opId = team.operatorChatId();
     const entries = team.list().map(e => {
       // `telegramLinked` is roster-level info (who's reachable on Telegram) and
       // is visible to EVERYONE, so members can see each other's channels.
       // The raw chat id is a private contact handle, so only an admin or the
       // row's owner sees the actual value. `preferredSurface` stays visible too.
-      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId };
+      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId, operatorPinned: !!(opId && e.telegramChatId === opId) };
       if (!viewerIsAdmin && e.email !== viewerEmail) row.telegramChatId = null;
       return row;
     });
