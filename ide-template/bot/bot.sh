@@ -142,9 +142,14 @@ except Exception:
     sys.stdout.write('{}')
 " 2>/dev/null)
     [ -z "$GROUPS_JSON" ] && GROUPS_JSON='{}'
+    # dmPolicy "allowlist", NOT the plugin default "pairing": access is managed
+    # from the workspace UI (team roster → TELEGRAM_ALLOWED_IDS → allowFrom), so
+    # the pairing prompt ("run /telegram:access pair …" — an operator-side Claude
+    # Code command) would only ever reach STRANGERS and roster members whose id
+    # isn't linked yet; both should get silence, not instructions they can't use.
     cat > "$CLAUDE_CONFIG_DIR/channels/telegram/access.json" <<EOF
 {
-  "dmPolicy": "pairing",
+  "dmPolicy": "allowlist",
   "allowFrom": [${IDS_JSON}],
   "groups": ${GROUPS_JSON},
   "pending": {}

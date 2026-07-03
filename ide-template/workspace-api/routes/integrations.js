@@ -166,6 +166,21 @@ export default function integrationsRouter() {
       return res.status(400).json({ error: err.message });
     }
 
+    // Telegram activation asks for the admin's own chat id — mirror it into the
+    // activating admin's roster entry so the Telegram settings panel shows them
+    // linked instead of asking for the SAME id again a minute later. Best-effort:
+    // a conflict (id already linked to someone else) must not fail activation.
+    if (id === 'telegram') {
+      const adminChatId = typeof body.fields?.TELEGRAM_ADMIN_CHAT_ID === 'string'
+        ? body.fields.TELEGRAM_ADMIN_CHAT_ID.trim() : '';
+      if (adminChatId) {
+        try { team.setTelegram(req.actor, { chatId: adminChatId }, req.actor); }
+        catch (err) {
+          process.stderr.write(`[integrations] telegram admin chat-id mirror skipped: ${err.message}\n`);
+        }
+      }
+    }
+
     // Some integrations need files on disk (email accounts.json, GA4 service-
     // account JSON). Write them BEFORE syncing mcp config so the file exists
     // when the next claude turn spawns the MCP.

@@ -555,9 +555,9 @@ function LinkPersonModal({ person, onClose, onSaved }) {
             <span className={labelCls}>Telegram chat id</span>
             <input value={chatId} autoFocus onChange={e => setChatId(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && chatId.trim() && !busy) submit(); }}
-              placeholder="numeric id from the bot pairing" spellCheck={false} autoComplete="off"
+              placeholder="e.g. 123456789" spellCheck={false} autoComplete="off"
               className={cn(inputCls, 'font-mono')} />
-            <span className="text-[11.5px] text-muted-foreground/55">The teammate DMs the bot to reveal their numeric id.</span>
+            <span className="text-[11.5px] text-muted-foreground/55">The teammate sends /start to @userinfobot on Telegram to see their numeric id. Until linked here, the bot stays silent to them.</span>
           </label>
           {err && (
             <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">

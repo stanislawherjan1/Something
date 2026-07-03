@@ -70,7 +70,10 @@ export async function syncTelegramAllowedIds() {
   try {
     const ids = telegramAllowedIds();
     const joined = ids.join(',') || NO_IDS_SENTINEL;
-    store.update('telegram', { fields: { TELEGRAM_ALLOWED_IDS: joined } });
+    // updateInternal, not update(): TELEGRAM_ALLOWED_IDS is no longer a catalog
+    // field (the roster owns the list since the settings panel), and update()
+    // silently drops non-catalog names → "no recognised fields" → sync dead.
+    store.updateInternal('telegram', { TELEGRAM_ALLOWED_IDS: joined });
     runtime.applyFiles('telegram');           // → {home}/.{bot}/integrations.env
     const restartOk = await runtime.restartBot();
     return { ok: true, count: ids.length, restartOk };

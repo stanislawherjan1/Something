@@ -277,6 +277,46 @@ export function update(id, body) {
 }
 
 /**
+ * Server-side write of internal fields the catalog does NOT declare. update()
+ * above is UI-driven and filters against the catalog so operators can only edit
+ * declared fields — but some fields are owned by the SERVER, not the operator
+ * (telegram's TELEGRAM_ALLOWED_IDS is derived from the team roster; its catalog
+ * entry was removed when the settings panel took over, which silently killed
+ * every roster→allowlist sync through update()). Values are encrypted exactly
+ * like update()'s. Never expose this through a route.
+ */
+export function updateInternal(id, fields) {
+  const state = readAll();
+  const entry = state[id];
+  if (!entry) throw new Error(`${id} is not active`);
+
+  const updates = {};
+  for (const [name, value] of Object.entries(fields || {})) {
+    if (typeof name !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(name)) continue;
+    if (typeof value !== 'string' || value.trim() === '') continue;
+    updates[name] = encryptValue(value.trim());
+  }
+  const updatedNames = Object.keys(updates);
+  if (updatedNames.length === 0) {
+    throw new Error('no fields supplied to updateInternal.');
+  }
+
+  const cat = getCatalog(id);
+  if (cat?.multi) {
+    entry.items = (entry.items || []).map(item => ({
+      ...item,
+      fields: { ...(item.fields || {}), ...updates },
+    }));
+  } else {
+    entry.fields = { ...(entry.fields || {}), ...updates };
+  }
+  state[id] = entry;
+  writeAll(state);
+  appendAudit('update-internal', id, updatedNames);
+  return updatedNames;
+}
+
+/**
  * Read plaintext values for non-secret global fields (those flagged
  * globalForMulti). Used by the dashboard so the Permissions panel can
  * pre-populate with the user's current choices when they click Settings.
