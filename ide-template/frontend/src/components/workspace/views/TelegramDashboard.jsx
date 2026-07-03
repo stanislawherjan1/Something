@@ -567,7 +567,9 @@ function LinkPersonModal({ person, onClose, onSaved }) {
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
-          {linked ? (
+          {linked && person.operatorPinned ? (
+            <span className="text-[11.5px] text-muted-foreground/65">Operator id from the Telegram activation — can't be unlinked.</span>
+          ) : linked ? (
             <button type="button" onClick={() => submit(true)} disabled={busy}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
               <Trash2 className="size-3.5" strokeWidth={1.75} /> Unlink
