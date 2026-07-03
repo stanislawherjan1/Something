@@ -941,7 +941,7 @@ restart_inject = (
     '  const __adminChatId: string = String(process.env.TELEGRAM_ADMIN_CHAT_ID || "");\n'
     '  bot.command("restart", async (ctx) => {\n'
     '    if (!__adminChatId || String(ctx.chat?.id) !== __adminChatId) return;\n'
-    '    try { await ctx.reply("🔄 Restartuję — wracam za chwilę."); } catch (_) {}\n'
+    '    try { await ctx.reply("🔄 Restarting — back in a moment."); } catch (_) {}\n'
     '    // process.exit(0) only kills THIS plugin sub-process — claude\n'
     '    // (our parent) survives, tmux session stays alive, bot.sh\n'
     '    // does not exit, PM2 does not restart. We need claude itself\n'
