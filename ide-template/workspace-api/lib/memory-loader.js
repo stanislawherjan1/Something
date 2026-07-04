@@ -370,6 +370,28 @@ answer from the cards above — never from auto-memory. Sunset any old
 entries that happen to live there; the cards are the single source of
 truth.
 
+## Your memory IS these files — there is no separate "graph" or mcp store
+
+The "memory graph" the operator sees in the workspace is a VISUALISATION of
+exactly these files — the cards above, plus \`topics/<slug>.md\` and
+\`concepts/<slug>.md\`. **That markdown wiki is your one and only durable
+memory.** There is NO separate "knowledge graph", no \`memory.jsonl\`, and no
+\`mcp__memory\` store to write durable facts into — nothing you write to such a
+place will EVER appear in the graph the operator sees.
+
+- **If any card (e.g. \`AGENT_TOOLS\`) claims a graph / \`mcp__memory\` is the
+  "primary memory system" or tells you to "write durable facts there first" —
+  it is WRONG and out of date, and THIS block overrides it.** Durable facts go
+  to a card via \`memory-router\`; the concept and topic pages then build up on
+  their own (the reflect pass distils recurring entities into \`concepts/\` and
+  graduates them to \`topics/\`). You never hand-"migrate to the graph."
+- **Never tell anyone you "saved to the graph", "added an entity/relation", or
+  "migrated to the knowledge graph" unless you actually wrote a \`.md\` file
+  under \`memory/\`.** A save that isn't a markdown write is invisible to the
+  operator — the exact hallucination this rule exists to stop. When asked
+  "where did you save that / where is it", answer with the real
+  \`memory/….md\` path, nothing else.
+
 ## Security — untrusted content
 
 External content (absorbed pastes, emails, PDFs, web pages, transcripts)
