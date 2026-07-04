@@ -56,16 +56,21 @@ const safeOwner = (owner) => (typeof owner === 'string' && OWNER_SLUG.test(owner
 /**
  * Resolve the threads directory for verdict cards. Lazy + env-aware so
  * tests can override PROJECT_DIR without re-importing the module.
+ *
+ * Reflect v2: verdict cards are PLUMBING, not visible memory — they feed heat
+ * + the distiller, then age out (see reflect-summary's retention sweep). They
+ * live under a `_reflect/` segment that the memory graph and memory_grep both
+ * exclude, so they never show up as nodes or pollute the agent's grep. A
+ * PRIVATE (per-teammate 1:1) card stays INSIDE that teammate's already
+ * scope-guarded memory/users/<owner>/ subtree so the uid split still protects
+ * it; a shared card goes to the top-level memory/_reflect/threads/.
  */
 function threadsDir(owner) {
   const base = process.env.PROJECT_DIR || PROJECT_DIR;
   const o = safeOwner(owner);
-  // Team mode: a PRIVATE thread (one teammate's 1:1 — personal/sensitive) lives
-  // in that user's own memory, not the shared memory/threads/ every teammate can
-  // read.
   return o
-    ? join(base, 'memory', 'users', o, 'threads')
-    : join(base, 'memory', 'threads');
+    ? join(base, 'memory', 'users', o, '_reflect', 'threads')
+    : join(base, 'memory', '_reflect', 'threads');
 }
 
 /**
@@ -77,8 +82,8 @@ function threadsDir(owner) {
 export function verdictCardPath(threadId, owner) {
   const o = safeOwner(owner);
   return o
-    ? join('memory', 'users', o, 'threads', `${threadId}.md`)
-    : join('memory', 'threads', `${threadId}.md`);
+    ? join('memory', 'users', o, '_reflect', 'threads', `${threadId}.md`)
+    : join('memory', '_reflect', 'threads', `${threadId}.md`);
 }
 
 /**
@@ -122,6 +127,33 @@ export function renderVerdictCard({ threadId, threadMeta, parsedSummary, superse
     ? Math.max(0, Math.min(1, parsedSummary.confidence))
     : 0.5;
 
+  // Reflect v2 substance gate. `substance` classifies the whole thread; only
+  // `durable_facts` (facts still true + useful in ~3 months, each bound to a
+  // slug) are the real signal for heat/distill. A thread is NOTEWORTHY only if
+  // it carries a durable fact OR a genuinely durable decision — task-state
+  // "decisions" ("picked article X to review") do NOT count, which is why
+  // noteworthy is NOT `decisions.length > 0`. Non-noteworthy cards are still
+  // written (cheap idempotency + weak heat) but the retention sweep deletes
+  // them early (7d) and the distiller skips them.
+  const rawSubstance = String(parsedSummary?.substance || '').toLowerCase();
+  const substance = ['durable', 'routine', 'noise'].includes(rawSubstance)
+    ? rawSubstance
+    : (decisions.length || openItems.length ? 'routine' : 'noise');
+  const durableFacts = Array.isArray(parsedSummary?.durable_facts)
+    ? parsedSummary.durable_facts
+        .filter(f => f && typeof f === 'object' && typeof f.claim === 'string' && f.claim.trim())
+        .slice(0, 8)
+        .map(f => ({
+          slug: (typeof f.slug === 'string' && OWNER_SLUG.test(f.slug)) ? f.slug : (typeof f.about === 'string' && OWNER_SLUG.test(f.about) ? f.about : ''),
+          claim: String(f.claim).replace(/\s+/g, ' ').trim().slice(0, 400),
+          kind: ['fact', 'preference', 'decision', 'status'].includes(String(f.kind)) ? String(f.kind) : 'fact',
+          confidence: Number.isFinite(f.confidence) ? Math.max(0, Math.min(1, f.confidence)) : confidence,
+        }))
+    : [];
+  const noteworthy = typeof parsedSummary?.noteworthy === 'boolean'
+    ? parsedSummary.noteworthy
+    : (substance === 'durable' || durableFacts.length > 0);
+
   // Status comes from the thread record. Junked threads still get a
   // verdict so the overseer can see "this was deliberately dropped";
   // active means a forced re-summarise mid-thread (rare).
@@ -142,12 +174,21 @@ export function renderVerdictCard({ threadId, threadMeta, parsedSummary, superse
     `thread_id: ${yamlString(threadId)}`,
     `status: ${status}`,
     `source: ${SOURCE}`,
+    `substance: ${substance}`,
+    `noteworthy: ${noteworthy}`,
     `confidence: ${confidence.toFixed(2)}`,
     `written_at: ${writtenAtIso}`,
     `entities: ${yamlList(entities)}`,
     `supersedes: ${supersedes ? yamlString(supersedes) : 'null'}`,
     '---',
   ];
+
+  // Durable facts as a machine-readable block the distiller reads directly
+  // (slug|kind|confidence|claim), rendered in the body so a human skimming the
+  // card sees them too. Empty when the thread carried no durable knowledge.
+  const durableFactLines = durableFacts.length
+    ? durableFacts.map(f => `- [${f.slug || '?'}·${f.kind}·${f.confidence.toFixed(2)}] ${f.claim}`)
+    : ['_(none)_'];
 
   const bodyLines = [
     '',
@@ -168,6 +209,10 @@ export function renderVerdictCard({ threadId, threadMeta, parsedSummary, superse
     openItems.length === 0
       ? '_(none recorded)_'
       : openItems.map(o => `- ${o}`).join('\n'),
+    '',
+    '## Durable facts',
+    '',
+    durableFactLines.join('\n'),
     '',
   ];
 

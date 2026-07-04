@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Check, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -26,6 +27,7 @@ export default function NotificationsView({ sidebarOpen }) {
   const { notifications, connecting } = useNotifications();
   const desktop = useDesktopNotifications(notifications);
   const { isRead, markRead, markAllRead } = useNotificationReadState();
+  const navigate = useNavigate();
 
   const items = useMemo(
     () =>
@@ -36,7 +38,11 @@ export default function NotificationsView({ sidebarOpen }) {
   );
 
   const onOpen = (n) => {
-    if (n.meta?.session_id) {
+    // A memory-write notification opens the memory page; a session notification
+    // opens that chat. Either way it's then marked read (leaves the inbox).
+    if (n.kind === 'memory') {
+      navigate('/memory');
+    } else if (n.meta?.session_id) {
       window.dispatchEvent(
         new CustomEvent('ide:chat-select-session', {
           detail: { sessionId: n.meta.session_id },

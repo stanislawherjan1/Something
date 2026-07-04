@@ -15,14 +15,15 @@
  */
 
 import { Router } from 'express';
-import { readFileSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, renameSync, appendFileSync, statSync, existsSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 import { buildMemoryGraph } from '../lib/memory-graph.js';
-import { grepMemory } from '../lib/memory-grep.js';
+import { grepMemory, grepMemorySmart } from '../lib/memory-grep.js';
 import { buildCachedPrefix, meetsCacheFloor } from '../lib/memory-loader.js';
 import { listVerdictCards, readVerdictCard } from '../lib/verdict-card-reader.js';
 import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
-import { getTeamMode, primaryAdminSlug, getUser } from '../lib/team.js';
+import { getTeamMode, primaryAdminSlug, getUser, isAdmin } from '../lib/team.js';
+import { distillVerdicts } from '../lib/reflect-distill.js';
 
 export default function memoryRouter() {
   const router = Router();
@@ -41,17 +42,22 @@ export default function memoryRouter() {
     }
   });
 
-  // GET /api/memory/grep?q=<query>&regex=0|1&max=10
+  // GET /api/memory/grep?q=<query>&regex=0|1&max=10&expand=0|1
   // Cheap deterministic lookup over memory/. Backed by ripgrep when present,
-  // pure-Node fallback otherwise (see lib/memory-grep.js).
+  // pure-Node fallback otherwise (see lib/memory-grep.js). With expand=1, a thin
+  // literal result triggers one Haiku query-expansion pass (synonyms, PL/EN,
+  // inflections) so "pricing decision" still finds a page that says "cennik".
   router.get('/memory/grep', async (req, res) => {
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     if (!q) return res.status(400).json({ error: 'missing query: ?q=<text>' });
-    const regex = req.query.regex === '1' || req.query.regex === 'true';
-    const max   = req.query.max != null ? Math.max(1, Math.min(50, Number(req.query.max) || 10)) : 10;
+    const regex  = req.query.regex === '1' || req.query.regex === 'true';
+    const expand = req.query.expand === '1' || req.query.expand === 'true';
+    const max    = req.query.max != null ? Math.max(1, Math.min(50, Number(req.query.max) || 10)) : 10;
     try {
-      const matches = await grepMemory(q, { maxCount: max, regex });
-      res.json({ query: q, regex, count: matches.length, matches });
+      const matches = expand && !regex
+        ? await grepMemorySmart(q, { maxCount: max })
+        : await grepMemory(q, { maxCount: max, regex });
+      res.json({ query: q, regex, count: matches.length, matches, expandedWith: matches._expandedWith || null });
     } catch (err) {
       process.stderr.write(`[memory/grep] ${err && err.stack || err}\n`);
       res.status(500).json({ error: err && err.message || 'internal error' });
@@ -140,6 +146,89 @@ export default function memoryRouter() {
       res.json(card);
     } catch (err) {
       process.stderr.write(`[memory/threads/:id] ${err && err.stack || err}\n`);
+      res.status(500).json({ error: err && err.message || 'internal error' });
+    }
+  });
+
+  // GET /api/memory/changes[?days=7] — the reflect v2 activity digest: what the
+  // pipeline auto-applied/curated recently, each with a revertable undo snapshot.
+  // Powers the dashboard's "what I learned" review surface (auto-apply is only
+  // trustworthy if the operator can see + one-tap undo it after the fact).
+  router.get('/memory/changes', (req, res) => {
+    try {
+      const base = process.env.PROJECT_DIR || '/home/coder/project';
+      const logPath = join(base, 'memory', '_drafts', '.activity.jsonl');
+      if (!existsSync(logPath)) return res.json({ count: 0, changes: [] });
+      const days = req.query.days != null ? Math.max(1, Math.min(90, Number(req.query.days) || 7)) : 7;
+      const cutoff = Date.now() - days * 86400 * 1000;
+      const changes = [];
+      for (const line of readFileSync(logPath, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        let e; try { e = JSON.parse(line); } catch { continue; }
+        if (!['auto-apply', 'curate', 'apply'].includes(e.action)) continue;
+        if (Date.parse(e.ts) < cutoff) continue;
+        changes.push({
+          ts: e.ts, action: e.action, target: e.target || e.card || null,
+          kind: e.kind || null, scope: e.scope || 'shared', owner: e.owner || null,
+          undo: e.undo || null, revertable: !!e.undo,
+        });
+      }
+      changes.reverse();   // newest first
+      res.json({ count: changes.length, days, changes });
+    } catch (err) {
+      process.stderr.write(`[memory/changes] ${err && err.stack || err}\n`);
+      res.status(500).json({ error: err && err.message || 'internal error' });
+    }
+  });
+
+  // POST /api/memory/revert { undo, target } — restore a pre-image snapshot,
+  // one-tap undo of an auto-applied/curated write. Logs a `revert` action, which
+  // the curate circuit breaker counts (two reverts freeze a page). Admin only,
+  // and both paths are confined to memory/ (no path escape).
+  router.post('/memory/revert', (req, res) => {
+    if (getTeamMode() && !(req.actor && isAdmin(req.actor))) {
+      return res.status(403).json({ error: 'admin only' });
+    }
+    try {
+      const base = process.env.PROJECT_DIR || '/home/coder/project';
+      const memRoot = resolve(join(base, 'memory'));
+      const undoRel = String(req.body?.undo || '');
+      const targetRel = String(req.body?.target || '');
+      if (!undoRel || !targetRel) return res.status(400).json({ error: 'need { undo, target }' });
+      const undoAbs = resolve(join(base, undoRel));
+      const targetAbs = resolve(join(base, targetRel));
+      const inMem = (p) => p === memRoot || p.startsWith(memRoot + sep);
+      if (!inMem(undoAbs) || !inMem(targetAbs) || !targetAbs.endsWith('.md')) {
+        return res.status(400).json({ error: 'path escapes memory dir' });
+      }
+      if (!existsSync(undoAbs)) return res.status(404).json({ error: 'undo snapshot gone' });
+      const before = readFileSync(undoAbs, 'utf8');
+      const tmp = targetAbs + '.tmp';
+      writeFileSync(tmp, before);
+      renameSync(tmp, targetAbs);
+      const entry = { ts: new Date().toISOString(), action: 'revert', target: targetRel, undo: undoRel };
+      appendFileSync(join(memRoot, '_drafts', '.activity.jsonl'), JSON.stringify(entry) + '\n');
+      res.json({ ok: true, reverted: targetRel });
+    } catch (err) {
+      process.stderr.write(`[memory/revert] ${err && err.stack || err}\n`);
+      res.status(500).json({ error: err && err.message || 'internal error' });
+    }
+  });
+
+  // POST /api/memory/seed?slug=<slug> — "Create its page now" from the graph's
+  // emerging-concept panel. Forces a distill cycle (bypassing the ~12h rate
+  // limit), which picks up the hot slug and auto-applies its concept page.
+  // Admin only in team mode. The slug is advisory (distill processes all hot
+  // slugs); we accept it for logging + future slug-targeted seeding.
+  router.post('/memory/seed', async (req, res) => {
+    if (getTeamMode() && !(req.actor && isAdmin(req.actor))) {
+      return res.status(403).json({ error: 'admin only' });
+    }
+    try {
+      const r = await distillVerdicts({ force: true });
+      res.json({ ok: true, slug: typeof req.query.slug === 'string' ? req.query.slug : null, distill: r });
+    } catch (err) {
+      process.stderr.write(`[memory/seed] ${err && err.stack || err}\n`);
       res.status(500).json({ error: err && err.message || 'internal error' });
     }
   });

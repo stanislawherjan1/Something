@@ -27,9 +27,12 @@ import { join } from 'node:path';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { computeConceptHeat } from './memory-graph.js';
+import { autoPromoteOwners } from './team.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
-const MODEL          = process.env.REFLECT_DISTILL_MODEL || 'claude-haiku-4-5';
+// Consolidation quality gates what the whole wiki learns — worth Sonnet over
+// Haiku at 2 calls/day (operator decision 2026-07-03). Lint stays on Haiku.
+const MODEL          = process.env.REFLECT_DISTILL_MODEL || 'claude-sonnet-5';
 const WINDOW_MS      = num('REFLECT_DISTILL_WINDOW_DAYS', 2) * 86400 * 1000;   // verdicts modified within this window
 let   MIN_CONF       = num('REFLECT_DISTILL_MIN_CONF', 0.6);
 if (MIN_CONF > 1) MIN_CONF /= 100;                                            // tolerate 60 or 0.6
@@ -42,7 +45,7 @@ const REFLECT_APPLY  = process.env.REFLECT_APPLY_PY || '/opt/ide/hooks/reflect-a
 // claims one distill cycle proposes, so a chatty week can't flood /memory review.
 // Mirrors CONCEPT_HEAT in lib/memory-graph.js — keep in sync.
 const CONCEPT_HEAT   = Math.max(1, num('REFLECT_CONCEPT_HEAT', 3));
-const CONCEPT_MAX    = Math.max(1, num('REFLECT_CONCEPT_MAX', 6));
+const CONCEPT_MAX    = Math.max(1, num('REFLECT_CONCEPT_MAX', 12));
 // Per-cycle cap on how many DISTINCT owners get a private concept pass (each is
 // its own isolated LLM call), so a big team can't fan out into dozens of calls
 // in one tick. Owners beyond the cap are picked up on the next cycle.
@@ -78,6 +81,8 @@ const SYSTEM_CARDS = [
   'Anything that does not fit one of these — do NOT propose. The cards are not a catch-all.',
   '',
   'actions: "append" (floor 0.7, default), "update_field" (0.85, needs section+field), "replace_section" (0.9). Use the LEAST destructive. Propose HIGH-confidence only; cite the thread number in rationale.',
+  'GROUND EVERYTHING — invent NOTHING. Every proposed fact must be stated in the verdicts. Do NOT infer a job title, employer, role, or company from a location or an unrelated detail (e.g. "moved to Gdańsk" is a LOCATION, never a new job). If it is not in the verdicts verbatim or by clear paraphrase, do not propose it.',
+  'AVOID DUPLICATES — the card likely already holds facts about this topic. Propose ONLY genuinely new information; a fact already implied by the card is a NOOP (skip it). Do not re-state the same project/person in slightly different words across multiple bullets.',
   'scope/owner (TEAM MODE): every USER_* proposal MUST carry "scope":"private" + "owner":"<slug>" — use the verdict\'s stated owner. Shared cards (RULES/AGENT_*) → "scope":"shared" or omit. If you cannot attribute a fact to a specific person, SKIP it — never guess an owner.',
   '',
   'Most verdicts yield nothing durable. {"proposals":[]} is correct most of the time. Quality over quantity.',
@@ -92,7 +97,7 @@ const SYSTEM_CONCEPTS = [
   'Output ONE JSON object and NOTHING else (no preamble, no fences):',
   '{"concept_proposals":[{"slug":"acme","claim":"Renews its contract annually in Q3","confidence":0.85,"rationale":"threads [2],[4]"}]}',
   '',
-  'Rules: (a) ONLY use a slug that appears verbatim in CONCEPTS IN PLAY — NEVER invent one. (b) Propose AT MOST ONE new claim per slug, and ONLY if the verdicts add something NOT already covered by its existing claims — NOOP a restatement (emit nothing). (c) Atomic: one self-contained fact per claim, durable (true beyond this week); no transient task state, no leading dash. (d) confidence ≥ 0.7 or skip. (e) The page is TEAM-SHARED and read by EVERY teammate — never put a private, sensitive, or personal detail in a claim; if a fact feels personal to one person, it does NOT belong here. (f) No code fences or backticks in a claim.',
+  'Rules: (a) ONLY use a slug that appears verbatim in CONCEPTS IN PLAY — NEVER invent one. (b) Propose one claim per NEW, distinct durable fact about the slug (up to 5 per slug this cycle) — skip any fact already covered by an existing claim (NOOP restatements). A rich conversation about an entity SHOULD yield several claims at once. (c) Atomic: one self-contained fact per claim, durable (true beyond this week); no transient task state, no leading dash. (d) confidence ≥ 0.7 or skip. (e) The page is TEAM-SHARED and read by EVERY teammate — never put a private, sensitive, or personal detail in a claim; if a fact feels personal to one person, it does NOT belong here. (f) No code fences or backticks in a claim.',
   '',
   'Most cycles yield nothing. {"concept_proposals":[]} is correct most of the time. Quality over quantity.',
 ].join('\n');
@@ -107,9 +112,30 @@ const SYSTEM_CONCEPTS_PRIVATE = [
   'Output ONE JSON object and NOTHING else (no preamble, no fences):',
   '{"concept_proposals":[{"slug":"sam","claim":"Prefers async written updates over calls","confidence":0.85,"rationale":"threads [1],[3]"}]}',
   '',
-  "Rules: (a) ONLY use a slug that appears verbatim in CONCEPTS IN PLAY — NEVER invent one. (b) At most ONE new claim per slug, and ONLY if the verdicts add something NOT already covered by its existing claims — NOOP a restatement (emit nothing). (c) Atomic: one self-contained, durable fact per claim (true beyond this week); no transient task state, no leading dash. (d) confidence ≥ 0.7 or skip. (e) The page is PRIVATE to this one person, so personal/sensitive detail ABOUT THE ENTITY is fine — but derive every claim ONLY from the verdicts shown here (this person's own threads); never invent, never guess. (f) No code fences or backticks in a claim.",
+  "Rules: (a) ONLY use a slug that appears verbatim in CONCEPTS IN PLAY — NEVER invent one. (b) One claim per NEW, distinct durable fact about the slug (up to 5 per slug this cycle) — skip facts already covered (NOOP restatements). A rich conversation SHOULD yield several claims at once. (c) Atomic: one self-contained, durable fact per claim (true beyond this week); no transient task state, no leading dash. (d) confidence ≥ 0.7 or skip. (e) The page is PRIVATE to this one person, so personal/sensitive detail ABOUT THE ENTITY is fine — but derive every claim ONLY from the verdicts shown here (this person's own threads); never invent, never guess. (f) No code fences or backticks in a claim.",
   '',
   'Most cycles yield nothing. {"concept_proposals":[]} is correct most of the time. Quality over quantity.',
+].join('\n');
+
+// Promotion scout prompt (pass 2c, reflect v2 scope routing). Runs over ONE
+// owner's PRIVATE verdicts (same isolation as the private concept pass — never
+// shared, never another teammate's) and finds ORG facts trapped under the DM
+// privacy ceiling that are safe to surface to the whole team. The privacy
+// boundary is only ever crossed by an individual, sanitized, consented claim —
+// this pass EMITS candidates; whether they auto-apply depends on the owner's
+// autoPromote pre-consent (decided by the caller, in code, not the model).
+const SYSTEM_PROMOTION = [
+  'You are the SCOPE ROUTER for a team AI coworker. INPUT: durable facts from ONE person\'s PRIVATE 1:1 conversations. Most belong in their private memory. Your job: find the few that are ORGANISATION knowledge the whole team should have, and are SAFE to make team-visible. Output ONE JSON object and NOTHING else.',
+  '',
+  '{"promotions":[{"slug":"linear","shared_text":"The team is switching to Linear for issue tracking (decided 2026-07).","confidence":0.9,"rationale":"verdict [2]"}]}',
+  '',
+  'A fact is PROMOTABLE only if ALL hold:',
+  '- SUBJECT = organisation: a decision, process, project/client/vendor fact, tool choice, team rule. NOT the person\'s own preference/taste/schedule/identity (those stay private). NOT a fact about another named person unless it is roster-grade professional (role, assignment, business contact).',
+  '- SENSITIVITY = none: NEVER promote anything strategic (internal margins, automation a client must not learn about, negotiation posture), personal (health, family, finance, emotion), a confidence ("between us"), or gossip. When unsure whether something is sensitive, DO NOT promote it.',
+  '- It is durable (true + useful in 3 months).',
+  'slug: a kebab-case concept/topic slug for the shared page it belongs on (reuse a KNOWN SLUG when given). shared_text: the exact sentence to publish to team memory — self-contained, no "I"/DM context, no who-said-it unless that IS the fact, nothing sensitive. confidence 0..1.',
+  '',
+  'Bias hard toward NOT promoting. {"promotions":[]} is the right answer most of the time — over-privatising costs nothing, over-sharing is a leak.',
 ].join('\n');
 
 // Parse a verdict card (YAML frontmatter + ## Outcome / ## Decisions made body).
@@ -132,17 +158,22 @@ function parseVerdict(text, owner) {
   };
   const summary = sec('Outcome').replace(/\s+/g, ' ').trim();
   const decisions = sec('Decisions made').split('\n').map(l => l.replace(/^\s*[-*]\s*/, '').trim()).filter(d => d && !/^_\(none/.test(d));
+  // Reflect v2: the durable-fact block is the richest signal — strip the
+  // machine tag `[slug·kind·conf]` and keep the fact text for the digest.
+  const durableFacts = sec('Durable facts').split('\n')
+    .map(l => l.replace(/^\s*[-*]\s*(?:\[[^\]]*\]\s*)?/, '').trim())
+    .filter(d => d && !/^_\(none/.test(d));
   if (!title) return null;
-  return { title, summary, entities, decisions, confidence, owner };
+  return { title, summary, entities, decisions, durableFacts, confidence, owner };
 }
 
 function readRecentDurableVerdicts(windowMs = WINDOW_MS, maxVerdicts = MAX_VERDICTS) {
   const base = process.env.PROJECT_DIR || PROJECT_DIR;
   const now = Date.now();
-  const dirs = [{ dir: join(base, 'memory', 'threads'), owner: null }];
+  const dirs = [{ dir: join(base, 'memory', '_reflect', 'threads'), owner: null }];
   try {
     for (const u of readdirSync(join(base, 'memory', 'users'), { withFileTypes: true })) {
-      if (u.isDirectory()) dirs.push({ dir: join(base, 'memory', 'users', u.name, 'threads'), owner: u.name });
+      if (u.isDirectory()) dirs.push({ dir: join(base, 'memory', 'users', u.name, '_reflect', 'threads'), owner: u.name });
     }
   } catch { /* no per-user threads */ }
 
@@ -157,9 +188,9 @@ function readRecentDurableVerdicts(windowMs = WINDOW_MS, maxVerdicts = MAX_VERDI
       let v; try { v = parseVerdict(readFileSync(abs, 'utf8'), owner); } catch { v = null; }
       if (!v) continue;
       // Cheap durability pre-filter: drop the obvious noise (low confidence AND no
-      // entities AND no decisions — e.g. the "create folder" one-off). The LLM does
-      // the real judgement on what survives.
-      if (v.confidence < MIN_CONF && v.entities.length === 0 && v.decisions.length === 0) continue;
+      // entities AND no decisions AND no durable facts — e.g. the "create folder"
+      // one-off). The LLM does the real judgement on what survives.
+      if (v.confidence < MIN_CONF && v.entities.length === 0 && v.decisions.length === 0 && !(v.durableFacts && v.durableFacts.length)) continue;
       out.push({ ...v, mtime: st.mtimeMs });
     }
   }
@@ -173,6 +204,7 @@ function renderDigest(verdicts) {
     if (v.summary) lines.push(`    summary: ${v.summary}`);
     if (v.entities.length) lines.push(`    entities: ${v.entities.join(', ')}`);
     if (v.decisions.length) lines.push(`    decisions: ${v.decisions.join(' | ')}`);
+    if (v.durableFacts && v.durableFacts.length) lines.push(`    durable facts: ${v.durableFacts.join(' | ')}`);
     return lines.join('\n');
   }).join('\n\n');
 }
@@ -189,10 +221,11 @@ function parseDistillOutput(text) {
     if (!o || typeof o !== 'object') return null;
     const proposals = Array.isArray(o.proposals) ? o.proposals : [];
     const conceptProposals = Array.isArray(o.concept_proposals) ? o.concept_proposals : [];
+    const promotions = Array.isArray(o.promotions) ? o.promotions : [];
     // At least one recognised key must be present, else treat as unparseable
     // (an LLM that "replied" to the transcript instead of emitting the schema).
-    if (!('proposals' in o) && !('concept_proposals' in o)) return null;
-    return { proposals, conceptProposals };
+    if (!('proposals' in o) && !('concept_proposals' in o) && !('promotions' in o)) return null;
+    return { proposals, conceptProposals, promotions };
   } catch { /* unparseable */ }
   return null;
 }
@@ -216,8 +249,9 @@ function readConceptClaims(slug, owner = null) {
     : join(base, 'memory', 'concepts', `${slug}.md`);
   try {
     const body = readFileSync(abs, 'utf8');
-    const m = body.match(/^##\s*Claims\s*\n([\s\S]*?)(?:\n##\s|$)/im);
-    return m ? m[1].trim() : '';
+    const parts = body.split(/\n##\s+/);
+    const sec = parts.find(x => /^Claims\b/i.test(x.trimStart()));
+    return sec ? sec.split('\n').slice(1).join('\n').trim() : '';
   } catch { return ''; }
 }
 
@@ -238,9 +272,12 @@ function eligibleConceptsFor(verdicts, owner = null) {
       if (isConceptSlug(s)) inWindow.add(s);
     }
   }
+  // computeConceptHeat returns DECAYED heat (reflect v2): N fresh verdicts sum
+  // to just UNDER N (exp(-ε)<1), so a strict `>= CONCEPT_HEAT` would never fire
+  // for exactly-N same-day threads. Same epsilon as memory-graph's emergence gate.
   return [...inWindow]
-    .filter(s => (heat[s] || 0) >= CONCEPT_HEAT)
-    .map(s => ({ slug: s, heat: heat[s], claims: readConceptClaims(s, owner) }));
+    .filter(s => (heat[s] || 0) >= CONCEPT_HEAT - 0.05)
+    .map(s => ({ slug: s, heat: Math.round((heat[s] || 0) * 10) / 10, claims: readConceptClaims(s, owner) }));
 }
 
 // Render the CONCEPTS IN PLAY block the LLM dedups against. '' → no concepts.
@@ -301,6 +338,55 @@ async function runConceptPass({ eligible, digest, system, owner }) {
   return (res.conceptProposals || []).map(cp => conceptToProposal(cp, eligibleSlugs, owner)).filter(Boolean);
 }
 
+// Promotion scout (pass 2c). Classify ONE owner's private org facts; return
+// SHARED concept proposals for the promotable ones. The digest is the owner's
+// OWN verdicts only (isolation preserved). `autoPromote` decides the fate in the
+// CALLER: true → proposals join the auto-apply stream; false → they're written
+// to a promotions queue for a later consent ping (never auto-applied).
+async function runPromotionScout({ owner, digest, knownSlugs }) {
+  const res = await runLLM(SYSTEM_PROMOTION,
+    `${owner}'S PRIVATE THREAD VERDICTS:\n----\n${digest}\n----\n`
+    + (knownSlugs.length ? `\nKNOWN SLUGS (reuse for the same referent): ${knownSlugs.join(', ')}\n` : '')
+    + `\nFind ORG facts safe to share with the whole team (or {"promotions":[]}).`);
+  if (!res.ok) { process.stderr.write(`[reflect-distill] promotion scout (${owner}) failed: ${res.error}\n`); return []; }
+  const date = new Date().toISOString().slice(0, 10);
+  return (res.promotions || []).map((pr) => {
+    const slug = String(pr && pr.slug || '').toLowerCase().trim();
+    if (!isConceptSlug(slug)) return null;
+    const text = String(pr.shared_text || '').trim().replace(/`+/g, "'").replace(/\s+/g, ' ').slice(0, 280);
+    if (!text) return null;
+    if (Number(pr.confidence) < 0.8) return null;   // promotion floor — leaks are unretractable
+    return {
+      kind: 'concept',
+      card: slug,                    // SHARED concept page (no owner)
+      section: 'Claims',
+      action: 'append',
+      content: `- ${text}  [Source: promoted from ${owner}'s DM, ${date}]`,
+      confidence: Number(pr.confidence) || 0,
+      scope: 'shared',
+      owner: '',
+      rationale: `promotion ${slug} (${owner} → shared): ${String(pr.rationale || '').replace(/`+/g, "'").slice(0, 60)}`,
+      _promotedFrom: owner,
+    };
+  }).filter(Boolean);
+}
+
+// Queue promotion candidates for owners WITHOUT autoPromote — a later consent
+// ping asks the speaker before anything reaches shared memory. Append-only file
+// under _drafts (out of the graph); never auto-applied.
+function queuePromotionCandidates(candidates) {
+  if (!candidates.length) return;
+  const dir = join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory', '_drafts');
+  const file = join(dir, `promotions-${new Date().toISOString().slice(0, 10)}.md`);
+  try {
+    mkdirSync(dir, { recursive: true });
+    const blocks = candidates.map(c =>
+      `## promotion — ${c._promotedFrom} → ${c.card}\n**shared_text:** ${c.content.replace(/^- /, '').replace(/\s*\[Source:.*$/, '')}\n**confidence:** ${c.confidence}\n**status:** awaiting-consent\n\n---\n`).join('\n');
+    const head = existsSync(file) ? '' : `# Promotion candidates — awaiting speaker consent\n\n`;
+    writeFileSync(file, (existsSync(file) ? readFileSync(file, 'utf8') : head) + blocks, { flag: 'w' });
+  } catch (err) { process.stderr.write(`[reflect-distill] queue promotions failed: ${err.message}\n`); }
+}
+
 function runLLM(system, userMessage) {
   return new Promise((resolve) => {
     const env = { ...process.env };
@@ -327,12 +413,16 @@ function runLLM(system, userMessage) {
       if (code !== 0) return finish({ ok: false, error: `exit ${code}` });
       const parsed = parseDistillOutput(out);
       if (!parsed) return finish({ ok: false, error: 'unparseable output' });
-      finish({ ok: true, proposals: parsed.proposals, conceptProposals: parsed.conceptProposals });
+      finish({ ok: true, proposals: parsed.proposals, conceptProposals: parsed.conceptProposals, promotions: parsed.promotions });
     });
   });
 }
 
-// Pipe the proposals through the existing reflect-apply.py ingest path → _drafts.
+// Pipe the proposals through reflect-apply.py. Reflect v2: `ingest --auto`
+// APPLIES the safe envelope (concept/topic page ops + high-confidence non-RULES
+// card appends) immediately and queues the rest for /memory review — breaking
+// the dead-drafts deadlock. REFLECT_AUTO_APPLY=0 makes the script queue
+// everything (its own env kill switch), so we can always pass --auto here.
 function ingestProposals(proposals) {
   return new Promise((resolve) => {
     if (!existsSync(REFLECT_APPLY)) return resolve({ ok: false, error: `apply script missing: ${REFLECT_APPLY}` });
@@ -342,7 +432,7 @@ function ingestProposals(proposals) {
     let out = '', done = false;
     const finish = (r) => { if (done) return; done = true; resolve(r); };
     let proc;
-    try { proc = spawn('python3', [REFLECT_APPLY, 'ingest', tmp], { env: { ...process.env, PROJECT_DIR: base }, stdio: ['ignore', 'pipe', 'pipe'] }); }
+    try { proc = spawn('python3', [REFLECT_APPLY, 'ingest', '--auto', tmp], { env: { ...process.env, PROJECT_DIR: base }, stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (err) { return finish({ ok: false, error: `spawn python3: ${err.message}` }); }
     proc.stdout.on('data', (c) => { out += c.toString('utf8'); });
     proc.stderr.on('data', (c) => process.stderr.write(`[reflect-distill/apply] ${c.toString('utf8')}`));
@@ -431,7 +521,35 @@ export async function distillVerdicts({ force = false } = {}) {
     }
     conceptProposals = conceptProposals.slice(0, CONCEPT_MAX);
 
-    const proposals = [...cardProposals, ...conceptProposals];
+    // PASS 2c — PROMOTION SCOUT (reflect v2 scope routing). For each owner, find
+    // ORG facts trapped under their DM privacy ceiling that are safe to share.
+    // Isolation preserved (each scout sees ONLY that owner's verdicts — same as
+    // the private concept pass; pass 2a's shared context is NEVER widened). An
+    // owner who pre-consented (autoPromote) → their promotions join the auto-apply
+    // stream; everyone else → a consent-queue file the operator/ping resolves.
+    let promotionProposals = [];
+    try {
+      const autoOwners = new Set(autoPromoteOwners());
+      const ownersWithVerdicts = [...new Set(conceptVerdicts.filter(v => v.owner).map(v => v.owner))];
+      const queued = [];
+      for (const owner of ownersWithVerdicts.slice(0, CONCEPT_OWNERS_MAX)) {
+        const ownerVerdicts = conceptVerdicts.filter(v => v.owner === owner);
+        // Only bother when the owner's private threads carry org-shaped signal.
+        if (!ownerVerdicts.some(v => (v.durableFacts && v.durableFacts.length) || v.decisions.length)) continue;
+        const cands = await runPromotionScout({
+          owner,
+          digest: renderDigest(ownerVerdicts),                 // ISOLATION: this owner only
+          knownSlugs: eligibleConceptsFor(conceptVerdicts, null).map(c => c.slug),
+        });
+        if (!cands.length) continue;
+        if (autoOwners.has(owner)) promotionProposals.push(...cands);   // pre-consented → auto-apply
+        else queued.push(...cands);                                     // needs consent → queue
+      }
+      queuePromotionCandidates(queued);
+      if (queued.length) process.stderr.write(`[reflect-distill] ${queued.length} promotion candidate(s) queued for consent\n`);
+    } catch (err) { process.stderr.write(`[reflect-distill] promotion scout error: ${err.message}\n`); }
+
+    const proposals = [...cardProposals, ...conceptProposals, ...promotionProposals];
     if (!proposals.length) { process.stderr.write(`[reflect-distill] ${verdicts.length} card-window + ${conceptVerdicts.length} concept-window verdict(s) → 0 durable proposals\n`); return { ok: true, verdicts: verdicts.length, conceptVerdicts: conceptVerdicts.length, proposals: 0, concepts: 0 }; }
 
     const ing = await ingestProposals(proposals);

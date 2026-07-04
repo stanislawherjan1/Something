@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,6 +30,7 @@ const STACK_LIMIT = 1;
 export default function NotificationToasts({ chatOpen = false }) {
   const { notifications } = useNotifications();
   const [dismissed, setDismissed] = useState(() => new Set());
+  const navigate = useNavigate();
 
   // When the chat is expanded, the bubble would just visually duplicate
   // what the chat history dropdown already shows (each notification is
@@ -89,13 +91,20 @@ export default function NotificationToasts({ chatOpen = false }) {
               // Very subtle solid colour shift on hover — neutral-50 is one
               // step off white, dark:neutral-900 one step off the dark card.
               // No opacity blending; the tail mirrors via group-hover.
-              n.meta?.session_id ? 'cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900' : '',
+              (n.meta?.session_id || n.kind === 'memory') ? 'cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900' : '',
             )}
             onClick={() => {
-              if (!n.meta?.session_id) return;
-              window.dispatchEvent(new CustomEvent('ide:chat-select-session', {
-                detail: { sessionId: n.meta.session_id },
-              }));
+              // A memory-write notification takes you to the memory graph; a
+              // session notification opens that chat. Anything else isn't clickable.
+              if (n.kind === 'memory') {
+                navigate('/memory');
+              } else if (n.meta?.session_id) {
+                window.dispatchEvent(new CustomEvent('ide:chat-select-session', {
+                  detail: { sessionId: n.meta.session_id },
+                }));
+              } else {
+                return;
+              }
               setDismissed((prev) => {
                 const next = new Set(prev);
                 next.add(n.id);

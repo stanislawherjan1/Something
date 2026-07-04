@@ -20,6 +20,7 @@ import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/t
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
 import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
 import { distillVerdicts } from '../lib/reflect-distill.js';
+import { curatePages } from '../lib/reflect-curate.js';
 import { lintMemory } from '../lib/memory-lint.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
@@ -509,6 +510,20 @@ export default function internalRouter() {
       return res.json(r);
     } catch (err) {
       process.stderr.write(`[internal] reflect-distill failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Reflect-curate (reflect v2): rewrite pages whose Claims buffer is full/stale
+  // so they stay tight instead of degrading into append-only logs. Self-rate-
+  // limited (~12h) + single-flight; the monitor calls it every tick (cheap no-op
+  // until due). Pass {"force":true} to bypass the rate-limit. loopback only.
+  router.post('/internal/reflect-curate', loopbackOnly, async (req, res) => {
+    try {
+      const r = await curatePages(req.body || {});
+      return res.json(r);
+    } catch (err) {
+      process.stderr.write(`[internal] reflect-curate failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

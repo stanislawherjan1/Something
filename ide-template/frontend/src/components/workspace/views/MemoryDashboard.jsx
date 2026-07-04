@@ -31,12 +31,19 @@ const ForceGraph2D = lazy(() => import('react-force-graph-2d'));
 //     while a capped charge range (distanceMax) makes it physically impossible
 //     for anything to settle far out (beyond it a node feels only the inward
 //     pull). d3-force's RNG is fixed-seed, so the layout is deterministic.
-function settleLayout(nodes, links) {
+function settleLayout(nodes, links, scopeSep = 0) {
   if (!nodes.length) return nodes;
+  // scopeSep > 0 pulls the two scope clusters to SEPARATE horizontal centres
+  // (shared → left, yours → right) so their hulls don't overlap. Scaled by
+  // cluster size upstream, so they stay apart as memory grows. 0 = single
+  // shared centre (single-scope filter, or no per-user nodes).
+  const targetX = scopeSep
+    ? (d) => (d.scope === 'yours' ? scopeSep : -scopeSep)
+    : 0;
   const sim = forceSimulation(nodes, 2)
     .force('link', forceLink(links).id((d) => d.id).distance(34).strength(0.9))
     .force('charge', forceManyBody().strength(-32).distanceMax(95))
-    .force('x', forceX(0).strength(0.32))
+    .force('x', forceX(targetX).strength(scopeSep ? 0.5 : 0.32))
     .force('y', forceY(0).strength(0.32))
     .force('collide', forceCollide(11))
     .stop();
@@ -151,14 +158,20 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
 
   const NODE_COLOURS = isDark ? DARK_PALETTE : LIGHT_PALETTE;
 
-  // Fetch graph.
+  // Fetch graph — on mount AND whenever a `memory-graph-refresh` event fires
+  // (the emerging-concept panel's "Create its page now" dispatches it after the
+  // seed completes, so the freshly-created page shows up without a manual reload).
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/memory/graph')
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(data => { if (!cancelled) { setGraph(data); setError(null); } })
-      .catch(err => { if (!cancelled) setError(err.message); });
-    return () => { cancelled = true; };
+    const loadGraph = () => {
+      fetch('/api/memory/graph')
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(data => { if (!cancelled) { setGraph(data); setError(null); } })
+        .catch(err => { if (!cancelled) setError(err.message); });
+    };
+    loadGraph();
+    window.addEventListener('memory-graph-refresh', loadGraph);
+    return () => { cancelled = true; window.removeEventListener('memory-graph-refresh', loadGraph); };
   }, []);
 
   // Track container size — the force-graph needs explicit pixel width/height.
@@ -193,26 +206,27 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     const links = (showBare ? graph.edges : graph.edges.filter(e => e.kind === 'wiki'))
       .filter(e => nodeIds.has(eid(e.source)) && nodeIds.has(eid(e.target)))
       .map(e => ({ ...e, source: eid(e.source), target: eid(e.target) }));
-    // Tether each disconnected scope cluster to the shared hub with an INVISIBLE
-    // link. With no real edge between clusters, charge alone flings the "yours"
-    // island to infinity; a tether present from the first layout keeps it near
-    // (charge still gives a sensible gap). Not rendered, not counted.
-    if (scopeFilter === 'all') {
-      const sharedHub = nodes.find(n => n.id === 'index') || nodes.find(n => (n.scope || 'shared') === 'shared');
-      const yoursHub = nodes.find(n => n.scope === 'yours');
-      if (sharedHub && yoursHub) links.push({ source: sharedHub.id, target: yoursHub.id, kind: 'tether' });
-    }
+    // Two-cluster separation (reflect v2): when both scopes are shown, pull them
+    // to separate horizontal centres so the hulls never overlap. The gap SCALES
+    // with the larger cluster (√count) so it holds as memory grows. Replaces the
+    // old invisible "tether" that pulled the clusters TOGETHER (the overlap bug).
+    const sharedN = nodes.filter(n => (n.scope || 'shared') === 'shared').length;
+    const yoursN  = nodes.filter(n => n.scope === 'yours').length;
+    const bothScopes = scopeFilter === 'all' && sharedN > 0 && yoursN > 0;
+    const scopeSep = bothScopes ? Math.round(60 + 7 * Math.sqrt(Math.max(sharedN, yoursN))) : 0;
+
     const cache = posCacheRef.current;
-    // Seed from the position cache (filter stability). If anything lacks a
-    // cached position, run the headless settle so the FIRST paint is already
-    // laid out (no animation) and bounded (no flinging).
+    // Seed from the position cache (within-cluster stability). Re-settle whenever
+    // separation applies (deterministic seed → stable, and it pulls the clusters
+    // apart from any cached overlap); otherwise settle only if a position is
+    // missing. force-graph then renders the already-placed nodes with no drift.
     const simNodes = nodes.map(n => {
       const c = cache.get(n.id);
       return c ? { ...n, x: c.x, y: c.y } : { ...n };
     });
-    if (simNodes.some(n => !Number.isFinite(n.x))) {
+    if (scopeSep > 0 || simNodes.some(n => !Number.isFinite(n.x))) {
       const simLinks = links.map(l => ({ ...l }));   // forceLink mutates these
-      settleLayout(simNodes, simLinks);
+      settleLayout(simNodes, simLinks, scopeSep);
       simNodes.forEach(n => cache.set(n.id, { x: n.x, y: n.y }));
     }
     // Pin every node at its settled position → force-graph renders it static
@@ -260,20 +274,33 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   // (over the Shared loop). Loaded once; a light reheat repaints when ready.
   useEffect(() => {
     let cancelled = false;
-    const load = (url, ref) => {
-      if (!url) return;
+    // `fallback` mirrors what the sidebar shows when there's no custom image:
+    // the org badge falls back to /workspace-logo.svg (NOT the /logo.png default,
+    // which on a logo-less client is a broken/placeholder that rendered bright
+    // green here). The avatar simply stays empty (clean badge) with no image.
+    const tryLoad = (src, ref, onErr) => {
+      if (!src) { if (onErr) onErr(); return; }
       const img = new Image();
-      img.onload = () => {
-        if (cancelled) return;
-        ref.current = img;
-        graphRef.current?.d3ReheatSimulation?.();
-      };
-      img.src = url;
+      img.onload = () => { if (!cancelled) { ref.current = img; graphRef.current?.d3ReheatSimulation?.(); } };
+      img.onerror = () => { if (!cancelled && onErr) onErr(); };
+      img.src = src;
     };
+    // Avatar (Yours badge): me.avatarUrl is the user's own uploaded pic or null —
+    // load it directly, no image if absent (clean badge, never a green placeholder).
     fetch('/api/me').then(r => (r.ok ? r.json() : null))
-      .then(me => { if (!cancelled) load(me?.avatarUrl, avatarImgRef); }).catch(() => {});
+      .then(me => { if (!cancelled && me?.avatarUrl) tryLoad(me.avatarUrl, avatarImgRef); }).catch(() => {});
+    // Org (Shared badge): a CUSTOM logo lives at /api/branding/logo. The bare
+    // /logo.png|/icon.png default is a placeholder (renders bright green on a
+    // logo-less client), so skip it and use the sidebar's /workspace-logo.svg —
+    // exactly what the sidebar falls back to.
     fetch('/api/branding').then(r => (r.ok ? r.json() : null))
-      .then(b => { if (!cancelled) load(b?.logoUrl || b?.iconUrl, logoImgRef); }).catch(() => {});
+      .then(b => {
+        if (cancelled) return;
+        const url = b?.logoUrl || b?.iconUrl;
+        const isCustom = !!(url && url.includes('/api/branding/'));
+        if (isCustom) tryLoad(url, logoImgRef, () => tryLoad('/workspace-logo.svg', logoImgRef));
+        else tryLoad('/workspace-logo.svg', logoImgRef);
+      }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -849,8 +876,13 @@ function MemoryCardModal({ node, onClose }) {
   const [content, setContent] = useState('');
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
+  const [seeding, setSeeding] = useState(false);
+  // An emerging (synthetic) concept has no page on disk yet — reading it would
+  // 404. Reflect v2 renders an explainer instead: it's a normal, transient state.
+  const isEmerging = !!node.synthetic || !node.relPath;
 
   useEffect(() => {
+    if (isEmerging) { setStatus('emerging'); return; }
     let cancelled = false;
     setStatus('loading');
     const url = `/api/files/read?path=${encodeURIComponent(node.relPath)}`;
@@ -872,7 +904,16 @@ function MemoryCardModal({ node, onClose }) {
       })
       .catch(err => { if (!cancelled) { setStatus('error'); setError(err.message); } });
     return () => { cancelled = true; };
-  }, [node.relPath]);
+  }, [node.relPath, isEmerging]);
+
+  const seedNow = async () => {
+    setSeeding(true);
+    try {
+      const r = await fetch(`/api/memory/seed?slug=${encodeURIComponent(node.baseStem || node.id.replace(/^yours:/, ''))}`, { method: 'POST' });
+      if (r.ok) { onClose(); window.dispatchEvent(new CustomEvent('memory-graph-refresh')); }
+      else setSeeding(false);
+    } catch { setSeeding(false); }
+  };
 
   // Esc to close + lock body scroll.
   useEffect(() => {
@@ -931,6 +972,29 @@ function MemoryCardModal({ node, onClose }) {
               <div className="flex max-w-md items-start gap-2 rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12.5px] text-destructive">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
                 <span>{error}</span>
+              </div>
+            </div>
+          )}
+          {status === 'emerging' && (
+            <div className="mx-auto min-h-full w-full max-w-2xl px-8 py-10">
+              <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/[0.05] px-6 py-6">
+                <div className="text-[14px] font-semibold text-foreground/90">Emerging concept — no page yet</div>
+                <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
+                  I keep hearing about <span className="font-medium text-foreground/85">{node.baseStem || node.name?.replace(/\.md$/, '')}</span> — it came up across{' '}
+                  <span className="font-medium text-foreground/85">{Math.round(node.heat || 0)}</span> recent conversation{Math.round(node.heat || 0) === 1 ? '' : 's'} but doesn't have its own page yet. Once it stays warm, the memory pass writes a full page automatically — no action needed.
+                </p>
+                <div className="mt-5 flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={seedNow}
+                    disabled={seeding}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {seeding ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" strokeWidth={2} />}
+                    {seeding ? 'Creating…' : 'Create its page now'}
+                  </button>
+                  <span className="text-[11.5px] text-muted-foreground/60">or leave it — it forms on its own</span>
+                </div>
               </div>
             </div>
           )}

@@ -53,11 +53,117 @@ PROJECT_DIR = Path(os.environ.get("PROJECT_DIR", "/home/coder/project"))
 MEMORY_DIR = PROJECT_DIR / "memory"
 DRAFTS_DIR = MEMORY_DIR / "_drafts"
 ACTIVITY_LOG = DRAFTS_DIR / ".activity.jsonl"
+# Before-bytes of every auto-applied write land here so the dashboard's per-node
+# diff + one-tap revert can restore them (reflect v2). Under _reflect/ so the
+# graph and memory_grep ignore it.
+UNDO_DIR = MEMORY_DIR / "_reflect" / "undo"
 
 # Confidence floors per action — proposals below floor are rejected at
 # apply-time even if operator approves. Defends against propagating a
 # 0.4-confidence proposal the operator accidentally typed.
 CONFIDENCE_FLOORS = {"append": 0.7, "update_field": 0.85, "replace_section": 0.9}
+
+# ── Auto-apply envelope (reflect v2) ─────────────────────────────────────────
+# The old flow queued EVERY proposal to _drafts for a manual /memory review that
+# nobody ran — 11 days of good facts rotted and zero pages were ever born. So
+# the safe, additive writes now auto-apply (with an undo snapshot + audit trail
+# + after-the-fact digest), while destructive / canonical-rule writes stay gated.
+AUTO_APPLY_CONF = float(os.environ.get("REFLECT_AUTO_APPLY_CONF", "0.8"))
+# A global kill switch: REFLECT_AUTO_APPLY=0 reverts to draft-everything.
+AUTO_APPLY_ON = os.environ.get("REFLECT_AUTO_APPLY", "1") not in ("0", "false", "no")
+# Cards whose edits are ALWAYS operator-gated regardless of confidence — the
+# behavioural commitments and the agent's own voice are deliberate choices.
+AUTO_APPLY_CARD_DENY = {"RULES", "AGENT_IDENTITY"}
+
+
+# ── Secrets kill-list (reflect v2, structural) ───────────────────────────────
+# Credentials must NEVER persist to memory — not even a private card (markdown is
+# plaintext at rest). The scope-router prompt is told to discard them; this makes
+# it true in CODE regardless of what the model emits. A proposal whose content
+# trips the kill-list is dropped at ingest.
+SECRET_PATTERNS = [
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                 # AWS access key id
+    re.compile(r"\bsk-ant-[A-Za-z0-9_-]{16,}"),          # Anthropic API key / OAuth token (sk-ant-api03-… / sk-ant-oat01-…; hyphens break the plain sk- rule below)
+    re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"),              # OpenAI-style key
+    re.compile(r"\bghp_[A-Za-z0-9]{30,}\b"),             # GitHub PAT
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"),     # Slack token
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),   # PEM private key
+    re.compile(r"\bAIza[0-9A-Za-z_\-]{30,}\b"),          # Google API key
+    re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key|token)\b\s*[:=]\s*\S{6,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),  # JWT
+]
+
+
+def looks_like_secret(text: str) -> bool:
+    return any(p.search(text or "") for p in SECRET_PATTERNS)
+
+
+# ── Append dedup (reflect v2) ────────────────────────────────────────────────
+# Concept/topic pages get curated (folded, deduped); canonical CARDS did not, so
+# a fact stated twice (repeat distills, LLM restatements) piled up duplicate
+# bullets. This catches a NEW append whose content substantially overlaps a line
+# already on the target — a near-duplicate, not just an exact one — and drops it.
+_DUP_STOP = {"the", "and", "with", "for", "that", "this", "user", "brand", "via", "per"}
+
+
+def _dup_words(s: str) -> set[str]:
+    s = re.sub(r"\[source:[^\]]*\]", " ", (s or "").lower())
+    s = re.sub(r"[^0-9a-ząćęłńóśźż ]", " ", s)
+    return {w for w in s.split() if len(w) > 2 and w not in _DUP_STOP}
+
+
+def is_duplicate_append(card_text: str, content: str) -> bool:
+    cw = _dup_words(content)
+    if len(cw) < 3:
+        return False
+    for line in (card_text or "").splitlines():
+        line = line.strip()
+        if not line.startswith(("-", "*", "|")) and not line[:2].isalpha():
+            continue
+        lw = _dup_words(line)
+        if not lw:
+            continue
+        # High overlap of the NEW content's significant words with an existing
+        # line = the same fact already recorded (in either phrasing).
+        if len(cw & lw) / len(cw) >= 0.7:
+            return True
+    return False
+
+
+def is_auto_applicable(p: dict) -> bool:
+    """True when a proposal is inside the safe auto-apply envelope: an ADDITIVE
+    write (append / concept-page claim / new page seed) at high confidence to a
+    non-canonical-rule target. Destructive edits (update_field, replace_section),
+    RULES/AGENT_IDENTITY, and lint findings stay draft-gated."""
+    if not AUTO_APPLY_ON:
+        return False
+    if float(p.get("confidence", 0)) < AUTO_APPLY_CONF:
+        return False
+    if p.get("action", "append") != "append":
+        return False           # only additive writes auto-apply
+    kind = p.get("kind", "")
+    if kind == "lint":
+        return False           # advisory only — never mutate on a lint finding
+    if kind in ("concept", "page_seed", "page_edit"):
+        return True            # concept/topic page ops are the core auto surface
+    # A canonical / private CARD append: allowed except the always-gated cards.
+    return str(p.get("card", "")) not in AUTO_APPLY_CARD_DENY
+
+
+def write_undo_snapshot(target: Path, before_text: str) -> Path | None:
+    """Persist the pre-write bytes so a change can be reverted with one tap.
+    Best-effort — a snapshot failure must never block the write itself."""
+    if not before_text:
+        return None
+    try:
+        UNDO_DIR.mkdir(parents=True, exist_ok=True)
+        ts = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S")
+        safe = re.sub(r"[^A-Za-z0-9_-]", "_", target.stem)[:40]
+        snap = UNDO_DIR / f"{ts}-{secrets.token_hex(3)}-{safe}.md"
+        snap.write_text(before_text)
+        return snap
+    except Exception:
+        return None
 
 
 def today_draft() -> Path:
@@ -135,10 +241,13 @@ def parse_proposal_blocks(draft_text: str) -> list[dict]:
     return proposals
 
 
-def render_proposal(pid: str, p: dict) -> str:
-    """Render one proposal as a markdown section."""
+def render_proposal(pid: str, p: dict, status_note: str = "") -> str:
+    """Render one proposal as a markdown section. `status_note` (e.g.
+    'auto-applied 2026-07-03') strikes the header so an auto-applied proposal
+    is an audit record, not a pending review item."""
+    header = f"## ~~{pid}~~ ({status_note})" if status_note else f"## {pid}"
     lines = [
-        f"## {pid}",
+        header,
         f"**card:** {p.get('card', '')}",
         f"**section:** {p.get('section', '')}",
         f"**action:** {p.get('action', 'append')}",
@@ -182,36 +291,67 @@ def cmd_ingest(args) -> int:
 
     ensure_drafts_dir()
     draft = today_draft()
+    today = dt.date.today().isoformat()
 
     # Build existing-IDs set from today's draft
     existing_text = draft.read_text() if draft.exists() else ""
     existing_ids = {p["id"] for p in parse_proposal_blocks(existing_text)}
 
-    # Emit one proposal section per JSON entry with a freshly generated ID
+    # Emit one proposal section per JSON entry with a freshly generated ID.
+    # With --auto (reflect v2), proposals inside the safe envelope are APPLIED
+    # now and recorded struck as an audit trail; everything else is queued
+    # pending for /memory review exactly as before.
     new_text = existing_text
     if not existing_text.strip():
-        new_text = f"# Learnings draft — {dt.date.today().isoformat()}\n\n"
-    appended = 0
+        new_text = f"# Learnings draft — {today}\n\n"
+    auto = bool(getattr(args, "auto", False))
+    appended = applied = gated = 0
+    applied_targets = []
     for p in proposals:
-        # Confidence floor gate
         floor = CONFIDENCE_FLOORS.get(p.get("action", "append"), 0.7)
         if float(p.get("confidence", 0)) < floor:
             print(f"SKIP (below {floor} floor): {p.get('card')} — {p.get('rationale', '')[:60]}", file=sys.stderr)
             continue
+        # Secrets kill-list: a credential must never reach memory, not even a
+        # private card — drop it outright (structural, not prompt-dependent).
+        if looks_like_secret(p.get("content", "")):
+            print(f"SKIP (secret detected): {p.get('card')} — dropped, never stored", file=sys.stderr)
+            continue
         pid = gen_proposal_id(existing_ids)
         existing_ids.add(pid)
+        if auto and is_auto_applicable(p):
+            res = apply_proposal_dict(p, source="auto-apply", pid=pid)
+            if res["ok"]:
+                new_text += render_proposal(pid, p, status_note=f"auto-applied {today}")
+                applied += 1
+                applied_targets.append(res["target"])
+                continue
+            if res.get("duplicate"):
+                # Already recorded — drop silently, don't queue (that's the whole point).
+                print(f"SKIP (duplicate): {p.get('card')} — already recorded", file=sys.stderr)
+                existing_ids.discard(pid)
+                continue
+            # An auto-apply that couldn't land cleanly (e.g. ambiguous field) falls
+            # back to a pending draft item so the operator can resolve it — never lost.
+            print(f"AUTO-FALLBACK ({res['error']}): {p.get('card')} → queued for review", file=sys.stderr)
+            gated += 1
+        else:
+            gated += (1 if auto else 0)
         new_text += render_proposal(pid, p)
         appended += 1
 
-    if appended == 0:
+    if appended == 0 and applied == 0:
         print("No proposals above confidence floor.")
         return 0
 
-    # Atomic write
     tmp = draft.with_suffix(".md.tmp")
     tmp.write_text(new_text)
     tmp.replace(draft)
-    print(f"Appended {appended} proposal(s) to {draft.relative_to(PROJECT_DIR)}.")
+    if auto:
+        tail = f" ({', '.join(applied_targets)})" if applied_targets else ""
+        print(f"Auto-applied {applied}, queued {appended} for review in {draft.relative_to(PROJECT_DIR)}{tail}.")
+    else:
+        print(f"Appended {appended} proposal(s) to {draft.relative_to(PROJECT_DIR)}.")
     return 0
 
 
@@ -346,6 +486,76 @@ def resolve_target(proposal: dict) -> tuple[Path, str | None]:
     return path, None
 
 
+def apply_proposal_dict(p: dict, *, source: str, pid: str = "") -> dict:
+    """Apply ONE proposal dict to its target card. The single mutation choke
+    point shared by manual approve (cmd_apply) and auto-apply (cmd_ingest
+    --auto). Writes an undo snapshot + activity-log entry. Returns
+      {ok, target, before_sha256, undo, error}. Never raises for a bad
+    proposal — returns ok:False with a reason."""
+    floor = CONFIDENCE_FLOORS.get(p.get("action", "append"), 0.7)
+    if float(p.get("confidence", 0)) < floor:
+        return {"ok": False, "error": f"confidence {p.get('confidence')} below {floor} floor"}
+
+    target, err = resolve_target(p)
+    if err:
+        return {"ok": False, "error": err}
+
+    is_private = p.get("scope") == "private"
+    is_concept = p.get("kind") == "concept"
+    is_lint = p.get("kind") == "lint"
+    if target.exists():
+        before = target.read_text()
+    elif is_lint:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = seed_lint_page()
+    elif is_concept:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = seed_concept_page(target.stem)
+    elif is_private:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        before = ""
+    else:
+        return {"ok": False, "error": f"target card {target.name} doesn't exist"}
+
+    # Drop a near-duplicate append before it piles onto the card/page.
+    if p.get("action", "append") == "append" and is_duplicate_append(before, p.get("content", "")):
+        return {"ok": False, "duplicate": True, "error": "duplicate — fact already recorded"}
+
+    after = apply_action(before, p)
+    if after is None:
+        return {"ok": False, "error": f"action {p.get('action')} could not be applied unambiguously"}
+
+    undo = write_undo_snapshot(target, before)
+    undo_rel = str(undo.relative_to(PROJECT_DIR)) if undo else None
+
+    tmp = target.with_suffix(".md.tmp")
+    tmp.write_text(after)
+    tmp.replace(target)
+
+    # A concept page just accreted a claim (created or appended) — keep its
+    # signpost in the right INDEX current so the bot can actually FIND it later
+    # (concept pages are never in the prefix; private ones are grep-invisible).
+    if is_concept:
+        upsert_index_signpost(target)
+
+    before_sha = hashlib.sha256(before.encode()).hexdigest()
+    target_rel = str(target.relative_to(PROJECT_DIR))
+    log_activity({
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "action": source,                 # "apply" (manual) | "auto-apply"
+        "proposal_id": pid,
+        "card": p.get("card", ""),
+        "target": target_rel,             # explicit path so revert is uniform
+        "kind": p.get("kind", ""),
+        "scope": p.get("scope", ""),
+        "owner": p.get("owner", ""),
+        "section": p.get("section", ""),
+        "before_sha256": before_sha,
+        "undo": undo_rel,
+    })
+    return {"ok": True, "target": target_rel, "before_sha256": before_sha, "undo": undo_rel}
+
+
 def cmd_apply(args) -> int:
     """Apply a single proposal by ID, strike it as applied in the draft."""
     pid = args.proposal_id
@@ -357,64 +567,323 @@ def cmd_apply(args) -> int:
         print(f"ERROR: proposal {pid} is already {proposal['status']}.", file=sys.stderr)
         return 1
 
-    floor = CONFIDENCE_FLOORS.get(proposal["action"], 0.7)
-    if proposal["confidence"] < floor:
-        print(f"ERROR: confidence {proposal['confidence']} below {floor} floor for action {proposal['action']}.", file=sys.stderr)
+    res = apply_proposal_dict(proposal, source="apply", pid=pid)
+    if not res["ok"]:
+        if res.get("duplicate"):
+            mark_proposal_status(draft, pid, "applied")   # already recorded — clear it
+            print(f"Skipped {pid} (duplicate — already recorded).")
+            return 0
+        print(f"ERROR: {res['error']}.", file=sys.stderr)
         return 1
 
-    target, err = resolve_target(proposal)
-    if err:
-        print(f"ERROR: {err}.", file=sys.stderr)
+    mark_proposal_status(draft, pid, "applied")
+    print(f"Applied {pid} → {res['target']}")
+    return 0
+
+
+def count_recent_reverts(target_rel: str, within_s: int = 30 * 86400) -> int:
+    """How many times this page was reverted in the recent window. Two reverts
+    trip the circuit breaker — reflect-curate stops rewriting a page a human
+    keeps un-doing (it's theirs now). Reads the activity log."""
+    if not ACTIVITY_LOG.exists():
+        return 0
+    cutoff = dt.datetime.now(dt.timezone.utc).timestamp() - within_s
+    n = 0
+    try:
+        for line in ACTIVITY_LOG.read_text().splitlines():
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            if e.get("action") != "revert" or e.get("target") != target_rel:
+                continue
+            try:
+                ts = dt.datetime.fromisoformat(e["ts"]).timestamp()
+            except Exception:
+                ts = cutoff + 1
+            if ts >= cutoff:
+                n += 1
+    except Exception:
+        return 0
+    return n
+
+
+def cmd_curate(args) -> int:
+    """Apply a full-page rewrite from reflect-curate (guarded upstream in JS).
+    Freezes a page with `hand-curated: true` once it's been reverted twice."""
+    spec = json.loads(Path(args.json_file).read_text())
+    target_rel = str(spec.get("target", "")).strip()
+    new_page = spec.get("page", "")
+    if not target_rel or not new_page:
+        print("ERROR: curate needs {target, page}.", file=sys.stderr)
+        return 1
+    target = (PROJECT_DIR / target_rel).resolve()
+    if not target.is_relative_to(MEMORY_DIR.resolve()) or target.suffix != ".md":
+        print(f"ERROR: curate target escapes memory dir: {target_rel}", file=sys.stderr)
+        return 1
+    if not target.exists():
+        print(f"ERROR: curate target does not exist: {target_rel}", file=sys.stderr)
         return 1
 
-    is_private = proposal.get("scope") == "private"
-    is_concept = proposal.get("kind") == "concept"
-    is_lint = proposal.get("kind") == "lint"
-    if target.exists():
-        before = target.read_text()
-    elif is_lint:
-        # First lint finding — seed the advisory log (## Findings section).
-        target.parent.mkdir(parents=True, exist_ok=True)
-        before = seed_lint_page()
-    elif is_concept:
-        # First claim about this entity — seed the concept page (frontmatter +
-        # an empty ## Claims section the append then writes into).
-        target.parent.mkdir(parents=True, exist_ok=True)
-        before = seed_concept_page(target.stem)
-    elif is_private:
-        # First write to a teammate's private card — seed it (append actions
-        # create the section from empty; the dir may not be bootstrapped yet).
-        target.parent.mkdir(parents=True, exist_ok=True)
-        before = ""
-    else:
-        print(f"ERROR: target card {target} doesn't exist.", file=sys.stderr)
-        return 1
-    after = apply_action(before, proposal)
-    if after is None:
-        print(f"ERROR: action {proposal['action']} could not be applied unambiguously.", file=sys.stderr)
-        return 1
+    before = target.read_text()
+    # Circuit breaker: a page reverted twice becomes the human's — freeze it.
+    if count_recent_reverts(target_rel) >= 2 and "hand-curated: true" not in before:
+        fm_end = before.find("\n---", 3)
+        if fm_end != -1:
+            frozen = before[:fm_end] + "\nhand-curated: true" + before[fm_end:]
+            _atomic_write(target, frozen)
+        print(f"FROZEN {target_rel} (reverted twice — pipeline will stop rewriting it).")
+        return 0
 
-    # Atomic write target
-    tmp = target.with_suffix(".md.tmp")
-    tmp.write_text(after)
-    tmp.replace(target)
-
-    # Log to activity (BEFORE state preserved)
+    undo = write_undo_snapshot(target, before)
+    _atomic_write(target, new_page)
     log_activity({
         "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "action": "apply",
-        "proposal_id": pid,
-        "card": proposal["card"],
-        "kind": proposal.get("kind", ""),
-        "scope": proposal.get("scope", ""),
-        "owner": proposal.get("owner", ""),
-        "section": proposal["section"],
+        "action": "curate",
+        "target": target_rel,
         "before_sha256": hashlib.sha256(before.encode()).hexdigest(),
+        "undo": str(undo.relative_to(PROJECT_DIR)) if undo else None,
     })
+    print(f"Curated {target_rel}.")
+    return 0
 
-    # Strike proposal in draft
-    mark_proposal_status(draft, pid, "applied")
-    print(f"Applied {pid} → {target.relative_to(PROJECT_DIR)}")
+
+def _atomic_write(target: Path, text: str) -> None:
+    tmp = target.with_suffix(".md.tmp")
+    tmp.write_text(text)
+    tmp.replace(target)
+
+
+# ── INDEX = the map of each memory scope ─────────────────────────────────────
+# An INDEX.md is the auto-maintained MAP of everything in ITS scope. The shared
+# tree → memory/INDEX.md lists every shared card + topic + concept; each user's
+# private tree → memory/users/<owner>/INDEX.md lists THAT user's cards + topics +
+# concepts. It is load-bearing three ways:
+#   1. Prefix — the shared INDEX (always) and the per-user USER_INDEX are the map
+#      the bot navigates from. Concept/topic pages live OUTSIDE the prefix by
+#      invariant and memory_grep skips users/**, so without the index a private
+#      page is undiscoverable (write-only).
+#   2. Graph — the index node's `[[wiki-links]]` become the strong edges that
+#      make each scope's index the visible HUB connecting all its cards/pages.
+#   3. Lint — memory-lint keys on "index_drift" (a page with no INDEX entry, or
+#      an entry whose page is gone), i.e. it EXPECTS the index to map everything.
+# The file is fully machine-generated (a map, not prose): the memory grammar
+# lives in the cached-prefix PREAMBLE, so INDEX.md carries only the map. Every
+# entry is `[[<stem>]] — <blurb>`; `[[<stem>]]` resolves in-scope (a private
+# index's [[user_profile]] → that user's card), which is what draws the hub.
+
+# One-line blurbs for the canonical role cards (they carry no `purpose:`
+# frontmatter). Topic/concept pages use their own `purpose:`/`title:` instead.
+# Membership here also classifies a root .md as a CARD; any other root .md
+# (e.g. a stray topic saved at the root) is listed under Topics.
+CARD_DESCRIPTIONS = {
+    "RULES": "hard never/always rules — override preferences on conflict",
+    "MISSION": "what the bot is here to do: responsibilities, principles, org context",
+    "AGENT_IDENTITY": "the agent's name, voice, mood, defaults",
+    "AGENT_TOOLS": "per-tool gotchas + activation notes for active integrations",
+    "CHANNELS": "the Telegram groups the bot is in + who's in them",
+    "TEAM": "the team roster + each member's role",
+    "USER_PROFILE": "stable facts about the user (role, location, languages, focus)",
+    "USER_PREFERENCES": "soft preferences (tone, formatting, working style)",
+    "USER_RELATIONSHIPS": "people in the user's life",
+    "USER_REFLECTIONS": "the user's own self-introspection entries",
+    "RECENT_WEB": "rolling snapshot of the recent web chat",
+    "RECENT_TELEGRAM": "rolling snapshot of the recent Telegram conversation",
+}
+
+
+def _frontmatter_field(text: str, field: str) -> str | None:
+    m = re.search(rf"^{re.escape(field)}:\s*(.+?)\s*$", text, re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
+def _clip_blurb(s: str) -> str:
+    """First sentence of s, whitespace-collapsed + capped for a one-line blurb."""
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.split(r"(?<=[.!?])\s+", s)[0]        # first sentence only
+    return s.strip().rstrip(".")[:110]
+
+
+def _describe(abs_path: Path, stem_up: str) -> str:
+    """A one-line blurb for an index entry — every topic/concept gets one, even
+    without a `purpose:` field. Order: canonical card → its fixed description; a
+    NON-boilerplate `purpose:`; the first real prose line / claim of the body; the
+    page's H1 heading; `title:`. (Concept `purpose:` is the seed boilerplate
+    'Accreting claims about X' — skipped so we surface the actual first claim.)"""
+    if stem_up in CARD_DESCRIPTIONS:
+        return CARD_DESCRIPTIONS[stem_up]
+    try:
+        raw = abs_path.read_text()
+    except OSError:
+        return ""
+    fm, body = "", raw
+    if raw.startswith("---"):
+        end = raw.find("\n---", 3)
+        if end != -1:
+            fm, body = raw[3:end], raw[end + 4:]
+    purpose = _frontmatter_field(fm, "purpose") or ""
+    if purpose and not purpose.lower().startswith("accreting claims about"):
+        return _clip_blurb(purpose)
+    heading = ""
+    for line in body.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("#"):
+            if not heading and s.startswith("# "):
+                heading = s[2:].strip()
+            continue
+        if s.startswith("<!--") or s.lower().startswith("accreting claims about"):
+            continue
+        s = re.sub(r"^[-*+]\s+", "", s)                              # list marker
+        s = re.sub(r"\s*\[(?:Source|src)\s*:.*?\]\s*$", "", s, flags=re.I)  # citation tail
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)                       # unbold
+        s = re.sub(r"\[\[([^\]]+)\]\]", r"\1", s)                    # unwrap wikilinks (no stray edges)
+        if len(s) >= 8:
+            return _clip_blurb(s)
+    return _clip_blurb(heading or _frontmatter_field(fm, "title") or "")
+
+
+def _md_files(d: Path):
+    try:
+        return sorted(f for f in d.iterdir() if f.is_file() and f.suffix == ".md")
+    except OSError:
+        return []
+
+
+def rebuild_scope_index(scope_root: Path, index_path: Path, *, title: str, intro: str) -> None:
+    """(Re)generate an INDEX.md as the full MAP of scope_root: every root card,
+    every topics/<x>.md and concepts/<x>.md — one `[[<stem>]] — blurb` line each,
+    grouped under Cards / Topics / Concepts. Fully machine-owned, so it is written
+    wholesale (any stale hand/clone content is replaced). Writes nothing when the
+    scope is empty (no card/topic/concept), so we never litter empty indexes.
+    Best-effort — never raises into the caller."""
+    try:
+        cards, topics, concepts = [], [], []
+
+        def entry(f: Path) -> str:
+            blurb = _describe(f, f.stem.upper())
+            return f"- [[{f.stem}]]" + (f" — {blurb}" if blurb else "")
+
+        for f in _md_files(scope_root):
+            if f.name.lower() in ("index.md", "about.md"):
+                continue
+            (cards if f.stem.upper() in CARD_DESCRIPTIONS else topics).append(entry(f))
+        for f in _md_files(scope_root / "topics"):
+            if f.name.lower() == "about.md":
+                continue
+            topics.append(entry(f))
+        for f in _md_files(scope_root / "concepts"):
+            if f.name.lower() == "about.md":
+                continue
+            concepts.append(entry(f))
+
+        if not (cards or topics or concepts):
+            return  # empty scope → no index file
+
+        parts = [f"# {title}\n\n{intro}\n"]
+        for label, items in (("Cards", cards), ("Topics", topics), ("Concepts", concepts)):
+            if items:
+                parts.append(f"\n## {label}\n" + "\n".join(sorted(set(items))) + "\n")
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(index_path, "".join(parts))
+    except Exception:
+        pass
+
+
+def _rebuild_shared_index() -> None:
+    rebuild_scope_index(
+        MEMORY_DIR, MEMORY_DIR / "INDEX.md",
+        title="Memory index",
+        intro="Map of SHARED (team-wide) memory — cards, topics, concepts. The wiki "
+              "entry point; `Read` a target when a turn needs its depth.",
+    )
+
+
+def _rebuild_private_index(owner: str) -> None:
+    rebuild_scope_index(
+        MEMORY_DIR / "users" / owner, MEMORY_DIR / "users" / owner / "INDEX.md",
+        title=f"{owner}'s private memory",
+        intro=f"Map of {owner}'s PRIVATE memory — cards, topics, concepts. `Read` a "
+              "target for its depth; these are not all in the prefix and memory_grep "
+              "cannot see private pages.",
+    )
+
+
+def upsert_index_signpost(page_path: Path) -> None:
+    """A concept/topic page just changed — regenerate the INDEX map for ITS scope
+    (shared → memory/INDEX.md; private → memory/users/<owner>/INDEX.md) so the map
+    always reflects reality. Best-effort; never breaks the underlying page write."""
+    try:
+        p = page_path.resolve()
+        if not p.is_relative_to(MEMORY_DIR.resolve()):
+            return
+        parts = p.relative_to(MEMORY_DIR.resolve()).parts
+        if parts and parts[0] == "users":
+            if len(parts) >= 2 and SLUG_RE.match(parts[1]):
+                _rebuild_private_index(parts[1])
+        else:
+            _rebuild_shared_index()
+    except Exception:
+        pass
+
+
+def cmd_reindex(args) -> int:
+    """Regenerate every INDEX map from scratch: the shared tree (memory/INDEX.md)
+    and each user's private tree (memory/users/<slug>/INDEX.md). Idempotent; safe
+    to re-run. Use to backfill/repair after the index generator changes, or when a
+    shared INDEX.md went missing. Empty scopes get no index file."""
+    _rebuild_shared_index()
+    n = 1
+    users_dir = MEMORY_DIR / "users"
+    if users_dir.is_dir():
+        for u in sorted(users_dir.iterdir()):
+            if u.is_dir() and SLUG_RE.match(u.name):
+                _rebuild_private_index(u.name)
+                n += 1
+    print(f"Rebuilt {n} INDEX map(s) (shared + per-user).")
+    return 0
+
+
+def cmd_graduate(args) -> int:
+    """Graduate a matured concept page to a topic (reflect v2 lifecycle): an
+    entity that started as an accreting concept, once curated into a rich
+    multi-section page, becomes a proper long-form topic. Moves
+    concepts/<slug>.md -> topics/<slug>.md and flips `kind: concept` ->
+    `kind: topic`. The graph re-renders it as a topic node by directory."""
+    src_rel = str(args.path).strip()
+    src = (PROJECT_DIR / src_rel).resolve()
+    if not src.is_relative_to(MEMORY_DIR.resolve()) or "concepts" not in src.parts or src.suffix != ".md":
+        print(f"ERROR: not a concept page: {src_rel}", file=sys.stderr)
+        return 1
+    if not src.exists():
+        print(f"ERROR: concept page gone: {src_rel}", file=sys.stderr)
+        return 1
+    dest = Path(str(src).replace(f"{os.sep}concepts{os.sep}", f"{os.sep}topics{os.sep}"))
+    if dest.exists():
+        print(f"SKIP: a topic already exists at {dest.relative_to(PROJECT_DIR)}", file=sys.stderr)
+        return 0
+    text = src.read_text()
+    write_undo_snapshot(src, text)
+    text = re.sub(r"^kind:\s*concept\s*$", "kind: topic", text, count=1, flags=re.MULTILINE)
+    # Refresh the stale concept-seed purpose line to a topic-shaped one.
+    slug = src.stem
+    text = re.sub(r"^purpose:\s*Accreting claims about .*$",
+                  f"purpose: Long-form context on {slug}. Read when the topic comes up; keep tight, curate in place.",
+                  text, count=1, flags=re.MULTILINE)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(dest, text)
+    src.unlink()
+    # Update the signpost: keyed on slug, so this replaces the old concepts/<slug>
+    # line with the new topics/<slug> one (same INDEX — shared or the owner's).
+    upsert_index_signpost(dest)
+    log_activity({
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "action": "graduate",
+        "target": str(dest.relative_to(PROJECT_DIR)),
+        "from": src_rel,
+    })
+    print(f"Graduated {src_rel} -> {dest.relative_to(PROJECT_DIR)} (concept -> topic).")
     return 0
 
 
@@ -524,6 +993,7 @@ def main() -> int:
 
     p_ingest = sub.add_parser("ingest", help="Append JSON proposals to today's draft.")
     p_ingest.add_argument("json_file", nargs="?", help="Path to JSON file (default: stdin).")
+    p_ingest.add_argument("--auto", action="store_true", help="Auto-apply proposals inside the safe envelope; queue the rest (reflect v2).")
 
     sub.add_parser("list", help="List pending proposals across all drafts.")
 
@@ -533,8 +1003,16 @@ def main() -> int:
     p_reject = sub.add_parser("reject", help="Reject a proposal without applying.")
     p_reject.add_argument("proposal_id")
 
+    p_curate = sub.add_parser("curate", help="Apply a full-page rewrite {target, page} from reflect-curate.")
+    p_curate.add_argument("json_file", help="Path to JSON file with {target, page}.")
+
+    p_grad = sub.add_parser("graduate", help="Promote a matured concept page to a topic.")
+    p_grad.add_argument("path", help="Relative path of the concept page (memory/.../concepts/<slug>.md).")
+
+    sub.add_parser("reindex", help="Rebuild INDEX signposts for all concept/topic pages (shared + per-user). Idempotent backfill/repair.")
+
     args = parser.parse_args()
-    return {"ingest": cmd_ingest, "list": cmd_list, "apply": cmd_apply, "reject": cmd_reject}[args.cmd](args)
+    return {"ingest": cmd_ingest, "list": cmd_list, "apply": cmd_apply, "reject": cmd_reject, "curate": cmd_curate, "graduate": cmd_graduate, "reindex": cmd_reindex}[args.cmd](args)
 
 
 if __name__ == "__main__":

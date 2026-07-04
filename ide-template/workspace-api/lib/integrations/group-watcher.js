@@ -135,6 +135,34 @@ function pushHistory(chatId, entry) {
   if (!h) { h = []; history.set(chatId, h); }
   h.push(entry);
   if (h.length > HISTORY_MAX) h.splice(0, h.length - HISTORY_MAX);
+  persistHistory(chatId, entry);   // reflect v2: durable trace so groups feed memory
+}
+
+// Reflect v2: the in-memory ring above is lost on restart, so a group
+// conversation left NO durable trace and never fed the memory pipeline. Mirror
+// each turn to a per-group JSONL that reflect-summary's group sweep reads. The
+// audit sink (<gid>.jsonl) records the bot's DECISIONS; this records the
+// CONVERSATION. Group content is team-visible by contract → summarised as SHARED.
+const GROUP_TRANSCRIPT_MAX_LINES = num('GROUP_TRANSCRIPT_MAX_LINES', 2000);
+function persistHistory(chatId, entry) {
+  try {
+    const gid = String(chatId).replace(/[^\d-]/g, '') || 'unknown';
+    mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o770 });
+    const path = join(AUDIT_DIR, `${gid}-history.jsonl`);
+    appendFileSync(path, JSON.stringify({
+      ts: new Date().toISOString(),
+      role: entry.role === 'assistant' ? 'assistant' : 'user',
+      who: entry.who || '',
+      text: String(entry.text || '').slice(0, 4000),
+    }) + '\n', { mode: 0o660 });
+    // Cheap bounded trim: when the file grows past the cap, keep the tail.
+    try {
+      const lines = readFileSync(path, 'utf8').split('\n');
+      if (lines.length > GROUP_TRANSCRIPT_MAX_LINES * 1.5) {
+        writeFileSync(path, lines.slice(-GROUP_TRANSCRIPT_MAX_LINES).join('\n'), { mode: 0o660 });
+      }
+    } catch { /* trim best-effort */ }
+  } catch { /* persistence is best-effort — never break the watcher */ }
 }
 // Render the recent conversation for the model; messages in `newIds` are the
 // undecided ones (marked ← NEW), earlier lines + the assistant's own replies are
@@ -473,17 +501,23 @@ export function parseDecision(text) {
 
 // ─── Group brain — FULL team-scoped assistant (Phase 2) ───────────────────────
 // On a positive verdict, the FULL assistant answers — the SAME engine the web/1:1
-// chat uses (runClaudeTurn), run as actor='team' (shared scope). It gets exactly
-// what a member has in 1:1: SHARED files (cwd=PROJECT_DIR), shared memory, skills,
-// integrations, reminders — and it can ACT. It even knows its own name, because
-// claude auto-discovers PROJECT_DIR/.claude/CLAUDE.md (synthesised from branding).
+// chat uses (runClaudeTurn). It runs AS the message's SENDER: their roster slug
+// (actor) + their real role (actorIsAdmin), resolved by Telegram user-id in
+// groupTurnParams below. So the bot has the identity + access that person has 1:1
+// — SHARED files (cwd=PROJECT_DIR), shared memory, skills, integrations, reminders
+// — and it can ACT. It knows its own name via PROJECT_DIR/.claude/CLAUDE.md.
 //
-// Scope: IDE_ACTOR_SLUG='team' + IS_ADMIN=0, so scope-guard fences it OUT of every
-// individual's private users/<slug> tree (shared-only). The group is the team —
-// no outsiders, which is the group ADMIN's responsibility — so there is no special
-// isolation: members get exactly what they already have 1:1. The reply is public
-// to the group, so private/personal asks belong in a DM (the prompt says so);
-// that's the member's choice, not a gate the bot enforces.
+// Scope + privacy (deliberate design — see the 2026-07 group read-path audit): the
+// group IS the team (no outsiders — the group admin's responsibility), so the bot
+// is NOT fenced to shared-only; it runs with the sender's scope, including their
+// own private tree (and, if the sender is an admin, IS_ADMIN=1 relaxes scope-guard
+// exactly as it does 1:1). The one structural hardening: the group turn passes
+// excludeIds:['USER_INDEX'] (groupTurnParams) so the PUBLIC reply's prefix never
+// advertises the sender's private pages. Beyond that, a private/personal ask is
+// steered to a DM by the compose prompt — a soft nudge, not a hard gate. (A
+// stricter shared-only group brain is available if ever wanted: buildTeamPrefix +
+// loadGroupMemory in memory-loader.js — currently unused.) An unknown sender (not
+// in the roster) falls back to actor='team', non-admin.
 // The group brain has the FULL toolset and often does real multi-tool work
 // (e.g. "what are today's plans?" → walk Trello boards/lists/cards + Bash). 90s
 // was too tight and SIGKILLed productive turns mid-compose → silent failure. 1:1
@@ -534,6 +568,11 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
     actorName: senderName,
     actorIsAdmin,           // their real role; unknown sender → false
     teammates: [],
+    // PUBLIC-reply guard: drop the sender's private-page index (USER_INDEX) from
+    // the group prefix, so a reply visible to the WHOLE group never advertises
+    // that person's private concept/topic pages. They keep full private access
+    // 1:1 / in a DM — this only affects what the group brain's prefix lists.
+    excludeIds: ['USER_INDEX'],
     ...cb,
   };
 }

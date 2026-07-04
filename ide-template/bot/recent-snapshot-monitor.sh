@@ -56,6 +56,14 @@ while true; do
         log "reflect-distill: $distill"
     fi
 
+    # Gardener (reflect v2): rewrite pages whose Claims buffer is full/stale so
+    # they stay tight instead of degrading into append-only logs. Self-rate-
+    # limited (~12h) + single-flight server-side. Log only when it tends a page.
+    curate=$(curl -sf --max-time 150 -X POST "http://localhost:3001/api/internal/reflect-curate" 2>/dev/null) || true
+    if echo "$curate" | grep -qE '"curated":[1-9]'; then
+        log "reflect-curate: $curate"
+    fi
+
     # Health-check the shared memory wiki → advisory findings → _drafts
     # (memory/LINT.md). Self-rate-limited (~24h) + single-flight server-side, so
     # calling every tick is a cheap no-op until due. Log only when it flags one.

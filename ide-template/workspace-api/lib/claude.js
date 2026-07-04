@@ -39,7 +39,7 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -85,7 +85,13 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
     // bleed it can cause is still handled by the memory-loader guidance (treat
     // it as a DIFFERENT conversation; ask when ambiguous).
     const isTgOperator = actor === primaryAdminSlug();
-    const excludeIds = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
+    const baseExclude = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
+    // Callers can force EXTRA exclusions: the group brain passes ['USER_INDEX'] so a
+    // PUBLIC group reply never advertises the sender's private pages (the group
+    // reply is visible to everyone; private depth stays available 1:1 / in a DM).
+    const excludeIds = Array.isArray(callerExcludeIds)
+      ? [...baseExclude, ...callerExcludeIds]
+      : baseExclude;
     const prefix = buildCachedPrefix({
       memoryDir: join(PROJECT_DIR, 'memory'),
       excludeIds,

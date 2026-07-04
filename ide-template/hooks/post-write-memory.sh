@@ -34,8 +34,9 @@ NOTIFY_TARGET="${MEMORY_WRITE_NOTIFY:-web}"
 TG_NOTIFY="${NOTIFY_SCRIPT:-/opt/ide/bot-notify.sh}"
 WEB_NOTIFY="${WEB_NOTIFY_SCRIPT:-/opt/ide/web-notify.sh}"
 
-# Fully silent → skip all the payload parsing too.
-[ "$NOTIFY_TARGET" = "off" ] && exit 0
+# NOTE: even when notifications are `off` we still keep the INDEX map current
+# below — the write happened, so the map must reflect it. The `off` switch gates
+# only the operator heads-up, so we no longer early-exit here.
 
 # Read JSON payload from stdin. CC PostToolUse passes the tool call
 # context as JSON; we want tool_name and tool_input.file_path (Write)
@@ -68,8 +69,29 @@ esac
 # Operator notifications on those would be noise.
 BASENAME=$(basename "$FILE_PATH")
 case "$BASENAME" in
-    RECENT_*.md) exit 0 ;;
+    RECENT_*.md) exit 0 ;;   # rolling snapshots — the monitor maintains these
+    INDEX.md)    exit 0 ;;   # auto-generated MAP — a rebuild is not a memory "write" worth flagging (and needs no reindex)
 esac
+
+# Keep the scope's INDEX map in sync with the bot's OWN memory writes. The reflect
+# pipeline updates the index on ITS writes (reflect-apply apply/graduate); this
+# covers the model writing a card/topic/concept directly via memory-router. A full
+# reindex also makes cross-scope MOVES correct: a page written to shared while its
+# private original is gone → the private index drops it and the shared index gains
+# it. Skip a write TO an index (nothing to derive from it). Best-effort, detached,
+# and never allowed to delay or fail the bot's turn.
+case "$BASENAME" in
+    INDEX.md) ;;
+    *)
+        REFLECT_APPLY="${REFLECT_APPLY_PY:-/opt/ide/hooks/reflect-apply.py}"
+        if [ -f "$REFLECT_APPLY" ]; then
+            ( PROJECT_DIR="$PROJECT_DIR" python3 "$REFLECT_APPLY" reindex >/dev/null 2>&1 & )
+        fi
+        ;;
+esac
+
+# From here down is only the operator heads-up — silent clients stop here.
+[ "$NOTIFY_TARGET" = "off" ] && exit 0
 
 # Determine the card/topic label (relative path under memory/)
 REL_PATH="${FILE_PATH#$MEMORY_DIR/}"
@@ -84,24 +106,43 @@ elif [ "$TOOL_NAME" = "Edit" ]; then
     PREVIEW=$(echo "$PAYLOAD" | jq -r '.tool_input.new_string // empty' 2>/dev/null | head -c 200)
 fi
 
-# Truncate cleanly
-[ -z "$PREVIEW" ] && PREVIEW="(content not extracted from hook payload)"
+# Truncate cleanly.
 [ ${#PREVIEW} -ge 200 ] && PREVIEW="${PREVIEW}…"
 
-# Title + body for the web notification (web-notify.sh JSON-encodes, so no
-# markdown-fence escaping needed). The single-string form is kept for the
-# Telegram path (bot-notify.sh wraps in markdown).
-TITLE="Memory write: $TOOL_NAME → $REL_PATH"
-BODY="$PREVIEW
+# ── Human-friendly framing ───────────────────────────────────────────────────
+# Non-technical operators read these, so show NO file paths, tool names, or raw
+# markdown. Turn the path into a plain subject and the content into a clean gist;
+# clicking the notification opens the memory page (kind=memory, handled client-side).
+slug=$(printf '%s' "${BASENAME%.md}" | tr '_-' '  ' | sed -E 's/^ +| +$//g')
+case "$REL_PATH" in
+    *USER_PROFILE*)          WHAT="I updated your profile" ;;
+    *USER_PREFERENCES*)      WHAT="I noted how you like things done" ;;
+    *USER_RELATIONSHIPS*)    WHAT="I noted something about someone you know" ;;
+    *USER_REFLECTIONS*)      WHAT="I saved a personal reflection" ;;
+    */topics/*|*/concepts/*) WHAT="I noted something about ${slug}" ;;
+    RULES.md)                WHAT="I noted a rule to follow" ;;
+    MISSION.md)              WHAT="I updated what I'm here to do" ;;
+    *)                       WHAT="I saved a note about ${slug}" ;;
+esac
 
-To correct: edit $REL_PATH manually, or send /correct <note> if this was a verification-failure pattern."
-MESSAGE="Memory write: $TOOL_NAME → $REL_PATH
+# Reduce the raw write to a plain-prose gist: DELETE frontmatter, headings, and
+# the concept-seed boilerplate line entirely (not just their markers), then unwrap
+# wikilinks and strip bullets/bold. What's left is the actual fact in plain words.
+GIST=$(printf '%s' "$PREVIEW" \
+    | sed -E -e '/^---/d' -e '/^[A-Za-z_]+:[[:space:]]/d' -e '/^[[:space:]]*#{1,6}[[:space:]]/d' \
+             -e '/^[[:space:]]*Accreting claims about/d' \
+             -e 's/\[\[([^]]+)\]\]/\1/g' -e 's/^[[:space:]]*[-*][[:space:]]+//' -e 's/\*\*//g' \
+    | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ +| +$//g')
 
-\`\`\`
-$PREVIEW
-\`\`\`
+TITLE="$WHAT"
+BODY="${GIST}
 
-To correct: edit $REL_PATH manually, or send /correct <note> if this was a verification-failure pattern."
+Open the memory page to see it — or tell me if I got something wrong."
+MESSAGE="🧠 ${WHAT}
+
+${GIST}
+
+Tell me if I got something wrong."
 
 # Fire-and-forget, each path backgrounded with a hard 5s timeout so this hook
 # NEVER blocks claude's turn finalization (PostToolUse waits for the process to

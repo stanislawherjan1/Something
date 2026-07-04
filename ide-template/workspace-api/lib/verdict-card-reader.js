@@ -39,7 +39,7 @@ import { PROJECT_DIR } from './config.js';
 const MAX_CARD_BYTES = 256 * 1024;
 
 function threadsDir() {
-  return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory', 'threads');
+  return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory', '_reflect', 'threads');
 }
 
 /**
@@ -170,7 +170,7 @@ export function readVerdictCard(threadId) {
   try {
     stat = statSync(abs);
     if (stat.size > MAX_CARD_BYTES) {
-      return { _unparseable: true, path: `memory/threads/${threadId}.md`, bytes: stat.size, mtime: stat.mtime.toISOString(), reason: 'too-large' };
+      return { _unparseable: true, path: `memory/_reflect/threads/${threadId}.md`, bytes: stat.size, mtime: stat.mtime.toISOString(), reason: 'too-large' };
     }
     body = readFileSync(abs, 'utf8');
   } catch (err) {
@@ -178,7 +178,7 @@ export function readVerdictCard(threadId) {
   }
   const fm = parseVerdictFrontmatter(body);
   if (!fm) {
-    return { _unparseable: true, path: `memory/threads/${threadId}.md`, bytes: stat.size, mtime: stat.mtime.toISOString(), reason: 'no-frontmatter' };
+    return { _unparseable: true, path: `memory/_reflect/threads/${threadId}.md`, bytes: stat.size, mtime: stat.mtime.toISOString(), reason: 'no-frontmatter' };
   }
   return {
     thread_id: fm.thread_id || threadId,
@@ -190,7 +190,7 @@ export function readVerdictCard(threadId) {
     written_at: fm.written_at,
     entities: fm.entities,
     supersedes: fm.supersedes,
-    path: `memory/threads/${threadId}.md`,
+    path: `memory/_reflect/threads/${threadId}.md`,
     bytes: stat.size,
     mtime: stat.mtime.toISOString(),
   };

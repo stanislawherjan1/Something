@@ -20,6 +20,7 @@
 import express from 'express';
 import helmet from 'helmet';
 import { existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PORT, PROJECT_DIR } from './lib/config.js';
@@ -189,6 +190,26 @@ try {
   if (team.getTeamMode()) writeRecentSnapshot({ channel: 'telegram' });
 } catch (err) {
   process.stderr.write(`[workspace-api] telegram snapshot relocation failed: ${err.message}\n`);
+}
+
+// Read-path backfill: every concept/topic page needs an INDEX signpost so the
+// bot can find it (pages live outside the cached prefix; memory_grep skips
+// users/**). New pages self-signpost via reflect-apply apply/graduate; this
+// one-shot `reindex` on boot covers pages that PREDATE the signpost mechanism —
+// i.e. the fleet-cascade backfill, automatic per client, no manual step. Runs as
+// THIS process (wsapi) — the same uid that writes reflect's pages, so index
+// ownership stays consistent (no chown). Detached + best-effort: idempotent, and
+// it must never block wsapi from becoming ready.
+try {
+  const REFLECT_APPLY = process.env.REFLECT_APPLY_PY || '/opt/ide/hooks/reflect-apply.py';
+  if (existsSync(REFLECT_APPLY)) {
+    const child = spawn('python3', [REFLECT_APPLY, 'reindex'], { stdio: 'ignore', detached: true, env: process.env });
+    child.on('error', (e) => process.stderr.write(`[workspace-api] memory reindex spawn failed: ${e.message}\n`));
+    child.unref();
+    process.stdout.write('[workspace-api] memory INDEX reindex kicked off (read-path signpost backfill)\n');
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] memory reindex failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start
