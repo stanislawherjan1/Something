@@ -721,7 +721,9 @@ def _describe(abs_path: Path, stem_up: str) -> str:
         end = raw.find("\n---", 3)
         if end != -1:
             fm, body = raw[3:end], raw[end + 4:]
-    purpose = _frontmatter_field(fm, "purpose") or ""
+    # `purpose:` is the reflect-v2 field; `summary:` is what older hand-made topic
+    # pages use — accept either so those pages get a real blurb, not a raw first line.
+    purpose = _frontmatter_field(fm, "purpose") or _frontmatter_field(fm, "summary") or ""
     if purpose and not purpose.lower().startswith("accreting claims about"):
         return _clip_blurb(purpose)
     heading = ""
