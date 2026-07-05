@@ -1,6 +1,22 @@
 /* pdf-mcp house stylesheet — the ONE place PDF look-and-feel lives.
- * Applied to every markdown→PDF render. Tweak here, not per-document.
- * Targets weasyprint (full CSS 2.1 + paged-media + a lot of CSS3). */
+ * Applied to every markdown→PDF render. Targets weasyprint (full CSS 2.1 +
+ * paged-media + a lot of CSS3).
+ *
+ * The `style` knobs on render_pdf are applied by render.py as a small :root
+ * override injected AFTER this file — accent colour, body font, base size,
+ * line-height, and the heading rule toggle all flow through the variables
+ * below. Page size / margins are overridden by a concrete @page block (NOT via
+ * var(), which weasyprint doesn't resolve inside @page). Edit defaults here;
+ * per-document tweaks go through the knobs, never by editing content. */
+
+:root {
+  --accent:      #111111;                                              /* headings + title */
+  --body-font:   "Liberation Serif", "DejaVu Serif", "Times New Roman", serif;
+  --heading-font:"Liberation Sans", "DejaVu Sans", sans-serif;
+  --base-size:   10.5pt;
+  --line-height: 1.5;
+  --rule-border: none;                                                 /* heading underline: none | <border> */
+}
 
 @page {
   size: A4;
@@ -19,23 +35,23 @@
 }
 
 html {
-  font-family: "Liberation Serif", "DejaVu Serif", "Times New Roman", serif;
-  font-size: 10.5pt;
-  line-height: 1.5;
+  font-family: var(--body-font);
+  font-size: var(--base-size);
+  line-height: var(--line-height);
   color: #1a1a1a;
 }
 
 body { margin: 0; }
 
-/* Optional document title block (rendered when a --title is passed). */
+/* Optional document title block (rendered when a title is set or auto-promoted). */
 .doc-title {
-  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-family: var(--heading-font);
   font-size: 20pt;
   font-weight: 700;
-  color: #111;
+  color: var(--accent);
   margin: 0 0 4pt 0;
   padding-bottom: 8pt;
-  border-bottom: 2pt solid #111;
+  border-bottom: 2pt solid var(--accent);
 }
 .doc-meta {
   font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
@@ -45,16 +61,18 @@ body { margin: 0; }
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
-  color: #111;
+  font-family: var(--heading-font);
+  color: var(--accent);
   line-height: 1.25;
   margin: 18pt 0 6pt 0;
   page-break-after: avoid;
 }
 h1 { font-size: 17pt; font-weight: 700; }
-h2 { font-size: 13.5pt; font-weight: 700; }
+/* border-bottom is off by default (--rule-border: none); the `rules` knob flips
+ * it to a hairline for people who WANT ruled section headings. */
+h2 { font-size: 13.5pt; font-weight: 700; border-bottom: var(--rule-border); padding-bottom: 2pt; }
 h3 { font-size: 11.5pt; font-weight: 700; }
-h4 { font-size: 10.5pt; font-weight: 700; color: #33383d; }
+h4 { font-size: 10.5pt; font-weight: 700; }
 
 p { margin: 0 0 8pt 0; orphans: 2; widows: 2; }
 

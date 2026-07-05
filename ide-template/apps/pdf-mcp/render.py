@@ -16,6 +16,7 @@ empty/invalid, so the Node wrapper can surface a truthful error.
 
 import argparse
 import html
+import json
 import os
 import re
 import sys
@@ -26,6 +27,77 @@ def die(msg):
     sys.exit(1)
 
 
+# ── Bounded visual knobs ─────────────────────────────────────────────────────
+# The ONLY surface for changing the look. Every value is validated/clamped here,
+# so no input can break the layout — a bad value is ignored, never fatal. The
+# result is a tiny CSS override injected AFTER house.css.
+_PALETTE = {
+    "slate": "#111111", "black": "#111111", "ink": "#1a1a1a",
+    "blue": "#1155cc", "navy": "#1f3a8a", "teal": "#0f6b6b",
+    "green": "#1f7a3d", "plum": "#6b2f6b", "maroon": "#7a2f2f",
+    "orange": "#b5560f", "gray": "#4a4f54", "grey": "#4a4f54",
+}
+_FONTS = {
+    "serif": '"Liberation Serif", "DejaVu Serif", "Times New Roman", serif',
+    "sans":  '"Liberation Sans", "DejaVu Sans", "Helvetica", sans-serif',
+}
+
+
+def build_style_override(raw):
+    """Parse the --style JSON and return a validated CSS override string ('' if
+    nothing valid). Never raises: malformed JSON or unknown keys are ignored."""
+    if not raw or not str(raw).strip():
+        return ""
+    try:
+        style = json.loads(raw)
+        if not isinstance(style, dict):
+            return ""
+    except Exception:
+        return ""
+
+    root = {}
+
+    accent = str(style.get("accent", "")).strip().lower()
+    if re.match(r"^#[0-9a-f]{6}$", accent):
+        root["--accent"] = accent
+    elif accent in _PALETTE:
+        root["--accent"] = _PALETTE[accent]
+
+    font = str(style.get("font", "")).strip().lower()
+    if font in _FONTS:
+        root["--body-font"] = _FONTS[font]
+
+    size = style.get("size")
+    if isinstance(size, (int, float)) and not isinstance(size, bool):
+        root["--base-size"] = "%gpt" % max(9.0, min(13.0, float(size)))
+
+    rules = style.get("rules")
+    if rules is True:
+        root["--rule-border"] = "0.75pt solid #d8dbdf"
+    elif rules is False:
+        root["--rule-border"] = "none"
+
+    page_rules = []
+    density = str(style.get("density", "")).strip().lower()
+    if density == "compact":
+        root["--line-height"] = "1.38"
+        page_rules.append("@page { margin: 16mm 16mm 15mm 16mm; }")
+    elif density in ("normal", "relaxed"):
+        root["--line-height"] = "1.6" if density == "relaxed" else "1.5"
+
+    page = str(style.get("page", "")).strip().lower()
+    if page == "letter":
+        page_rules.append("@page { size: Letter; }")
+    elif page == "a4":
+        page_rules.append("@page { size: A4; }")
+
+    css = ""
+    if root:
+        css += ":root {" + " ".join(f"{k}: {v};" for k, v in root.items()) + "}\n"
+    css += "\n".join(page_rules)
+    return css
+
+
 def main():
     ap = argparse.ArgumentParser()
     src = ap.add_mutually_exclusive_group(required=True)
@@ -33,6 +105,7 @@ def main():
     src.add_argument("--stdin", action="store_true", help="Read markdown from stdin.")
     ap.add_argument("--out", required=True, help="Output PDF path.")
     ap.add_argument("--title", default="", help="Optional document title block.")
+    ap.add_argument("--style", default="", help="Optional JSON of bounded visual knobs (accent/font/size/density/rules/page).")
     ap.add_argument("--css", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "house.css"))
     args = ap.parse_args()
 
@@ -92,10 +165,13 @@ def main():
     except Exception as e:
         die(f"House stylesheet unreadable ({args.css}): {e}")
 
+    # The bounded style override is injected AFTER house.css so its :root wins.
+    override = build_style_override(args.style)
+
     doc = (
         "<!doctype html><html><head><meta charset='utf-8'>"
         f"<title>{html.escape(title or 'Document')}</title>"
-        f"<style>{css}</style></head><body>{title_block}{body}</body></html>"
+        f"<style>{css}</style><style>{override}</style></head><body>{title_block}{body}</body></html>"
     )
 
     out = os.path.abspath(args.out)

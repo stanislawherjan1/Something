@@ -47,9 +47,28 @@ yourself reaching for `import struct` to make a PDF, **stop** and use
      that file to the group. **Never claim you sent a file unless you actually
      used `sendDocument` or a `[[SEND_FILE ...]]` marker.**
 
-## Styling
+## Changing the look — use the `style` knobs, nothing else
 
-Look-and-feel (fonts, margins, table borders, page numbers) lives in one place:
-`/opt/ide/apps/pdf-mcp/house.css`. Every render uses it, so documents look
-consistent. If a document needs a genuinely different look, adjust the markdown;
-only touch the stylesheet for a deliberate, workspace-wide change.
+When someone asks to restyle a document ("make it warmer", "bigger text",
+"tighter", "put it on Letter paper", "can the headings be blue"), change the look
+**only** through the `style` object on `render_pdf`. Every value is validated, so
+you can't break the layout with them:
+
+| Knob | Values | Effect |
+|---|---|---|
+| `accent`  | `slate` (default), `blue`, `navy`, `teal`, `green`, `plum`, `maroon`, `orange`, `gray`, or a `#rrggbb` hex | Heading + title colour |
+| `font`    | `serif` (default) / `sans` | Body font (headings stay sans) |
+| `size`    | number, 9–13 (default 10.5) | Base text size in pt |
+| `density` | `compact` / `normal` (default) / `relaxed` | Spacing + margins |
+| `rules`   | `true` / `false` (default) | Hairline under section headings |
+| `page`    | `A4` (default) / `Letter` | Paper size |
+
+Example: `render_pdf({ source_path: "Documents/proposal.md", title: "Proposal",
+style: { accent: "navy", density: "compact", size: 11 } })`.
+
+**Never** try to change the look by editing the document's content or structure
+(stripping `---`, rewriting headings, adding raw HTML) or by hand-writing CSS —
+that's how formatting gets broken. The knobs above are the whole safe surface; if
+a request needs something outside them, say so rather than improvising. The base
+stylesheet (`apps/pdf-mcp/house.css`) is a workspace-wide default — only an
+operator changes it, never per document.

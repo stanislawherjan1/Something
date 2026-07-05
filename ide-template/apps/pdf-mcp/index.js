@@ -74,7 +74,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'PDF here — never write raw PDF bytes or a Python PDF builder by hand. Give it markdown, either as an ' +
         'existing .md file (source_path) or inline (markdown). Tables, headings, lists, code, blockquotes and ' +
         'accented/Unicode text all render correctly. Returns the absolute PDF path, page count and size. ' +
-        'After rendering, use preview_pdf to SEE it before you send it to anyone.',
+        'After rendering, use preview_pdf to SEE it before you send it to anyone. ' +
+        'To change the LOOK (colour, font, size, spacing), use the `style` knobs below — NEVER edit the ' +
+        'document content or its structure to achieve a visual effect, and never hand-write CSS.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -82,6 +84,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           markdown:    { type: 'string', description: 'Inline markdown content to render. Use this OR source_path.' },
           out_path:    { type: 'string', description: 'Where to write the PDF. Defaults to Documents/<name>.pdf (from source_path) or Documents/document.pdf.' },
           title:       { type: 'string', description: 'The document headline, rendered as a prominent title block at the top of the first page. ALWAYS set this for a real document (letter, proposal, report, invoice) — without a title the PDF opens straight into body text with no headline. (If the markdown already starts with a single "# Heading", that is used as the title automatically and you can omit this.)' },
+          style:       {
+            type: 'object',
+            description:
+              'The ONLY safe way to change the visual look — every value is validated, so nothing here can break the layout. ' +
+              'Use this when someone asks to restyle the document (warmer colour, bigger text, tighter spacing, Letter paper). ' +
+              'Do NOT change the markdown content or structure to get a visual effect.',
+            properties: {
+              accent:  { type: 'string', description: 'Heading + title colour. A named colour (slate, blue, navy, teal, green, plum, maroon, orange, gray) or a #rrggbb hex. Default slate.' },
+              font:    { type: 'string', enum: ['serif', 'sans'], description: 'Body font. serif (default, formal) or sans (modern). Headings are always sans.' },
+              size:    { type: 'number', description: 'Base text size in pt, clamped to 9–13. Default 10.5.' },
+              density: { type: 'string', enum: ['compact', 'normal', 'relaxed'], description: 'Spacing/margins. compact = tighter, relaxed = airier. Default normal.' },
+              rules:   { type: 'boolean', description: 'Draw a hairline under section headings. Default false (clean, no lines).' },
+              page:    { type: 'string', enum: ['A4', 'Letter'], description: 'Paper size. Default A4.' },
+            },
+          },
         },
       },
     },
@@ -122,6 +139,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const pyArgs = ['--out', out];
     if (args.title && String(args.title).trim()) pyArgs.push('--title', String(args.title).trim());
+    // Bounded visual knobs — passed as JSON; render.py validates/clamps every value.
+    if (args.style && typeof args.style === 'object') pyArgs.push('--style', JSON.stringify(args.style));
 
     let r;
     if (hasFile) {
