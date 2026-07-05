@@ -1516,6 +1516,18 @@ managed['tasks'] = {
     }
 }
 
+# PDF MCP — markdown → clean typeset PDF via python-markdown + weasyprint.
+# The ONE supported way to make a PDF (render_pdf) plus preview_pdf to
+# rasterise a page so the bot can SEE the result before sending. Always on:
+# no credentials required. Renders under PROJECT_DIR; default output Documents/.
+managed['pdf'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/pdf-mcp/index.js'],
+    'env': {
+        'PROJECT_DIR': '/home/coder/project',
+    }
+}
+
 # Workspace-API MCP — thin wrapper exposing workspace-api HTTP routes as
 # MCP tools. Currently surfaces `memory_grep` (the tool the cached prefix
 # PREAMBLE instructs the model to use). Always on: no credentials required.

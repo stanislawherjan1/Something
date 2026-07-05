@@ -32,7 +32,7 @@ import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
 import { isAllowedGroup, getGroup, userByChatId, recordGroupMember, addGroup } from '../team.js';
 import { activeIds } from './store.js';
-import { sendTelegramMessage, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
+import { sendTelegramMessage, sendGroupDocument, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
 import { injectBotFrame } from '../bot-inject.js';
 
@@ -558,6 +558,9 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, your FIRST output must be exactly `[[SILENT]]` — immediately, before using any tool — and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
+    '',
+    'SENDING A FILE (PDF, doc, sheet, image) into this group: your text messages CANNOT carry an attachment. The ONE way to deliver a file is to emit a marker `[[SEND_FILE <absolute path>]]` on its own — the system uploads that file (it must live under the project directory) and removes the marker from your message. So: put the file somewhere in the project, then emit the marker. NEVER say you have sent, attached, or delivered a file unless you actually emitted a `[[SEND_FILE ...]]` marker for it in THIS reply — claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.',
+    'MAKING A PDF: use the `render_pdf` tool (pdf-mcp) — give it a markdown file or inline markdown and it returns a clean, correctly typeset PDF (tables, accents and Unicode all render right). NEVER hand-write raw PDF bytes or a Python PDF builder — that path produces blank pages and broken tables. After rendering, call `preview_pdf` and Read the returned image to SEE the result before you deliver it, especially when asked to check it visually. Then deliver it with the `[[SEND_FILE ...]]` marker above.',
     target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
     target && target.docPath ? `\n\nThe "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
     target && target.attachment && !target.docPath && target.attachment.kind !== 'sticker' ? `\n\nThe "← NEW" message carries a ${target.attachment.kind.replace('_', ' ')} attachment you CANNOT open (no way to listen/watch, or the download failed). Don't pretend otherwise — if its content matters, say so and ask for the gist as text.` : '',
@@ -591,6 +594,15 @@ const TYPING_REFRESH_MS = num('GROUP_TYPING_REFRESH_MS', 4500);
 const SEND_RE  = /`{0,3}\[\[\s*SEND\s*\]\]`{0,3}/i;
 const MAX_PARTS = num('GROUP_MAX_PARTS', 5);
 
+// A file-delivery marker: the ONLY way the group brain can actually attach a
+// file (PDF, CSV, …) to the chat — the text stream can't carry an attachment, so
+// "I sent you the file" over text was always false. When the brain emits
+// [[SEND_FILE <path>]], we upload that file (confined to PROJECT_DIR) via
+// sendDocument and strip the marker from the text. Requires the closing ]] so a
+// still-streaming partial marker waits for the rest.
+const SEND_FILE_RE = /`{0,3}\[\[\s*SEND_FILE\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
+const MAX_FILES = num('GROUP_MAX_FILES', 3);
+
 // While the brain's first output streams, tell whether it's heading for a silent
 // verdict: a leading [[SILENT]] (or a still-streaming prefix of it) → stay invisible.
 // As soon as the text diverges from that prefix, it's committing to a reply.
@@ -601,7 +613,7 @@ function isSilentPrefix(s) {
 
 function groupCompose(group, ctxMsgs, target) {
   return new Promise((resolve) => {
-    let text = '', done = false, proc = null, parts = 0, typing = null;
+    let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
     // Typing shows ONLY once the brain COMMITS to replying — a silent verdict stays
     // invisible (no "typing…" flicker). It commits when it streams real reply text
     // (diverging from the [[SILENT]] prefix) or starts a tool (a silent verdict uses
@@ -625,13 +637,38 @@ function groupCompose(group, ctxMsgs, target) {
         if (chunk) { parts += 1; startTyping(); sendTelegramMessage(group.chatId, chunk, { logKind: 'group' }).catch(() => {}); }
       }
     };
+    // Upload any completed [[SEND_FILE <path>]] markers as they stream in, and
+    // strip them from the text so the marker never shows in the posted message.
+    // Best-effort + truthful: on failure we tell the group we couldn't attach it,
+    // rather than letting the brain's "here's the file" text stand as a lie.
+    const flushFiles = () => {
+      let m;
+      while (files < MAX_FILES && (m = text.match(SEND_FILE_RE))) {
+        const filePath = m[1].trim();
+        text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+        files += 1;
+        startTyping();
+        sendChatAction(group.chatId, 'upload_document').catch(() => {});
+        sendGroupDocument(group.chatId, filePath, { logKind: 'group' })
+          .then((r) => {
+            if (!r.ok) sendTelegramMessage(group.chatId, `(couldn't attach that file — ${r.error})`, { logKind: 'group' }).catch(() => {});
+          })
+          .catch(() => {});
+      }
+    };
     try {
       proc = runClaudeTurn(groupTurnParams(group, ctxMsgs, target, {
-        onText: (t) => { text += t; if (text.trim() && !isSilentPrefix(text)) startTyping(); flushSends(); },
+        onText: (t) => { text += t; if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
         onToolStart: (info) => { startTyping(); process.stderr.write(`[group-brain] tool: ${info && info.name ? info.name : JSON.stringify(info)}\n`); },
         onToolEnd: () => {}, onImage: () => {},
         onError: (e) => finish({ ok: false, error: String(e).slice(0, 200) }),
-        onDone: () => finish({ ok: true, text: finalizeReply(text), parts }),
+        onDone: () => {
+          flushFiles();
+          // Strip any residual SEND_FILE markers (e.g. beyond MAX_FILES) so a raw
+          // marker never leaks into the posted text.
+          text = text.replace(/`{0,3}\[\[\s*SEND_FILE\s+[^\]\n]+?\s*\]\]`{0,3}/gi, '');
+          finish({ ok: true, text: finalizeReply(text), parts, files });
+        },
       }));
     } catch (err) { finish({ ok: false, error: err.message }); }
   });
@@ -729,14 +766,16 @@ async function flush(chatId) {
   // is liberal; the brain decides, and "it doesn't reply after all" is first-class.)
   const cleaned = String(reply.text || '').trim().replace(/^`+|`+$/g, '').trim();
   const emptyFinal = !cleaned || /^\[\[\s*silent\s*\]\]$/i.test(cleaned);
-  if (emptyFinal && !(reply.parts > 0)) {
+  const acted = reply.parts > 0 || reply.files > 0;   // sent something (a part, or a file attachment)
+  if (emptyFinal && !acted) {
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'silent', beat, confidence, reason_enum: 'brain-pass', preview: clip(target.text, 120) });
   }
   if (emptyFinal) {
-    // Everything already went out as [[SEND]] parts — nothing left for a final
-    // message. It DID speak; record context so the next turn sees it.
-    pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: '(replied in parts)' });
-    return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${reply.parts} parts, no trailing)` });
+    // Everything already went out as [[SEND]] parts and/or [[SEND_FILE]] uploads —
+    // nothing left for a final message. It DID act; record context for next turn.
+    const summary = [reply.parts > 0 ? `${reply.parts} parts` : null, reply.files > 0 ? `${reply.files} file(s)` : null].filter(Boolean).join(' + ');
+    pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: `(replied: ${summary})` });
+    return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${summary}, no trailing)` });
   }
   const sent = await sendTelegramMessage(chatId, reply.text, { logKind: 'group' });
   if (sent.ok) {

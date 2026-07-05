@@ -17,6 +17,9 @@
  */
 
 import { appendFileSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
+import { basename, resolve as resolvePath, relative as relativePath } from 'node:path';
+import { PROJECT_DIR } from '../config.js';
 import * as store from './store.js';
 import * as runtime from './runtime.js';
 import { telegramAllowedIds, list as teamList } from '../team.js';
@@ -169,6 +172,69 @@ export async function sendTelegramMessage(chatId, text, { logKind } = {}) {
     // group's own audit sink (.group-watcher/<gid>.jsonl) is its record instead.
     if (logKind !== 'group') logTelegramOutbound(id, body, messageId);
     return { ok: true, messageId };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Telegram Bot API hard limit for bot uploads is 50 MB.
+const TELEGRAM_DOC_MAX_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Upload a file from disk to a Telegram chat as a document (sendDocument). This
+ * is how the group brain DELIVERS a real file (a rendered PDF, a CSV, …) — the
+ * text stream alone can't carry an attachment, which is why claiming "sent" a
+ * file over text was always a lie.
+ *
+ * Security: the path is confined to PROJECT_DIR. A group message is untrusted
+ * input, and the marker that triggers this comes from the brain's output; the
+ * confinement stops "[[SEND_FILE /etc/…]]" / secret-file exfiltration even if a
+ * member tries to steer it. Must be a regular file, ≤ 50 MB.
+ *
+ * Uses Node's native fetch + FormData + Blob (undici multipart) — this is wsapi
+ * (Node), NOT the bun/grammy path that hangs on multipart, so no bypass needed.
+ * api.telegram.org is on the egress base allowlist. Returns { ok, messageId } or
+ * { ok:false, error }. Never throws.
+ */
+export async function sendGroupDocument(chatId, filePath, { caption, logKind } = {}) {
+  if (!telegramActive()) return { ok: false, error: 'telegram not active' };
+  const id = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(id)) return { ok: false, error: 'invalid chat id' };
+
+  const raw = String(filePath == null ? '' : filePath).trim();
+  if (!raw) return { ok: false, error: 'no file path' };
+  // Confine to PROJECT_DIR: resolve, then require it stays inside (no ../ escape,
+  // no absolute path to a secret elsewhere on the box).
+  const abs = resolvePath(PROJECT_DIR, raw);
+  const rel = relativePath(PROJECT_DIR, abs);
+  if (rel === '' || rel.startsWith('..')) return { ok: false, error: 'file is outside the project directory' };
+
+  let data, info;
+  try {
+    info = await stat(abs);
+    if (!info.isFile()) return { ok: false, error: 'not a regular file' };
+    if (info.size === 0) return { ok: false, error: 'file is empty' };
+    if (info.size > TELEGRAM_DOC_MAX_BYTES) return { ok: false, error: 'file exceeds the 50 MB Telegram limit' };
+    data = await readFile(abs);
+  } catch (err) {
+    return { ok: false, error: `file unreadable: ${err.message}` };
+  }
+
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return { ok: false, error: 'no bot token' };
+
+  try {
+    const form = new FormData();
+    form.set('chat_id', id);
+    if (caption && String(caption).trim()) form.set('caption', String(caption).trim().slice(0, 1024));
+    form.set('document', new Blob([data]), basename(abs));
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: form });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json.ok) {
+      return { ok: false, error: `telegram ${resp.status}: ${JSON.stringify(json).slice(0, 180)}` };
+    }
+    return { ok: true, messageId: json.result?.message_id };
   } catch (err) {
     return { ok: false, error: err.message };
   }

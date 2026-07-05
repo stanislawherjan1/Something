@@ -1,0 +1,128 @@
+/* pdf-mcp house stylesheet — the ONE place PDF look-and-feel lives.
+ * Applied to every markdown→PDF render. Tweak here, not per-document.
+ * Targets weasyprint (full CSS 2.1 + paged-media + a lot of CSS3). */
+
+@page {
+  size: A4;
+  margin: 22mm 20mm 20mm 20mm;
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font: 8pt "Liberation Sans", "DejaVu Sans", sans-serif;
+    color: #9aa0a6;
+  }
+}
+
+/* First page: a touch more headroom, no page number. */
+@page :first {
+  margin-top: 26mm;
+  @bottom-center { content: ""; }
+}
+
+html {
+  font-family: "Liberation Serif", "DejaVu Serif", "Times New Roman", serif;
+  font-size: 10.5pt;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+body { margin: 0; }
+
+/* Optional document title block (rendered when a --title is passed). */
+.doc-title {
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-size: 20pt;
+  font-weight: 700;
+  color: #111;
+  margin: 0 0 4pt 0;
+  padding-bottom: 8pt;
+  border-bottom: 2pt solid #111;
+}
+.doc-meta {
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-size: 9pt;
+  color: #6b7075;
+  margin: 0 0 18pt 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  color: #111;
+  line-height: 1.25;
+  margin: 18pt 0 6pt 0;
+  page-break-after: avoid;
+}
+h1 { font-size: 17pt; font-weight: 700; }
+h2 { font-size: 13.5pt; font-weight: 700; border-bottom: 0.75pt solid #d8dbdf; padding-bottom: 3pt; }
+h3 { font-size: 11.5pt; font-weight: 700; }
+h4 { font-size: 10.5pt; font-weight: 700; color: #33383d; }
+
+p { margin: 0 0 8pt 0; orphans: 2; widows: 2; }
+
+a { color: #1155cc; text-decoration: none; }
+
+strong { font-weight: 700; }
+em { font-style: italic; }
+
+ul, ol { margin: 0 0 8pt 0; padding-left: 18pt; }
+li { margin: 0 0 3pt 0; }
+li > ul, li > ol { margin-top: 3pt; }
+
+/* Tables — the thing that was "shitty" before. Real borders + padding + zebra. */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 4pt 0 12pt 0;
+  font-size: 9.5pt;
+  page-break-inside: auto;
+}
+thead { display: table-header-group; }   /* repeat header on page breaks */
+tr { page-break-inside: avoid; }
+th, td {
+  border: 0.75pt solid #c4c8cc;
+  padding: 5pt 8pt;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #f0f2f4;
+  font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+  font-weight: 700;
+  color: #111;
+}
+tbody tr:nth-child(even) td { background: #f8f9fa; }
+
+blockquote {
+  margin: 8pt 0;
+  padding: 2pt 12pt;
+  border-left: 3pt solid #c4c8cc;
+  color: #4a4f54;
+}
+
+code {
+  font-family: "Liberation Mono", "DejaVu Sans Mono", monospace;
+  font-size: 9pt;
+  background: #f0f2f4;
+  padding: 1pt 3pt;
+  border-radius: 2pt;
+}
+pre {
+  background: #f6f8fa;
+  border: 0.5pt solid #d8dbdf;
+  border-radius: 3pt;
+  padding: 8pt 10pt;
+  margin: 8pt 0;
+  font-size: 8.5pt;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  page-break-inside: avoid;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+hr {
+  border: none;
+  border-top: 0.75pt solid #d8dbdf;
+  margin: 14pt 0;
+}
+
+img { max-width: 100%; }

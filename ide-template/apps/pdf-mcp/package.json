@@ -1,0 +1,16 @@
+{
+  "name": "pdf-mcp",
+  "version": "1.0.0",
+  "description": "PDF MCP — markdown → clean typeset PDF via python-markdown + weasyprint. The one supported way to make PDFs; never hand-roll PDF bytes.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

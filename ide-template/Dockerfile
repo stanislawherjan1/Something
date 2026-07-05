@@ -92,6 +92,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     x11vnc \
     websockify \
     novnc \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libpangocairo-1.0-0 \
+    libharfbuzz0b \
+    libffi8 \
+    fonts-liberation2 \
+    fonts-dejavu-core \
+    poppler-utils \
     jq && \
     rm -rf /var/lib/apt/lists/*
 
@@ -190,6 +198,14 @@ RUN npm install -g \
 RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
     google-analytics-mcp
 
+# PDF toolchain for pdf-mcp: python-markdown → weasyprint. The one supported
+# way to make PDFs (apps/pdf-mcp). System libs (pango/harfbuzz/ffi) + fonts +
+# poppler-utils are installed in LAYER 1a above. NO latin-1 mangling, no
+# hand-rolled PDF bytes — weasyprint is a real CSS/paged-media engine.
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
+    weasyprint \
+    markdown
+
 # === LAYER 2d: Custom MCP servers (shopify, meta, google-ads, seedream) ===
 # Shared helpers used by every MCP — google-oauth.js (token refresh) +
 # broker-client.js (credential fetch over UDS + global HTTPS_PROXY
@@ -228,6 +244,11 @@ RUN cd /opt/ide/apps/nano-banana-mcp && npm install --production
 
 COPY apps/reminder-mcp /opt/ide/apps/reminder-mcp
 RUN cd /opt/ide/apps/reminder-mcp && npm install --production
+
+# pdf-mcp: markdown → PDF via python-markdown + weasyprint (installed above).
+# Always on, no credentials. The ONE supported way to make PDFs.
+COPY apps/pdf-mcp /opt/ide/apps/pdf-mcp
+RUN cd /opt/ide/apps/pdf-mcp && npm install --production
 
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
 RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
