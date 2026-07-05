@@ -27,8 +27,50 @@ const RENDER_PY = path.join(HERE, 'render.py');
 const PROJECT_DIR = process.env.PROJECT_DIR || '/home/coder/project';
 const DEFAULT_OUT_DIR = process.env.PDF_OUTPUT_DIR || path.join(PROJECT_DIR, 'Documents');
 
+// Named style presets are MCP-owned state — the ONLY thing that touches this
+// file is this server (via save/list/delete + preset resolution in render_pdf).
+// The brain never reads or writes it directly. It lives under a hidden,
+// component-owned dir on the project volume so it survives restarts/redeploys.
+const STYLE_DIR = path.join(PROJECT_DIR, '.pdf-mcp');
+const STYLE_STORE = path.join(STYLE_DIR, 'styles.json');
+// The knobs a preset may carry (mirrors render.py's validated surface). Anything
+// else is dropped on save so the store stays clean; render.py clamps values.
+const STYLE_KEYS = ['accent', 'font', 'size', 'density', 'rules', 'page'];
+
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (text) => ({ content: [{ type: 'text', text }], isError: true });
+
+// Keep only recognised knobs from a style object (shallow whitelist).
+function sanitizeStyle(raw) {
+  const out = {};
+  if (raw && typeof raw === 'object') {
+    for (const k of STYLE_KEYS) if (raw[k] !== undefined && raw[k] !== null) out[k] = raw[k];
+  }
+  return out;
+}
+
+// Read the preset store → { default: string|null, presets: { name: styleObj } }.
+// Missing/corrupt file → empty store (never throws).
+async function readStyles() {
+  try {
+    const j = JSON.parse(await fs.readFile(STYLE_STORE, 'utf8'));
+    const presets = (j && typeof j.presets === 'object' && j.presets) ? j.presets : {};
+    return { default: typeof j?.default === 'string' ? j.default : null, presets };
+  } catch { return { default: null, presets: {} }; }
+}
+
+async function writeStyles(store) {
+  await fs.mkdir(STYLE_DIR, { recursive: true, mode: 0o770 });
+  const tmp = STYLE_STORE + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(store, null, 2));
+  await fs.rename(tmp, STYLE_STORE);   // atomic swap
+}
+
+// A preset name: short, filesystem/JSON-friendly, human-typable.
+function cleanName(raw) {
+  const s = String(raw == null ? '' : raw).trim().toLowerCase().replace(/[^\w -]/g, '').replace(/\s+/g, '-').slice(0, 40);
+  return s;
+}
 
 // Spawn a child process, feed optional stdin, collect stdout/stderr.
 function run(cmd, cmdArgs, stdin = null) {
@@ -75,8 +117,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'existing .md file (source_path) or inline (markdown). Tables, headings, lists, code, blockquotes and ' +
         'accented/Unicode text all render correctly. Returns the absolute PDF path, page count and size. ' +
         'After rendering, use preview_pdf to SEE it before you send it to anyone. ' +
-        'To change the LOOK (colour, font, size, spacing), use the `style` knobs below — NEVER edit the ' +
-        'document content or its structure to achieve a visual effect, and never hand-write CSS.',
+        'To change the LOOK (colour, font, size, spacing), use `preset` (a saved named layout) and/or the `style` ' +
+        'knobs below — NEVER edit the document content or its structure to achieve a visual effect, and never ' +
+        'hand-write CSS. If no preset is given, the saved default layout (if any) is applied automatically.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -84,6 +127,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           markdown:    { type: 'string', description: 'Inline markdown content to render. Use this OR source_path.' },
           out_path:    { type: 'string', description: 'Where to write the PDF. Defaults to Documents/<name>.pdf (from source_path) or Documents/document.pdf.' },
           title:       { type: 'string', description: 'The document headline, rendered as a prominent title block at the top of the first page. ALWAYS set this for a real document (letter, proposal, report, invoice) — without a title the PDF opens straight into body text with no headline. (If the markdown already starts with a single "# Heading", that is used as the title automatically and you can omit this.)' },
+          preset:      { type: 'string', description: 'Name of a saved layout to render in (see list_pdf_styles / save_pdf_style). Its knobs form the base look; the `style` object below overrides individual knobs. Omit to use the saved default layout, if one is set.' },
           style:       {
             type: 'object',
             description:
@@ -117,6 +161,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['pdf_path'],
       },
     },
+    {
+      name: 'save_pdf_style',
+      description:
+        'Save a named layout (a set of style knobs) so PDFs can be rendered in it later with render_pdf({ preset }). ' +
+        'Use this when someone is happy with a look and asks to remember/save it ("save this style as X", "use this ' +
+        'from now on"). Pass the exact style you just rendered with. Set set_default:true to make it the layout ' +
+        'applied automatically when no preset is named. Saving an existing name overwrites it. Multiple layouts can be saved.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name:        { type: 'string', description: 'Short name for the layout, e.g. "brand", "invoice", "letter".' },
+          style:       { type: 'object', description: 'The style knobs to store (accent/font/size/density/rules/page) — same shape as render_pdf\'s style.' },
+          set_default: { type: 'boolean', description: 'Also make this the default layout (applied when render_pdf gets no preset). Default false.' },
+        },
+        required: ['name', 'style'],
+      },
+    },
+    {
+      name: 'list_pdf_styles',
+      description: 'List the saved named layouts with their knobs, and which one is the default. Use it to see what is available before rendering with a preset or when someone asks which styles are saved.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'delete_pdf_style',
+      description: 'Delete a saved named layout. If it was the default, the default is cleared.',
+      inputSchema: {
+        type: 'object',
+        properties: { name: { type: 'string', description: 'Name of the layout to delete.' } },
+        required: ['name'],
+      },
+    },
   ],
 }));
 
@@ -139,8 +214,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const pyArgs = ['--out', out];
     if (args.title && String(args.title).trim()) pyArgs.push('--title', String(args.title).trim());
-    // Bounded visual knobs — passed as JSON; render.py validates/clamps every value.
-    if (args.style && typeof args.style === 'object') pyArgs.push('--style', JSON.stringify(args.style));
+
+    // Resolve the effective style: a named preset (or the saved default) forms the
+    // base, and any per-call `style` overrides it knob-by-knob. render.py still
+    // validates/clamps the merged result, so nothing here can break the layout.
+    const store = await readStyles();
+    let base = {};
+    if (args.preset && String(args.preset).trim()) {
+      const nm = cleanName(args.preset);
+      if (!store.presets[nm]) return fail(`No saved layout named "${nm}". Use list_pdf_styles to see what's available, or save_pdf_style to create it.`);
+      base = store.presets[nm];
+    } else if (store.default && store.presets[store.default]) {
+      base = store.presets[store.default];
+    }
+    const effectiveStyle = { ...sanitizeStyle(base), ...sanitizeStyle(args.style) };
+    if (Object.keys(effectiveStyle).length) pyArgs.push('--style', JSON.stringify(effectiveStyle));
 
     let r;
     if (hasFile) {
@@ -178,6 +266,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const png = `${stem}.png`;
     if (!(await fileSize(png))) return fail(`Preview render produced no image (does page ${page} exist?).`);
     return ok(`Preview of page ${page} → ${png}\nOpen it with the Read tool to view the page and check the layout before sending.`);
+  }
+
+  if (name === 'save_pdf_style') {
+    const nm = cleanName(args.name);
+    if (!nm) return fail('Give the layout a short name (letters/numbers/dashes).');
+    const style = sanitizeStyle(args.style);
+    if (!Object.keys(style).length) return fail('No recognisable style knobs to save (accent/font/size/density/rules/page).');
+    const store = await readStyles();
+    const existed = !!store.presets[nm];
+    store.presets[nm] = style;
+    if (args.set_default === true) store.default = nm;
+    await writeStyles(store);
+    const knobs = Object.entries(style).map(([k, v]) => `${k}=${v}`).join(', ');
+    return ok(`${existed ? 'Updated' : 'Saved'} layout "${nm}" (${knobs})${store.default === nm ? ' — now the default' : ''}. Render in it with render_pdf({ preset: "${nm}" }).`);
+  }
+
+  if (name === 'list_pdf_styles') {
+    const store = await readStyles();
+    const names = Object.keys(store.presets);
+    if (!names.length) return ok('No saved layouts yet. Save one with save_pdf_style once a look is dialled in.');
+    const lines = names.map((n) => {
+      const knobs = Object.entries(store.presets[n]).map(([k, v]) => `${k}=${v}`).join(', ') || '(no knobs)';
+      return `- ${n}${store.default === n ? ' [default]' : ''}: ${knobs}`;
+    });
+    return ok(`Saved layouts:\n${lines.join('\n')}`);
+  }
+
+  if (name === 'delete_pdf_style') {
+    const nm = cleanName(args.name);
+    const store = await readStyles();
+    if (!store.presets[nm]) return fail(`No saved layout named "${nm}".`);
+    delete store.presets[nm];
+    if (store.default === nm) store.default = null;
+    await writeStyles(store);
+    return ok(`Deleted layout "${nm}".`);
   }
 
   return fail(`Unknown tool: ${name}`);

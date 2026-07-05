@@ -72,3 +72,27 @@ that's how formatting gets broken. The knobs above are the whole safe surface; i
 a request needs something outside them, say so rather than improvising. The base
 stylesheet (`apps/pdf-mcp/house.css`) is a workspace-wide default — only an
 operator changes it, never per document.
+
+## Saving layouts (named presets)
+
+You can remember a look and reuse it. Presets are owned by pdf-mcp — manage them
+**only** through these tools, never by reading or writing files:
+
+- **Save** — when someone dials in a look and says "save this / remember this /
+  use this from now on", call `save_pdf_style({ name: "brand", style: { … } })`
+  with the exact style you just rendered. Add `set_default: true` to make it the
+  layout used automatically. You can save several (e.g. `brand`, `invoice`,
+  `letter`).
+- **Use** — `render_pdf({ source_path: "…", preset: "brand" })` renders in that
+  layout. A per-call `style` still overrides individual knobs on top of the
+  preset. With **no** preset, the saved default (if any) is applied automatically
+  — so once a default is set, every PDF just looks right without asking.
+- **See / offer / remove** — `list_pdf_styles()` shows what's saved (and the
+  default). When more than one layout exists and it's not obvious which to use —
+  or when someone asks which styles there are, or to "pick"/"choose" one — call
+  it and **offer the saved layouts by name so they can choose**, then render with
+  that `preset`. `delete_pdf_style({ name })` removes one.
+
+So the flow is: tweak with `style` → when they're happy, `save_pdf_style` →
+later, offer the saved layouts and render the chosen one with `preset` (or just
+let the default apply), staying consistent across documents.
