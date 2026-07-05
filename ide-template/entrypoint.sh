@@ -268,9 +268,23 @@ d['mcpServers']['web-channel'] = {
         'WORKSPACE_API_PORT': os.environ.get('WORKSPACE_API_PORT', '3001'),
     },
 }
+# PDF MCP — always-on markdown→PDF (render_pdf) + preview_pdf. Force-written
+# here for the SAME reason as playwright/web-channel above: it's a local,
+# non-broker MCP, so syncMcpServers (which only rebuilds catalog integrations)
+# never lands it in /home/bot/.claude.json — the config the bot's Claude AND
+# the wsapi-spawned web/group brains actually read (--mcp-config). Registering
+# it only in /home/coder/.claude.json (the `managed` dict) leaves every brain
+# without render_pdf. This block is what makes the tool reachable.
+d['mcpServers']['pdf'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/pdf-mcp/index.js'],
+    'env': {
+        'PROJECT_DIR': '/home/coder/project',
+    },
+}
 with open(p, 'w') as f:
     json.dump(d, f, indent=2)
-print('[entrypoint] Forced playwright + web-channel mcpServers entries in /home/bot/.claude.json')
+print('[entrypoint] Forced playwright + web-channel + pdf mcpServers entries in /home/bot/.claude.json')
 PY
         chown bot:botshare /home/bot/.claude.json 2>/dev/null || true
         chmod 0660         /home/bot/.claude.json 2>/dev/null || true
