@@ -17,6 +17,7 @@ empty/invalid, so the Node wrapper can surface a truthful error.
 import argparse
 import html
 import os
+import re
 import sys
 
 
@@ -55,6 +56,24 @@ def main():
         die("Refusing to render an empty document — no markdown content.")
 
     # "extra" pulls in tables, fenced_code, footnotes, attr_list, def_list, abbr.
+    # Resolve the document title. Explicit --title wins. Otherwise, if the
+    # document naturally starts with a single "# H1", promote it to the title
+    # block (and strip it from the body so it isn't rendered twice) — so a normal
+    # markdown document with a top-level heading gets a proper headline without
+    # the caller having to remember the title argument.
+    title = args.title.strip()
+    if not title:
+        lines = md_text.split("\n")
+        i = 0
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i < len(lines):
+            m = re.match(r"^#\s+(.+?)\s*#*\s*$", lines[i])
+            if m:
+                title = m.group(1).strip()
+                del lines[i]
+                md_text = "\n".join(lines)
+
     # "smarty" gives typographic quotes/dashes. NO nl2br — a business doc should
     # reflow paragraphs, not turn every source newline into a hard <br>.
     body = markdown.markdown(
@@ -64,8 +83,8 @@ def main():
     )
 
     title_block = ""
-    if args.title.strip():
-        title_block = f'<div class="doc-title">{html.escape(args.title.strip())}</div>'
+    if title:
+        title_block = f'<div class="doc-title">{html.escape(title)}</div>'
 
     try:
         with open(args.css, "r", encoding="utf-8") as fh:
@@ -75,7 +94,7 @@ def main():
 
     doc = (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>{html.escape(args.title.strip() or 'Document')}</title>"
+        f"<title>{html.escape(title or 'Document')}</title>"
         f"<style>{css}</style></head><body>{title_block}{body}</body></html>"
     )
 

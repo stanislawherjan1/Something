@@ -26,10 +26,14 @@ yourself reaching for `import struct` to make a PDF, **stop** and use
 1. **Write the content as markdown.** Put it in a `.md` file in the project
    (e.g. `Documents/proposal.md`) — or pass it inline. Use normal markdown:
    `#`/`##` headings, `- ` lists, `| a | b |` tables, `**bold**`, `> quotes`.
-2. **Render it:**
-   `render_pdf({ source_path: "Documents/proposal.md", title: "Proposal" })`
-   — or `render_pdf({ markdown: "# Hello…", out_path: "Documents/hello.pdf" })`.
-   It returns the absolute PDF path, page count, and size.
+2. **Render it — and give it a title.**
+   `render_pdf({ source_path: "Documents/proposal.md", title: "Proposal for Acme" })`.
+   ALWAYS pass a `title` for a real document (letter, proposal, report, invoice) —
+   it renders as a prominent headline block at the top. Without it the PDF opens
+   straight into body text with no title. (Alternatively, start the markdown with
+   a single `# Heading` and it becomes the title automatically.) Don't rely on a
+   bold first line like `**Re: …**` — that is NOT a title, it renders as ordinary
+   body text. It returns the absolute PDF path, page count, and size.
 3. **See it before you send it.** Call
    `preview_pdf({ pdf_path: "<the returned path>" })`, then **Read** the PNG it
    returns — actually look at the layout, tables, and spacing. Do this

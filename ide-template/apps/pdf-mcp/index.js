@@ -81,7 +81,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           source_path: { type: 'string', description: 'Path to a markdown (.md) file to render (relative to the project or absolute). Use this OR markdown.' },
           markdown:    { type: 'string', description: 'Inline markdown content to render. Use this OR source_path.' },
           out_path:    { type: 'string', description: 'Where to write the PDF. Defaults to Documents/<name>.pdf (from source_path) or Documents/document.pdf.' },
-          title:       { type: 'string', description: 'Optional title shown as a heading block at the top of the first page (and the PDF metadata title).' },
+          title:       { type: 'string', description: 'The document headline, rendered as a prominent title block at the top of the first page. ALWAYS set this for a real document (letter, proposal, report, invoice) — without a title the PDF opens straight into body text with no headline. (If the markdown already starts with a single "# Heading", that is used as the title automatically and you can omit this.)' },
         },
       },
     },
