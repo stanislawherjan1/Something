@@ -52,7 +52,7 @@ h1, h2, h3, h4, h5, h6 {
   page-break-after: avoid;
 }
 h1 { font-size: 17pt; font-weight: 700; }
-h2 { font-size: 13.5pt; font-weight: 700; border-bottom: 0.75pt solid #d8dbdf; padding-bottom: 3pt; }
+h2 { font-size: 13.5pt; font-weight: 700; }
 h3 { font-size: 11.5pt; font-weight: 700; }
 h4 { font-size: 10.5pt; font-weight: 700; color: #33383d; }
 
@@ -119,10 +119,12 @@ pre {
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
+/* No visible rule — a `---` in the source just becomes breathing room, never an
+ * ugly horizontal line. Heading typography (size/weight) carries the structure. */
 hr {
   border: none;
-  border-top: 0.75pt solid #d8dbdf;
-  margin: 14pt 0;
+  height: 0;
+  margin: 10pt 0;
 }
 
 img { max-width: 100%; }
