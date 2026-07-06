@@ -56,11 +56,18 @@ you can't break the layout with them:
 
 | Knob | Values | Effect |
 |---|---|---|
-| `accent`  | `slate` (default), `blue`, `navy`, `teal`, `green`, `plum`, `maroon`, `orange`, `gray`, or a `#rrggbb` hex | Heading + title colour |
+| `accent`  | named (`slate` default, `blue`, `navy`, `teal`, `green`, `plum`, `maroon`, `orange`, `gray`) or `#rrggbb` | Heading + title colour |
+| `text`    | named or `#rrggbb` | Body text colour (default near-black) |
+| `muted`   | named or `#rrggbb` | Date/meta line + page numbers (default grey) |
+| `link`    | named or `#rrggbb` | Hyperlink colour (default blue) |
 | `font`    | `serif` (default) / `sans` | Body font (headings stay sans) |
 | `size`    | number, 9–13 (default 10.5) | Base text size in pt |
 | `density` | `compact` / `normal` (default) / `relaxed` | Spacing + margins |
 | `rules`   | `true` / `false` (default) | Hairline under section headings |
+| `title_rule` | `true` (default) / `false` | Rule under the document title |
+| `justify` | `true` / `false` (default) | Justify body text vs left-align |
+| `table`   | `grid` (default) / `lined` / `plain` | Table borders: full+zebra / horizontal only / borderless |
+| `table_header` | `shaded` (default) / `accent` / `plain` | Header row: grey fill / accent text+underline / just bold |
 | `page`    | `A4` (default) / `Letter` | Paper size |
 
 Example: `render_pdf({ source_path: "Documents/proposal.md", title: "Proposal",

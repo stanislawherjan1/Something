@@ -35,12 +35,16 @@ const STYLE_DIR = path.join(PROJECT_DIR, '.pdf-mcp');
 const STYLE_STORE = path.join(STYLE_DIR, 'styles.json');
 // The knobs a preset may carry (mirrors render.py's validated surface). Anything
 // else is dropped on save so the store stays clean; render.py clamps values.
-const STYLE_KEYS = ['accent', 'font', 'size', 'density', 'rules', 'page'];
+const STYLE_KEYS = ['accent', 'text', 'muted', 'link', 'font', 'size', 'density', 'rules', 'title_rule', 'justify', 'table', 'table_header', 'page'];
 // The house.css baseline for every knob. A saved preset is filled out to the FULL
 // set from this, so a layout pins the WHOLE look (not just the one thing someone
 // mentioned) — that's what keeps documents consistent instead of "same colour but
 // the font drifted".
-const STYLE_DEFAULTS = { accent: 'slate', font: 'serif', size: 10.5, density: 'normal', rules: false, page: 'A4' };
+const STYLE_DEFAULTS = {
+  accent: 'slate', text: 'ink', muted: '#6b7075', link: 'blue',
+  font: 'serif', size: 10.5, density: 'normal', rules: false,
+  title_rule: true, justify: false, table: 'grid', table_header: 'shaded', page: 'A4',
+};
 
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (text) => ({ content: [{ type: 'text', text }], isError: true });
@@ -147,12 +151,19 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               'Use this when someone asks to restyle the document (warmer colour, bigger text, tighter spacing, Letter paper). ' +
               'Do NOT change the markdown content or structure to get a visual effect.',
             properties: {
-              accent:  { type: 'string', description: 'Heading + title colour. A named colour (slate, blue, navy, teal, green, plum, maroon, orange, gray) or a #rrggbb hex. Default slate.' },
-              font:    { type: 'string', enum: ['serif', 'sans'], description: 'Body font. serif (default, formal) or sans (modern). Headings are always sans.' },
-              size:    { type: 'number', description: 'Base text size in pt, clamped to 9–13. Default 10.5.' },
-              density: { type: 'string', enum: ['compact', 'normal', 'relaxed'], description: 'Spacing/margins. compact = tighter, relaxed = airier. Default normal.' },
-              rules:   { type: 'boolean', description: 'Draw a hairline under section headings. Default false (clean, no lines).' },
-              page:    { type: 'string', enum: ['A4', 'Letter'], description: 'Paper size. Default A4.' },
+              accent:       { type: 'string', description: 'Heading + title colour. A named colour (slate, blue, navy, teal, green, plum, maroon, orange, gray) or a #rrggbb hex. Default slate.' },
+              text:         { type: 'string', description: 'Body text colour (named colour or #rrggbb hex). Default near-black.' },
+              muted:        { type: 'string', description: 'Secondary text colour — the date/meta line and page numbers (named or #rrggbb hex). Default grey.' },
+              link:         { type: 'string', description: 'Hyperlink colour (named or #rrggbb hex). Default blue.' },
+              font:         { type: 'string', enum: ['serif', 'sans'], description: 'Body font. serif (default, formal) or sans (modern). Headings are always sans.' },
+              size:         { type: 'number', description: 'Base text size in pt, clamped to 9–13. Default 10.5.' },
+              density:      { type: 'string', enum: ['compact', 'normal', 'relaxed'], description: 'Spacing/margins. compact = tighter, relaxed = airier. Default normal.' },
+              rules:        { type: 'boolean', description: 'Draw a hairline under section headings. Default false (clean, no lines).' },
+              title_rule:   { type: 'boolean', description: 'Draw the rule under the document title. Default true.' },
+              justify:      { type: 'boolean', description: 'Justify body text (flush both margins) instead of left-aligned. Default false.' },
+              table:        { type: 'string', enum: ['grid', 'lined', 'plain'], description: 'Table style. grid = full borders + zebra (default); lined = horizontal rules only; plain = borderless, spacing only.' },
+              table_header: { type: 'string', enum: ['shaded', 'accent', 'plain'], description: 'Table header row. shaded = grey fill (default); accent = accent-coloured text + underline; plain = just bold.' },
+              page:         { type: 'string', enum: ['A4', 'Letter'], description: 'Paper size. Default A4.' },
             },
           },
         },

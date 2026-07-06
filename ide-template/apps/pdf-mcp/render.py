@@ -57,11 +57,18 @@ def build_style_override(raw):
 
     root = {}
 
-    accent = str(style.get("accent", "")).strip().lower()
-    if re.match(r"^#[0-9a-f]{6}$", accent):
-        root["--accent"] = accent
-    elif accent in _PALETTE:
-        root["--accent"] = _PALETTE[accent]
+    def color(key):
+        """Return a validated colour (hex or palette name) for a knob, else None."""
+        v = str(style.get(key, "")).strip().lower()
+        if re.match(r"^#[0-9a-f]{6}$", v):
+            return v
+        return _PALETTE.get(v)
+
+    # Colours — accent (headings/title), text (body), muted (meta/page nums), link.
+    for key, var in (("accent", "--accent"), ("text", "--text"), ("muted", "--muted"), ("link", "--link")):
+        c = color(key)
+        if c:
+            root[var] = c
 
     font = str(style.get("font", "")).strip().lower()
     if font in _FONTS:
@@ -77,6 +84,18 @@ def build_style_override(raw):
     elif rules is False:
         root["--rule-border"] = "none"
 
+    title_rule = style.get("title_rule")
+    if title_rule is True:
+        root["--title-rule"] = "2pt solid var(--accent)"
+    elif title_rule is False:
+        root["--title-rule"] = "none"
+
+    justify = style.get("justify")
+    if justify is True:
+        root["--text-align"] = "justify"
+    elif justify is False:
+        root["--text-align"] = "left"
+
     page_rules = []
     density = str(style.get("density", "")).strip().lower()
     if density == "compact":
@@ -91,10 +110,28 @@ def build_style_override(raw):
     elif page == "a4":
         page_rules.append("@page { size: A4; }")
 
+    # Table style. grid/shaded are the house defaults (var-driven); lined/plain and
+    # accent/plain headers change the border MODEL, so emit concrete rules AFTER
+    # :root so they win. Order: body-style first, then header-style.
+    table_rules = []
+    table = str(style.get("table", "")).strip().lower()
+    if table == "lined":
+        root["--zebra-bg"] = "transparent"
+        table_rules.append("th,td{border:none;border-bottom:0.5pt solid #d8dbdf}")
+    elif table == "plain":
+        root["--zebra-bg"] = "transparent"
+        table_rules.append("th,td{border:none}")
+
+    thead = str(style.get("table_header", "")).strip().lower()
+    if thead == "accent":
+        table_rules.append("th{background:transparent;color:var(--accent);border:none;border-bottom:1.5pt solid var(--accent)}")
+    elif thead == "plain":
+        table_rules.append("th{background:transparent;color:var(--text)}")
+
     css = ""
     if root:
         css += ":root {" + " ".join(f"{k}: {v};" for k, v in root.items()) + "}\n"
-    css += "\n".join(page_rules)
+    css += "\n".join(page_rules + table_rules)
     return css
 
 
