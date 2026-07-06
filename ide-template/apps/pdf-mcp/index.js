@@ -36,6 +36,11 @@ const STYLE_STORE = path.join(STYLE_DIR, 'styles.json');
 // The knobs a preset may carry (mirrors render.py's validated surface). Anything
 // else is dropped on save so the store stays clean; render.py clamps values.
 const STYLE_KEYS = ['accent', 'font', 'size', 'density', 'rules', 'page'];
+// The house.css baseline for every knob. A saved preset is filled out to the FULL
+// set from this, so a layout pins the WHOLE look (not just the one thing someone
+// mentioned) — that's what keeps documents consistent instead of "same colour but
+// the font drifted".
+const STYLE_DEFAULTS = { accent: 'slate', font: 'serif', size: 10.5, density: 'normal', rules: false, page: 'A4' };
 
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (text) => ({ content: [{ type: 'text', text }], isError: true });
@@ -49,20 +54,27 @@ function sanitizeStyle(raw) {
   return out;
 }
 
-// Read the preset store → { default: string|null, presets: { name: styleObj } }.
+// Read the preset store → { default, presets, last }. `last` is the effective
+// style of the most recent render, so "save this look" can capture the FULL set
+// of knobs that produced the approved document, not just what someone named.
 // Missing/corrupt file → empty store (never throws).
 async function readStyles() {
   try {
     const j = JSON.parse(await fs.readFile(STYLE_STORE, 'utf8'));
     const presets = (j && typeof j.presets === 'object' && j.presets) ? j.presets : {};
-    return { default: typeof j?.default === 'string' ? j.default : null, presets };
-  } catch { return { default: null, presets: {} }; }
+    const last = (j && typeof j._last === 'object' && j._last) ? j._last : {};
+    return { default: typeof j?.default === 'string' ? j.default : null, presets, last };
+  } catch { return { default: null, presets: {}, last: {} }; }
 }
 
+// Persist the readStyles shape ({default, presets, last}). `last` is serialised as
+// the internal `_last` key so it never collides with a preset name.
 async function writeStyles(store) {
   await fs.mkdir(STYLE_DIR, { recursive: true, mode: 0o770 });
+  const out = { default: store.default ?? null, presets: store.presets || {} };
+  if (store.last && Object.keys(store.last).length) out._last = store.last;
   const tmp = STYLE_STORE + '.tmp';
-  await fs.writeFile(tmp, JSON.stringify(store, null, 2));
+  await fs.writeFile(tmp, JSON.stringify(out, null, 2));
   await fs.rename(tmp, STYLE_STORE);   // atomic swap
 }
 
@@ -230,6 +242,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const effectiveStyle = { ...sanitizeStyle(base), ...sanitizeStyle(args.style) };
     if (Object.keys(effectiveStyle).length) pyArgs.push('--style', JSON.stringify(effectiveStyle));
 
+    // Remember the FULL effective look of this render so a later "save this style"
+    // can capture every knob that produced it — not just the one someone named.
+    try { await writeStyles({ ...store, last: { ...STYLE_DEFAULTS, ...effectiveStyle } }); } catch { /* best-effort */ }
+
     let r;
     if (hasFile) {
       const inPath = abs(args.source_path);
@@ -271,15 +287,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === 'save_pdf_style') {
     const nm = cleanName(args.name);
     if (!nm) return fail('Give the layout a short name (letters/numbers/dashes).');
-    const style = sanitizeStyle(args.style);
-    if (!Object.keys(style).length) return fail('No recognisable style knobs to save (accent/font/size/density/rules/page).');
     const store = await readStyles();
+    // A layout pins the WHOLE look, so it stays consistent — never just one knob.
+    // Base = the house defaults, layered with the last render's full effective
+    // style (what the approved document actually looked like), then any explicit
+    // knobs passed here win. Result always carries all six knobs.
+    const style = { ...STYLE_DEFAULTS, ...sanitizeStyle(store.last), ...sanitizeStyle(args.style) };
     const existed = !!store.presets[nm];
     store.presets[nm] = style;
     if (args.set_default === true) store.default = nm;
     await writeStyles(store);
-    const knobs = Object.entries(style).map(([k, v]) => `${k}=${v}`).join(', ');
-    return ok(`${existed ? 'Updated' : 'Saved'} layout "${nm}" (${knobs})${store.default === nm ? ' — now the default' : ''}. Render in it with render_pdf({ preset: "${nm}" }).`);
+    const knobs = STYLE_KEYS.map((k) => `${k}=${style[k]}`).join(', ');
+    return ok(`${existed ? 'Updated' : 'Saved'} layout "${nm}" — full look pinned (${knobs})${store.default === nm ? '. Now the default' : ''}. Render in it with render_pdf({ preset: "${nm}" }); every document in this layout will match.`);
   }
 
   if (name === 'list_pdf_styles') {

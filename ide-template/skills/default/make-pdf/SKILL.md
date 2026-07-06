@@ -83,9 +83,12 @@ You can remember a look and reuse it. Presets are owned by pdf-mcp — manage th
   with the exact style you just rendered. Add `set_default: true` to make it the
   layout used automatically. You can save several (e.g. `brand`, `invoice`,
   `letter`).
+  A saved layout pins the **whole** look (colour, font, size, spacing, page) —
+  not just the one thing mentioned — so every document in it matches. You don't
+  need to list all the knobs; the tool captures the full look of what you last
+  rendered.
 - **Use** — `render_pdf({ source_path: "…", preset: "brand" })` renders in that
-  layout. A per-call `style` still overrides individual knobs on top of the
-  preset. With **no** preset, the saved default (if any) is applied automatically
+  layout. With **no** preset, the saved default (if any) is applied automatically
   — so once a default is set, every PDF just looks right without asking.
 - **See / offer / remove** — `list_pdf_styles()` shows what's saved (and the
   default). When more than one layout exists and it's not obvious which to use —
@@ -93,6 +96,13 @@ You can remember a look and reuse it. Presets are owned by pdf-mcp — manage th
   it and **offer the saved layouts by name so they can choose**, then render with
   that `preset`. `delete_pdf_style({ name })` removes one.
 
+**Don't override a saved layout by accident.** When a default or a chosen preset
+is in effect, render with it and **pass NO `style` knobs of your own** — a stray
+`style` (e.g. picking a colour yourself) silently overrides the saved layout and
+breaks consistency (that's how a "black" default came out grey). Only add a
+`style` knob when the person explicitly asks to change the look for *this*
+document; if they then want that kept, save it back with `save_pdf_style`.
+
 So the flow is: tweak with `style` → when they're happy, `save_pdf_style` →
-later, offer the saved layouts and render the chosen one with `preset` (or just
-let the default apply), staying consistent across documents.
+later, render with `preset` (or just let the default apply) and add nothing on
+top, so documents stay consistent.
