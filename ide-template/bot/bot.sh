@@ -520,7 +520,10 @@ if tg_inbound_marker not in content:
     )
     # Anchor: the line that constructs the bot. Inject immediately after.
     pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
-    new_content, n = pattern.subn(r'\1' + inbound_inject, content, count=1)
+    # lambda, NOT string concat: an inject containing "\s" etc. would be parsed
+    # as a (broken) backreference template and crash the whole patcher — caught
+    # live 2026-07-11 (re.PatternError killed every patch after this point).
+    new_content, n = pattern.subn(lambda m: m.group(1) + inbound_inject, content, count=1)
     if n > 0:
         content = new_content
         changed = True
@@ -572,7 +575,7 @@ if tg_relay_marker not in content:
         '});\n'
     )
     pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
-    new_content, n = pattern.subn(r'\1' + relay_inject, content, count=1)
+    new_content, n = pattern.subn(lambda m: m.group(1) + relay_inject, content, count=1)   # lambda: see inbound note
     if n > 0:
         content = new_content
         changed = True
@@ -683,7 +686,7 @@ if tg_group_marker not in content:
         '});\n'
     )
     pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
-    new_content, n = pattern.subn(r'\1' + group_inject, content, count=1)
+    new_content, n = pattern.subn(lambda m: m.group(1) + group_inject, content, count=1)   # lambda: see inbound note
     if n > 0:
         content = new_content
         changed = True
@@ -730,7 +733,7 @@ if tg_join_marker not in content:
         '});\n'
     )
     pattern = re.compile(r'(^const bot = new Bot\([^)]*\))', re.MULTILINE)
-    new_content, n = pattern.subn(r'\1' + join_inject, content, count=1)
+    new_content, n = pattern.subn(lambda m: m.group(1) + join_inject, content, count=1)   # lambda: see inbound note
     if n > 0:
         content = new_content
         changed = True
@@ -806,7 +809,11 @@ if tg_outbound_marker not in content:
     # Anchor on `await bot.start(` — real plugin uses `bot.start({...options})`
     # not a bare `bot.start()` call. Match indentation + the `await ` prefix.
     pattern = re.compile(r'^(\s*)(await bot\.start\()', re.MULTILINE)
-    new_content, n = pattern.subn(outbound_inject + r'\1\2', content, count=1)
+    # lambda, NOT string concat — outbound_inject contains TS regexes with "\s",
+    # which a template replacement parses as a bad escape and crashes the whole
+    # patcher (re.PatternError, live 2026-07-11: bot ran with ZERO patches —
+    # group diversion dead, groups fell back to the stock plugin gate).
+    new_content, n = pattern.subn(lambda m: outbound_inject + m.group(1) + m.group(2), content, count=1)
     if n > 0:
         content = new_content
         changed = True
