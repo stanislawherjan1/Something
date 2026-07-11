@@ -24,7 +24,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -143,9 +143,38 @@ function pushHistory(chatId, entry) {
   if (!entry || !String(entry.text || '').trim()) return;
   let h = history.get(chatId);
   if (!h) { h = []; history.set(chatId, h); }
+  entry.ts = entry.ts || new Date().toISOString();   // Phase 1: lets the prompt diet slice "new since last turn"
   h.push(entry);
   if (h.length > HISTORY_MAX) h.splice(0, h.length - HISTORY_MAX);
   persistHistory(chatId, entry);   // reflect v2: durable trace so groups feed memory
+}
+
+// ─── Persistent per-group Claude session (Phase 1, D2) ────────────────────────
+// Every group turn used to be a stateless one-shot with only the 20-line ring as
+// context — the root cause of correction relapses, double replies, language
+// flips and sender confusion measured in the live audit. Now each group keeps ONE
+// resumable Claude session (`--resume`, the same engine web chat uses), persisted
+// here so it survives restarts. The turn still runs with the SENDER's identity
+// per turn (attribution + outbound actions as them) — but in GROUP CONTEXT:
+// private trees are hard-blocked for everyone (see scope-rule.pathInGroupScope).
+function sessionFile(chatId) {
+  const gid = String(chatId).replace(/[^\d-]/g, '') || 'unknown';
+  return join(AUDIT_DIR, `${gid}-session.json`);
+}
+function loadSession(chatId) {
+  try {
+    const s = JSON.parse(readFileSync(sessionFile(chatId), 'utf8'));
+    return s && typeof s.sessionId === 'string' && s.sessionId ? s : null;
+  } catch { return null; }
+}
+function saveSession(chatId, sess) {
+  try {
+    mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o770 });
+    writeFileSync(sessionFile(chatId), JSON.stringify(sess), { mode: 0o660 });
+  } catch (err) { process.stderr.write(`[group-watcher] session save failed: ${err.message}\n`); }
+}
+function clearSession(chatId) {
+  try { unlinkSync(sessionFile(chatId)); } catch { /* already gone */ }
 }
 
 // Reflect v2: the in-memory ring above is lost on restart, so a group
@@ -661,25 +690,26 @@ function maybePinLanguage(chatId, code) {
   } catch { /* best-effort */ }
 }
 
-// ─── Group brain — FULL team-scoped assistant (Phase 2) ───────────────────────
+// ─── Group brain — FULL team-scoped assistant ─────────────────────────────────
 // On a positive verdict, the FULL assistant answers — the SAME engine the web/1:1
 // chat uses (runClaudeTurn). It runs AS the message's SENDER: their roster slug
 // (actor) + their real role (actorIsAdmin), resolved by Telegram user-id in
-// groupTurnParams below. So the bot has the identity + access that person has 1:1
-// — SHARED files (cwd=PROJECT_DIR), shared memory, skills, integrations, reminders
-// — and it can ACT. It knows its own name via PROJECT_DIR/.claude/CLAUDE.md.
+// groupTurnParams below — attribution and OUTBOUND actions (reminders, sends)
+// are theirs. It knows its own name via PROJECT_DIR/.claude/CLAUDE.md.
 //
-// Scope + privacy (deliberate design — see the 2026-07 group read-path audit): the
-// group IS the team (no outsiders — the group admin's responsibility), so the bot
-// is NOT fenced to shared-only; it runs with the sender's scope, including their
-// own private tree (and, if the sender is an admin, IS_ADMIN=1 relaxes scope-guard
-// exactly as it does 1:1). The one structural hardening: the group turn passes
-// excludeIds:['USER_INDEX'] (groupTurnParams) so the PUBLIC reply's prefix never
-// advertises the sender's private pages. Beyond that, a private/personal ask is
-// steered to a DM by the compose prompt — a soft nudge, not a hard gate. (A
-// stricter shared-only group brain is available if ever wanted: buildTeamPrefix +
-// loadGroupMemory in memory-loader.js — currently unused.) An unknown sender (not
-// in the roster) falls back to actor='team', non-admin.
+// Scope + privacy (group-mode v2, D2 — REPLACES the earlier run-as-sender-with-
+// soft-nudge design): a group turn's reply is public to the whole group, and its
+// persistent session is shared across turns run as DIFFERENT senders — so
+// whatever enters the turn is de facto group-visible. Hence groupContext: true →
+// claude.js sets IDE_GROUP_CONTEXT=1 and the scope-guard hook hard-blocks EVERY
+// private tree (the sender's own and an admin's alike; see
+// scope-rule.pathInGroupScope), the prefix drops the whole USER tier, and the
+// per-user private KG clone is skipped. Identity stays per turn; private DATA
+// stays out. Work that genuinely needs the sender's private space is DELEGATED:
+// the brain emits [[PRIVATE_TASK …]], and runPrivateDelegate runs it as the
+// sender in their full private scope, delivering the result to their DM — the
+// group session only ever sees the handoff. An unknown sender (not in the
+// roster) falls back to actor='team', non-admin.
 // The group brain has the FULL toolset and often does real multi-tool work
 // (e.g. "what are today's plans?" → walk Trello boards/lists/cards + Bash). 90s
 // was too tight and SIGKILLed productive turns mid-compose → silent failure. 1:1
@@ -726,9 +756,10 @@ function stripScaffolding(s, groupLang) {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-// Build the runClaudeTurn params for a group turn (exported for the guard test —
-// it pins the scope: actor 'team', NEVER admin, so scope-guard fences private).
-export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
+// Build the runClaudeTurn params for a group turn (exported for the guard test).
+// opts.resumed — a persistent session is live: the context window below carries
+// only the messages SINCE the last turn; everything earlier is session memory.
+export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   const window = renderContext(ctxMsgs, new Set([String(target.message_id)]), BRAIN_CONTEXT_CLAMP);
   // Resolve the SENDER by their Telegram user-id against the team roster, so the
   // bot runs AS that person (their real identity, profile and 1:1 access) — NOT a
@@ -745,11 +776,13 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
   const lang = group && group.language ? String(group.language).trim() : '';
   const replyLang = lang || `${senderName}'s language`;
   const message = [
-    'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). Recent conversation:',
+    opts.resumed
+      ? 'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). You have an ongoing session memory of this group\'s earlier conversation — trust it. Below are ONLY the messages since your last turn:'
+      : 'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). Recent conversation:',
     '----',
     window,
     '----',
-    `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — files, memory, skills, integrations, reminders — and you may act, exactly as you would 1:1. Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group, so if a request needs PRIVATE/personal data, offer to do it in a DM instead.`,
+    `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — the SHARED workspace, shared memory, skills, integrations, reminders — and you may act. This is a GROUP context: NO private space is reachable (not even the requester's own) and nothing private may enter the conversation; genuinely private work is delegated via [[PRIVATE_TASK]] (below). Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group.`,
     lang ? `This group's language is ${lang} — reply ONLY in ${lang}, whatever language a message happens to be written in. Even when quoting or discussing text in another language, your own words stay in ${lang}.` : '',
     '',
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, your FIRST output must be exactly `[[SILENT]]` — immediately, before using any tool — and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
@@ -763,6 +796,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
     '- STAY OUT OF PRIVATE BANTER: when two people are clearly talking to EACH OTHER and nobody asked you anything, output `[[SILENT]]`. Do not chime in on jokes you don\'t fully get — a forced quip reads worse than silence.',
     '- OTHER BOTS: you CANNOT see messages sent by other Telegram bots — the Telegram platform never delivers bot messages to bots (loop prevention). If someone asks you to talk to another bot or react to what another bot said, explain this limitation plainly instead of waiting or improvising.',
     '- LONG TASKS: if fulfilling a request will clearly take more than a couple of minutes of tool work (deep research, reviewing a repo, producing a long report), do NOT attempt it inline — your turn has a hard time cap and will be killed mid-work. Instead: acknowledge briefly what you will do, create a reminder for yourself to do the work and deliver the result back to this group, and end your turn.',
+    `- PRIVATE REQUESTS: when ${senderName} asks for something that needs THEIR OWN private files, notes, or memory (a private summary, "send it to me privately", their personal data), emit \`[[PRIVATE_TASK <one clear sentence describing exactly what to do>]]\` on its own line — the system runs it privately as ${senderName} and delivers the result to their DM. In the group, say only that it's on its way to their DM. NEVER emit [[PRIVATE_TASK]] for data belonging to anyone OTHER than the requester, and never try to read private paths here yourself.`,
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
     '',
@@ -775,14 +809,16 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}) {
   ].join('\n');
   return {
     message,
-    actor,                  // the resolved member's slug → their identity + scope (or 'team' shared for unknown)
+    actor,                  // the resolved member's slug → attribution + outbound actions as them
     actorName: senderName,
-    actorIsAdmin,           // their real role; unknown sender → false
+    actorIsAdmin,           // their real role (scope-guard ignores it under groupContext)
     teammates: [],
-    // PUBLIC-reply guard: drop the sender's private-page index (USER_INDEX) from
-    // the group prefix, so a reply visible to the WHOLE group never advertises
-    // that person's private concept/topic pages. They keep full private access
-    // 1:1 / in a DM — this only affects what the group brain's prefix lists.
+    // D2 hard fence: claude.js excludes the whole USER tier from the prefix,
+    // skips the private-KG clone, and sets IDE_GROUP_CONTEXT=1 so the
+    // scope-guard hook blocks EVERY private tree at tool time.
+    groupContext: true,
+    // Redundant with the groupContext prefix exclusion — kept as belt-and-braces
+    // for older claude.js versions that only honour excludeIds.
     excludeIds: ['USER_INDEX'],
     ...cb,
   };
@@ -811,6 +847,14 @@ const MAX_PARTS = num('GROUP_MAX_PARTS', 5);
 const SEND_FILE_RE = /`{0,3}\[\[\s*SEND_FILE\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
 const MAX_FILES = num('GROUP_MAX_FILES', 3);
 
+// Private-task delegation marker (Phase 1, D2 layer 3): the group brain cannot
+// touch private trees, so when the requester asks for THEIR OWN private data it
+// emits this marker; runPrivateDelegate re-runs the task as that sender in their
+// full private scope and DMs them the result. ONE per turn; the sender is always
+// resolved from the target message's from_id — NEVER parsed from brain output
+// (same no-fan-out invariant as chatId).
+const PRIVATE_TASK_RE = /`{0,3}\[\[\s*PRIVATE_TASK\s+([\s\S]{1,600}?)\s*\]\]`{0,3}/i;
+
 // While the brain's first output streams, tell whether it's heading for a silent
 // verdict: a leading [[SILENT]] (or a still-streaming prefix of it) → stay invisible.
 // As soon as the text diverges from that prefix, it's committing to a reply.
@@ -819,9 +863,20 @@ function isSilentPrefix(s) {
   return c.length > 0 && '[[silent]]'.startsWith(c);
 }
 
-function groupCompose(group, ctxMsgs, target) {
+function groupCompose(group, ctxMsgs, target, session = null) {
   return new Promise((resolve) => {
     let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
+    let privateTask = null, capturedSessionId = null;
+    // Capture ONE [[PRIVATE_TASK …]] marker (first wins) and strip every
+    // occurrence from the outgoing text. Requires the closing ]] — a
+    // still-streaming partial marker waits, same as SEND/SEND_FILE.
+    const extractPrivateTask = () => {
+      let m;
+      while ((m = text.match(PRIVATE_TASK_RE))) {
+        if (!privateTask) privateTask = m[1].trim();
+        text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+      }
+    };
     // Typing shows ONLY once the brain COMMITS to replying — a silent verdict stays
     // invisible (no "typing…" flicker). It commits when it streams real reply text
     // (diverging from the [[SILENT]] prefix) or starts a tool (a silent verdict uses
@@ -866,20 +921,75 @@ function groupCompose(group, ctxMsgs, target) {
     };
     try {
       proc = runClaudeTurn(groupTurnParams(group, ctxMsgs, target, {
-        onText: (t) => { text += t; if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
+        sessionId: session && session.sessionId ? session.sessionId : undefined,   // Phase 1: resume the group's persistent session
+        onText: (t) => { text += t; extractPrivateTask(); if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
         onToolStart: (info) => { startTyping(); process.stderr.write(`[group-brain] tool: ${info && info.name ? info.name : JSON.stringify(info)}\n`); },
         onToolEnd: () => {}, onImage: () => {},
         onError: (e) => finish({ ok: false, error: String(e).slice(0, 200) }),
-        onDone: () => {
+        onDone: (info) => {
+          if (info && info.sessionId) capturedSessionId = info.sessionId;
+          extractPrivateTask();
           flushFiles();
-          // Strip any residual SEND_FILE markers (e.g. beyond MAX_FILES) so a raw
-          // marker never leaks into the posted text.
+          // Strip any residual SEND_FILE / PRIVATE_TASK markers (e.g. beyond the
+          // caps) so a raw marker never leaks into the posted text.
           text = text.replace(/`{0,3}\[\[\s*SEND_FILE\s+[^\]\n]+?\s*\]\]`{0,3}/gi, '');
-          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files });
+          text = text.replace(/`{0,3}\[\[\s*PRIVATE_TASK\s+[\s\S]{1,600}?\s*\]\]`{0,3}/gi, '');
+          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, privateTask, sessionId: capturedSessionId });
         },
-      }));
+      }, { resumed: !!(session && session.sessionId) }));
     } catch (err) { finish({ ok: false, error: err.message }); }
   });
+}
+
+// ─── Private-task delegation (Phase 1, D2 layer 3) ────────────────────────────
+// Runs the delegated task AS the requester, in their FULL private scope (no
+// groupContext), and DMs them the result. The delegate's output never touches
+// the group session. Sender identity comes from the target message's from_id —
+// structurally never from brain output. logKind:'group' on the DM send keeps a
+// MEMBER's private DM out of RECENT_TELEGRAM (that card is the operator's DM log).
+const DELEGATE_TIMEOUT = num('GROUP_DELEGATE_TIMEOUT_MS', 300000);
+async function runPrivateDelegate(chatId, group, target, task) {
+  let member = null;
+  try { member = userByChatId(target.from_id); } catch { member = null; }
+  if (!member || !member.slug) {
+    // Unknown sender has no private scope to delegate into — tell the group.
+    sendTelegramMessage(chatId, failureNoticeText(group, 'compose-error'), { logKind: 'group' }).catch(() => {});
+    return;
+  }
+  if (!(await acquireSlot())) {
+    process.stderr.write(`[group-watcher] delegate dropped (no slot) for ${member.slug}\n`);
+    return;
+  }
+  try {
+    const senderName = member.displayName || member.slug;
+    const result = await new Promise((resolve) => {
+      let out = '', done = false, proc = null;
+      const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
+      const timer = setTimeout(() => finish(null), DELEGATE_TIMEOUT);
+      try {
+        proc = runClaudeTurn({
+          message: `[PRIVATE TASK — delegated from the team group chat "${clip(group.title || chatId, 40)}"] ${senderName} asked there for something that needs their PRIVATE space, which group turns cannot touch. Do it now, in their private scope, and write the result as a direct Telegram DM to ${senderName} (plain text, their language, no preamble — your final output IS the DM):\n\n${clip(task, 600)}`,
+          actor: member.slug,
+          actorName: senderName,
+          actorIsAdmin: member.role === 'admin',
+          teammates: [],
+          onText: (t) => { out += t; },
+          onToolStart: () => {}, onToolEnd: () => {}, onImage: () => {},
+          onError: () => finish(null),
+          onDone: () => finish(out.trim()),
+        });
+      } catch { finish(null); }
+    });
+    if (result) {
+      await sendTelegramMessage(target.from_id, finalizeReply(result), { logKind: 'group' });
+      process.stderr.write(`[group-watcher] private delegate for ${member.slug} delivered to DM\n`);
+    } else {
+      // The delegate died — the requester was told "it's headed to your DM", so
+      // a silent failure here would be a broken promise. One short group notice.
+      notifyFailure(chatId, group, 'compose-error');
+      process.stderr.write(`[group-watcher] private delegate for ${member.slug} FAILED\n`);
+    }
+  } finally { releaseSlot(); }
 }
 
 // ─── Flush one chat's burst ───────────────────────────────────────────────────
@@ -990,10 +1100,41 @@ async function flush(chatId) {
       if (m.imagePath) { target.moreFiles.push({ path: m.imagePath, name: '(image)', who }); fetchedFiles += 1; }
     }
   }
+  // Phase 1: persistent per-group session. With a live session the brain gets
+  // ONLY the messages since its last turn (the session remembers the rest) —
+  // the full ring is the seed for a fresh session.
+  let session = loadSession(chatId);
+  const ctxForBrain = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
+  const lastTsSnapshot = hist.length ? hist[hist.length - 1].ts : (session && session.lastTs) || null;
   let reply;
-  try { reply = await groupCompose(group, hist, target); }
-  catch (err) { reply = { ok: false, error: err.message }; }
-  finally { releaseSlot(); }
+  try {
+    try { reply = await groupCompose(group, ctxForBrain, target, session); }
+    catch (err) { reply = { ok: false, error: err.message }; }
+
+    // Session rotation (P1d): a failed --resume (stale/corrupt session id) exits
+    // early with code 1. Retry ONCE with a fresh session seeded from the full
+    // ring. (`exit 1` is also the subscription-limit signature — the retry then
+    // just fails again fast and the limit notice below still fires.)
+    if (!reply.ok && session && /exited with code 1|exit 1|no conversation|not found/i.test(String(reply.error || ''))) {
+      process.stderr.write(`[group-watcher] session resume failed for ${chatId} (${reply.error}) — rotating session\n`);
+      clearSession(chatId);
+      session = null;
+      try { reply = await groupCompose(group, hist, target, null); }
+      catch (err) { reply = { ok: false, error: err.message }; }
+    }
+  } finally { releaseSlot(); }
+
+  // A completed turn advances the session — INCLUDING a [[SILENT]] verdict (the
+  // brain saw these messages; don't re-send them next turn).
+  if (reply.ok && reply.sessionId) {
+    saveSession(chatId, {
+      sessionId: reply.sessionId,
+      startedAt: (session && session.startedAt) || new Date().toISOString(),
+      turns: ((session && session.turns) || 0) + 1,
+      lastTs: lastTsSnapshot,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 
   if (!reply.ok) {
     // A dead REPLY turn must not vanish silently (D3): the gate said speak, the
@@ -1005,6 +1146,15 @@ async function flush(chatId) {
     notifyFailure(chatId, group, kind);
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'compose-failed', beat, confidence, reason_enum: 'compose-error', error: reply.error, preview: clip(target.text, 120) });
   }
+  // Phase 1: a delegated private task fires regardless of which exit path the
+  // group reply takes below (full reply, parts-only, or even a silent verdict
+  // where the whole answer happens privately).
+  const fireDelegate = () => {
+    if (!reply.privateTask) return;
+    runPrivateDelegate(chatId, group, target, reply.privateTask)
+      .catch((err) => process.stderr.write(`[group-watcher] delegate error: ${err.message}\n`));
+  };
+
   // The brain is the real judge: it may look and decide it has nothing to add. An
   // explicit [[SILENT]] sentinel (or an empty reply) with NO interim [[SEND]] parts
   // is an ACCEPTED no-op, not a failure — we post nothing. (Design: the cheap gate
@@ -1013,6 +1163,7 @@ async function flush(chatId) {
   const emptyFinal = !cleaned || /^\[\[\s*silent\s*\]\]$/i.test(cleaned);
   const acted = reply.parts > 0 || reply.files > 0;   // sent something (a part, or a file attachment)
   if (emptyFinal && !acted) {
+    fireDelegate();
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'silent', beat, confidence, reason_enum: 'brain-pass', preview: clip(target.text, 120) });
   }
   if (emptyFinal) {
@@ -1020,6 +1171,7 @@ async function flush(chatId) {
     // nothing left for a final message. It DID act; record context for next turn.
     const summary = [reply.parts > 0 ? `${reply.parts} parts` : null, reply.files > 0 ? `${reply.files} file(s)` : null].filter(Boolean).join(' + ');
     pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: `(replied: ${summary})` });
+    fireDelegate();
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${summary}, no trailing)` });
   }
   const sent = await sendTelegramMessage(chatId, reply.text, { logKind: 'group' });
@@ -1049,6 +1201,8 @@ async function flush(chatId) {
     error: sent.ok ? undefined : sent.error,
     preview: clip(reply.text, 120),
   });
+
+  fireDelegate();
 }
 
 function scheduleFlush(chatId) {

@@ -42,3 +42,21 @@ export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) 
   if (!ownSlug) return false;                       // a private tree, but the actor has no slug
   return (isMemTree ? parts[2] : parts[1]) === ownSlug;
 }
+
+/**
+ * Group-context scope rule (group-mode v2, D2). A group turn's output is public
+ * to the whole group and its session context is SHARED across turns run as
+ * different senders — so whatever enters it is de facto group-visible. Hence the
+ * hard rule: NO private tree is readable in a group turn — not the sender's own,
+ * not an admin's. One rule, no exceptions (private work is delegated to a
+ * sender-scoped DM turn instead). Everything outside users/ + memory/users/ is
+ * the shared team space and stays allowed.
+ */
+export function pathInGroupScope(relPosix) {
+  const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
+  if (parts.some(p => p === '..')) return false;
+  if (parts.length === 0) return true;              // project root → shared listing
+  if (parts[0] === USERS_DIR) return false;                            // anyone's private files
+  if (parts[0] === 'memory' && parts[1] === USERS_DIR) return false;   // anyone's private memory
+  return true;
+}
