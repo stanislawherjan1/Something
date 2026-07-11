@@ -1,7 +1,7 @@
 ---
 name: research-twitter-account
 description: Research a Twitter/X account and the network around it. Triggers when the user asks to "research @handle", "analyze the X account", "kogo obserwują w sektorze X", "find similar accounts to @handle", "build a profile for @handle". Queries Grok for similar accounts the target frequently interacts with, then drafts a folder of bio + posting-style profiles for each.
-allowed-tools: Read, Bash, mcp__grok__ask_grok, mcp__memory__create_entities, mcp__memory__add_observations
+allowed-tools: Read, Bash, Write, mcp__grok__ask_grok
 ---
 
 # Research a Twitter Account
@@ -43,9 +43,9 @@ Template + sections (similar accounts table, adjacent accounts, notes) → `refe
 
 For each of the 10 accounts, run TWO Grok queries — **bio** and **post-style** — in parallel where possible to save wall-time. Both templates + per-file save targets → `references/grok-queries.md`.
 
-## Step 6 — index in memory
+## Step 6 — leave a discoverable pointer
 
-Create one `research_index` entity per target handle so future sessions can `search_nodes("<handle>")` and find the research. Entity shape → `references/output-shape.md`.
+Record a concept page (`memory/concepts/twitter-research-<handle>.md`) so future sessions can find the research via `memory_grep` or the INDEX map. Writing the page auto-triggers the INDEX rebuild — no separate step. Page shape → `references/output-shape.md`.
 
 ## Step 7 — summary to user
 

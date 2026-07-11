@@ -248,7 +248,7 @@ const TOOLS = [
   {
     name: 'replace_in_doc',
     description:
-      'Find every occurrence of a string and replace it. Idempotent — returns 0 replacements ' +
+      'Find every occurrence of a string and replace it. Idempotent: returns 0 replacements ' +
       'if the string is not found. Case-sensitive by default.',
     inputSchema: {
       type: 'object',
@@ -264,7 +264,7 @@ const TOOLS = [
   {
     name: 'list_doc_revisions',
     description:
-      'List the edit history of a Google Doc — each entry has revision_id, modified_at, ' +
+      'List the edit history of a Google Doc: each entry has revision_id, modified_at, ' +
       'and who made the edit (display name + email). Google retains revisions for ~30 days ' +
       'by default unless keep_forever is true on the revision. Use this for "who edited X" ' +
       'or "when did this doc last change". Returns newest first.',

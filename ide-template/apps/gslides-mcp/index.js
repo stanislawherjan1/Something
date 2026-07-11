@@ -196,7 +196,7 @@ const TOOLS = [
     name: 'replace_text',
     description:
       'Find every occurrence of a string across the deck and replace it. Returns the number of replacements. ' +
-      'Idempotent — returns 0 if not found. Requires write permission (workspace-level toggle).',
+      'Idempotent: returns 0 if not found. Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
       required: ['presentation_id', 'find', 'replace'],

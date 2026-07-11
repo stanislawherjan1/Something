@@ -1204,7 +1204,7 @@ function friendlyError({ errorKind, errorStatus, errorDetail }) {
       return {
         icon: AlertCircle,
         title: 'Something went wrong on our end',
-        body:  "We hit an unexpected error. Try again in a moment — if it keeps happening, the service may be temporarily down.",
+        body:  "We hit an unexpected error. Try again in a moment; if it keeps happening, the service may be temporarily down.",
         retryable: true,
       };
     }
@@ -1406,7 +1406,7 @@ function UnreadOtherSessionsBanner({ currentSessionId }) {
   const head = sorted[0];
   const count = sorted.length;
   const label = count === 1
-    ? `New message in another thread${head.title ? ` — ${head.title}` : ''}`
+    ? `New message in another thread${head.title ? `: ${head.title}` : ''}`
     : `${count} new messages in other threads`;
 
   return (

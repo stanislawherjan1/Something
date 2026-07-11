@@ -1,7 +1,7 @@
 ---
 name: repo-audit
-description: Weekly project structure review. Identifies orphans (loose files in root), stale files (no edit 30+ days), duplicate folders, empty dirs, and files missing from memory index. Auto-executes obvious safe cleanups (empty folders, twin-folder casing, .playwright-mcp wipe), asks for approval on judgment calls. Triggered weekly by reminder `[REPO_AUDIT_TRIGGER]`, or manually via "/audit", "weekly audit", "clean up repo", "tidy up the project".
-allowed-tools: Read, Bash, Write, mcp__memory__search_nodes, mcp__memory__create_entities, mcp__memory__add_observations
+description: Weekly project structure review. Identifies orphans (loose files in root), stale files (no edit 30+ days), duplicate folders, empty dirs, and files missing from the memory INDEX map. Auto-executes obvious safe cleanups (empty folders, twin-folder casing, .playwright-mcp wipe), asks for approval on judgment calls. Triggered weekly by reminder `[REPO_AUDIT_TRIGGER]`, or manually via "/audit", "weekly audit", "clean up repo", "tidy up the project".
+allowed-tools: Read, Bash, Write
 ---
 
 # Repo Audit Protocol
@@ -59,20 +59,7 @@ Reply with number + decision (e.g. "1 inbox, 2 yes, 3 keep") or "leave everythin
 
 Wait for response. Parse, execute, append to `Audit.md`.
 
-## Step 5 — update memory index log
-
-After the audit completes, update the `repo-audit-log` entity:
-
-```
-mcp__memory__add_observations(repo-audit-log, [
-  "lastAudit: 2026-05-12",
-  "autoActions: 3",
-  "userApprovedActions: 2",
-  "userDeclinedActions: 1"
-])
-```
-
-Create the entity on first run.
+The audit record lives in `~/project/${BOT_NAME}/<today>/Audit.md` (Step 3) — that is the durable log. Do NOT write a run summary into `memory/concepts/` or `memory/topics/`: the memory graph is for knowledge about the user's world, not the bot's own housekeeping logs, and a self-referential audit-log node just clutters it.
 
 ## Edge cases
 

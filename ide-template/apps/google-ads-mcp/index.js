@@ -201,7 +201,7 @@ const TOOLS = [
 
   {
     name: 'create_campaign',
-    description: 'Create a new Google Ads campaign. Budget is created automatically. Campaign starts PAUSED — use update_campaign to enable when ready.',
+    description: 'Create a new Google Ads campaign. Budget is created automatically. Campaign starts PAUSED: use update_campaign to enable when ready.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -281,7 +281,7 @@ const TOOLS = [
 
   {
     name: 'update_campaign',
-    description: 'Update a campaign — change status, name, budget, bidding strategy, conversion goal, end date, AI Max, or URL expansion.',
+    description: 'Update a campaign: change status, name, budget, bidding strategy, conversion goal, end date, AI Max, or URL expansion.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -296,7 +296,7 @@ const TOOLS = [
         status: {
           type: 'string',
           enum: ['ENABLED', 'PAUSED'],
-          description: 'New status. Note: campaigns cannot be deleted via API — REMOVED is a read-only value. To delete, pause it and remove manually in the UI.',
+          description: 'New status. Note: campaigns cannot be deleted via API; REMOVED is a read-only value. To delete, pause it and remove manually in the UI.',
         },
         name: {
           type: 'string',
@@ -375,7 +375,7 @@ const TOOLS = [
 
   {
     name: 'update_ad_group',
-    description: 'Update an ad group — change status, name, or default CPC bid.',
+    description: 'Update an ad group: change status, name, or default CPC bid.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -444,7 +444,7 @@ const TOOLS = [
 
   {
     name: 'update_keyword',
-    description: 'Update a keyword — change status (pause/enable) or CPC bid. Use the criterion ID returned by create_keyword or found via search.',
+    description: 'Update a keyword: change status (pause/enable) or CPC bid. Use the criterion ID returned by create_keyword or found via search.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -491,7 +491,7 @@ const TOOLS = [
         match_type: {
           type: 'string',
           enum: ['BROAD', 'PHRASE', 'EXACT'],
-          description: 'Match type (default: EXACT — safest, only blocks that exact phrase).',
+          description: 'Match type (default: EXACT, the safest; only blocks that exact phrase).',
         },
         campaign_id: {
           type: 'string',
@@ -535,7 +535,7 @@ const TOOLS = [
               },
             ],
           },
-          description: 'Headlines (3–15, max 30 chars each). Pass a plain string, or an object { text, pin } to pin to a position. E.g. [{ "text": "From €850 — Allura Corset", "pin": 1 }, "Handmade French Silk"]',
+          description: 'Headlines (3–15, max 30 chars each). Pass a plain string, or an object { text, pin } to pin to a position. E.g. [{ "text": "From €850, Allura Corset", "pin": 1 }, "Handmade French Silk"]',
         },
         descriptions: {
           type: 'array',
@@ -631,7 +631,7 @@ const TOOLS = [
 
   {
     name: 'add_audience_target',
-    description: 'Add an audience to a campaign in observation mode (does not restrict reach — only lets you see and bid-adjust per audience). Use search tool to find audience IDs first.',
+    description: 'Add an audience to a campaign in observation mode (does not restrict reach, only lets you see and bid-adjust per audience). Use search tool to find audience IDs first.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -965,13 +965,13 @@ async function handleTool(name, args) {
           }]);
           conversionGoalSummary = `\nConversion goal: ${args.conversion_goal} (biddable)`;
         } else {
-          conversionGoalSummary = `\nConversion goal: ${args.conversion_goal} requested but no matching goal found in account — set manually in UI`;
+          conversionGoalSummary = `\nConversion goal: ${args.conversion_goal} requested but no matching goal found in account, set manually in UI`;
         }
       } catch (goalErr) {
         const msg = goalErr?.errors?.length
           ? goalErr.errors.map(e => e.message).join('; ')
           : (goalErr?.message ?? String(goalErr));
-        conversionGoalSummary = `\nConversion goal: failed to set (${msg}) — set manually in UI`;
+        conversionGoalSummary = `\nConversion goal: failed to set (${msg}), set manually in UI`;
       }
     }
 
@@ -1050,7 +1050,7 @@ async function handleTool(name, args) {
           }]);
           goalNote = ` | Conversion goal: ${args.conversion_goal} (biddable)`;
         } else {
-          goalNote = ` | Conversion goal: ${args.conversion_goal} not found in account — set manually in UI`;
+          goalNote = ` | Conversion goal: ${args.conversion_goal} not found in account, set manually in UI`;
         }
       } catch (goalErr) {
         const msg = goalErr?.errors?.length ? goalErr.errors.map(e => e.message).join('; ') : (goalErr?.message ?? String(goalErr));

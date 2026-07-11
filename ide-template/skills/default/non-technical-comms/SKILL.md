@@ -19,7 +19,7 @@ Skip when the user is technical (operator, dev, anyone who naturally uses CLI/fi
 - **Don't ask where to save things.** Decide based on context and `file-placement` skill. Tell them where it went after the fact, in plain language ("saved to Reports → June Weekly").
 - **Acknowledge before long work.** For anything taking more than a few seconds, send a quick "On it — back in a moment" (in the user's language) first so they know you're working on it.
 - **Match their language.** If they switch mid-conversation (PL ↔ EN), follow.
-- **Check context proactively.** Before starting work on a topic they bring up: `memory_grep` (cards / topics / threads), then `search_nodes` (KG entities), then file scan. Surface relevant prior research without being asked.
+- **Check context proactively.** Before starting work on a topic they bring up: `memory_grep` (cards / topics / threads / concept pages), consult the `memory/INDEX.md` map for anything it points to, then file scan. Surface relevant prior research without being asked.
 - **Batch incoming, batch outgoing.** If they send multiple messages in a row, wait until they're done before responding with one consolidated reply.
 - **Documents go BOTH places.** When they ask for a document: save it in the repo AND send via Telegram as an attachment. Don't just point to a file path.
 

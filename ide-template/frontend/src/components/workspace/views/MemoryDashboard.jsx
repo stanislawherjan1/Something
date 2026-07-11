@@ -4,6 +4,7 @@ import { forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
+import { MarkdownView, stripFrontmatter } from '@/lib/markdown';
 
 /**
  * MemoryDashboard — interactive graph of `project/memory/` (P3.03).
@@ -789,8 +790,8 @@ const KIND_LABEL = { index: 'Index', card: 'Card', concept: 'Concept', topic: 'T
 // to the auto-stripped preview.
 const CARD_DESCRIPTIONS = {
   INDEX:              'The wiki root. One-line summaries of every card + topic, plus a navigation rule of thumb.',
-  USER_PROFILE:       'Stable facts about the user — role, location, languages, schedule, current focus.',
-  USER_PREFERENCES:   'Soft preferences — tone, channels, formatting, working style.',
+  USER_PROFILE:       'Stable facts about the user: role, location, languages, schedule, current focus.',
+  USER_PREFERENCES:   'Soft preferences: tone, channels, formatting, working style.',
   USER_RELATIONSHIPS: 'People in the user’s life. One section per person, pointer to a topic page when deep context exists.',
   USER_REFLECTIONS:   'The user’s own self-introspection entries, dated. Newer on top.',
   RULES:              'Hard "never / always" rules. Override preferences when in conflict.',
@@ -978,10 +979,10 @@ function MemoryCardModal({ node, onClose }) {
           {status === 'emerging' && (
             <div className="mx-auto min-h-full w-full max-w-2xl px-8 py-10">
               <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/[0.05] px-6 py-6">
-                <div className="text-[14px] font-semibold text-foreground/90">Emerging concept — no page yet</div>
+                <div className="text-[14px] font-semibold text-foreground/90">Emerging concept: no page yet</div>
                 <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
-                  I keep hearing about <span className="font-medium text-foreground/85">{node.baseStem || node.name?.replace(/\.md$/, '')}</span> — it came up across{' '}
-                  <span className="font-medium text-foreground/85">{Math.round(node.heat || 0)}</span> recent conversation{Math.round(node.heat || 0) === 1 ? '' : 's'} but doesn't have its own page yet. Once it stays warm, the memory pass writes a full page automatically — no action needed.
+                  I keep hearing about <span className="font-medium text-foreground/85">{node.baseStem || node.name?.replace(/\.md$/, '')}</span>, it came up across{' '}
+                  <span className="font-medium text-foreground/85">{Math.round(node.heat || 0)}</span> recent conversation{Math.round(node.heat || 0) === 1 ? '' : 's'} but doesn't have its own page yet. Once it stays warm, the memory pass writes a full page automatically: no action needed.
                 </p>
                 <div className="mt-5 flex items-center gap-2.5">
                   <button
@@ -993,7 +994,7 @@ function MemoryCardModal({ node, onClose }) {
                     {seeding ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" strokeWidth={2} />}
                     {seeding ? 'Creating…' : 'Create its page now'}
                   </button>
-                  <span className="text-[11.5px] text-muted-foreground/60">or leave it — it forms on its own</span>
+                  <span className="text-[11.5px] text-muted-foreground/60">or leave it, it forms on its own</span>
                 </div>
               </div>
             </div>
@@ -1003,15 +1004,13 @@ function MemoryCardModal({ node, onClose }) {
               {isAutoMaintained && (
                 <div className="mb-5 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3.5 py-2 text-[12px] text-muted-foreground/85">
                   <Lock className="mt-0.5 size-3 shrink-0 text-muted-foreground/60" strokeWidth={2} />
-                  <span>Auto-maintained — refreshed by workspace-api on idle and chat reset. Hand-edits get overwritten on the next snapshot tick.</span>
+                  <span>Auto-maintained: refreshed by workspace-api on idle and chat reset. Hand-edits get overwritten on the next snapshot tick.</span>
                 </div>
               )}
-              {content ? (
-                <pre
-                  className="block max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-[1.7] tracking-[-0.005em] text-foreground/85"
-                >
-                  {content}
-                </pre>
+              {stripFrontmatter(content) ? (
+                <MarkdownView className="max-h-[62vh] overflow-y-auto pr-1">
+                  {stripFrontmatter(content)}
+                </MarkdownView>
               ) : (
                 <div className="rounded-md border border-dashed border-border/55 bg-muted/15 px-5 py-6 text-[12.5px] leading-relaxed text-muted-foreground/80">
                   <div className="font-medium text-foreground/80">Card body is empty.</div>

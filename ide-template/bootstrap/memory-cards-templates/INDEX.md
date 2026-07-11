@@ -14,8 +14,8 @@ every memory change:
 - on `reflect-apply.py reindex`,
 - and on wsapi startup.
 
-**Do not hand-edit it — your changes are overwritten.** Navigate *from* it: each
-entry is `[[<stem>]] — <one-line blurb>`, grouped under `## Cards` / `## Topics` /
+**Do not hand-edit it: your changes are overwritten.** Navigate *from* it: each
+entry is `[[<stem>]]` followed by a one-line blurb, grouped under `## Cards` / `## Topics` /
 `## Concepts`. In team mode there are two indexes, both loaded into the prefix: the
 shared `memory/INDEX.md` and a private `memory/users/<slug>/INDEX.md` per user. The
 memory conventions live in the system-prompt preamble, so this file is only the map.

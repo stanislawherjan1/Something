@@ -18,27 +18,29 @@ export const USERS_DIR = 'users';
  * `relPosix === ''` is the project root (allowed — the shared listing).
  */
 export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) {
-  if (isAdmin) return true;
   // Normalize BEFORE the positional check so it can't be defeated by empty
   // ('//') or dot ('/./') segments — 'memory//users/bob' and 'memory/./users/bob'
   // must both classify as the memory tree and get denied. Reject upward
-  // traversal outright: a member never legitimately needs '..' (the real path
-  // has none), so any '..' is treated as out of scope.
+  // traversal outright: nobody legitimately needs '..' through this API (the
+  // real path has none), so any '..' is treated as out of scope.
   const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
   if (parts.some(p => p === '..')) return false;
   if (parts.length === 0) return true;              // project root / '.' → shared listing
   // Each user has TWO private trees: their files (users/<slug>/…) and their
-  // memory (memory/users/<slug>/…). Own → allow; another user's → deny;
-  // everything else (the shared team space) → allow.
+  // memory (memory/users/<slug>/…). Another member's private tree is denied to
+  // EVERYONE through the product surfaces — including admins and the operator.
+  // (An admin's out-of-band escape is raw DB/SSH on their own box; the bot + UI
+  // never hand one member another member's private data.) Own tree → allow.
   const isUsersTree = parts[0] === USERS_DIR;                            // users/<slug>/…
   const isMemTree   = parts[0] === 'memory' && parts[1] === USERS_DIR;   // memory/users/<slug>/…
-  // Group-mode memory (memory/groups/<gid>/…) is the GROUP brain's working set,
-  // not a member-browsable space — deny it to every non-admin via the file API
-  // (admin already returned true above). The group brain itself has no file
-  // tools, so this only gates web members; it stops a teammate reading raw group
-  // transcripts/notes through /api/files.
+  if (isUsersTree || isMemTree) {
+    if (!ownSlug) return false;                     // a private tree, but the actor has no slug
+    return (isMemTree ? parts[2] : parts[1]) === ownSlug;   // only your OWN — admin or not
+  }
+  // Not a private tree. Admins get everything else (system files, group-mode
+  // memory, the shared space). Members get the shared team space, but not the
+  // group brain's working set (memory/groups/<gid>/… — raw group transcripts).
+  if (isAdmin) return true;
   if (parts[0] === 'memory' && parts[1] === 'groups') return false;
-  if (!isUsersTree && !isMemTree) return true;
-  if (!ownSlug) return false;                       // a private tree, but the actor has no slug
-  return (isMemTree ? parts[2] : parts[1]) === ownSlug;
+  return true;
 }

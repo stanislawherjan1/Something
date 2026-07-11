@@ -28,6 +28,7 @@ import { useApi, invalidate } from '@/lib/useApi';
  */
 const VIEW_ROUTES = [
   { path: '/tasks',        selected: { path: 'Tasks.md',           type: 'file' } },
+  { path: '/responsibilities', selected: { path: '.claude/responsibilities', type: 'responsibilities' } },
   { path: '/reminders',    selected: { path: '.claude/reminders',  type: 'reminders' } },
   { path: '/skills',       selected: { path: '.claude/skills',     type: 'skills' } },
   { path: '/integrations', selected: { path: '.claude/integrations', type: 'integrations' } },
@@ -571,7 +572,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
         <div className="flex flex-col gap-4 px-5 py-4">
           <div className="flex flex-col gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-3">
             <Step n={1}>
-              On Telegram, send <span className="font-medium text-foreground/90">{botName}</span> the command <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">/start</code> — it can&apos;t message you until you do.
+              On Telegram, send <span className="font-medium text-foreground/90">{botName}</span> the command <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">/start</code>: it can&apos;t message you until you do.
             </Step>
             <Step n={2}>
               Then message <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">@userinfobot</code>, copy the chat id it replies with, and paste it below.

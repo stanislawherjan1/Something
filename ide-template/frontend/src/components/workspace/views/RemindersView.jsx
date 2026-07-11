@@ -100,7 +100,7 @@ export default function RemindersView({ sidebarOpen }) {
           {state.status === 'loading' && <Skeleton />}
           {state.status === 'error'   && <ErrorBox>{state.error}</ErrorBox>}
           {state.status === 'ok' && reminders.length === 0 && (
-            <Hint>No reminders yet. Ask the assistant to set one — say "remind me about X tomorrow at 9".</Hint>
+            <Hint>No reminders yet. Ask the assistant to set one: say "remind me about X tomorrow at 9".</Hint>
           )}
           {pending.length > 0 && (
             <Section title="Pending">
@@ -113,7 +113,7 @@ export default function RemindersView({ sidebarOpen }) {
             </Section>
           )}
           {systemPending.length > 0 && (
-            <Section title="System rituals" subtitle="Built-in weekly self-maintenance. Cancellable only via the Reminders panel below — the assistant won't remove these.">
+            <Section title="System rituals" subtitle="Built-in weekly self-maintenance. Cancellable only via the Reminders panel below; the assistant won't remove these.">
               {systemPending.map(r => <Card key={r.id} reminder={r} dimmed={telegramOff} system />)}
             </Section>
           )}

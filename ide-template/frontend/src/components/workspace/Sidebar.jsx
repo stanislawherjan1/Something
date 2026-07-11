@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
-  Wrench, Plug, Clock, UsersRound, Inbox, Search,
+  Wrench, Plug, Repeat, UsersRound, Inbox, Search,
   FilePlus, FolderPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -244,26 +244,26 @@ export default function Sidebar({
         </button>
         <button
           type="button"
-          onClick={() => onSelect({ path: '.claude/reminders', type: 'reminders' })}
+          onClick={() => onSelect({ path: '.claude/responsibilities', type: 'responsibilities' })}
           className={cn(
             'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
             'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'reminders'
+            selected?.type === 'responsibilities'
               ? 'bg-sidebar-accent font-medium text-foreground'
               : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
           )}
         >
-          {selected?.type === 'reminders' && (
+          {selected?.type === 'responsibilities' && (
             <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
           )}
-          <Clock
+          <Repeat
             className={cn(
               'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'reminders' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+              selected?.type === 'responsibilities' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
             )}
             strokeWidth={1.75}
           />
-          <span>Reminders</span>
+          <span>Routines</span>
         </button>
         <button
           type="button"

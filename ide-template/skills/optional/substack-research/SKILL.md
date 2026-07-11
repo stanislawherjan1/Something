@@ -1,7 +1,7 @@
 ---
 name: substack-research
 description: Find and research things on Substack — a publication's recent posts, an author and what they write, their recent Notes, comments on a post, or the gist of a specific URL. Triggers when the user asks to "what's <author> writing on Substack", "research the <publication> newsletter", "find Substack posts about X", "summarise <author>'s recent posts", "monitor <publication>", "co piszą o X na Substacku". Substack has no search API, so for open-ended topics it surfaces candidate URLs via a web-search integration, then reads them with the Substack tools.
-allowed-tools: Read, mcp__substack__read_publication_archive, mcp__substack__read_post, mcp__substack__get_author, mcp__substack__list_recent_notes, mcp__substack__list_comments, mcp__memory__create_entities, mcp__memory__add_observations
+allowed-tools: Read, mcp__substack__read_publication_archive, mcp__substack__read_post, mcp__substack__get_author, mcp__substack__list_recent_notes, mcp__substack__list_comments
 requires: substack
 ---
 
@@ -54,8 +54,9 @@ counts that come back on the archive entries.
 - **Quick ask** → a short summary in chat with links. No files.
 - **"Research / monitor" ask** → write a markdown digest. Use the
   **file-placement skill** to choose where (default `Research/Substack/<publication-or-topic>/`).
-  Optionally index it in memory — one entity per publication or author — so a
-  future session can `search_nodes` and find prior research.
+  The digest itself is the durable record: keeping it on disk (one file per
+  publication or topic) is what lets a future session rediscover prior research
+  with `memory_grep` or the INDEX map — no separate memory write needed.
 
 ## Edge cases
 

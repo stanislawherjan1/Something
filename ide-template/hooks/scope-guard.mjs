@@ -99,14 +99,15 @@ function pathsFromTool(toolName, input) {
 }
 
 async function main() {
-  // Enforce ONLY for a web turn that belongs to a known non-admin member.
-  // No actor context (the Telegram bot / any non-web-chat claude — IDE_ACTOR_SLUG
-  // unset) or an admin turn → allow everything. This is critical: the Telegram
-  // bot is the operator and must keep full access.
-  // 'default' is the synthetic solo/legacy actor (claude.js no longer sets it,
-  // but guard here too so the hook is a true no-op for solo regardless of caller).
+  // Enforce for EVERY turn that carries a real actor slug — INCLUDING admins and
+  // the operator brain. Through the bot + UI, no one reads one member's private
+  // tree to serve another, even an admin: an admin's out-of-band escape is raw
+  // DB/SSH on their own box, not the product surfaces. (Was admin-exempt; that
+  // let two admins + the operator brain read each other's private memory.)
+  // Exempt only a slug-less context (solo brain, or an internal non-web-chat
+  // claude such as the reflect runs) and the legacy 'default' actor.
   const ownSlug = process.env.IDE_ACTOR_SLUG;
-  if (!ownSlug || ownSlug === 'default' || process.env.IDE_ACTOR_IS_ADMIN === '1') process.exit(0);
+  if (!ownSlug || ownSlug === 'default') process.exit(0);
 
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;

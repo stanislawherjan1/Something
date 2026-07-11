@@ -42,21 +42,21 @@ Research generated: <YYYY-MM-DD> · Source: Grok x_search
 [Anything Grok flagged that's relevant beyond the table — e.g. "this account recently went private", "two of these are alts of the same person", recurring controversies, etc.]
 ```
 
-## Memory-index entity shape
+## Memory pointer — concept page
 
-```
-mcp__memory__create_entities([
-  {
-    name: "twitter-research-<handle>",
-    entityType: "research_index",
-    observations: [
-      "target: @<handle>",
-      "generated: <ISO date>",
-      "similar_accounts: @h1, @h2, …",
-      "path: Research/Twitter/<handle>/"
-    ]
-  }
-])
+Record a durable, discoverable pointer to this research by writing a concept page at `memory/concepts/twitter-research-<handle>.md` (create it, or append a claim if it already exists). Writing the page auto-triggers the INDEX rebuild, so no separate reindex step is needed.
+
+```markdown
+# twitter-research-<handle>
+
+Research index for the X account @<handle>.
+
+## Claims
+
+- target: @<handle>
+- generated: <ISO date>
+- similar_accounts: @h1, @h2, …
+- path: Research/Twitter/<handle>/
 ```
 
 ## Summary message to user

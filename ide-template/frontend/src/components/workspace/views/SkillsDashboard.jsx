@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Save, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MarkdownView, stripFrontmatter } from '@/lib/markdown';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
@@ -233,7 +234,7 @@ function SkillsGrid({ skills, requiresLogoMap, knownIntegrationIds, activeTags, 
         hint={activeTags?.size > 0 ? `filtered by ${activeTags.size} tag${activeTags.size === 1 ? '' : 's'}` : null}
         empty={activeTags?.size > 0
           ? 'No skills match the active tag filter.'
-          : 'No project skills yet — add one or rely on the integration / global skills below.'}
+          : 'No project skills yet. Add one or rely on the integration / global skills below.'}
         belowHeader={tagCounts.length > 0 && (
           <TagFilterBar
             tagCounts={tagCounts}
@@ -477,7 +478,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
           {badgeLabel && (
             <span
               className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/55 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/75"
-              title={isReadOnly ? 'Managed by template — read-only' : ''}
+              title={isReadOnly ? 'Managed by template, read-only' : ''}
             >
               {badgeLabel}
             </span>
@@ -706,7 +707,7 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
               autoComplete="off"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="One line — when should the assistant use this skill?"
+              placeholder="One line: when should the assistant use this skill?"
               disabled={busy}
               className="rounded border border-border/60 bg-background px-3.5 py-2 text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10 disabled:opacity-60"
             />
@@ -751,7 +752,7 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
               />
             </div>
             <div className="text-[11.5px] text-muted-foreground/70">
-              Up to 8 tags. Used by the filter bar to group your skills. Optional — leave empty if you don't want to categorize this one.
+              Up to 8 tags. Used by the filter bar to group your skills. Optional: leave empty if you don't want to categorize this one.
             </div>
           </div>
 
@@ -934,29 +935,37 @@ function SkillEditModal({ skill, onClose, onSaved }) {
                   <Lock className="mt-0.5 size-3 shrink-0 text-muted-foreground/60" strokeWidth={2} />
                   <span>
                     {isGlobal
-                      ? 'Global skill — read-only here. To customise it for this project, copy the contents into a new project skill with the same name; it\'ll override the global.'
-                      : 'This skill is marked read-only. To customise it, create a project skill with the same name — that takes precedence.'}
+                      ? 'Global skill, read-only here. To customise it for this project, copy the contents into a new project skill with the same name; it\'ll override the global.'
+                      : 'This skill is marked read-only. To customise it, create a project skill with the same name: that takes precedence.'}
                   </span>
                 </div>
               )}
-              <textarea
-                value={content}
-                onChange={(e) => { setContent(e.target.value); setError(null); }}
-                spellCheck={false}
-                autoFocus={!isReadOnly}
-                readOnly={isReadOnly}
-                className={cn(
-                  'block w-full resize-none border-0 bg-transparent font-mono text-[14px] leading-[1.75] tracking-[-0.005em] outline-none placeholder:text-muted-foreground/40',
-                  // When references exist, the modal already has substantial
-                  // content below the textarea — don't claim space just to
-                  // sit on it. Let fieldSizing grow the textarea with its
-                  // actual content (couple lines = couple lines tall) and
-                  // references get the room they need below.
-                  references.length > 0 ? 'min-h-[12vh]' : 'min-h-[60vh]',
-                  isReadOnly ? 'text-foreground/75' : 'text-foreground/92',
-                )}
-                style={{ fieldSizing: 'content' }}
-              />
+              {/* Read-only skills (global + read-only project skills) render as
+                  formatted markdown — the raw ## / ** / frontmatter dump was
+                  unreadable. Editable skills keep the mono textarea so the
+                  source stays exactly what you save. */}
+              {isReadOnly ? (
+                <MarkdownView className={references.length > 0 ? 'min-h-[12vh]' : 'min-h-[40vh]'}>
+                  {stripFrontmatter(content)}
+                </MarkdownView>
+              ) : (
+                <textarea
+                  value={content}
+                  onChange={(e) => { setContent(e.target.value); setError(null); }}
+                  spellCheck={false}
+                  autoFocus
+                  className={cn(
+                    'block w-full resize-none border-0 bg-transparent font-mono text-[14px] leading-[1.75] tracking-[-0.005em] text-foreground/92 outline-none placeholder:text-muted-foreground/40',
+                    // When references exist, the modal already has substantial
+                    // content below the textarea — don't claim space just to
+                    // sit on it. Let fieldSizing grow the textarea with its
+                    // actual content (couple lines = couple lines tall) and
+                    // references get the room they need below.
+                    references.length > 0 ? 'min-h-[12vh]' : 'min-h-[60vh]',
+                  )}
+                  style={{ fieldSizing: 'content' }}
+                />
+              )}
 
               {/* References — collapsible cards below the main editor. Skills
                   split via Bundle 10 keep their bulky reference material in
@@ -992,7 +1001,7 @@ function SkillEditModal({ skill, onClose, onSaved }) {
         <div className="flex items-center gap-2 border-t border-border/40 bg-background px-6 py-3">
           <span className="text-[11.5px] text-muted-foreground/60">
             {isReadOnly
-              ? 'Read-only — close with '
+              ? 'Read-only, close with '
               : 'Save with '}
             {!isReadOnly && <kbd className="rounded bg-muted/60 px-1 py-px font-mono text-[10.5px]">⌘S</kbd>}
             {!isReadOnly && ', close with '}

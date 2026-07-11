@@ -82,6 +82,11 @@ export default function meRouter() {
       try { mkdirSync(resolve(PROJECT_DIR, USERS_DIR, scope.slug), { recursive: true }); }
       catch { /* best-effort — a real FS error surfaces on the tree call */ }
     }
+    // no-store: this identity payload changes shape over time (avatarUrl, new
+    // fields) and is per-user — without it the browser heuristically caches the
+    // response (it has an etag but no cache-control) and keeps serving a stale
+    // pre-deploy body on soft reloads, so new fields never appear.
+    res.set('Cache-Control', 'no-store');
     res.json(meEnvelope(req));
   });
 

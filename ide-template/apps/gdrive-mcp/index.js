@@ -124,10 +124,10 @@ const TOOLS = [
     name: 'search_files',
     description:
       'Search Drive with the API\'s native query syntax. Common patterns:\n' +
-      '  - `name contains "report"` — name match\n' +
-      '  - `mimeType = "application/pdf"` — by mime\n' +
-      '  - `"<folderId>" in parents` — files in a folder\n' +
-      '  - `modifiedTime > "2026-05-01T00:00:00"` — recent\n' +
+      '  - `name contains "report"` - name match\n' +
+      '  - `mimeType = "application/pdf"` - by mime\n' +
+      '  - `"<folderId>" in parents` - files in a folder\n' +
+      '  - `modifiedTime > "2026-05-01T00:00:00"` - recent\n' +
       '  - combine with `and` / `or` / `not`\n' +
       '`trashed = false` is auto-appended to keep results clean. Returns id, name, mime, modified, parents, owner, url.',
     inputSchema: {
@@ -163,7 +163,7 @@ const TOOLS = [
     name: 'download_file',
     description:
       'Download a non-Google-native file (PDF, image, zip, etc.) to a temp path. Returns the local path + size + mime. ' +
-      'For Google-native files (Docs/Sheets/Slides), use export_doc_file instead — this tool will refuse them.',
+      'For Google-native files (Docs/Sheets/Slides), use export_doc_file instead; this tool will refuse them.',
     inputSchema: {
       type: 'object',
       required: ['file_id'],
@@ -282,7 +282,7 @@ const TOOLS = [
     description:
       'List all comments on a Drive file (typically a Google Doc). Returns ' +
       'author display name, the comment content, the anchored text fragment ' +
-      '(quoted_text — what was highlighted in the doc when the comment was ' +
+      '(quoted_text: what was highlighted in the doc when the comment was ' +
       'added), creation/modification timestamps, resolved/deleted status, and ' +
       'reply count. Read-only. Use this to pull review comments from a doc ' +
       'in one shot rather than scraping the UI. By default includes deleted/' +
@@ -327,7 +327,7 @@ const TOOLS = [
   {
     name: 'resolve_comment',
     description:
-      'Mark a comment thread resolved on a Drive file — it leaves the open-comments ' +
+      'Mark a comment thread resolved on a Drive file: it leaves the open-comments ' +
       'list (same as the Docs UI "Resolve" button). Optionally include a closing ' +
       'reply. Get comment_id from list_comments first. Requires write access. ' +
       'Returns { ok:false, reason:"not_found" } if the file/comment is gone.',
@@ -345,7 +345,7 @@ const TOOLS = [
     name: 'delete_comment',
     description:
       'Delete a comment thread from a Drive file. Destructive and not recoverable ' +
-      'through this tool — prefer resolve_comment unless you really mean to remove it. ' +
+      'through this tool; prefer resolve_comment unless you really mean to remove it. ' +
       'Requires write access. Returns { ok:false, reason:"not_found" } if already gone.',
     inputSchema: {
       type: 'object',
@@ -515,7 +515,7 @@ async function handleExportDocRevision({ file_id, revision_id, mime_type }) {
     const available = Object.keys(exportLinks);
     if (available.length === 0) {
       throw new Error(
-        `Revision ${revision_id} has no export links — revision may be too old ` +
+        `Revision ${revision_id} has no export links: revision may be too old ` +
         `(Drive prunes per-revision export bytes after ~30 days unless keep_forever=true). ` +
         `keep_forever on this revision: ${revision.keepForever ? 'true' : 'false'}.`,
       );

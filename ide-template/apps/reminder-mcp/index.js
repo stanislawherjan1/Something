@@ -127,7 +127,7 @@ function resolveRecipients(rawArg, roster, setter) {
       return dn === low || dn.split(/\s+/)[0] === low;
     });
     if (byName) { out.add(byName.slug); continue; }
-    return { error: `I don't recognise "${tok}" as a teammate — who do you mean?` };
+    return { error: `I don't recognise "${tok}" as a teammate. Who do you mean?` };
   }
   return { recipients: [...out] };
 }
@@ -183,6 +183,21 @@ function parseDue(input) {
   return new Date(s);
 }
 
+// Strip em/en dashes from user-facing reminder text. The global no-em-dash rule
+// (global-claude.md) applies to reminders too, but a planning LLM still slips
+// them into titles it generates ("Inbox check — email"). This is the structural
+// safety net (like the Telegram sanitizer): normalise a dash separator to a
+// colon so a fired reminder never shows a machine-looking em dash. Ordinary
+// in-word hyphens ("inbox-check", U+002D) are untouched — only U+2014/U+2013 and
+// a spaced "--" faux dash are rewritten.
+function deDash(s) {
+  if (typeof s !== 'string') return s;
+  return s
+    .replace(/\s*[—–]\s*/g, ': ') // em/en dash (any spacing) → ": "
+    .replace(/\s+--\s+/g, ': ')             // " -- " faux em dash → ": "
+    .replace(/\s*:\s*:\s*/g, ': ');         // collapse an accidental double colon
+}
+
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -197,7 +212,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         'Set a persistent reminder. Stored in ~/project/.reminders.json and ' +
         'sent via Telegram when due, even across container restarts. Prefer ' +
-        'the structured form (title + optional description) — title shows as ' +
+        'the structured form (title + optional description): title shows as ' +
         'the row heading in the dashboard, description as a muted second line. ' +
         'Use plain `message` only for one-line reminders without context.',
       inputSchema: {
@@ -236,18 +251,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               'Simple recurrence shortcut. none (default) / hourly / daily / ' +
               'weekly / monthly. Time-of-day and day-of-month come from `due`. ' +
               'For anything more specific (every N units, certain weekdays, ' +
-              'bounded repeats) use `recur` instead — it overrides this.',
+              'bounded repeats) use `recur` instead: it overrides this.',
           },
           recur: {
             type: 'object',
             description:
               'Advanced recurrence (overrides `repeat`). All times UTC. Shapes:\n' +
               '• Interval: {"type":"interval","every":N,"unit":"minutes|hours|days|weeks"} ' +
-              '— e.g. every 2 hours. The time-of-day comes from `due`.\n' +
+              ': e.g. every 2 hours. The time-of-day comes from `due`.\n' +
               '• Weekly:  {"type":"weekly","days":["mon","wed","fri"],"at":"09:00"}.\n' +
               '• Monthly: {"type":"monthly","day":1,"at":"08:00"} (day 1..31 or "last").\n' +
               'Optional bounds on any shape: "until":"<ISO>" and/or "count":N (max fires). ' +
-              'For weekly/monthly just pass a near-future `due` (e.g. "in 1 minute") — ' +
+              'For weekly/monthly just pass a near-future `due` (e.g. "in 1 minute"): ' +
               'the first fire snaps to the next matching slot automatically.',
             properties: {
               type:  { type: 'string', enum: ['interval', 'weekly', 'monthly'] },
@@ -265,14 +280,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             enum: ['telegram', 'web', 'all'],
             description:
               'Which surface the user wants this reminder delivered on. ' +
-              '"telegram" — bot replies via Telegram only (mirror covers web ' +
-              'if the user has it open). "web" — bot replies via ' +
-              'web_send_message; nothing goes to Telegram. "all" — bot picks ' +
+              '"telegram": bot replies via Telegram only (mirror covers web ' +
+              'if the user has it open). "web": bot replies via ' +
+              'web_send_message; nothing goes to Telegram. "all": bot picks ' +
               'whichever channels are wired and replies through them. ' +
               'Default: read from REMINDER_DEFAULT_CHANNEL env var (set at ' +
               'bot startup based on the channel the prompt came in on); ' +
               'falls back to "all" if not set. Override explicitly when the ' +
-              "user's intent disagrees with the default — e.g. they're " +
+              "user's intent disagrees with the default, e.g. they're " +
               'chatting via web but say "ping me on Telegram tomorrow".',
           },
           recipient: {
@@ -280,16 +295,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             items: { type: 'string' },
             description:
               'WHO this reminder is for (team mode). Infer it from the user\'s wording, ' +
-              'exactly as you resolve relay recipients. DEFAULT = the person asking — ' +
+              'exactly as you resolve relay recipients. DEFAULT = the person asking: ' +
               'OMIT this arg (or pass "me") for a normal self-reminder ("remind me to call ' +
               'Cass"). When they name people ("remind Jan and Kasia about the deadline"), ' +
               'resolve each NAME to that teammate\'s roster SLUG and pass the array of slugs ' +
-              '(["jan","kasia"]) — never display names, never emails. When they say ' +
+              '(["jan","kasia"]); never display names, never emails. When they say ' +
               '"everyone"/"all"/"the team", pass the single string "everyone". Resolve names ' +
               'to slugs from the team roster in your context; ask ONLY when genuinely ambiguous, ' +
               'never guess a wrong target. Permissions still apply (only an admin can target ' +
-              '"everyone" or other people) — if the tool refuses, relay that and offer to remind ' +
+              '"everyone" or other people): if the tool refuses, relay that and offer to remind ' +
               'just the asker. Omit entirely in a solo workspace.',
+          },
+          urgency: {
+            type: 'string',
+            enum: ['now', 'ambient'],
+            description:
+              'How this reminder should REACH the user. "now" (default): ' +
+              'time-critical; deliver the moment it fires, as its own message ' +
+              '(meeting in 30 min, a hard deadline). "ambient": a soft, ' +
+              'general-interest nudge (weather, the day\'s plan overview): NOT ' +
+              'sent standalone, but held and woven into the next natural opening ' +
+              'in conversation. Set by the morning-planner per item; omit for ' +
+              'ordinary user-set reminders (defaults to "now").',
+          },
+          origin: {
+            type: 'string',
+            enum: ['planner'],
+            description:
+              'Set to "planner" ONLY when the morning-planner places this reminder as part ' +
+              'of the daily plan. It marks the reminder as planner-placed so a later planner ' +
+              'run can prune ITS OWN stale one-shots without ever touching a reminder the user ' +
+              'set for themselves. Omit for anything a user asked for directly.',
           },
         },
         required: ['due'],
@@ -336,9 +372,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     //   { message, due }                ← legacy single-string
     //   { title, message, due }         ← message-as-description with explicit title
     // Reject if neither title nor message is supplied.
-    const titleIn       = typeof args.title       === 'string' ? args.title.trim()       : '';
-    const descriptionIn = typeof args.description === 'string' ? args.description.trim() : '';
-    const messageIn     = typeof args.message     === 'string' ? args.message.trim()     : '';
+    // deDash: strip em/en dashes the planning LLM slips into generated titles —
+    // the structural backstop for the global no-em-dash rule (see deDash above).
+    const titleIn       = typeof args.title       === 'string' ? deDash(args.title.trim())       : '';
+    const descriptionIn = typeof args.description === 'string' ? deDash(args.description.trim()) : '';
+    const messageIn     = typeof args.message     === 'string' ? deDash(args.message.trim())     : '';
     if (!titleIn && !messageIn) {
       return {
         content: [{ type: 'text', text: 'Provide either `title` (preferred) or `message`.' }],
@@ -351,7 +389,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // so the agent can correct the call instead of writing a broken reminder.
     const rr = recur.buildRecur(args, dueDate.getTime());
     if (!rr.ok) {
-      return { content: [{ type: 'text', text: `Reminder NOT set — ${rr.error}.` }], isError: true };
+      return { content: [{ type: 'text', text: `Reminder NOT set: ${rr.error}.` }], isError: true };
     }
     const recurrence = rr.recur; // canonical recur object, or null for one-shot
     // First fire: interval honors the explicit `due`; weekly/monthly snap to
@@ -375,7 +413,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } else {
         const roster = await fetchRoster();
         if (!roster) {
-          return { content: [{ type: 'text', text: 'Could not reach the team roster to resolve who this is for — try again in a moment.' }], isError: true };
+          return { content: [{ type: 'text', text: 'Could not reach the team roster to resolve who this is for. Try again in a moment.' }], isError: true };
         }
         const res = resolveRecipients(args.recipient, roster, setter);
         if (res.error) return { content: [{ type: 'text', text: res.error }], isError: true };
@@ -403,13 +441,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // below so the bot can't accidentally tear down baseline rituals.
       kind: 'user',
       // Normalise to the structured shape on disk. Keep `message` mirroring
-      // title (and description joined with " — ") so consumers that haven't
+      // title (and description joined with ": ") so consumers that haven't
       // upgraded to title/description (reminder-monitor, older UI) keep
       // working unchanged.
       title: titleIn || messageIn,
       description: descriptionIn || (titleIn ? '' : ''),
       message: titleIn
-        ? (descriptionIn ? `${titleIn} — ${descriptionIn}` : titleIn)
+        ? (descriptionIn ? `${titleIn}: ${descriptionIn}` : titleIn)
         : messageIn,
       due: new Date(firstDueMs).toISOString(),
       // Canonical recurrence object (omitted entirely for one-shot). `repeat`
@@ -425,6 +463,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       channel: (typeof args.channel === 'string' && ['telegram', 'web', 'all'].includes(args.channel))
         ? args.channel
         : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
+      // Delivery urgency: 'ambient' items are held + woven into conversation
+      // rather than sent standalone (reminder-monitor reads this). Stored only
+      // when ambient, so ordinary reminders stay byte-identical to pre-feature.
+      ...(args.urgency === 'ambient' ? { urgency: 'ambient' } : {}),
+      // Origin: 'planner' marks a reminder the morning-planner placed (vs one the user
+      // asked for directly). Lets the planner prune ITS OWN stale one-shots on a later
+      // run without ever touching a reminder the user set for themselves. Stored only
+      // when set, so ordinary user reminders stay byte-identical to pre-feature.
+      ...(args.origin === 'planner' ? { origin: 'planner' } : {}),
       created: new Date().toISOString(),
       status: 'pending',
       // Team mode: who set it + who it's for. Both omitted in solo (setter='')
@@ -504,7 +551,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       sections.push(`User reminders (${userReminders.length}):\n${userReminders.map(fmt).join('\n')}`);
     }
     if (systemReminders.length) {
-      sections.push(`System reminders (${systemReminders.length}) — baseline rituals; cannot be cancelled via MCP, manage via UI:\n${systemReminders.map(fmt).join('\n')}`);
+      sections.push(`System reminders (${systemReminders.length}): baseline rituals; cannot be cancelled via MCP, manage via UI:\n${systemReminders.map(fmt).join('\n')}`);
     }
 
     return {
@@ -537,7 +584,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{
           type: 'text',
-          text: `Cannot cancel ${args.id} — this is a system reminder (baseline ritual). To turn it off, use the Reminders panel in the workspace UI; the user can toggle it off there. Don't try to delete the file directly either; bootstrap will re-seed it.`,
+          text: `Cannot cancel ${args.id}: this is a system reminder (baseline ritual). To turn it off, use the Reminders panel in the workspace UI; the user can toggle it off there. Don't try to delete the file directly either; bootstrap will re-seed it.`,
         }],
         isError: true,
       };
@@ -548,7 +595,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const me = actorSlug();
     if (me && !actorIsAdmin() && (reminders[idx].setBy || '') !== me) {
       return {
-        content: [{ type: 'text', text: `That reminder isn't yours to cancel — only the person who set it (or an admin) can.` }],
+        content: [{ type: 'text', text: `That reminder isn't yours to cancel: only the person who set it (or an admin) can.` }],
         isError: true,
       };
     }

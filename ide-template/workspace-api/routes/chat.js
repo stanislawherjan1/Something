@@ -621,8 +621,8 @@ export default function chatRouter() {
   // multer error mapping
   router.use((err, _req, res, next) => {
     if (err instanceof multer.MulterError) {
-      const msg = err.code === 'LIMIT_FILE_SIZE'  ? `File too large — max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB per file.`
-                : err.code === 'LIMIT_FILE_COUNT' ? `Too many files — max ${MAX_FILES} per message.`
+      const msg = err.code === 'LIMIT_FILE_SIZE'  ? `File too large: max ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB per file.`
+                : err.code === 'LIMIT_FILE_COUNT' ? `Too many files: max ${MAX_FILES} per message.`
                 : err.code === 'LIMIT_FIELD_VALUE' ? 'Message too long.'
                 : `Upload rejected (${err.code}).`;
       return res.status(413).json({ error: msg });

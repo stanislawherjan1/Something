@@ -13,13 +13,12 @@ You'll add your own folders as you go (e.g. `Marketing/`, `Brand/`, `Products/`)
 
 ## Recurring rituals (already configured)
 
-The bot runs three weekly self-maintenance routines on its own:
+The bot runs two weekly self-maintenance routines on its own:
 
 | When (UTC) | What |
 |---|---|
 | Monday 09:00 | Repo audit — proposes cleanups, sorts orphans, flags stale files |
 | Friday 14:00 | Project backup — sends a `.tar.gz` snapshot via Telegram |
-| Sunday 22:00 | Memory reindex — quietly updates the knowledge graph |
 
 You can edit these in the **Reminders** view in the workspace UI, or just tell the bot to change them.
 

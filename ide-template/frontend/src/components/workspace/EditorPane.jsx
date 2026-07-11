@@ -13,6 +13,7 @@ import GalleryView        from './views/GalleryView.jsx';
 import ClaudeDashboard    from './views/ClaudeDashboard.jsx';
 import SkillsDashboard    from './views/SkillsDashboard.jsx';
 import IntegrationsDashboard from './views/IntegrationsDashboard.jsx';
+import ResponsibilitiesDashboard from './views/ResponsibilitiesDashboard.jsx';
 import RemindersDashboard from './views/RemindersDashboard.jsx';
 import TeamDashboard      from './views/TeamDashboard.jsx';
 import MemoryDashboard    from './views/MemoryDashboard.jsx';
@@ -99,6 +100,7 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'dashboard')                              return <ClaudeDashboard onSelect={onSelect} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'skills')                                 return <SkillsDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'integrations')                           return <IntegrationsDashboard sidebarOpen={sidebarOpen} />;
+  if (type === 'responsibilities')                       return <ResponsibilitiesDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'reminders')                              return <RemindersDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'team')                                   return <TeamDashboard sidebarOpen={sidebarOpen} />;
   if (type === 'memory')                                 return <MemoryDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
@@ -193,7 +195,7 @@ function EmptyState() {
             </h2>
             <p className="text-[13.5px] leading-relaxed text-muted-foreground/70">
               {fresh ? (
-                <>No files yet — create your first note from the sidebar, or ask{' '}
+                <>No files yet. Create your first note from the sidebar, or ask{' '}
                   <span className="font-medium text-foreground/85">{bot}</span> in chat to draft one.</>
               ) : (
                 'Select a file from the sidebar to start editing.'

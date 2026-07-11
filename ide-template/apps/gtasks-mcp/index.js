@@ -115,7 +115,7 @@ const TOOLS = [
         tasklist_id: { type: 'string', default: '@default' },
         title:       { type: 'string' },
         notes:       { type: 'string' },
-        due:         { type: 'string', description: 'YYYY-MM-DD (or full RFC 3339 — time will be ignored).' },
+        due:         { type: 'string', description: 'YYYY-MM-DD (or full RFC 3339; time will be ignored).' },
         parent:      { type: 'string', description: 'Existing task id; new task becomes its subtask.' },
         previous:    { type: 'string', description: 'Existing task id; new task is inserted right after it (sibling order).' },
       },
@@ -145,7 +145,7 @@ const TOOLS = [
   },
   {
     name: 'delete_task',
-    description: 'Permanently delete a task. Tasks API has no trash — this is irreversible. Requires write permission (workspace-level toggle).',
+    description: 'Permanently delete a task. Tasks API has no trash, so this is irreversible. Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
       required: ['task_id'],

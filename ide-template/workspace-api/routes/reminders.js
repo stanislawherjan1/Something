@@ -56,6 +56,12 @@ export default function remindersRouter() {
   const concernsMe = (r, me, admin) => {
     if (!me) return true;
     const rc = Array.isArray(r.recipients) ? r.recipients : null;
+    // A per-user system trigger (system + has recipients, e.g. the per-user
+    // morning-planner) is PERSONAL: each user sees only their OWN, admin
+    // included — so the operator doesn't see every teammate's planner and a
+    // teammate DOES see theirs. Shared operator rituals (system, no recipients:
+    // backup/audit/reflect) stay operator-only below.
+    if (r.kind === 'system' && rc) return rc.includes(me) || rc.includes(EVERYONE);
     if (r.kind === 'system' || (!rc && !r.setBy)) return admin;
     if ((r.setBy || '') === me) return true;
     return !!rc && (rc.includes(me) || rc.includes(EVERYONE));
@@ -72,6 +78,7 @@ export default function remindersRouter() {
       if (getTeamMode()) for (const m of teamList()) {
         people[m.slug] = { name: m.displayName || m.slug, avatar: avatarUrl(m.slug) || null };
       }
+      res.set('Cache-Control', 'no-store');   // per-user + shape changes over time; never let the browser serve a stale cached list
       return res.json({ ok: true, teamMode: getTeamMode(), me, reminders, people });
     } catch (err) {
       process.stderr.write(`[reminders] list failed: ${err.message}\n`);

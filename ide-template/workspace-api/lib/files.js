@@ -185,7 +185,7 @@ export function readTextFile(absPath) {
   try { buf = readFileSync(absPath); }
   catch (err) { return { kind: 'error', status: 500, error: err.message }; }
   if (buf.slice(0, 8 * 1024).includes(0)) {
-    return { kind: 'error', status: 415, error: 'binary file — use /api/files/raw' };
+    return { kind: 'error', status: 415, error: 'binary file: use /api/files/raw' };
   }
   return { kind: 'ok', size: st.size, mtime: st.mtimeMs, content: buf.toString('utf8') };
 }

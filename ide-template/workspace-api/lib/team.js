@@ -308,6 +308,25 @@ export function ensureFirstAdmin(email, addedBy = 'auto-bootstrap') {
   return true;
 }
 
+// Seed a new teammate's private card from the image template so it starts
+// well-formed (frontmatter contract + the {icon}/#tags format) instead of being
+// created lazily on first write (which is how a card drifts into a stale format).
+// Never clobbers an existing card. memory/ is setgid `workspace`, so the new file
+// inherits the group; chmod 664 keeps it group-writable for the bot.
+const CARD_TEMPLATES_DIR = process.env.MEMORY_TEMPLATES_DIR || '/opt/ide/bootstrap/memory-cards-templates';
+function seedPrivateCard(slug, card) {
+  try {
+    const src = join(CARD_TEMPLATES_DIR, `${card}.md`);
+    if (!existsSync(src)) return;
+    const destDir = join(PROJECT_DIR, 'memory', 'users', slug);
+    const dest = join(destDir, `${card}.md`);
+    if (existsSync(dest)) return;               // never overwrite real content
+    mkdirSync(destDir, { recursive: true });
+    writeFileSync(dest, readFileSync(src, 'utf8'));
+    try { chmodSync(dest, 0o664); } catch { /* best-effort */ }
+  } catch { /* best-effort — falls back to lazy creation on first write */ }
+}
+
 export function add({ email, role = 'member', addedBy, displayName }) {
   if (!isValidEmail(email)) throw new Error(`Invalid email format.`);
   if (!VALID_ROLES.has(role)) throw new Error(`Invalid role "${role}".`);
@@ -337,6 +356,9 @@ export function add({ email, role = 'member', addedBy, displayName }) {
   writeRaw(entries);
   appendAudit('add', e, { role, slug, addedBy: entry.addedBy });
   writeTeamRoster();
+  // New teammate starts with a well-formed RESPONSIBILITIES card (the bot's duties
+  // toward them) instead of a lazily-created one that could drift in format.
+  seedPrivateCard(slug, 'RESPONSIBILITIES');
   return entry;
 }
 
@@ -453,7 +475,7 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
     // Telegram integration is the one honest way to change the operator id.
     const prevId = normalizeChatId(entries[idx].telegramChatId);
     if (prevId && prevId !== patch.telegramChatId && prevId === operatorChatId()) {
-      throw new Error('This id comes from the Telegram activation — the bot always answers the operator, so it can\'t be unlinked here. To change it, rotate the Telegram integration.');
+      throw new Error('This id comes from the Telegram activation: the bot always answers the operator, so it can\'t be unlinked here. To change it, rotate the Telegram integration.');
     }
     // A chat id maps to ONE person: reject linking one that another teammate
     // already holds (otherwise inbound routing is ambiguous + outbound double-

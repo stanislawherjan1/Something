@@ -8,11 +8,11 @@ conflict: When two patterns disagree, the newer one wins. Older ones get a `supe
 
 # memory/patterns/
 
-This directory holds **anti-patterns** — things the workspace got wrong once and shouldn't get wrong again. It's the structured "taste memory" that complements the trial-and-error layer most LLM systems lack.
+This directory holds **anti-patterns**: things the workspace got wrong once and shouldn't get wrong again. It's the structured "taste memory" that complements the trial-and-error layer most LLM systems lack.
 
-## Team workspace — shared vs private patterns
+## Team workspace: shared vs private patterns
 
-Most patterns are **personal taste** (one person's "warmer, less corporate Polish") — and personal taste is private. So in a team workspace:
+Most patterns are **personal taste** (one person's "warmer, less corporate Polish"), and personal taste is private. So in a team workspace:
 
 - **Shared `memory/patterns/`** holds only genuinely **team-wide** anti-patterns (a shared tooling/process failure everyone should avoid).
 - **Private `memory/users/<slug>/patterns/`** holds one person's taste/rejection patterns. `taste-recall` loads the current user's private patterns + the shared ones, never another teammate's.
@@ -26,7 +26,7 @@ This is the simplest possible implementation:
 
 - One markdown file per coherent failure type.
 - Loaded by relevant agents at the start of a session via the `taste-recall` skill.
-- Promoted to `tests/cases/*.jsonl` (the frozen eval set) when a pattern shows up twice — at that point we have enough signal to encode it as a checkable test.
+- Promoted to `tests/cases/*.jsonl` (the frozen eval set) when a pattern shows up twice: at that point we have enough signal to encode it as a checkable test.
 
 ## File format
 
@@ -61,8 +61,8 @@ Cost-aware: an empty `memory/patterns/` dir means no extra load. A few cards cos
 
 ## Not in this directory
 
-- `memory/topics/` — long-form context on people / projects / domains. Positive content.
-- `memory/USER_PREFERENCES.md` — general style preferences that always apply.
-- `documents/` — research, briefs, decisions. Free-form artifacts.
+- `memory/topics/` - long-form context on people / projects / domains. Positive content.
+- `memory/USER_PREFERENCES.md` - general style preferences that always apply.
+- `documents/` - research, briefs, decisions. Free-form artifacts.
 
 This dir is **only** for "the workspace got X wrong; here's the rule that prevents repeating it."

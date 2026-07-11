@@ -83,14 +83,14 @@ async function resolveOwner(raw) {
     return dn === low || dn.split(/\s+/)[0] === low;
   });
   if (byName) return { owner: byName.slug };
-  return { error: `I don't recognise "${tok}" as a teammate — who do you mean? (use their roster slug, a name, or "me")` };
+  return { error: `I don't recognise "${tok}" as a teammate. Who do you mean? (use their roster slug, a name, or "me")` };
 }
 
 const ok = (text) => ({ content: [{ type: 'text', text }] });
 const fail = (text) => ({ content: [{ type: 'text', text }], isError: true });
 
 function renderBoard(tasks) {
-  if (!tasks.length) return 'The board is empty — no tasks yet.';
+  if (!tasks.length) return 'The board is empty: no tasks yet.';
   const lines = [];
   for (const status of STATUSES) {
     const inCol = tasks.filter(t => t.status === status).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -116,21 +116,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: 'list_tasks',
       description:
         'List the whole task board grouped by status (Backlog / In Progress / Done) with each task id. ' +
-        'Read this before adding or changing tasks — check for an existing one to update instead of duplicating.',
+        'Read this before adding or changing tasks: check for an existing one to update instead of duplicating.',
       inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'add_task',
       description:
         'Add a task to the board. Defaults to the Backlog. Set `owner` to a teammate so it shows under their name. ' +
-        'A task is a unit of work to track — NOT a timed alert (use set_reminder for "remind me at <time>").',
+        'A task is a unit of work to track, NOT a timed alert (use set_reminder for "remind me at <time>").',
       inputSchema: {
         type: 'object',
         properties: {
           title:       { type: 'string', description: 'Short imperative heading, e.g. "Send Q3 report to acme".' },
-          description: { type: 'string', description: 'Optional context — why it matters, what is needed, blockers, file paths.' },
+          description: { type: 'string', description: 'Optional context: why it matters, what is needed, blockers, file paths.' },
           status:      { type: 'string', enum: STATUSES, description: 'Column. Default "backlog"; "in_progress" if work has already started.' },
-          owner:       { type: 'string', description: 'WHO is responsible. A teammate roster SLUG (resolved by name too), or "me" for the asker. Omit if unassigned. Team mode only — assigning does NOT notify them.' },
+          owner:       { type: 'string', description: 'WHO is responsible. A teammate roster SLUG (resolved by name too), or "me" for the asker. Omit if unassigned. Team mode only; assigning does NOT notify them.' },
           priority:    { type: 'string', enum: PRIORITIES, description: 'high / medium / low. Omit if unknown.' },
           deadline:    { type: 'string', description: 'Due date as YYYY-MM-DD, or omit/"TBD" if none.' },
         },
@@ -207,7 +207,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (!args.id) return fail('Which task? Pass the id from list_tasks.');
     const tasks = await readTasks();
     const t = tasks.find(x => x.id === args.id);
-    if (!t) return fail(`No task with id ${args.id} — run list_tasks to see current ids.`);
+    if (!t) return fail(`No task with id ${args.id}; run list_tasks to see current ids.`);
 
     if (typeof args.title === 'string')       t.title = args.title.trim().slice(0, 200);
     if (typeof args.description === 'string')  t.description = args.description;

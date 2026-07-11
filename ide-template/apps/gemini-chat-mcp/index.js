@@ -56,7 +56,7 @@ const TOOLS = [
       "second opinion from outside the GPT/Claude families, want to leverage " +
       "Gemini's strong long-context handling, or specifically need Google's " +
       "search-grounded reasoning. Returns the model's reply as plain text. " +
-      "Single-turn only — for multi-turn, the operator's primary agent (you) " +
+      "Single-turn only: for multi-turn, the operator's primary agent (you) " +
       "keeps the conversation; this tool is for one-shot queries.",
     inputSchema: {
       type: 'object',
@@ -98,7 +98,7 @@ const TOOLS = [
     description:
       "List Google Gemini models available to this API key. Filtered to " +
       "models that support generateContent (i.e. text/chat). Useful before " +
-      "picking a non-default model for ask_gemini — surfaces newly released " +
+      "picking a non-default model for ask_gemini: surfaces newly released " +
       "models without rebuilding this MCP.",
     inputSchema: {
       type: 'object',

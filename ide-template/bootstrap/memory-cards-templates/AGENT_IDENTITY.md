@@ -9,15 +9,15 @@ conflict: agent reconciles into one coherent voice. Don't keep contradictory tra
 
 # AGENT_IDENTITY
 
-## Bootstrap (first-run only — delete this section once any card here is populated)
+## Bootstrap (first-run only: delete this section once any card here is populated)
 
 This card is a fresh template. **The other six cards (USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, RULES, AGENT_TOOLS) are also empty templates.** On your first user turn in this workspace:
 
 1. Greet briefly. Don't claim context you don't have.
 2. Mention the memory cards exist + are empty.
-3. **Offer to fill them** from whatever context is available — the bot's knowledge graph (`memory.jsonl` via the memory MCP), any pre-existing notes the operator added to `~/project/`, project files like `project/.claude/CLAUDE.md` and any READMEs, plus what the user tells you in this conversation.
+3. **Offer to fill them** from whatever context is available: any pre-existing notes the operator added to `~/project/`, project files like `project/.claude/CLAUDE.md` and any READMEs, existing pages in the memory wiki, plus what the user tells you in this conversation.
 4. Wait for the user's go before bulk-writing. They may want to skip, do it gradually, or only fill specific cards (e.g. `USER_PROFILE` + `USER_RELATIONSHIPS` first).
-5. Use the `memory-router` skill when actually writing — it documents the routing tree so you don't accidentally write a relationship to `USER_PROFILE` or a rule to `USER_PREFERENCES`.
+5. Use the `memory-router` skill when actually writing: it documents the routing tree so you don't accidentally write a relationship to `USER_PROFILE` or a rule to `USER_PREFERENCES`.
 
 Delete this whole "Bootstrap" section once any card here is meaningfully populated (signals the workspace is past first-run).
 

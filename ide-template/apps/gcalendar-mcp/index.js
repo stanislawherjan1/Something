@@ -136,7 +136,7 @@ const TOOLS = [
     name: 'create_event',
     description:
       'Create a new event. For timed events provide both `start.dateTime` and `end.dateTime` as RFC 3339 with offset (e.g. "2026-05-09T09:00:00+02:00"). ' +
-      'For all-day events use `start.date` / `end.date` (YYYY-MM-DD; end is exclusive — a single-day event has end one day after start). ' +
+      'For all-day events use `start.date` / `end.date` (YYYY-MM-DD; end is exclusive, so a single-day event has end one day after start). ' +
       'Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',

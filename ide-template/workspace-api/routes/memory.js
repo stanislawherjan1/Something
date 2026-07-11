@@ -286,7 +286,7 @@ export default function memoryRouter() {
           snapshot_age_seconds: null,
           content: '',
           bytes: 0,
-          note: 'snapshot file not yet created — channel may be idle or never used',
+          note: 'snapshot file not yet created: channel may be idle or never used',
         });
       }
       const st = statSync(path);

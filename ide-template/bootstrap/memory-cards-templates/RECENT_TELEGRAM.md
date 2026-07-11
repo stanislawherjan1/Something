@@ -23,6 +23,6 @@ When populated, the format is:
 
 Older messages first, newer at the bottom. Maximum ~50 messages or ~4000 tokens (whichever hits first; older messages trimmed).
 
-The Telegram source is `/home/bot/.telegram/conversation.jsonl` (written by the bot's grammy middleware + API transformer — see `bot.sh` Patch 4). This card is the model-facing view of its tail.
+The Telegram source is `/home/bot/.telegram/conversation.jsonl` (written by the bot's grammy middleware + API transformer, see `bot.sh` Patch 4). This card is the model-facing view of its tail.
 
 **When the user asks about prior Telegram messages, consult this card before claiming no context.**

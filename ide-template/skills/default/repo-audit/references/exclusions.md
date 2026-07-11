@@ -13,8 +13,8 @@ These paths/items are off-limits for silent action. Always classify as 🔴 and 
 
 - **Mixed pile**: if a single command finding contains both safe-pile and never-pile entries (e.g. stale files where some sit inside `${BOT_NAME}/`), split them and only auto-execute the safe ones.
 - **Ambiguous root file**: prefer 🟡 (ask once) over 🟢. A misclassified auto-execute on an unknown root file is the worst case.
-- **First-run uncertainty**: if `repo-audit-log` entity doesn't exist yet, run in **report-only mode** for the first audit — don't auto-execute anything, list all findings for review. Creates a baseline the user can sanity-check.
+- **First-run uncertainty**: if `memory/concepts/repo-audit-log.md` doesn't exist yet, run in **report-only mode** for the first audit — don't auto-execute anything, list all findings for review. Creates a baseline the user can sanity-check.
 
 ## When to escalate to 🔴 mid-audit
 
-If during the green-pile execution any command returns a permission error, write error, or unexpected count (e.g. 500+ files matched a "stale" filter), abort the rest, log `audit-aborted` to memory with the trigger, and surface as critical to the user.
+If during the green-pile execution any command returns a permission error, write error, or unexpected count (e.g. 500+ files matched a "stale" filter), abort the rest, append an `audit-aborted` claim (with the trigger) to `memory/concepts/repo-audit-log.md`, and surface as critical to the user.

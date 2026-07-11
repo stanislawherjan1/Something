@@ -53,18 +53,21 @@ If you notice **3+ files in the same folder share an obvious subtopic**, propose
 
 Propose, wait, execute on approval. Never reorganize unilaterally.
 
-## Memory-index shape after writing
+## Making the file discoverable after writing
 
-```
-mcp__memory__create_entities([{
-  name: "<relative-path-from-project-root>",
-  entityType: "file_index",
-  observations: [
-    "saved: <ISO date>",
-    "topic: <2-3 keywords from content>",
-    "trigger: <what the user asked for>"
-  ]
-}])
+There is no knowledge graph. Discoverability is handled by the auto-generated
+`memory/INDEX.md` map, which is rebuilt automatically on every memory write and
+on wsapi boot. In the normal case you do **not** need to do anything — the file
+you just wrote will be picked up on the next automatic reindex.
+
+If you want to force the map to refresh immediately (e.g. you just created a new
+top-level folder and want it reflected right away), run the real index rebuild:
+
+```bash
+python3 <REFLECT_APPLY> reindex   # rebuilds memory/INDEX.md; safe to run anytime
 ```
 
-Re-save of an existing file → `mcp__memory__add_observations` with `["updated: <date>", "change: <what changed>"]` instead.
+Do **not** run reindex for files saved under `project/users/<slug>/` — those are
+private and the shared/group INDEX already excludes `users/**`, so there is
+nothing to record and nothing to leak. Re-saving an existing file needs no
+special step; the automatic reindex on write keeps the map current.

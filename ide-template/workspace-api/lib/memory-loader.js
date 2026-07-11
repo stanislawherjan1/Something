@@ -58,6 +58,12 @@ import { USERS_DIR } from './scope-rule.js';
 const LOAD_ORDER = [
   { id: 'AGENT_IDENTITY',   path: 'AGENT_IDENTITY.md' },
   { id: 'AGENT_TOOLS',      path: 'AGENT_TOOLS.md' },
+  // The bot's standing duties + proactive directives TOWARD this user — what the
+  // bot does FOR them. Per-user in team mode (USER_TIER below), so each teammate's
+  // card holds the bot's duties for THAT person. Prefix-loaded so the bot knows its
+  // duties on EVERY turn (proactive all day, not just at planning time); the
+  // morning-planner reads it to plan each person's day into timed reminders.
+  { id: 'RESPONSIBILITIES', path: 'RESPONSIBILITIES.md' },
   { id: 'RULES',            path: 'RULES.md' },
   { id: 'INDEX',            path: 'INDEX.md' },
   // Per-user PRIVATE index (team mode) — the MAP of THIS actor's OWN private
@@ -106,7 +112,7 @@ const LOAD_ORDER = [
 // recent-snapshot.js. Loading it per-user means it comes from the actor's own
 // dir — the operator gets theirs, a non-operator gets an (empty) one, and
 // claude.js additionally excludes it for non-operators. Solo → flat, as before.
-const USER_TIER = new Set(['USER_PROFILE', 'USER_PREFERENCES', 'RECENT_TELEGRAM', 'RECENT_WEB', 'USER_INDEX']);
+const USER_TIER = new Set(['RESPONSIBILITIES', 'USER_PROFILE', 'USER_PREFERENCES', 'RECENT_TELEGRAM', 'RECENT_WEB', 'USER_INDEX']);
 
 const MAX_CARD_BYTES = 256 * 1024; // 256 KB ceiling per card — defensive
 
@@ -173,6 +179,12 @@ directly, tell them — the rule is *don't volunteer*, not *refuse*.
 - \`AGENT_IDENTITY.md\` — your character, voice, defaults.
 - \`AGENT_TOOLS.md\` — per-tool gotchas + activation notes for integrations
   available in this workspace.
+- \`RESPONSIBILITIES.md\` — your standing duties TOWARD this user: what you
+  do FOR them without being asked. In team mode this is per-user
+  (\`memory/users/<slug>/\`), so it's what you owe THIS person. Route a "from
+  now on…" / "every Friday…" / "always keep an eye on…" here. Each morning the
+  \`morning-planner\` reads it to plan the day into timed reminders. One-off
+  to-dos are reminders, not duties.
 - \`INDEX.md\` — the auto-generated MAP of a scope's memory: every card,
   topic, and concept as a \`[[stem]] — blurb\` line, grouped under
   \`## Cards\` / \`## Topics\` / \`## Concepts\`. It is MACHINE-OWNED — the

@@ -148,7 +148,7 @@ export function setClaudeToken(plaintext, actor) {
   if (t.length > 4096) throw new Error('Token is suspiciously long.');
   if (t.length < 20)   throw new Error('Token is too short to be valid.');
   if (!CLAUDE_TOKEN_RE.test(t)) {
-    throw new Error('Token does not look like a Claude Code OAuth token (expected prefix "sk-ant-oat01-" — run `claude setup-token` to generate one).');
+    throw new Error('Token does not look like a Claude Code OAuth token (expected prefix "sk-ant-oat01-"; run `claude setup-token` to generate one).');
   }
 
   const encrypted = encryptValue(t);

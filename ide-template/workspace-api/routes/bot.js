@@ -35,7 +35,7 @@ export default function botRouter() {
     const ok = await runtime.restartBot();
     if (!ok) {
       return res.status(503).json({
-        error: 'Restart signal file not present — bot has not started in this container, or is running a pre-watcher image. Try again after a container restart.',
+        error: 'Restart signal file not present: bot has not started in this container, or is running a pre-watcher image. Try again after a container restart.',
       });
     }
     // Bot watcher fires within 2s; PM2 restart_delay is 10s → ~10–15s

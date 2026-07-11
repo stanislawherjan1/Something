@@ -745,10 +745,45 @@ else:
 # log only user-facing send* methods (sendMessage / sendPhoto /
 # sendDocument); skip getMe / getFile / setMessageReaction / etc.
 tg_outbound_marker = '// CC-BOT-PATCH: telegram outbound transformer'
+# Re-apply on EVERY start. The plugin dir persists across deploys, so a bare
+# presence-check pins an OLD transformer forever: a changed version (e.g.
+# adding the Markdown/em-dash sanitizer) would never land. Strip any prior
+# block (from our marker up to the bot.start anchor it sits before) so the
+# check below re-injects the current one.
+if tg_outbound_marker in content:
+    content = re.sub(
+        r'// CC-BOT-PATCH: telegram outbound transformer.*?(?=\n\s*await bot\.start\()',
+        '', content, count=1, flags=re.DOTALL,
+    )
+    print('[bot] telegram outbound: stripped prior transformer for re-patch')
 if tg_outbound_marker not in content:
     outbound_inject = (
         '// ' + tg_outbound_marker + '\n'
+        '// Telegram plain-text hygiene: the model tends to emit Markdown (**bold**,\n'
+        '// `code`, # headings) and em dashes; Telegram renders the Markdown as literal\n'
+        '// characters (ugly) and em-dash-heavy text reads as machine-generated. Strip\n'
+        '// both from every plain-text send. Left alone when parse_mode is set (the\n'
+        '// caller intentionally chose markdownv2/HTML and escaped it themselves).\n'
+        'const stripTgMd = (s: any) => {\n'
+        '  if (typeof s !== "string") return s;\n'
+        '  return s\n'
+        '    .replace(/`([^`]+)`/g, "$1")\n'
+        '    .replace(/\\*\\*([^*]+)\\*\\*/g, "$1")\n'
+        '    .replace(/__([^_]+)__/g, "$1")\n'
+        '    .replace(/~~([^~]+)~~/g, "$1")\n'
+        '    .replace(/^\\s{0,3}#{1,6}\\s+/gm, "")\n'
+        '    .replace(/\\[([^\\]]+)\\]\\(([^)\\s]+)\\)/g, "$1 ($2)")\n'
+        '    .replace(/\\s*\\u2014\\s*/g, " - ")\n'
+        '    .replace(/ -- /g, " - ");\n'
+        '};\n'
         'bot.api.config.use(async (prev, method, payload) => {\n'
+        '  try {\n'
+        '    const q: any = payload;\n'
+        '    if (q && !q.parse_mode) {\n'
+        '      if (method === "sendMessage" && typeof q.text === "string") q.text = stripTgMd(q.text);\n'
+        '      else if ((method === "sendPhoto" || method === "sendDocument") && typeof q.caption === "string") q.caption = stripTgMd(q.caption);\n'
+        '    }\n'
+        '  } catch (_) { /* swallow: never block a send on hygiene */ }\n'
         '  const result = await prev(method, payload);\n'
         '  try {\n'
         '    if (method === "sendMessage" || method === "sendPhoto" || method === "sendDocument") {\n'
@@ -1111,104 +1146,71 @@ if correct_menu_marker not in content:
 else:
     print('[bot] /correct slash menu entry: already patched')
 
-# ── Patch 7: /memory slash command (drafts review/approve/reject) ─────
-# Operator types `/memory review` / `/memory approve <id>` / `/memory reject <id>`
-# / `/memory approve-all` to manage reflect-learnings proposals queued
-# in ~/project/memory/_drafts/. Bridges the operator approval UX
-# documented in CONTEXT_ENGINEERING_REWORK.md Bundle 9 (WS6.3).
-#
-# Backed by /opt/ide/hooks/reflect-apply.py (Python script that parses
-# draft markdown sections, applies one proposal to its canonical card
-# per the action field, strikes the proposal as ~~...~~ (applied YYYY-MM-DD)
-# so it doesn't re-appear in next /memory review).
-#
-# Admin-only (TELEGRAM_ADMIN_CHAT_ID gated). Idempotent — marker check +
-# remove old version before reinjecting.
+# ── Patch 7: REMOVE the legacy /memory slash command ─────────────────
+# Memory is now fully background/autonomous: reflect-distill auto-applies
+# safe additive facts (concept pages ≥0.75, canonical cards ≥0.8) with an
+# undo snapshot + audit trail, and RULES/AGENT_IDENTITY land only on
+# cross-day recurrence — all with NO operator review. So the /memory
+# review/approve/reject command is gone. This block only STRIPS any command
+# a previous bot version injected (idempotent marker check); it never adds.
 memory_marker = '// CC-BOT-PATCH: memory command v1'
-memory_existing_pattern = re.compile(
-    r'\n?// ' + re.escape(memory_marker.replace('// ', '')) + r'\n\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}\n\n?',
-    re.DOTALL,
-)
-if memory_existing_pattern.search(content):
-    content = memory_existing_pattern.sub('', content)
-    changed = True
+def _strip_marked_blocks(text, marker):
+    """Remove EVERY `// <marker>\n{ ... }` block by brace-counting (string- and
+    template-literal-aware), not a regex — the old regex couldn't match the
+    block's nested braces, so the idempotent remove silently failed and copies
+    piled up (100+ on long-lived bots). Returns (text, count_removed)."""
+    removed = 0
+    while True:
+        i = text.find(marker)
+        if i == -1:
+            break
+        b = text.find('{', i)
+        if b == -1:                       # marker with no block — drop the line
+            nl = text.find('\n', i)
+            text = text[:i] + (text[nl + 1:] if nl != -1 else '')
+            removed += 1
+            continue
+        depth, j, quote, esc = 0, b, None, False
+        while j < len(text):
+            c = text[j]
+            if esc:
+                esc = False
+            elif c == '\\':
+                esc = True
+            elif quote:
+                if c == quote:
+                    quote = None
+            elif c in ('"', "'", '`'):
+                quote = c
+            elif c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        end = j
+        while end < len(text) and text[end] in '\r\n':
+            end += 1
+        text = text[:i] + text[end:]
+        removed += 1
+    return text, removed
 
-memory_inject = (
-    '// ' + memory_marker + '\n'
-    '{\n'
-    '  const __adminChatId: string = String(process.env.TELEGRAM_ADMIN_CHAT_ID || "");\n'
-    '  const __applyScript: string = "/opt/ide/hooks/reflect-apply.py";\n'
-    '  bot.command("memory", async (ctx) => {\n'
-    '    if (!__adminChatId || String(ctx.chat?.id) !== __adminChatId) return;\n'
-    '    const raw = String(ctx.message?.text || "").replace(/^\\/memory(@\\S+)?\\s*/, "").trim();\n'
-    '    const [action, ...rest] = raw.split(/\\s+/);\n'
-    '    const arg = rest.join(" ").trim();\n'
-    '    if (!action || action === "help") {\n'
-    '      try { await ctx.reply("Usage:\\n/memory review — list pending proposals from memory/_drafts/\\n/memory approve <id> — apply a proposal to its canonical card\\n/memory reject <id> — drop a proposal without applying\\n/memory approve-all — apply every pending proposal (use with care)"); } catch (_) {}\n'
-    '      return;\n'
-    '    }\n'
-    '    try {\n'
-    '      const { execFile } = await import("child_process");\n'
-    '      const { promisify } = await import("util");\n'
-    '      const exec = promisify(execFile);\n'
-    '      const env = { ...process.env, PROJECT_DIR: process.env.PROJECT_DIR || "/home/coder/project" };\n'
-    '      let cmd: string[] = [];\n'
-    '      if (action === "review") cmd = ["list"];\n'
-    '      else if (action === "approve" && arg) cmd = ["apply", arg];\n'
-    '      else if (action === "reject" && arg) cmd = ["reject", arg];\n'
-    '      else if (action === "approve-all") {\n'
-    '        // list → apply each id\n'
-    '        const listOut = await exec(__applyScript, ["list"], { env });\n'
-    '        const ids = listOut.stdout.trim().split("\\n").map(l => l.split(" | ")[0]).filter(s => s.startsWith("proposal-"));\n'
-    '        if (ids.length === 0) { try { await ctx.reply("No pending proposals."); } catch (_) {} return; }\n'
-    '        let applied = 0, failed = 0;\n'
-    '        for (const id of ids) {\n'
-    '          try { await exec(__applyScript, ["apply", id], { env }); applied++; }\n'
-    '          catch (_) { failed++; }\n'
-    '        }\n'
-    '        try { await ctx.reply(`Approve-all: applied ${applied} proposal(s), ${failed} failed.`); } catch (_) {}\n'
-    '        return;\n'
-    '      }\n'
-    '      else { try { await ctx.reply(`Unknown /memory action: ${action}. Try /memory help.`); } catch (_) {} return; }\n'
-    '      const { stdout, stderr } = await exec(__applyScript, cmd, { env });\n'
-    '      const out = (stdout || stderr || "(no output)").trim().slice(0, 3500);\n'
-    '      try { await ctx.reply(`/memory ${action} ${arg}:\\n\\n${out}`); } catch (_) {}\n'
-    '    } catch (e: any) {\n'
-    '      try { await ctx.reply(`/memory ${action} failed: ${e?.stderr || e?.message || e}`); } catch (_) {}\n'
-    '    }\n'
-    '  });\n'
-    '}\n\n'
-)
-pattern = re.compile(r"^(bot\.command\(['\"]start['\"])", re.MULTILINE)
-new_content, n = pattern.subn(lambda m: memory_inject + m.group(1), content, count=1)
-if n > 0:
-    content = new_content
+content, _mem_removed = _strip_marked_blocks(content, memory_marker)
+if _mem_removed:
     changed = True
-    print('[bot] memory command: patched (v1, pre-bot.on)')
-else:
-    print('[bot] WARNING: memory command pattern (bot.command start) not found')
+    print(f'[bot] /memory command: removed {_mem_removed} injected block(s) (memory is now background-only)')
 
-# ── Patch 7b: append /memory to plugin's setMyCommands list ───────────
-memory_menu_marker = "{ command: 'memory',"
-if memory_menu_marker not in content:
-    plugin_menu_pattern_7b = re.compile(
-        r"(\{ command: 'correct', description: '[^']+' \},)\n(\s+\],)",
-        re.MULTILINE,
-    )
-    insertion = (
-        r"\1\n"
-        r"              { command: 'memory', description: 'Review/approve memory draft proposals (admin only)' },\n"
-        r"\2"
-    )
-    new_content, n = plugin_menu_pattern_7b.subn(insertion, content, count=1)
-    if n > 0:
-        content = new_content
-        changed = True
-        print('[bot] /memory slash menu entry: patched into plugin setMyCommands')
-    else:
-        print('[bot] WARNING: /memory slash menu anchor (post-/correct) not found')
-else:
-    print('[bot] /memory slash menu entry: already patched')
+# ── Patch 7b: REMOVE /memory from the plugin's setMyCommands list ──────
+# Strip the menu entry a previous bot version added, so the slash-menu no
+# longer advertises /memory. Matches the injected line regardless of leading
+# indentation; a no-op on bots that never had it.
+memory_menu_line = re.compile(r"\n[ \t]*\{ command: 'memory', description: '[^']*' \},")
+if memory_menu_line.search(content):
+    content = memory_menu_line.sub('', content)
+    changed = True
+    print('[bot] /memory slash menu entry: removed')
 
 if changed:
     with open(path, 'w', encoding='utf-8') as f:

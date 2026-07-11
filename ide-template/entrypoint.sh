@@ -720,10 +720,10 @@ fi
 # the templates dir can accumulate stragglers across image versions.
 # Iterating the directory glob would silently seed those into
 # project/memory/ — leaking obsolete templates into the user's tree.
-# The allowlist reflects exactly the seven cards the loader expects.
+# The allowlist reflects exactly the cards the loader expects.
 MEMORY_DIR="$PROJECT_DIR/memory"
 MEMORY_TEMPLATES_DIR="/opt/ide/bootstrap/memory-cards-templates"
-CARDS=(RULES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
+CARDS=(RULES RESPONSIBILITIES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
 if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     mkdir -p "$MEMORY_DIR"
     MEMORY_SEEDED=0
@@ -772,6 +772,17 @@ if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     fi
 fi
 
+# --- System-ritual reminder reconcile (runs EVERY boot) ---
+# bootstrap-project.sh seeds .reminders.json only ONCE (first boot). This step
+# makes NEW system rituals "default everywhere": on every deploy it merges any
+# missing kind:system reminder from the image template into the live file (by id,
+# idempotent, never touching user reminders). Runs before services start, so
+# there is no race with the reminder-monitor.
+if [ -f "/opt/ide/bootstrap/reconcile-reminders.py" ]; then
+    PROJECT_DIR="$PROJECT_DIR" REMINDERS_TEMPLATE="/opt/ide/bootstrap/reminders.json" \
+        python3 /opt/ide/bootstrap/reconcile-reminders.py || true
+fi
+
 # --- Team whitelist bootstrap ---
 # Seed PROJECT_DIR/.allowed-emails.json from every email in IDE_ALLOWED_EMAILS:
 #   - first email becomes admin (so SOMEONE can manage the team)
@@ -796,15 +807,21 @@ for piece in raw.split(','):
 if not emails:
     sys.exit(2)
 now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-entries = [
-    {
+entries = []
+for i, e in enumerate(emails):
+    entry = {
         'email':   e,
         'role':    'admin' if i == 0 else 'member',
         'addedAt': now,
         'addedBy': 'bootstrap',
     }
-    for i, e in enumerate(emails)
-]
+    # Reflect v2: the primary admin owns the workspace, so pre-consent their
+    # own ORG-classified, non-sensitive DM facts to flow into shared team
+    # memory automatically (audit-logged) instead of rotting in a promotion
+    # queue nobody reviews. Sensitivity veto still keeps personal facts private.
+    if i == 0:
+        entry['autoPromote'] = True
+    entries.append(entry)
 print(json.dumps(entries, indent=2))
 PYEOF
     then

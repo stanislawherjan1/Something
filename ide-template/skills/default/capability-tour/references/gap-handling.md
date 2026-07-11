@@ -33,11 +33,11 @@ PS: CLAUDE.md still describes <integration> but it's been deactivated. Remove th
 ```
 
 - If user says **yes** → use Edit to remove that bullet from Context.
-- If user says **leave** → respect, don't ask again for 30 days. Note dismissal in memory: `add_observations("capability-tour-state:<slug>", ["dismissed-cleanup-<integration>: <date>"])`.
+- If user says **leave** → respect, don't ask again for 30 days. Note the dismissal in durable memory: route via the memory-router skill to the concept page `memory/concepts/capability-tour-state.md`, appending a claim like `dismissed-cleanup-<integration> (<actor-slug>): <date>` under its `## Claims`. (The memory write auto-reindexes the markdown INDEX.)
 - If user says **no** (no explicit dismissal period) → respect, but you may ask again next month.
 
-> **Team mode — key the state PER USER.** The knowledge graph is shared, so a single `capability-tour-state` entity would make one teammate's dismissal suppress the tour for everyone (and load their interaction history into others' prompts). Use `capability-tour-state:<actor-slug>` (slug from the `[ACTOR …]` line) so dismissals + throttle are per person. Solo workspace → the bare `capability-tour-state` is fine.
+> **Team mode — key the state PER USER.** The `capability-tour-state` concept page is shared, so an unqualified claim would make one teammate's dismissal suppress the tour for everyone (and surface their interaction history to others). Tag every claim with the `<actor-slug>` (slug from the `[ACTOR …]` line) — e.g. `dismissed-cleanup-<integration> (<actor-slug>): <date>` — so dismissals + throttle are per person. Solo workspace → an untagged claim is fine.
 
 ## Repeated reminders cap
 
-Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. Track surfacing-attempt dates via the per-user `capability-tour-state:<slug>` observations (bare `capability-tour-state` in solo) so the fortnight cap is evaluated against the CURRENT user's history only — not workspace-global.
+Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. Track surfacing-attempt dates as actor-slug-tagged claims on `memory/concepts/capability-tour-state.md` (read them back with memory_grep or Read; write new ones via the memory-router) so the fortnight cap is evaluated against the CURRENT user's history only — not workspace-global.

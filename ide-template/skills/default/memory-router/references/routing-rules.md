@@ -54,9 +54,11 @@ it recurs across **≥ `REFLECT_CONCEPT_HEAT` (default 3) distinct verdict
 threads** — a computable squeeze-point. Two ways a page is born:
 
 1. **Automatic (the common path).** `reflect-distill` watches verdict-card
-   `entities:` heat and proposes the page + its first claims through the normal
-   `_drafts → /memory review` approval flow. You don't have to do anything — the
-   operator approves and the page appears.
+   `entities:` heat and proposes the page + its first claims, which the
+   apply-script AUTO-APPLIES in the background (concept pages at ≥0.75, with an
+   undo snapshot + audit trail). You don't have to do anything — the page appears
+   on its own, no approval step. A brand-new page needs more heat than accreting
+   to an existing one, so existing topics take priority.
 2. **By hand (when you feel the squeeze mid-turn).** If you're about to cram a
    third or fourth durable fact about the same entity onto a card, create
    `memory/concepts/<slug>.md` instead (frontmatter `kind: concept` + a

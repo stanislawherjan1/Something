@@ -51,7 +51,7 @@ export default function UserSettingsModal({ me, onClose }) {
       setRemoveAvatar(false);
       setPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(out); });
     } catch {
-      setError("Couldn't process that image — try a different one.");
+      setError("Couldn't process that image. Try a different one.");
     }
   }, []);
 
