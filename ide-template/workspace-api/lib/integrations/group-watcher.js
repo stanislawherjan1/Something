@@ -877,10 +877,14 @@ function groupCompose(group, ctxMsgs, target, session = null) {
         text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
       }
     };
-    // Typing shows ONLY once the brain COMMITS to replying — a silent verdict stays
-    // invisible (no "typing…" flicker). It commits when it streams real reply text
-    // (diverging from the [[SILENT]] prefix) or starts a tool (a silent verdict uses
-    // no tools — the prompt makes it decide first).
+    // Typing UX (operator decision, 2026-07-11): the GATE analyses in silence —
+    // no typing while deciding whether a message is for the bot. But once the
+    // verdict is "compose", typing starts WITH the turn (see the startTyping()
+    // call right after spawn below), not at the first streamed token: a resumed
+    // session spends 10-15s booting the CLI before any output, so commit-gated
+    // typing showed for the last ~3s of a 25s turn — reads as no typing at all.
+    // Cost: a brain-pass ([[SILENT]]) turn briefly shows typing that ends in
+    // nothing — rare (8/294 in the live audit) and explicitly accepted.
     const startTyping = () => {
       if (typing || done) return;
       sendChatAction(group.chatId, 'typing').catch(() => {});
@@ -937,6 +941,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
           finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, privateTask, sessionId: capturedSessionId });
         },
       }, { resumed: !!(session && session.sessionId) }));
+      startTyping();   // typing from turn start — the gate already decided this message is for the bot
     } catch (err) { finish({ ok: false, error: err.message }); }
   });
 }
