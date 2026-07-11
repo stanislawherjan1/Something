@@ -37,5 +37,32 @@ ok('message includes the NEW target text', p.message.includes('is the deploy bro
 ok('message names who is asking', p.message.includes('Sam'));
 ok('message routes private/personal asks to a DM', /\bDM\b/.test(p.message));
 
+// (c) GROUP CONTEXT (group-mode v2, D2) — the load-bearing privacy invariant.
+// Every group turn must carry groupContext: true, which makes claude.js set
+// IDE_GROUP_CONTEXT=1 (scope-guard hard-blocks EVERY private tree, admin
+// included) and drop the whole USER tier from the prefix. A refactor that loses
+// this flag silently reopens private reads in a publicly-replying context.
+ok('group turn sets groupContext (hard private fence)', p.groupContext === true);
+ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TASK/.test(p.message));
+
+// (d) pathInGroupScope — the pure rule the scope-guard hook applies under
+// IDE_GROUP_CONTEXT=1: NO private tree for anyone; shared space stays open.
+const { pathInGroupScope } = await import('./scope-rule.js');
+ok('group scope: shared project file allowed', pathInGroupScope('docs/notes.md') === true);
+ok('group scope: project root allowed', pathInGroupScope('') === true);
+ok('group scope: a user\'s private files blocked', pathInGroupScope('users/sam/todo.md') === false);
+ok('group scope: a user\'s private memory blocked', pathInGroupScope('memory/users/sam/topics/x.md') === false);
+ok('group scope: even the SENDER\'s own private tree blocked', pathInGroupScope('users/team/anything.md') === false);
+ok('group scope: traversal rejected', pathInGroupScope('users/sam/../../memory/users/sam/x.md') === false);
+ok('group scope: dot-segment smuggling rejected', pathInGroupScope('memory/./users/sam/x.md') === false);
+ok('group scope: shared memory allowed', pathInGroupScope('memory/CHANNELS.md') === true);
+
+// (e) session resume plumbing — a live session slims the context and flips the
+// framing line; sessionId passes through to runClaudeTurn's --resume.
+const pResumed = groupTurnParams({ chatId: '-1001234567890' }, ctx, target, { sessionId: 'sess-123' }, { resumed: true });
+ok('resumed turn passes sessionId through', pResumed.sessionId === 'sess-123');
+ok('resumed turn tells the brain it has session memory', /session memory/.test(pResumed.message));
+ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(p.message));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
