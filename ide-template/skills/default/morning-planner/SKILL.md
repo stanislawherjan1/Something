@@ -214,7 +214,7 @@ For each thing that should happen at a time today, `set_reminder`:
   above uses a `recur` (e.g. `{ "type":"interval", "every":1, "unit":"hours" }`) —
   and only when one isn't already live.
 - `message`: phrase it as a concrete **if-then / when-what** — the time, the specific
-  action, and briefly why: "at 13:00 leave for the Kamil meeting, bring the deck" beats
+  action, and briefly why: "at 13:00 leave for the Sam meeting, bring the deck" beats
   "meeting today". Name the real event/task it comes from; a reminder with no genuine
   source item should not exist (don't invent filler). Never restate the duty text verbatim
   — a reminder is a decision (when + what), not a copy. For an `ambient` item, write it so
