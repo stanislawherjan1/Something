@@ -1,12 +1,12 @@
 ---
 name: memory-router
-description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 7 memory cards (RULES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS), an accreting concept page (concepts/<slug>.md, for a recurring entity's growing facts), or to documents/ / session/ / skills/. In a team workspace it also decides Shared vs Private — personal cards (profile, preferences, relationships, reflections) route to the CURRENT user's private memory at memory/users/<slug>/, shared facts to the flat memory/ root. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
+description: Decide where a fact, preference, person, or rule belongs when the user asks to remember, save, note, or commit something. Routes to one of the 8 memory cards (RULES, RESPONSIBILITIES, USER_PROFILE, USER_PREFERENCES, USER_RELATIONSHIPS, USER_REFLECTIONS, AGENT_IDENTITY, AGENT_TOOLS), an accreting concept page (concepts/<slug>.md, for a recurring entity's growing facts), or to documents/ / session/ / skills/. In a team workspace it also decides Shared vs Private — personal cards (profile, preferences, relationships, reflections) route to the CURRENT user's private memory at memory/users/<slug>/, shared facts to the flat memory/ root. Triggers on "remember that…", "save…", "note that…", "from now on…", "always…", "never…", "I prefer…", "X likes…", "X is now…", and similar memory-write phrasings. Skip on ephemeral chat ("today is sunny") or task-execution ("draft the email").
 allowed-tools: Read, Edit, Write
 ---
 
 # Memory router — where does this fact go?
 
-When the user shares something worth keeping, this skill picks the destination. The structure of memory is fixed (`memory-cards` skill describes the seven cards); this skill applies the routing rules.
+When the user shares something worth keeping, this skill picks the destination. The structure of memory is fixed (`memory-cards` skill describes the eight cards); this skill applies the routing rules.
 
 ## Step 0 — Shared or private? (team workspace)
 
@@ -26,7 +26,7 @@ Each card in the tree is tagged **[private]** (per-user in team mode) or **[shar
 Walk these in order. **Stop at the first match.**
 
 1. **Hard rule** — phrases like "from now on never", "always", "never", "must", "don't ever", or a correction the user explicitly wants to stick.
-   → `memory/RULES.md` **[shared]**. Add one short bullet under `## Never` or `## Always`. Max ~10 words. No preamble. *(A rule the user wants only for THEMSELVES — "always greet me in Polish" — is a preference: route to card 3 instead.)*
+   → `memory/RULES.md` **[shared]**. Add one short bullet under `## Never` or `## Always`. Max ~10 words. No preamble. *(A rule the user wants only for THEMSELVES — "always greet me in Polish" — is a preference: route to card 3 instead.)* *(A recurring DUTY the bot performs on a cadence — "from now on check email daily", "every Friday send the report", "watch for deadlines" — is not a behavioral constraint: route to RESPONSIBILITIES, card 8.)*
 
 2. **Stable fact about the user** — role, location, language, tools they use professionally, dates that don't change weekly.
    → `memory/USER_PROFILE.md` **[private]** — in team mode `memory/users/<their-slug>/USER_PROFILE.md`. Place under the matching subsection (Identity / Background / Currently focused on / Schedule). Tighten existing entries — don't accrete duplicates.
@@ -46,13 +46,16 @@ Walk these in order. **Stop at the first match.**
 7. **Agent character** — voice, default disposition, what to lean into, what to flag back to the user.
    → `memory/AGENT_IDENTITY.md` **[shared]**. Tighten — the agent picks one self.
 
-8. **Workflow recipe** — how to do X end-to-end, repeatable procedure, multi-step playbook.
+8. **Standing duty toward the current user** — the bot is put on the hook to DO something FOR this person on a cadence, or to WATCH for something proactively for them: "from now on check my email daily", "every Friday send my report", "keep an eye on my deadlines and prep ahead". A TASK the bot performs for THEM — distinct from a RULES entry (which constrains HOW it behaves globally) and from a preference.
+   → `memory/RESPONSIBILITIES.md` **[private]** — in team mode `memory/users/<their-slug>/RESPONSIBILITIES.md` (the bot's duties toward THAT person; always the CURRENT actor's card). One line per responsibility under `## Responsibilities`, as `{icon} **Short title** — description #tags` (pick a fitting `{icon}` — mail, calendar, clock, message, users, file, receipt, tasks, refresh, rocket, watch, alert…; put the frequency or trigger condition in the description prose; end with a couple of `#tags`, REUSING a tag already on the card's other responsibilities when one fits — keep the vocabulary tight, a new tag only when none matches). Retire stale ones, don't accrete. **Recording it is the whole action** — do NOT also `set_reminder` (the `morning-planner` materialises reminders from responsibilities, deduped, planning around what's already set). After writing it, run the `morning-planner` so it takes effect today. Set a reminder directly ONLY if the user explicitly asked for one.
+
+9. **Workflow recipe** — how to do X end-to-end, repeatable procedure, multi-step playbook.
    → `project/.claude/skills/<name>/SKILL.md`. Skills, not memory cards.
 
-9. **Persistent document** — research, brief, decision rationale, anything the user might re-open later.
+10. **Persistent document** — research, brief, decision rationale, anything the user might re-open later.
    → `project/documents/<topic>/YYYY-MM-DD_Brief_Description.md` **[shared by default]**. In team mode, if it's personal to one teammate ("my CV", "save this privately", a personal note) → `project/users/<their-slug>/documents/<topic>/…` instead. Free-form file. Cross-link from the relevant memory card if there's a connection worth surfacing. *(`file-placement` skill owns the full save-location logic — defer to it for documents.)*
 
-10. **Ephemeral / scratch** — mid-task reasoning, a one-off computation, draft that won't survive past this conversation.
+11. **Ephemeral / scratch** — mid-task reasoning, a one-off computation, draft that won't survive past this conversation.
     → `project/session/<filename>.md`. Session has TTL ~14 days; the bot may purge stale entries.
 
 ## Accreting depth → concept pages (`concepts/<slug>.md`)
@@ -68,8 +71,8 @@ the growing detail on the concept page. Concept page = accreting facts;
 
 **You usually don't do this by hand.** The `reflect-distill` pass watches recurring
 entities and automatically proposes a concept page + its first claims once a slug
-recurs across ≥ 3 verdict threads, routed through the normal `/memory review`
-approval — so concept pages accrete on their own. Create one by hand ONLY when
+recurs across enough verdict threads, then auto-applies in the background
+(no approval step) — so concept pages accrete on their own. Create one by hand ONLY when
 you're mid-conversation and about to cram a 3rd/4th durable fact about the same
 entity onto a card: make `concepts/<slug>.md` (frontmatter `kind: concept` + a
 `## Claims` list), move the depth there, leave the card pointer. **Team mode:** a

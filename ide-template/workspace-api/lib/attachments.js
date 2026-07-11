@@ -45,7 +45,7 @@ function safeThread(threadId) {
 export function saveAttachments(threadId, files) {
   if (!files || files.length === 0) return [];
   if (files.length > MAX_FILES) {
-    throw new Error(`Too many files (${files.length}) — max ${MAX_FILES} per message.`);
+    throw new Error(`Too many files (${files.length}): max ${MAX_FILES} per message.`);
   }
 
   let total = 0;

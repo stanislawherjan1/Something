@@ -88,7 +88,7 @@ const TOOLS = [
 
   {
     name: 'generate_image',
-    description: 'Generate an image from a text prompt using Google Imagen 3 — highest quality text-to-image model. Does not accept image input. Returns saved file path.',
+    description: 'Generate an image from a text prompt using Google Imagen 3: highest quality text-to-image model. Does not accept image input. Returns saved file path.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -127,7 +127,7 @@ const TOOLS = [
       properties: {
         image: {
           type: 'string',
-          description: 'Source image — local file path or HTTPS URL.',
+          description: 'Source image: local file path or HTTPS URL.',
         },
         prompt: {
           type: 'string',

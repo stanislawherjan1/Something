@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Hexagon, ChevronLeft, ChevronRight, Save, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Brain, Lock,
+  Brain, Lock, Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -29,7 +29,7 @@ const inputCls = cn(
 function ReadOnlyNote() {
   return (
     <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground/60">
-      <Lock className="size-3" /> Read-only — admins manage AI settings
+      <Lock className="size-3" /> Read-only: admins manage AI settings
     </span>
   );
 }
@@ -113,12 +113,24 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   const cacheReady = !!memory.data?.meetsCacheFloor;
   const memoryDescription = cardsTotal
     ? `${cardsPresent}/${cardsTotal} cards · ~${tokensApprox.toLocaleString()} tokens · cache ${cacheReady ? 'ready' : 'below floor'}`
-    : 'Knowledge cards, topics, and patterns — your bot\'s long-term memory.';
+    : 'Knowledge cards, topics, and patterns: your bot\'s long-term memory.';
   const memoryTile = {
     id: 'memory',
     logo: <IconLogo icon={Brain} />,
     label: 'Memory',
     description: memoryDescription,
+    active: true,
+    alwaysOn: true,
+    credential: null,
+    activatedAt: null,
+  };
+
+  // Reminders — timed nudges + the bot's daily rituals. Sits next to Memory.
+  const remindersTile = {
+    id: 'reminders',
+    logo: <IconLogo icon={Clock} />,
+    label: 'Reminders',
+    description: 'Timed nudges plus the bot\'s daily rituals: planning, reflection, backups.',
     active: true,
     alwaysOn: true,
     credential: null,
@@ -135,7 +147,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     label: 'Telegram',
     description: tgConnected
       ? (tgCount ? `Active in ${tgCount} group${tgCount > 1 ? 's' : ''} · per-user links` : 'Channel connected · groups & per-user links')
-      : 'The bot\'s Telegram channel — connect it to get started.',
+      : 'The bot\'s Telegram channel: connect it to get started.',
     active: tgConnected,
     credential: tgConnected ? `••••${tgIntegration?.credentialSummary?.last4 || ''}` : null,
     activatedAt: tgConnected ? (tgIntegration?.activatedAt || null) : null,
@@ -163,11 +175,18 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
                 <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />
                 <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />
               </div>
-              <SettingTile
-                tile={memoryTile}
-                onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}
-                canEdit={isAdmin}
-              />
+              <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                <SettingTile
+                  tile={memoryTile}
+                  onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}
+                  canEdit={isAdmin}
+                />
+                <SettingTile
+                  tile={remindersTile}
+                  onOpen={() => onSelect && onSelect({ path: '.claude/reminders', type: 'reminders' })}
+                  canEdit={isAdmin}
+                />
+              </div>
               {/* Claude (API token) and Telegram expose credentials, so they're
                   admin-only — members see just the three default-on tiles above. */}
               {isAdmin && (

@@ -1,7 +1,7 @@
 ---
 name: shopify-catalog-sync
 description: Load a current snapshot of all products in the Shopify store. Use this when the user asks what products are in the store, needs a catalog overview, references a product by name without a GID, or when product data might be stale.
-allowed-tools: mcp__shopify__get_products, mcp__shopify__get_product, mcp__memory__create_entities, mcp__memory__add_observations, mcp__memory__search_nodes, mcp__memory__open_nodes, Write, Read
+allowed-tools: mcp__shopify__get_products, mcp__shopify__get_product, Write, Read
 requires: shopify
 ---
 
@@ -13,14 +13,14 @@ Saves a snapshot of all store products to `~/project/shop/products.md` for fast 
 
 - User asks "what products do we have", "show me the catalog", "jakie mamy produkty" etc.
 - User references a product by name and you don't have its GID
-- Snapshot is missing or older than 7 days (check `last_synced` on the `shopify-catalog` memory entity)
+- Snapshot is missing or older than 7 days (check the `Last synced:` line at the top of `~/project/shop/products.md`)
 - User explicitly asks to refresh/sync the product catalog
 
 ## How to run
 
 ### Step 1 — Check if snapshot is fresh
 
-Run `search_nodes("shopify-catalog")`. If the entity exists and `last_synced` is within the last 7 days, read `~/project/shop/products.md` directly instead of calling the API.
+Read `~/project/shop/products.md` (if it exists) and look at the `Last synced:` line at the top. If it is within the last 7 days, use that file directly instead of calling the API. If the file is missing or older than 7 days, continue to Step 2 to re-fetch.
 
 ### Step 2 — Fetch all products
 
@@ -53,13 +53,7 @@ Last synced: YYYY-MM-DD HH:MM
 
 Repeat a block per product. Sort: active products first, then drafts.
 
-### Step 4 — Update memory
-
-Create or update the `shopify-catalog` entity:
-- entityType: `catalog_index`
-- observations: `last_synced: YYYY-MM-DD`, `snapshot_path: ~/project/shop/products.md`, `product_count: N`
-
-### Step 5 — Confirm
+### Step 4 — Confirm
 
 Tell the user: "Catalog synced — N products saved to shop/products.md."
 

@@ -18,6 +18,7 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
+import { runClaudeTurn } from '../lib/claude.js';
 import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
 import { distillVerdicts } from '../lib/reflect-distill.js';
 import { curatePages } from '../lib/reflect-curate.js';
@@ -182,7 +183,7 @@ export default function internalRouter() {
         }
         if ((ch === 'telegram' || ch === 'all') && m.telegramChatId
             && (m.preferredSurface === 'telegram' || m.preferredSurface === 'both')) {
-          try { const r = await sendTelegramMessage(m.telegramChatId, `⏰ ${t}${b ? ' — ' + b : ''}`.trim()); telegram = !!(r && r.ok); }
+          try { const r = await sendTelegramMessage(m.telegramChatId, `⏰ ${t}${b ? ': ' + b : ''}`.trim()); telegram = !!(r && r.ok); }
           catch (e) { process.stderr.write(`[reminder-deliver] tg leg ${slug}: ${e.message}\n`); }
         }
         delivered.push({ slug, web, telegram });
@@ -190,6 +191,43 @@ export default function internalRouter() {
       return res.json({ ok: true, delivered, count: delivered.length });
     } catch (err) {
       process.stderr.write(`[internal] reminder-deliver failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Run a skill/prompt AS a specific teammate, triggered by a system process
+  // (reminder-monitor for an EXECUTION reminder — the per-user morning-planner),
+  // NOT an authenticated web request. This is what lets a per-user ritual execute
+  // in the TEAMMATE's own identity + scope: runClaudeTurn sets IDE_ACTOR_SLUG=<slug>
+  // so the scope-guard allows their OWN private cards (and still blocks everyone
+  // else's) — the operator brain can't do this since the guard now fences it out
+  // of a teammate's private tree. Same loopback trust boundary as the other
+  // /internal/* controls; the group-watcher already runs turns as a resolved
+  // teammate this way. Fire-and-forget: the turn runs async (may take minutes,
+  // sets reminders as its side effect) and we return 202 at once so the caller
+  // (a 60s bash poll) never blocks. Least-privilege: actorIsAdmin is always false
+  // — a planner run is single-person and needs no admin reach.
+  router.post('/internal/invoke-turn', loopbackOnly, (req, res) => {
+    const { actor, message } = req.body || {};
+    try {
+      if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
+      if (typeof message !== 'string' || !message.trim()) {
+        return res.status(400).json({ ok: false, error: 'message required' });
+      }
+      const m = resolveMember(actor);
+      if (!m) return res.status(400).json({ ok: false, error: 'unknown actor' });
+      runClaudeTurn({
+        message: message.trim(),
+        actor: m.slug,
+        actorName: m.displayName || m.slug,
+        actorIsAdmin: false,
+        onText: () => {}, onToolStart: () => {}, onToolEnd: () => {}, onImage: () => {},
+        onError: (e) => process.stderr.write(`[invoke-turn] ${m.slug}: ${String(e).slice(0, 200)}\n`),
+        onDone: () => process.stderr.write(`[invoke-turn] ${m.slug}: done\n`),
+      });
+      return res.status(202).json({ ok: true, started: m.slug });
+    } catch (err) {
+      process.stderr.write(`[internal] invoke-turn failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

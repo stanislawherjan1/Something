@@ -88,10 +88,10 @@ const TOOLS = [
       "Add an inline comment anchored to a specific text fragment in a Google " +
       "Doc. Drives the live logged-in browser (Docs UI) because the Docs/Drive " +
       "API can't anchor comments to a range. Use ONLY for adding anchored " +
-      "comments — list/reply/resolve/delete go through the Google Workspace " +
+      "comments: list/reply/resolve/delete go through the Google Workspace " +
       "tools (mcp__gdrive__*), which are faster and need no browser. Requires the " +
       "operator to have logged in via Integrations → Docs Comments → Connect. " +
-      "The bot sees only { ok, occurrence_used } — never raw doc content.",
+      "The bot sees only { ok, occurrence_used }, never raw doc content.",
     inputSchema: {
       type: 'object',
       required: ['doc_id', 'find_text', 'comment_text'],
@@ -127,7 +127,7 @@ async function addComment({ doc_id, find_text, comment_text, occurrence, find_co
   // produced later (after a successful attach + a bounce to accounts.google.com)
   // and is never retried — relaunch can't refresh dead cookies.
   const notConnected = () => Object.assign(
-    new Error('Docs Comments is not connected — log in via the workspace UI (Integrations → Docs Comments → Connect to Google).'),
+    new Error('Docs Comments is not connected: log in via the workspace UI (Integrations → Docs Comments → Connect to Google).'),
     { code: 'NOT_CONNECTED' },
   );
   let browser;
@@ -157,7 +157,7 @@ async function addComment({ doc_id, find_text, comment_text, occurrence, find_co
   try {
     const context = browser.contexts()[0];
     if (!context) {
-      throw Object.assign(new Error('Docs Comments browser has no session context — reconnect via the workspace UI.'), { code: 'NOT_CONNECTED' });
+      throw Object.assign(new Error('Docs Comments browser has no session context: reconnect via the workspace UI.'), { code: 'NOT_CONNECTED' });
     }
     page = await context.newPage();
     await page.goto(docUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
@@ -166,7 +166,7 @@ async function addComment({ doc_id, find_text, comment_text, occurrence, find_co
     const landedAt = new URL(page.url());
     if (landedAt.hostname === 'accounts.google.com') {
       throw Object.assign(
-        new Error('Docs Comments session expired — reconnect via the workspace UI (Integrations → Docs Comments).'),
+        new Error('Docs Comments session expired: reconnect via the workspace UI (Integrations → Docs Comments).'),
         { code: 'SESSION_EXPIRED' },
       );
     }

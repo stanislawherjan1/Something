@@ -380,7 +380,7 @@ function Step2Avatar({ botName, setBotName, avatarIdx, setAvatarIdx, activeAvata
 
 function Step3Character({ botName, backstory, setBackstory, personality, setPersonality, onBack, onNext, busy, error }) {
   const examples = [
-    `${botName || 'Assistant'} is a research analyst — precise, allergic to fluff.`,
+    `${botName || 'Assistant'} is a research analyst: precise, allergic to fluff.`,
     `${botName || 'Assistant'} runs marketing ops. Speaks plainly, surfaces tradeoffs.`,
     `${botName || 'Assistant'} is a senior engineer. Skeptical, exact, pushes back.`,
   ];
@@ -403,7 +403,7 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
               rows={3} maxLength={2000} placeholder={examples[idx]}
               className={cn(inputCls, 'resize-none leading-relaxed')} />
             <div className="flex justify-between">
-              <p className="text-[11.5px] text-muted-foreground/70">A sentence or two — we'll write the assistant's brief.</p>
+              <p className="text-[11.5px] text-muted-foreground/70">A sentence or two, we'll write the assistant's brief.</p>
               <span className="text-[10.5px] tabular-nums text-muted-foreground/50">{backstory.length}/2000</span>
             </div>
           </div>
@@ -473,11 +473,11 @@ function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
               </li>
               <li className="flex items-start gap-3 py-2.5">
                 <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">2</span>
-                <span className="text-[13px] leading-relaxed text-muted-foreground">A browser window opens — sign in with your Anthropic account.</span>
+                <span className="text-[13px] leading-relaxed text-muted-foreground">A browser window opens: sign in with your Anthropic account.</span>
               </li>
               <li className="flex items-start gap-3 py-2.5">
                 <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">3</span>
-                <span className="text-[13px] leading-relaxed text-muted-foreground">The terminal prints a token starting with <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">sk-ant-oat01-</code> — paste it above.</span>
+                <span className="text-[13px] leading-relaxed text-muted-foreground">The terminal prints a token starting with <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">sk-ant-oat01-</code>, paste it above.</span>
               </li>
             </ol>
           </div>

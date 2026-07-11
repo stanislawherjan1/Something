@@ -1,7 +1,7 @@
 ---
 name: file-placement
 description: Use this BEFORE writing or saving a new file when the destination path is not explicitly given by the user. Reads the project's "Where to Save" decision tree and the current folder structure, then either picks a folder confidently or asks one short question. Triggers on phrases like "save this", "make a note", "write down", "jot this", "record this" — but only when the user did NOT specify a path.
-allowed-tools: Read, Bash, Write, mcp__memory__create_entities, mcp__memory__add_observations
+allowed-tools: Read, Bash, Write
 ---
 
 # File Placement Protocol
@@ -44,11 +44,11 @@ Match content to rulebook + existing structure. Three branches (obvious match / 
 
 Use the Write tool with the full chosen path. Filename conventions (kebab-case, dated only for time-bound content) → `references/decision-tree.md`.
 
-## Step 5 — index in memory
+## Step 5 — make it discoverable
 
-After writing, log a `file_index` entity in the knowledge graph so the file is discoverable later. Exact shape (create vs add_observations) → `references/decision-tree.md`.
+There is no knowledge graph. Files are made discoverable by the auto-generated `memory/INDEX.md` map, which is rebuilt automatically on every memory write and on wsapi boot — so in the normal case, after writing you do **nothing**; the file is picked up on the next automatic reindex. Only if you need the map refreshed immediately (e.g. you just created a brand-new top-level folder), force a rebuild → `references/decision-tree.md` (reindex command).
 
-**Team mode — do NOT index private files.** If the file you just saved lives under `project/users/<slug>/` (a personal file), **skip the `file_index` entity entirely**. The knowledge graph is shared and team-wide-searchable (read by `repo-audit` / `memory-reindex`, surfaced in every teammate's prompt), so a `file_index` whose `name` is a `users/<slug>/…` path — plus its topic keywords and the originating "trigger" request — leaks one person's private file (its existence, location, and what it's about) to everyone. Only index files saved to the **shared** project root.
+**Team mode — never reindex for private files.** If the file you just saved lives under `project/users/<slug>/` (a personal file), do **not** trigger a reindex on its behalf. The shared/group `INDEX.md` excludes `users/**`, so a private file's existence, location, and topic never surface in another teammate's prompt — leave it to the automatic per-write reindex, which already applies the same exclusion. Only shared project-root files belong in the team-wide map.
 
 ## Cluster detection — propose a subfolder
 

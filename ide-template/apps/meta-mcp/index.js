@@ -283,7 +283,7 @@ const TOOLS = [
 
   {
     name: 'create_campaign',
-    description: 'Create a new Meta Ads campaign. Starts PAUSED — activate with resume_campaign when ready.',
+    description: 'Create a new Meta Ads campaign. Starts PAUSED: activate with resume_campaign when ready.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -406,7 +406,7 @@ const TOOLS = [
 
   {
     name: 'update_ad_set',
-    description: 'Update an ad set — change status, daily budget, or end date.',
+    description: 'Update an ad set: change status, daily budget, or end date.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -455,12 +455,12 @@ const TOOLS = [
         type: {
           type: 'string',
           enum: ['customer_list', 'website'],
-          description: '"customer_list" — upload email addresses (hashed with SHA-256 before sending). "website" — pixel-based audience from site events.',
+          description: '"customer_list": upload email addresses (hashed with SHA-256 before sending). "website": pixel-based audience from site events.',
         },
         emails: {
           type: 'array',
           items: { type: 'string' },
-          description: 'For type "customer_list": plaintext email addresses. They are SHA-256 hashed before upload — do NOT pre-hash.',
+          description: 'For type "customer_list": plaintext email addresses. They are SHA-256 hashed before upload, so do NOT pre-hash.',
         },
         pixel_id: {
           type: 'string',
@@ -516,7 +516,7 @@ const TOOLS = [
 
   {
     name: 'upload_video',
-    description: 'Upload a video to the Meta ad account library from a public URL. Returns a video_id needed for create_video_creative. Meta fetches the video asynchronously — status will show "processing" initially.',
+    description: 'Upload a video to the Meta ad account library from a public URL. Returns a video_id needed for create_video_creative. Meta fetches the video asynchronously, so status will show "processing" initially.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -529,7 +529,7 @@ const TOOLS = [
 
   {
     name: 'create_ad_creative',
-    description: 'Create an image ad creative — combines an image with copy (text, headline, CTA) and a destination URL. Returns a creative_id for create_ad. Requires META_PAGE_ID.',
+    description: 'Create an image ad creative: combines an image with copy (text, headline, CTA) and a destination URL. Returns a creative_id for create_ad. Requires META_PAGE_ID.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -641,7 +641,7 @@ const TOOLS = [
 
   {
     name: 'create_ad',
-    description: 'Create an ad by combining an ad set and a creative. This is the final step — the ad is what users see.',
+    description: 'Create an ad by combining an ad set and a creative. This is the final step: the ad is what users see.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -824,11 +824,11 @@ const TOOLS = [
         },
         url_contains: {
           type: 'string',
-          description: 'Optional URL substring to filter — only count events from URLs containing this string.',
+          description: 'Optional URL substring to filter: only count events from URLs containing this string.',
         },
         min_value: {
           type: 'number',
-          description: 'Optional minimum event value — only count purchases above this amount.',
+          description: 'Optional minimum event value: only count purchases above this amount.',
         },
       },
       required: ['name', 'pixel_id', 'event_type'],

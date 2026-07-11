@@ -40,21 +40,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: 'web_send_message',
       description:
         'Send a message into a user\'s workspace (a notification + chat entry). ' +
-        'THIS IS THE ONLY WAY to reach a person from here — use it for EVERY ' +
+        'THIS IS THE ONLY WAY to reach a person from here: use it for EVERY ' +
         'relay, INCLUDING when the user says "message them on Telegram" / "ask ' +
         'them on TG". There is NO separate Telegram tool on this surface; this ' +
         'tool delivers to the teammate on whichever surface THEY chose (their web ' +
-        'workspace always, plus their Telegram if they linked it and prefer it) — ' +
+        'workspace always, plus their Telegram if they linked it and prefer it); ' +
         'the routing is automatic, you do NOT pick the channel. NEVER tell the ' +
         'user you sent / relayed something unless you actually called this tool ' +
-        'and it returned success; the result states WHERE it landed — relay that ' +
+        'and it returned success; the result states WHERE it landed: relay that ' +
         'truthfully (do not promise Telegram if the result says web only). ' +
         'Two modes: (1) reply to the CURRENT web user (omit `recipient`); ' +
-        '(2) RELAY to ANOTHER teammate — set `recipient` to their slug (TEAM ' +
+        '(2) RELAY to ANOTHER teammate: set `recipient` to their slug (TEAM ' +
         'roster). Compose a NATURAL, human message addressed to them: greet them ' +
         'and weave the sender in conversationally ("Hi Jan, Stan is asking ' +
         'whether you finished the analysis"), in the RECIPIENT\'s language (roster ' +
-        'shows "writes in <lang>"). Put the whole message in `body` — delivered ' +
+        'shows "writes in <lang>"). Put the whole message in `body`: delivered ' +
         'VERBATIM, no "X asked me to forward" preamble. Only relay to a known ' +
         'slug, only when the user asked you to pass something on. `title` = short ' +
         'chat-list label (optional), `body` = the message.',
@@ -80,7 +80,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: 'string',
             enum: ['telegram', 'web'],
             description:
-              "Optional explicit delivery channel — set this ONLY when the user " +
+              "Optional explicit delivery channel: set this ONLY when the user " +
               "names one ('on Telegram' → 'telegram'; 'in their workspace' / 'on " +
               "web' → 'web'). It OVERRIDES the recipient's default preference. " +
               "Omit it normally: the recipient is then reached on whichever " +
@@ -175,16 +175,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } else if (d.telegram) {
         where = `Delivered to ${who} workspace AND ${who} Telegram.`;
       } else if (d.telegramRequested && d.recipientLinkedTelegram === false) {
-        where = `Delivered to ${who} workspace. Telegram was requested but ${recipient ? 'they have' : 'you have'} NOT linked Telegram, so it did NOT reach Telegram — tell the user that plainly, don't claim it went to Telegram.`;
+        where = `Delivered to ${who} workspace. Telegram was requested but ${recipient ? 'they have' : 'you have'} NOT linked Telegram, so it did NOT reach Telegram; tell the user that plainly, don't claim it went to Telegram.`;
       } else if (d.telegramRequested) {
-        where = `Delivered to ${who} workspace. Telegram was requested but the Telegram send did not go through — say it's in the workspace, not on Telegram.`;
+        where = `Delivered to ${who} workspace. Telegram was requested but the Telegram send did not go through; say it's in the workspace, not on Telegram.`;
       } else {
         where = `Delivered to ${who} workspace.`;
       }
       return {
         content: [{
           type: 'text',
-          text: `Sent.${sessionId ? '' : ' (session-create failed — message still delivered.)'} ${where}`,
+          text: `Sent.${sessionId ? '' : ' (session-create failed; message still delivered.)'} ${where}`,
         }],
       };
     } catch (err) {

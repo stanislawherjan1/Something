@@ -44,7 +44,11 @@ const REFLECT_APPLY  = process.env.REFLECT_APPLY_PY || '/opt/ide/hooks/reflect-a
 // threads to earn a concept page (squeeze-point). CONCEPT_MAX caps how many new
 // claims one distill cycle proposes, so a chatty week can't flood /memory review.
 // Mirrors CONCEPT_HEAT in lib/memory-graph.js — keep in sync.
-const CONCEPT_HEAT   = Math.max(1, num('REFLECT_CONCEPT_HEAT', 3));
+const CONCEPT_HEAT   = Math.max(1, num('REFLECT_CONCEPT_HEAT', 2));
+// A brand-NEW concept page needs MORE heat than accreting to an existing one:
+// existing pages take priority and a one-off entity shouldn't spawn its own
+// page. Existing pages still accrete at CONCEPT_HEAT.
+const CONCEPT_HEAT_NEW = Math.max(CONCEPT_HEAT, num('REFLECT_CONCEPT_HEAT_NEW', 3));
 const CONCEPT_MAX    = Math.max(1, num('REFLECT_CONCEPT_MAX', 12));
 // Per-cycle cap on how many DISTINCT owners get a private concept pass (each is
 // its own isolated LLM call), so a big team can't fan out into dozens of calls
@@ -255,6 +259,17 @@ function readConceptClaims(slug, owner = null) {
   } catch { return ''; }
 }
 
+// True when a slug already has a SHARED page (memory/concepts/ or a graduated
+// memory/topics/). Cross-scope guard: clients/processes live in the shared
+// scope, so a PRIVATE pass must NOT mint a parallel private page for them —
+// private is for prefs + small personal projects. A genuinely personal entity
+// never has a shared page, so it stays eligible for its own private page.
+function hasSharedPage(slug) {
+  const base = process.env.PROJECT_DIR || PROJECT_DIR;
+  return existsSync(join(base, 'memory', 'concepts', `${slug}.md`))
+      || existsSync(join(base, 'memory', 'topics', `${slug}.md`));
+}
+
 // Which recurring slugs are eligible for a concept claim THIS cycle for a given
 // scope: present in this scope's recent window AND hot enough (≥ CONCEPT_HEAT
 // distinct threads in this scope). owner=null → SHARED (heat over memory/threads,
@@ -275,9 +290,19 @@ function eligibleConceptsFor(verdicts, owner = null) {
   // computeConceptHeat returns DECAYED heat (reflect v2): N fresh verdicts sum
   // to just UNDER N (exp(-ε)<1), so a strict `>= CONCEPT_HEAT` would never fire
   // for exactly-N same-day threads. Same epsilon as memory-graph's emergence gate.
-  return [...inWindow]
+  let out = [...inWindow]
     .filter(s => (heat[s] || 0) >= CONCEPT_HEAT - 0.05)
-    .map(s => ({ slug: s, heat: Math.round((heat[s] || 0) * 10) / 10, claims: readConceptClaims(s, owner) }));
+    .map(s => ({ slug: s, heat: Math.round((heat[s] || 0) * 10) / 10, claims: readConceptClaims(s, owner) }))
+    // Existing pages accrete at CONCEPT_HEAT; a brand-NEW page (no claims yet)
+    // must clear the higher CONCEPT_HEAT_NEW bar — bias toward existing topics,
+    // don't spawn a page for a one-off entity.
+    .filter(c => c.claims ? true : (heat[c.slug] || 0) >= CONCEPT_HEAT_NEW - 0.05);
+  // Cross-scope dedup (PRIVATE pass only): never create/accrete a private page
+  // for a slug that already lives in SHARED — a client/process stays shared-only.
+  // Personal entities (prefs, small private projects) have no shared page, so
+  // they pass through untouched.
+  if (owner) out = out.filter(c => !hasSharedPage(c.slug));
+  return out;
 }
 
 // Render the CONCEPTS IN PLAY block the LLM dedups against. '' → no concepts.
@@ -290,7 +315,8 @@ function renderConceptBlock(eligible) {
       : '\n    existing claims: (none yet — new page)';
     return head + claims;
   });
-  return `\nCONCEPTS IN PLAY (propose at most one NEW atomic claim each, only if not already covered):\n${lines.join('\n')}\n`;
+  return `\nCONCEPTS IN PLAY (propose at most one NEW atomic claim each, only if not already covered):\n${lines.join('\n')}\n`
+    + `\nPREFER EXISTING PAGES: attach a claim to a slug that already has claims whenever the fact fits there. A '(new page)' slug is a last resort — claim it only when the entity is clearly its OWN recurring subject; a fact about a person or detail WITHIN an existing entity's world (a client's staff member, a sub-topic) belongs on that existing entity's page, not a new one.\n`;
 }
 
 // Convert one LLM concept_proposal into the standard proposal shape consumed by

@@ -30,7 +30,7 @@ export function RestartingBanner({ label = 'Restarting the bot so the change tak
   );
 }
 
-export function DoneBanner({ label = 'Done — bot is back online.' }) {
+export function DoneBanner({ label = 'Done: bot is back online.' }) {
   return (
     <div className="flex items-center gap-2.5 rounded-md border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2.5 text-[12.5px] text-emerald-700 dark:text-emerald-400">
       <Check className="size-3.5 shrink-0" strokeWidth={2.5} />

@@ -246,7 +246,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           {!isAdmin && (
             <div className="flex max-w-2xl items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-4 py-2.5 text-[12.5px] text-muted-foreground/80">
               <Lock className="size-3.5 shrink-0" strokeWidth={1.75} />
-              Read-only — your workspace admins manage integrations.
+              Read-only: your workspace admins manage integrations.
             </div>
           )}
           {isInitialLoad && <SkeletonCardGrid count={6} />}
@@ -787,7 +787,7 @@ function StorageStateField({ field, value, onChange, disabled, inputId }) {
           origins: Array.isArray(obj.origins) ? obj.origins.length : 0,
         };
       }
-      return 'Unrecognised shape — expected {cookies, origins} object or a cookies array.';
+      return 'Unrecognised shape: expected {cookies, origins} object or a cookies array.';
     } catch (err) {
       return `Invalid JSON: ${err.message}`;
     }
@@ -977,7 +977,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
           {busy ? 'Starting…' : value === 'ok' ? 'Reconnect to Google' : 'Connect to Google'}
         </button>
         {!busy && value === 'ok' && sessionValid === false && (
-          <span className="text-[12px] font-medium text-amber-600/90 dark:text-amber-400/90">⚠ Session expired — click Reconnect</span>
+          <span className="text-[12px] font-medium text-amber-600/90 dark:text-amber-400/90">⚠ Session expired: click Reconnect</span>
         )}
         {!busy && value === 'ok' && sessionValid !== false && (
           <span className="text-[12px] font-medium text-emerald-600/90 dark:text-emerald-400/90">Connected ✓</span>
@@ -1005,7 +1005,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
               <div>
                 <div className="text-[13px] font-medium text-foreground/85">Sign in to Google</div>
                 <div className="mt-0.5 text-[11.5px] text-muted-foreground/70">
-                  Use the account the bot should comment as — 2FA and security keys work. Once the page shows you're signed in, click <b>Done</b>. The session is saved on the server; nothing leaves it.
+                  Use the account the bot should comment as; 2FA and security keys work. Once the page shows you're signed in, click <b>Done</b>. The session is saved on the server; nothing leaves it.
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -1023,7 +1023,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
                   disabled={busy}
                   className="rounded border border-foreground/15 bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-60"
                 >
-                  Done — I'm signed in
+                  Done, I'm signed in
                 </button>
               </div>
             </div>
@@ -1270,7 +1270,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
                     return `## ${i + 1}. ${title}\n\n${body}`;
                   }).join('\n\n');
                   const prompt =
-`I'm activating the **${integration.label}** integration. Walk me through it step by step — these are the instructions from the activation form:
+`I'm activating the **${integration.label}** integration. Walk me through it step by step. These are the instructions from the activation form:
 
 ${stepsBlock}
 
@@ -1286,7 +1286,7 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                 Ask {branding.botDisplayName} for help
               </button>
               <div className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/65">
-                Drops a help prompt in the chat. Keys still go in the form on the right — never paste them in chat.
+                Drops a help prompt in the chat. Keys still go in the form on the right, never paste them in chat.
               </div>
             </div>
           )}

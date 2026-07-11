@@ -973,7 +973,7 @@ const TOOLS = [
     name: 'list_accounts',
     description:
       'List all configured email accounts and their folders (INBOX, Sent, etc.). ' +
-      'Call this first to see what accounts are available — every other tool ' +
+      'Call this first to see what accounts are available: every other tool ' +
       'takes an `account` id from this list. The bot never has implicit access ' +
       'to mail not configured here.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -982,7 +982,7 @@ const TOOLS = [
     name: 'list_recent',
     description:
       'List recent messages from one account (or all with account="*"). Returns ' +
-      'metadata + a 200-character snippet — use read_message to get the full body. ' +
+      'metadata + a 200-character snippet; use read_message to get the full body. ' +
       'Default window: last 7 days, 20 messages, INBOX.',
     inputSchema: {
       type: 'object',
@@ -990,7 +990,7 @@ const TOOLS = [
         account: { type: 'string', description: 'Account id from list_accounts, or "*" for all accounts in parallel. Defaults to all.' },
         folder:  { type: 'string', description: 'IMAP folder. Aliases (case-insensitive): "inbox" (default), "sent", "drafts", "trash", "spam"/"junk", "all"/"archive", "starred"/"flagged", "important". Aliases resolve via SPECIAL-USE so they work across Gmail (any locale), Zoho, etc. You can also pass the server-native path (e.g. "[Gmail]/Sent Mail") verbatim.' },
         limit:   { type: 'number', description: 'Max messages (default: 20)' },
-        since:   { type: 'string', description: 'ISO date — only fetch messages on/after this date (default: 7 days ago)' },
+        since:   { type: 'string', description: 'ISO date: only fetch messages on/after this date (default: 7 days ago)' },
       },
       additionalProperties: false,
     },
@@ -1009,7 +1009,7 @@ const TOOLS = [
         query:   { type: 'string', description: 'Search query (Gmail syntax for Gmail accounts).' },
         folder:  { type: 'string', description: 'IMAP folder. Aliases: "inbox" (default), "sent", "drafts", "trash", "spam", "all", "starred", "important". Or pass the server-native path verbatim.' },
         limit:   { type: 'number', description: 'Max results (default: 30)' },
-        since:   { type: 'string', description: 'ISO date floor — narrows the search window' },
+        since:   { type: 'string', description: 'ISO date floor: narrows the search window' },
       },
       required: ['query'],
       additionalProperties: false,
@@ -1019,7 +1019,7 @@ const TOOLS = [
     name: 'read_message',
     description:
       'Fetch one full message: headers, body_text (always), body_html (when present), ' +
-      'and attachment metadata (filename, size, mime — NOT content). ' +
+      'and attachment metadata (filename, size, mime; NOT content). ' +
       'Pass `account` and `uid` returned from list_recent or search. ' +
       'Use download_attachment to actually fetch attachment bytes.',
     inputSchema: {
@@ -1037,7 +1037,7 @@ const TOOLS = [
     name: 'download_attachment',
     description:
       'Download one attachment to /tmp/email-mcp/<account>/<uid>/<filename>. ' +
-      'Returns the absolute file path. Files are ephemeral — cleared on plugin ' +
+      'Returns the absolute file path. Files are ephemeral: cleared on plugin ' +
       'restart, and entries older than 1h are pruned at boot. Move the file ' +
       'into the project tree explicitly if the user wants to keep it.',
     inputSchema: {
@@ -1062,9 +1062,9 @@ const TOOLS = [
   {
     name: 'send_email',
     description:
-      'Send a new email via SMTP. STRONG-CONFIRM tool — never call without explicit ' +
+      'Send a new email via SMTP. STRONG-CONFIRM tool: never call without explicit ' +
       '"tak / yes / send / wyślij" from the user after showing them the full preview ' +
-      '(account, recipients incl. cc/bcc, subject, body). One email per call — no batch ' +
+      '(account, recipients incl. cc/bcc, subject, body). One email per call; no batch ' +
       'sends. The send is logged to .email-audit.jsonl with timestamp + recipients + ' +
       'subject + body snippet for an immutable trail of what the bot did on the ' +
       'user\'s behalf.',
@@ -1086,7 +1086,7 @@ const TOOLS = [
   {
     name: 'reply',
     description:
-      'Reply to an existing message via SMTP. STRONG-CONFIRM tool — bot must call ' +
+      'Reply to an existing message via SMTP. STRONG-CONFIRM tool: bot must call ' +
       'read_message first to fetch the original, show the user the thread context + ' +
       'proposed reply, and only proceed on explicit confirmation. Sets In-Reply-To + ' +
       'References headers automatically. Use reply_all=true to include the original ' +
@@ -1108,7 +1108,7 @@ const TOOLS = [
   {
     name: 'forward',
     description:
-      'Forward an existing message to new recipients via SMTP. STRONG-CONFIRM tool — ' +
+      'Forward an existing message to new recipients via SMTP. STRONG-CONFIRM tool: ' +
       'bot must show the user the original message body + new recipients before sending. ' +
       'Original attachments are preserved.',
     inputSchema: {
@@ -1119,7 +1119,7 @@ const TOOLS = [
         folder:     { type: 'string', description: 'Folder where the original lives. Default: inbox.' },
         to:         { type: 'array', items: { type: 'string' }, description: 'Forward recipients (required).' },
         cc:         { type: 'array', items: { type: 'string' }, description: 'Optional cc.' },
-        intro:      { type: 'string', description: 'Optional message prepended above the forwarded original (e.g. "FYI — looks relevant to your Q3 deck.").' },
+        intro:      { type: 'string', description: 'Optional message prepended above the forwarded original (e.g. "FYI: looks relevant to your Q3 deck.").' },
       },
       required: ['account', 'uid', 'to'],
       additionalProperties: false,
@@ -1128,9 +1128,9 @@ const TOOLS = [
   {
     name: 'create_draft',
     description:
-      'Save an email as Drafts WITHOUT sending. Safe by design — no confirmation ' +
+      'Save an email as Drafts WITHOUT sending. Safe by design: no confirmation ' +
       'needed because nothing leaves the server. Useful when the user asks the bot ' +
-      'to "draft a reply" — bot writes it as a draft, user opens their mail client ' +
+      'to "draft a reply": bot writes it as a draft, user opens their mail client ' +
       'to review and send manually.',
     inputSchema: {
       type: 'object',
@@ -1141,7 +1141,7 @@ const TOOLS = [
         subject:    { type: 'string', description: 'Subject (required).' },
         body:       { type: 'string', description: 'Plain-text body (required).' },
         html:       { type: 'string', description: 'Optional HTML body.' },
-        in_reply_to_uid:    { type: 'number', description: 'Optional — uid of a message this draft replies to. Headers will thread the draft into that conversation.' },
+        in_reply_to_uid:    { type: 'number', description: 'Optional: uid of a message this draft replies to. Headers will thread the draft into that conversation.' },
         in_reply_to_folder: { type: 'string', description: 'Folder for in_reply_to_uid lookup. Default: inbox.' },
       },
       required: ['account', 'to', 'subject', 'body'],
@@ -1151,7 +1151,7 @@ const TOOLS = [
   {
     name: 'mark_read',
     description:
-      'Mark a message as read (sets the \\Seen IMAP flag). Reversible — see mark_unread. ' +
+      'Mark a message as read (sets the \\Seen IMAP flag). Reversible; see mark_unread. ' +
       'Light-confirm: bot says "marking <subject> as read" and proceeds. The audit log ' +
       'still records every flag change.',
     inputSchema: {
@@ -1182,7 +1182,7 @@ const TOOLS = [
   {
     name: 'archive',
     description:
-      'Move a message out of Inbox into the All Mail / Archive folder. Light-confirm — ' +
+      'Move a message out of Inbox into the All Mail / Archive folder. Light-confirm: ' +
       'recoverable (search across all folders finds it). Falls back to gracefully ' +
       'removing INBOX when the provider has no separate Archive (Gmail-style).',
     inputSchema: {
@@ -1199,7 +1199,7 @@ const TOOLS = [
   {
     name: 'move',
     description:
-      'Move a message to a different folder. Light-confirm — show user source + ' +
+      'Move a message to a different folder. Light-confirm: show user source + ' +
       'destination folder before proceeding. Use folder aliases ("trash", "drafts", ' +
       '"sent", "all") or server-native paths.',
     inputSchema: {
@@ -1217,8 +1217,8 @@ const TOOLS = [
   {
     name: 'delete',
     description:
-      'Move a message to Trash (soft delete — recoverable from the Trash folder for ' +
-      '~30 days on Gmail/Zoho). Light-strong confirm — bot says "moving to Trash, ' +
+      'Move a message to Trash (soft delete, recoverable from the Trash folder for ' +
+      '~30 days on Gmail/Zoho). Light-strong confirm: bot says "moving to Trash, ' +
       'still recoverable" and waits for explicit confirmation. NOT permanent delete: ' +
       'this is intentionally reversible. There is no permanent_delete tool by design.',
     inputSchema: {

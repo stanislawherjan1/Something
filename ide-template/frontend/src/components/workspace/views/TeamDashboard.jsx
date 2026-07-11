@@ -188,7 +188,7 @@ function ModeCard({ teamMode, isAdmin, busy, error, onChange }) {
             </div>
             <p className="mt-0.5 max-w-xl text-[12.5px] leading-relaxed text-muted-foreground/75">
               {teamMode
-                ? 'Teammates can sign in — each gets their own files plus the shared files.'
+                ? 'Teammates can sign in: each gets their own files plus the shared files.'
                 : 'Just you. Turn on collaboration to invite teammates and split Shared vs. Your files.'}
             </p>
           </div>
@@ -263,8 +263,8 @@ function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
             You have <span className="font-semibold">{count} {noun} in Your Files</span>. What should happen to {count === 1 ? 'it' : 'them'}?
           </p>
           <ul className="flex flex-col gap-2 text-[12.5px] text-muted-foreground/85">
-            <li><span className="font-medium text-foreground/85">Move to Shared Files</span> — they join the shared files (renamed if a name clashes). This can't be auto-undone.</li>
-            <li><span className="font-medium text-foreground/85">Keep private</span> — they stay tucked away, hidden from the file list, and come back if you re-enable collaboration.</li>
+            <li><span className="font-medium text-foreground/85">Move to Shared Files</span> - they join the shared files (renamed if a name clashes). This can't be auto-undone.</li>
+            <li><span className="font-medium text-foreground/85">Keep private</span> - they stay tucked away, hidden from the file list, and come back if you re-enable collaboration.</li>
           </ul>
         </div>
 
@@ -676,8 +676,8 @@ function AddMemberModal({ onClose, onSuccess }) {
               onChange={(e) => setRole(e.target.value)}
               className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
             >
-              <option value="member">Member — can sign in and use the workspace</option>
-              <option value="admin">Admin — can also invite and remove others</option>
+              <option value="member">Member - can sign in and use the workspace</option>
+              <option value="admin">Admin - can also invite and remove others</option>
             </select>
           </label>
 

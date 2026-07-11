@@ -45,11 +45,16 @@ operator_in_set() {
 # so the solo / operator path stays byte-identical. tmux alive → brain frame;
 # else the channel-matched fallback ladder.
 fire_operator() {
-    local channel="$1" message="$2"
+    local channel="$1" message="$2" urgency="${3:-now}"
+    # Ambient reminders reach the brain as an [AMBIENT] frame — a soft topic to
+    # weave into the next natural opening, not to blurt standalone (handling is
+    # in global-claude.md). Everything else fires as a normal [REMINDER].
+    local frame="REMINDER"
+    [ "$urgency" = "ambient" ] && frame="AMBIENT"
     if tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        log "Firing via tmux (channel=${channel}): ${message}"
+        log "Firing via tmux (channel=${channel} urgency=${urgency}): ${message}"
         tmux -L "$TMUX_SOCKET" send-keys -l -t "$TMUX_SESSION" \
-            "[REMINDER channel=${channel} chat_id=${CHAT_ID} | ${message}]"
+            "[${frame} channel=${channel} chat_id=${CHAT_ID} | ${message}]"
         tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" Enter
     else
         log "Bot session offline (channel=${channel}) — using fallback"
@@ -95,6 +100,31 @@ NODE
 ) || return 1
     curl -sS -m 6 -X POST "http://localhost:${WSAPI_PORT}/api/internal/reminder-deliver" \
         -H 'Content-Type: application/json' -d "$json" >/dev/null 2>&1
+}
+
+# EXECUTION reminders (exec=1, e.g. the per-user morning-planner): run the wire
+# message AS each NON-operator teammate recipient, so the skill executes in THAT
+# person's identity + scope (reads their own private cards) instead of the
+# operator brain — which the scope-guard now fences out of a teammate's private
+# tree. POSTs to wsapi /internal/invoke-turn, which spawns runClaudeTurn(actor).
+# Fire-and-forget (wsapi returns 202); the operator's own leg still runs via
+# fire_operator above, so the operator is skipped here to avoid a double-run.
+invoke_turn_teammates() {
+    command -v curl >/dev/null 2>&1 || return 1
+    local recips="$1" wire="$2" slug json
+    [ "$recips" = "*everyone*" ] && return 0   # planner triggers are per-slug; never mass-execute
+    IFS=',' read -ra _arr <<< "$recips"
+    for slug in "${_arr[@]}"; do
+        [ -z "$slug" ] && continue
+        operator_in_set "$slug" && continue    # operator ran via fire_operator
+        json=$(ACTOR="$slug" MSG="$wire" node - << 'NODE'
+process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process.env.MSG }));
+NODE
+) || continue
+        curl -sS -m 8 -X POST "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" \
+            -H 'Content-Type: application/json' -d "$json" >/dev/null 2>&1 \
+            || log "invoke-turn POST failed for ${slug}"
+    done
 }
 
 # Don't block on bot startup — keep polling and route per-reminder. If the
@@ -257,7 +287,7 @@ reminders = reminders.map(r => {
     const title = (typeof r.title === 'string' ? r.title : '').trim();
     const desc  = (typeof r.description === 'string' ? r.description : '').trim();
     const wire  = title
-        ? (desc ? `${title} — ${desc}` : title)
+        ? (desc ? `${title}: ${desc}` : title)
         : (typeof r.message === 'string' ? r.message : '');
     // Channel hint travels with the wire message via a tab separator —
     // bash splits on it below. Default 'all' covers legacy reminders that
@@ -276,7 +306,10 @@ reminders = reminders.map(r => {
     // whitespace IFS like \t would collapse it). Flatten it (+ newlines/tabs)
     // out of every field so content can never inject a column break.
     const flat = (s) => String(s == null ? '' : s).replace(/[\n\t\x1f]+/g, ' ');
-    toSend.push(`${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}`);
+    // 7th column `exec`: '1' marks an EXECUTION reminder (run the wire AS each
+    // teammate recipient via /internal/invoke-turn), vs '' = a delivery reminder
+    // (notify the recipient). Only reconcile-set per-user planner triggers set it.
+    toSend.push(`${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}`);
     changed = true;
 
     // Advance to the next occurrence — interval / weekly / monthly, honoring
@@ -329,21 +362,28 @@ NODEEOF
         [ -z "$line" ] && continue
         # Split on \x1f (unit separator) — non-whitespace, so empty fields (e.g.
         # an absent recipients column = solo) are preserved.
-        IFS=$'\x1f' read -r channel recipients wire title desc <<< "$line"
+        IFS=$'\x1f' read -r channel recipients wire title desc urgency exec <<< "$line"
         [ -z "$channel" ] && channel="all"
 
         if [ -z "$recipients" ]; then
             # Solo / operator-only — byte-identical to before.
-            fire_operator "$channel" "$wire"
+            fire_operator "$channel" "$wire" "$urgency"
         else
             # Team mode. Operator's own copy is brain-elaborated when targeted.
             if operator_in_set "$recipients"; then
-                fire_operator "$channel" "$wire"
+                fire_operator "$channel" "$wire" "$urgency"
             fi
-            # Teammates via wsapi; on failure, surface to the operator.
-            if ! deliver_to_teammates "$recipients" "$channel" "$title" "$desc"; then
-                log "reminder-deliver POST failed (wsapi down?) — surfacing to operator"
-                fire_operator "$channel" "(team delivery failed) $wire"
+            if [ "$exec" = "1" ]; then
+                # EXECUTION reminder (per-user planner): run the wire AS each
+                # teammate recipient in their own scope, not the operator brain.
+                invoke_turn_teammates "$recipients" "$wire"
+            else
+                # Delivery reminder: notify teammates via wsapi; on failure,
+                # surface to the operator so a team reminder is never lost.
+                if ! deliver_to_teammates "$recipients" "$channel" "$title" "$desc"; then
+                    log "reminder-deliver POST failed (wsapi down?) — surfacing to operator"
+                    fire_operator "$channel" "(team delivery failed) $wire"
+                fi
             fi
         fi
         sleep 3  # small gap between multiple reminders

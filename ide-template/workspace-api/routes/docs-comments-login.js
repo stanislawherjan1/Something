@@ -347,7 +347,7 @@ function stopBrowser() {
 // VIEWER being up (the browser may be alive without a viewer post-login).
 function httpProxy(req, res) {
   if (!viewer) {
-    res.status(503).json({ error: 'No active docs-comments viewer — POST /connect-start first.' });
+    res.status(503).json({ error: 'No active docs-comments viewer: POST /connect-start first.' });
     return;
   }
   const upstreamPath = req.url.replace(/^\/vnc/, '') || '/';

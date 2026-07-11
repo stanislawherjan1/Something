@@ -54,7 +54,7 @@ function conceptsDir() { return join(memoryDir(), 'concepts'); }
 // lib/reflect-distill.js — keep the two in sync.
 const CONCEPT_HEAT = (() => {
   const v = Number(process.env.REFLECT_CONCEPT_HEAT);
-  return Number.isFinite(v) && v >= 1 ? v : 3;
+  return Number.isFinite(v) && v >= 1 ? v : 2;
 })();
 
 const CANONICAL_CARDS = new Set([
@@ -418,7 +418,7 @@ export function buildMemoryGraph(actorSlug = null) {
       scope: s.scope,
       name: s.name,
       relPath: null,
-      preview: `Emerging concept — warming up (recent-conversation heat ${s.heat}). A page gets seeded once it stays hot.`,
+      preview: `Emerging concept, warming up (recent-conversation heat ${s.heat}). A page gets seeded once it stays hot.`,
       purpose: '',
       synthetic: true,
       heat: s.heat,

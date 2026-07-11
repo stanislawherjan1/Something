@@ -128,7 +128,7 @@ function GalleryEmptyState() {
         </div>
         <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">No images yet</h2>
         <p className="text-[13px] leading-relaxed text-muted-foreground/75">
-          Ask <span className="font-medium text-foreground/85">{botName}</span> to generate or save an image — connect an image integration first.
+          Ask <span className="font-medium text-foreground/85">{botName}</span> to generate or save an image: connect an image integration first.
         </p>
       </div>
     </div>

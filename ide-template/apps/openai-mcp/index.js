@@ -51,7 +51,7 @@ const TOOLS = [
       "opinion from a different model family, want to cross-check a critical " +
       "answer, or need a specialised model (e.g. o-series reasoning for " +
       "math/logic, gpt-5 for general tasks). Returns the model's reply as " +
-      "plain text. Single-turn only — for multi-turn, the operator's primary " +
+      "plain text. Single-turn only: for multi-turn, the operator's primary " +
       "agent (you) keeps the conversation; this tool is for one-shot queries.",
     inputSchema: {
       type: 'object',
@@ -92,7 +92,7 @@ const TOOLS = [
     description:
       "List OpenAI models available to this API key. Filtered to chat-capable " +
       "models (gpt-* and o-*). Useful before picking a non-default model for " +
-      "ask_gpt — surfaces newly released models without needing this MCP to be " +
+      "ask_gpt: surfaces newly released models without needing this MCP to be " +
       "rebuilt.",
     inputSchema: {
       type: 'object',

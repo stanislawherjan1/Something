@@ -321,7 +321,7 @@ const TOOLS = [
     name: 'add_label',
     description:
       'Attach a label to a card by name. If the label does not exist on the board, it is created. ' +
-      'Idempotent — re-adding the same label is a no-op.',
+      'Idempotent: re-adding the same label is a no-op.',
     inputSchema: {
       type: 'object',
       required: ['card_id', 'label_name'],
@@ -418,9 +418,9 @@ const TOOLS = [
     description:
       'Download an uploaded attachment from a card to a local file and return its ' +
       'path. Get card_id + attachment_id from get_card (attachments[].id; only ' +
-      'is_upload=true ones are real files — for is_upload=false the url field is the ' +
+      'is_upload=true ones are real files; for is_upload=false the url field is the ' +
       'external link, no download needed). Routes through the MCP so the API token ' +
-      '(broker-held) authorises the binary download — curl/Playwright can\'t.',
+      '(broker-held) authorises the binary download, which curl/Playwright can\'t.',
     inputSchema: {
       type: 'object',
       required: ['card_id', 'attachment_id'],
@@ -435,7 +435,7 @@ const TOOLS = [
     description:
       'Delete a comment from a card. Get comment_id (idAction) from get_card\'s ' +
       'comments[].id. Only the token owner\'s own comments can be deleted (or by a ' +
-      'board admin). Destructive and not recoverable — prefer edit_comment to fix a ' +
+      'board admin). Destructive and not recoverable: prefer edit_comment to fix a ' +
       'comment rather than delete + re-add.',
     inputSchema: {
       type: 'object',
@@ -449,7 +449,7 @@ const TOOLS = [
   {
     name: 'list_card_actions',
     description:
-      'Full activity history of a card — moves between columns, label add/remove, ' +
+      'Full activity history of a card: moves between columns, label add/remove, ' +
       'member changes, attachments, checklist updates, comments, archive/unarchive, ' +
       'rename. Use this for "what happened to this card / who moved it when". ' +
       'get_card only returns comments; this returns the whole Trello action log. ' +
@@ -663,7 +663,7 @@ async function handleDownloadAttachment({ card_id, attachment_id } = {}) {
     // External-link attachment — no binary to fetch; the url IS the resource.
     return {
       card_id, attachment_id, is_upload: false, url: meta.url,
-      note: 'External link attachment — not an uploaded file; use the url directly.',
+      note: 'External link attachment: not an uploaded file; use the url directly.',
     };
   }
   const fileName = meta.fileName || meta.name || String(attachment_id);

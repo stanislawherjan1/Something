@@ -105,7 +105,7 @@ Children read these via props. No Redux, no context, no router — for one route
 | `type === 'dashboard'` | `views/ClaudeDashboard` |
 | `type === 'skills'` | `views/SkillsDashboard` |
 | `type === 'integrations'` | `views/IntegrationsDashboard` |
-| `type === 'reminders'` | `views/RemindersDashboard` |
+| `type === 'responsibilities'` | `views/ResponsibilitiesDashboard` (embeds `RemindersDashboard` as a sub-tab) |
 | `path === 'Tasks.md'` | `views/KanbanView` |
 | `type === 'dir'` and basename `'generated'` | `views/GalleryView` |
 | `type === 'file'` and image extension | `ImageViewer` |

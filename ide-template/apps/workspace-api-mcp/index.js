@@ -73,7 +73,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       description:
         'Live RECENT_<CHANNEL>.md content from disk + snapshot freshness. ' +
         'Use this when the user references conversation context that may ' +
-        'be OLDER than what your cached prefix shows — the Telegram side ' +
+        'be OLDER than what your cached prefix shows: the Telegram side ' +
         'in particular has a static prefix from tmux startup, so the ' +
         '`RECENT_TELEGRAM` block in your system prompt can be stale by ' +
         'hours or days. This tool returns the file the snapshot-monitor ' +
@@ -196,7 +196,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{
             type: 'text',
-            text: `No snapshot for channel "${channel}" yet (file ${data.path} doesn't exist — channel may be idle or never used).`,
+            text: `No snapshot for channel "${channel}" yet (file ${data.path} doesn't exist; channel may be idle or never used).`,
           }],
         };
       }

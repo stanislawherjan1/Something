@@ -118,7 +118,7 @@ function isAllowedDomain(domain) {
  */
 export function parseStorageState(rawJson) {
   if (typeof rawJson !== 'string' || rawJson.trim() === '') {
-    throw new Error('Empty input — paste the JSON export from your browser.');
+    throw new Error('Empty input: paste the JSON export from your browser.');
   }
   let parsed;
   try { parsed = JSON.parse(rawJson); }
@@ -135,7 +135,7 @@ export function parseStorageState(rawJson) {
     };
   }
   throw new Error(
-    'Unrecognised shape — expected either a Playwright storageState object ' +
+    'Unrecognised shape: expected either a Playwright storageState object ' +
     '({cookies, origins}) or a bare cookies array.'
   );
 }

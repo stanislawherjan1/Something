@@ -47,7 +47,7 @@ Your coworkers:
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups.
 - **Write their own playbooks.** A *skill* is a markdown file describing how to handle a recurring task, editable right from the UI.
 - **Keep the task list moving.** Your `Tasks.md` becomes a list or board view with owner, priority, and deadline, kept current as work progresses.
-- **Work with your whole team.** Turn on collaborative mode: everyone signs in with their own account and a private space beside the shared one, and your coworker routes reminders, tasks, and messages to the right person.
+- **Work with your whole team.** Turn on collaborative mode: everyone signs in with their own account and a private space beside the shared one, and your coworker routes routines, tasks, and messages to the right person.
 
 <br/>
 
@@ -137,7 +137,7 @@ Because it knows the whole team, it routes work to the right person, and carries
 > **You:** Remind Mara to send the review tomorrow morning.<br/>
 > **Coworker:** Done. I'll ping Mara at 9:00 tomorrow, in her workspace, and on Telegram since that's how she likes to be reached.
 
-Reminders and tasks can target one teammate or *everyone*, and a task's owner is a real face on the board. You can also talk *through* your coworker: it delivers your message into a colleague's workspace or Telegram, in their language, phrased like a person, not a forwarded memo.
+Routines and tasks can target one teammate or *everyone*, and a task's owner is a real face on the board. You can also talk *through* your coworker: it delivers your message into a colleague's workspace or Telegram, in their language, phrased like a person, not a forwarded memo.
 
 Solo setups are untouched: team mode off means no roles, no split, no routing, just the clean single-user workspace. Full design in **[docs/TEAM_MODE.md](docs/TEAM_MODE.md)**.
 
@@ -181,20 +181,20 @@ Create, edit, and delete skills from the dashboard. Integration-specific skills 
 
 <br/>
 
-## Reminders
+## Routines
 
 <p align="center">
-  <img src="assets/reminders.png" alt="Reminders dashboard, pending pings with relative due time and timezone" width="820" />
+  <img src="assets/routines.png" alt="Routines dashboard, the standing duties the coworker handles on its own, each with an icon and tags" width="820" />
 </p>
 
 <br/>
 
-Tell your coworker when to ping you, and they will: once, daily, or weekly. Reminders survive container restarts, reach you on Telegram, in the web app, or both, and live in a tidy dashboard you can edit by hand.
+Tell your coworker what to keep an eye on, and it takes it from there — the standing things it handles for you without being asked: scan the inbox each hour, chase threads that have gone quiet, watch approaching deadlines, prep meeting materials the day before. Every morning it plans the day from these routines, together with your calendar, tasks, and open threads.
 
-> **You:** Each morning, check Shopify for orders stuck unfulfilled over 48h and flag them.<br/>
-> **Coworker:** Done. I'll run that daily at 9:00 and ping you with anything stuck.
+> **You:** From now on, each morning check Shopify for orders stuck unfulfilled over 48h and flag them.<br/>
+> **Coworker:** Added to my routines. I'll check every morning and flag anything stuck.
 
-Your coworker also schedules its own (a Monday ad-spend review, a first-of-the-month revenue pull) whenever a recurring rhythm makes sense.
+Under the hood, routines run on **reminders** — a background scheduler that survives container restarts and fires on time (once, daily, weekly, or continuous), reaching you on Telegram, in the web app, or both. You rarely touch it directly: the coworker sets and prunes its own reminders as the routines demand.
 
 <br/>
 

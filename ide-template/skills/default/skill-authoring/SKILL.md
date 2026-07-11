@@ -78,7 +78,7 @@ Common patterns:
 - Memory-write skill: `allowed-tools: Read, Edit, Write`
 - Browser skill: `allowed-tools: mcp__playwright__*`
 - Integration skill calling one MCP: `allowed-tools: mcp__shopify__*`
-- Background reflect-bot: `allowed-tools: Read, mcp__memory__*`
+- Background reflect-bot (writes durable memory to the markdown wiki + rebuilds the INDEX): `allowed-tools: Read, Edit, Write, Bash`
 
 ### 6. Validate before committing
 

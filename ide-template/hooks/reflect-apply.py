@@ -71,9 +71,19 @@ CONFIDENCE_FLOORS = {"append": 0.7, "update_field": 0.85, "replace_section": 0.9
 AUTO_APPLY_CONF = float(os.environ.get("REFLECT_AUTO_APPLY_CONF", "0.8"))
 # A global kill switch: REFLECT_AUTO_APPLY=0 reverts to draft-everything.
 AUTO_APPLY_ON = os.environ.get("REFLECT_AUTO_APPLY", "1") not in ("0", "false", "no")
-# Cards whose edits are ALWAYS operator-gated regardless of confidence — the
-# behavioural commitments and the agent's own voice are deliberate choices.
+# Cards whose edits never ride ONE distill's confidence — behavioural
+# commitments and the agent's own voice are too consequential to write from a
+# single LLM read. They apply in the background only on cross-day recurrence
+# (see RULE_RECUR_DAYS + prior_recurrence); there is no operator review.
 AUTO_APPLY_CARD_DENY = {"RULES", "AGENT_IDENTITY"}
+# Concept/topic pages are the core auto surface and low-risk (accreting, cited,
+# non-canonical) — a slightly lower bar than canonical cards so genuinely useful
+# context (a client contact, a relationship fact) isn't lost to the 0.8 gate.
+AUTO_APPLY_CONF_CONCEPT = float(os.environ.get("REFLECT_AUTO_APPLY_CONF_CONCEPT", "0.75"))
+# A gated card (RULES/AGENT_IDENTITY) applies once the SAME fact has surfaced on
+# this many DISTINCT daily drafts (this run included): recurrence is the
+# confidence signal in place of a single score. 0 → keep them fully out (never).
+RULE_RECUR_DAYS = int(os.environ.get("REFLECT_RULE_RECUR_DAYS", "2"))
 
 
 # ── Secrets kill-list (reflect v2, structural) ───────────────────────────────
@@ -130,24 +140,64 @@ def is_duplicate_append(card_text: str, content: str) -> bool:
     return False
 
 
+def prior_recurrence(p: dict) -> int:
+    """How many PRIOR distinct daily drafts already carried a matching proposal
+    (same card + ≥70% content-word overlap). Today's draft is excluded, so this
+    counts how many EARLIER days independently surfaced the same fact — the
+    signal that lets a gated card apply in the background without a one-shot
+    confidence bet."""
+    cw = _dup_words(p.get("content", ""))
+    if len(cw) < 3:
+        return 0
+    card = str(p.get("card", ""))
+    today_name = today_draft().name
+    days = 0
+    try:
+        files = sorted(DRAFTS_DIR.glob("learnings-*.md"))
+    except Exception:
+        return 0
+    for f in files:
+        if f.name == today_name:
+            continue
+        try:
+            blocks = parse_proposal_blocks(f.read_text())
+        except Exception:
+            continue
+        for b in blocks:
+            if str(b.get("card", "")) != card:
+                continue
+            lw = _dup_words(b.get("content", ""))
+            if lw and len(cw & lw) / len(cw) >= 0.7:
+                days += 1
+                break   # count each day at most once
+    return days
+
+
 def is_auto_applicable(p: dict) -> bool:
-    """True when a proposal is inside the safe auto-apply envelope: an ADDITIVE
-    write (append / concept-page claim / new page seed) at high confidence to a
-    non-canonical-rule target. Destructive edits (update_field, replace_section),
-    RULES/AGENT_IDENTITY, and lint findings stay draft-gated."""
+    """True when a proposal is inside the safe auto-apply envelope. Only ADDITIVE
+    writes auto-apply (append / concept-page claim / new-page seed); destructive
+    edits (update_field, replace_section) and lint findings never do. Thresholds:
+    concept/topic pages at AUTO_APPLY_CONF_CONCEPT (low-risk, cited), canonical
+    cards at AUTO_APPLY_CONF. RULES / AGENT_IDENTITY never ride a single read —
+    they enter only once the fact recurs across RULE_RECUR_DAYS distinct daily
+    drafts (background, no operator review)."""
     if not AUTO_APPLY_ON:
-        return False
-    if float(p.get("confidence", 0)) < AUTO_APPLY_CONF:
         return False
     if p.get("action", "append") != "append":
         return False           # only additive writes auto-apply
     kind = p.get("kind", "")
     if kind == "lint":
         return False           # advisory only — never mutate on a lint finding
+    conf = float(p.get("confidence", 0))
     if kind in ("concept", "page_seed", "page_edit"):
-        return True            # concept/topic page ops are the core auto surface
-    # A canonical / private CARD append: allowed except the always-gated cards.
-    return str(p.get("card", "")) not in AUTO_APPLY_CARD_DENY
+        return conf >= AUTO_APPLY_CONF_CONCEPT   # concept/topic pages — lower bar
+    if str(p.get("card", "")) in AUTO_APPLY_CARD_DENY:
+        # Behavioural rules + the agent's voice: recurrence is the confidence
+        # signal. Apply only when the same fact surfaced on ≥ RULE_RECUR_DAYS
+        # distinct days (this run being the latest). The per-action floor was
+        # already enforced upstream, so no extra confidence gate here.
+        return RULE_RECUR_DAYS > 0 and prior_recurrence(p) >= (RULE_RECUR_DAYS - 1)
+    return conf >= AUTO_APPLY_CONF   # canonical / private CARD append
 
 
 def write_undo_snapshot(target: Path, before_text: str) -> Path | None:

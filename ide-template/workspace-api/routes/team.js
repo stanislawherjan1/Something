@@ -82,6 +82,7 @@ export default function teamRouter() {
       return row;
     });
     const me = req.actor ? team.find(req.actor) : null;
+    res.set('Cache-Control', 'no-store');   // per-user + avatarUrl/shape changes; never serve a stale cached roster
     res.json({
       entries,
       teamMode: team.getTeamMode(),

@@ -1,14 +1,14 @@
 ---
 name: reflect-learnings
-description: Memory consolidation — propose additions to the 7 memory cards based on recent conversation. Output is ALWAYS a JSON proposal list that the apply-script (/opt/ide/hooks/reflect-apply.py) converts to a `memory/_drafts/learnings-YYYY-MM-DD.md` review file. Proposals NEVER apply directly; operator approves via `/memory review` and `/memory approve <id>` on Telegram. Triggered by `[REFLECT_LEARNINGS_TRIGGER]` (daily reminder) or manually via "reflect on learnings", "consolidate memory", "review what we learned".
+description: Memory consolidation — propose additions to the memory cards + concept pages based on recent conversation. Output is ALWAYS a JSON proposal list handed to the apply-script (/opt/ide/hooks/reflect-apply.py), which AUTO-APPLIES the safe additive envelope in the BACKGROUND (concept/topic pages ≥0.75, canonical card appends ≥0.8) with an undo snapshot + audit trail; destructive edits are skipped, and RULES/AGENT_IDENTITY apply only once a fact recurs across distinct days. No operator review — memory is fully autonomous. Triggered by `[REFLECT_LEARNINGS_TRIGGER]` (daily reminder) or manually via "reflect on learnings", "consolidate memory", "review what we learned".
 allowed-tools: Read, Write
 ---
 
-# Reflect-bot: memory consolidation with operator approval
+# Reflect-bot: background memory consolidation
 
 You are reading recent conversation history (RECENT_WEB.md + RECENT_TELEGRAM.md, plus the live thread if invoked in-session). Your job: produce a JSON list of **proposed additions** to the memory cards.
 
-**Critical:** proposals NEVER apply directly to canonical cards. The apply-script (`/opt/ide/hooks/reflect-apply.py`) routes your JSON output to `~/project/memory/_drafts/learnings-YYYY-MM-DD.md` as markdown sections, and the operator approves each one via `/memory approve <id>` on Telegram. Autonomous writes to canonical cards are a one-way ratchet — a wrong proposal lives forever, polluting future cached prefixes. `_drafts/` flow keeps human-in-the-loop without losing the consolidation benefit.
+**How it applies (background, no approval step):** your JSON goes to the apply-script (`/opt/ide/hooks/reflect-apply.py`), which AUTO-APPLIES the safe envelope and records every write to `~/project/memory/_drafts/learnings-YYYY-MM-DD.md` as a struck audit entry (with an undo snapshot). Additive appends land on their own — concept/topic pages at ≥0.75, canonical card appends at ≥0.8. The guardrails against a bad one-way write are mechanical, not a human gate: only ADDITIVE actions auto-apply (destructive `update_field`/`replace_section` are skipped), a secrets kill-list drops credentials, near-duplicates are deduped — and the two most consequential cards, **RULES** and **AGENT_IDENTITY**, never ride a single read: they apply only once the same fact recurs across distinct days (recurrence as the confidence signal). Still propose HIGH-confidence only — a weak proposal just won't clear its bar.
 
 ## Team workspace — whose learnings?
 

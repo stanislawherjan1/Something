@@ -168,7 +168,7 @@ function formatResponse(data) {
   }
 
   if (!parts.length) {
-    throw new Error('Unexpected response from xAI — no output_text found.');
+    throw new Error('Unexpected response from xAI: no output_text found.');
   }
 
   const text = parts.join('\n\n');

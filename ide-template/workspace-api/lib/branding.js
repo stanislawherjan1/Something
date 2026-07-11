@@ -414,7 +414,7 @@ export function saveLogo(buffer) {
 export function applyPresetAvatar(presetId) {
   const n = parseInt(presetId, 10);
   if (!Number.isInteger(n) || n < 1 || n > 16) {
-    throw new Error('Invalid preset ID — must be 1–16.');
+    throw new Error('Invalid preset ID: must be 1–16.');
   }
   const src = join(PRESET_DIR, `${n}.png`);
   if (!existsSync(src)) throw new Error(`Preset ${n} not found.`);

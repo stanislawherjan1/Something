@@ -147,7 +147,7 @@ const TOOLS = [
         spreadsheet_id: { type: 'string' },
         range: {
           type: 'string',
-          description: 'Sheet/range to search for the table — usually just the sheet name like `Sheet1`. Sheets finds the existing table inside this range and appends after its last row.',
+          description: 'Sheet/range to search for the table: usually just the sheet name like `Sheet1`. Sheets finds the existing table inside this range and appends after its last row.',
         },
         values: {
           type: 'array',

@@ -26,31 +26,46 @@ const REMINDERS_URL = '/api/reminders';
  *   3. ": " after first capitalised word group
  *   4. fallback: whole string is the title, no description
  */
+// System-ritual reminders carry a routing marker like [REFLECT_LEARNINGS_TRIGGER]
+// in their text so the bot dispatches the right skill when they fire. That marker
+// is plumbing — never show it. Strip it from anything we display.
+const stripTrigger = (s) =>
+  (typeof s === 'string' ? s.replace(/\[[A-Z0-9_]+_TRIGGER\]\s*/g, '').trim() : '');
+
 function displayParts(reminder) {
   const r = reminder || {};
+  let raw;
   if (typeof r.title === 'string' && r.title.trim()) {
-    return {
+    raw = {
       title: r.title.trim(),
       description: typeof r.description === 'string' ? r.description.trim() : '',
     };
+  } else {
+    const msg = typeof r.message === 'string' ? r.message.trim() : '';
+    if (!msg) return { title: '(no message)', description: '' };
+
+    const splitOn = (sep) => {
+      const ix = msg.indexOf(sep);
+      if (ix < 1) return null;
+      const t = msg.slice(0, ix).trim();
+      const d = msg.slice(ix + sep.length).trim();
+      if (!t || !d) return null;
+      return { title: t, description: d };
+    };
+
+    raw = splitOn('\n')
+        ?? splitOn(' — ')
+        ?? splitOn(' – ')
+        ?? splitOn(': ')
+        ?? { title: msg, description: '' };
   }
-  const msg = typeof r.message === 'string' ? r.message.trim() : '';
-  if (!msg) return { title: '(no message)', description: '' };
 
-  const splitOn = (sep) => {
-    const ix = msg.indexOf(sep);
-    if (ix < 1) return null;
-    const t = msg.slice(0, ix).trim();
-    const d = msg.slice(ix + sep.length).trim();
-    if (!t || !d) return null;
-    return { title: t, description: d };
+  // Never surface the [*_TRIGGER] plumbing. Keep the raw title only if it was
+  // nothing but a marker (so the row never renders empty).
+  return {
+    title: stripTrigger(raw.title) || raw.title,
+    description: stripTrigger(raw.description),
   };
-
-  return splitOn('\n')
-      ?? splitOn(' — ')
-      ?? splitOn(' – ')
-      ?? splitOn(': ')
-      ?? { title: msg, description: '' };
 }
 
 function ReminderHeading({ reminder }) {
@@ -76,7 +91,7 @@ function ReminderHeading({ reminder }) {
  * reminder-mcp owns; we read + write the file directly via /api/files so
  * the bot picks up changes on its next tick.
  */
-export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
+export default function RemindersDashboard({ fileEventNonce, sidebarOpen, embedded = false }) {
   const { botDisplayName } = useBranding();
   // /api/files/read returns 404 when the file doesn't exist yet — useApi
   // surfaces that as `error: "HTTP 404"`. We treat it as "no reminders" to
@@ -137,7 +152,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
   return (
     <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
     <div className="flex h-full min-h-0 flex-col">
-      <EditorHeader icon={Clock} title="Reminders" sidebarOpen={sidebarOpen} />
+      {!embedded && <EditorHeader icon={Clock} title="Reminders" sidebarOpen={sidebarOpen} />}
 
       <div className="flex-1 overflow-auto">
         {!isInitialLoad && !realError && all.length === 0 ? (
@@ -162,7 +177,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                 {/* User-created reminders — what the bot has been asked to schedule */}
                 <Section
                   title="Your reminders"
-                  subtitle={`Timed nudges ${botDisplayName} has scheduled. Each fires on its own channel — Telegram, the web UI, or both — even when no chat session is active. Ask ${botDisplayName} to schedule new ones; clear out anything stale from here.`}
+                  subtitle={`Timed nudges ${botDisplayName} has scheduled. Each fires on its own channel, Telegram, the web UI, or both, even when no chat session is active. Ask ${botDisplayName} to schedule new ones; clear out anything stale from here.`}
                 >
                   {userReminders.length === 0 ? (
                     <EmptyHint>
@@ -188,7 +203,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                 {forOthers.length > 0 && (
                   <Section
                     title="Scheduled for others"
-                    subtitle="Reminders you set for teammates — these fire on their side, not yours. You can still clear them from here."
+                    subtitle="Reminders you set for teammates: these fire on their side, not yours. You can still clear them from here."
                   >
                     <div className="flex flex-col gap-2">
                       {forOthers.map(r => (
@@ -212,11 +227,11 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen }) {
                   <div className="opacity-65 transition-opacity hover:opacity-100">
                     <Section
                       title="System rituals"
-                      subtitle={`Built-in self-maintenance — ${botDisplayName} runs these to keep the workspace clean and the memory index fresh, then reports to Telegram. Platform-managed; not deletable.`}
+                      subtitle={`Built-in self-maintenance: ${botDisplayName} runs these to keep the workspace clean and the memory index fresh, then reports to Telegram. Platform-managed; not deletable.`}
                     >
                       <div className="flex flex-col gap-2">
                         {systemReminders.map(r => (
-                          <SystemReminderRow key={r.id} reminder={r} />
+                          <SystemReminderRow key={r.id} reminder={r} people={people} />
                         ))}
                       </div>
                     </Section>
@@ -398,7 +413,7 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
             {paused && (
               <span
                 className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium text-amber-600/90 dark:text-amber-400/90"
-                title="Paused — this reminder won't fire until it's resumed"
+                title="Paused: this reminder won't fire until it's resumed"
               >
                 <PauseCircle className="size-2.5" strokeWidth={2} />
                 Paused
@@ -495,10 +510,14 @@ function EmptyHint({ children }) {
 // can't be deleted from chat or UI — they're platform-managed) and no extra
 // "system" tag (the section heading + dimmed opacity already convey that).
 
-function SystemReminderRow({ reminder }) {
+function SystemReminderRow({ reminder, people }) {
   // System rituals are platform-managed — same compact, expandable row, just
-  // no delete affordance (omitting onDelete hides the trash button).
-  return <ReminderRow reminder={reminder} />;
+  // no delete affordance (omitting onDelete hides the trash button). Pass
+  // `people` (slug → {name, avatar}) so a per-user ritual (the morning-planner,
+  // which carries recipients) renders the recipient's PROFILE PHOTO instead of a
+  // slug-initial fallback. Without this prop the badge got an empty map and
+  // always showed the initial — no data refresh could fix it.
+  return <ReminderRow reminder={reminder} people={people} />;
 }
 
 // ─── Delete modal ──────────────────────────────────────────────────────────
@@ -557,7 +576,7 @@ function DeleteReminderModal({ reminder, onClose, onDeleted }) {
             <div className="text-[15px] font-semibold text-foreground">Delete reminder?</div>
             <div className="mt-1 text-[13px] leading-relaxed text-muted-foreground/85">
               <span className="font-medium text-foreground/80">"{displayParts(reminder).title}"</span>
-              {' '}— due {formatAbsolute(due)}. This can't be undone.
+              , due {formatAbsolute(due)}. This can't be undone.
             </div>
             {error && (
               <div className="mt-3 rounded border border-destructive/25 bg-destructive/[0.04] px-2.5 py-1.5 text-[12px] text-destructive">

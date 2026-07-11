@@ -127,7 +127,7 @@ const TOOLS = [
       properties: {
         prompt: {
           type: 'string',
-          description: 'Text description of the image. Be detailed — subject, action, environment, style, lighting, composition. Max ~600 words.',
+          description: 'Text description of the image. Be detailed: subject, action, environment, style, lighting, composition. Max ~600 words.',
         },
         size: {
           type: 'string',
@@ -153,13 +153,13 @@ const TOOLS = [
 
   {
     name: 'edit_image',
-    description: 'Edit an existing image using a text instruction — change style, colors, background, elements, texture, etc. Accepts local file path or HTTPS URL. Returns saved file path.',
+    description: 'Edit an existing image using a text instruction: change style, colors, background, elements, texture, etc. Accepts local file path or HTTPS URL. Returns saved file path.',
     inputSchema: {
       type: 'object',
       properties: {
         image: {
           type: 'string',
-          description: 'Source image — local file path or HTTPS URL.',
+          description: 'Source image: local file path or HTTPS URL.',
         },
         prompt: {
           type: 'string',
@@ -186,7 +186,7 @@ const TOOLS = [
       properties: {
         image: {
           type: 'string',
-          description: 'Source image — local file path or HTTPS URL.',
+          description: 'Source image: local file path or HTTPS URL.',
         },
         size: {
           type: 'string',
