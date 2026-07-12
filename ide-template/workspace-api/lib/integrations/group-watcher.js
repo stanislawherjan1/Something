@@ -801,7 +801,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
     '',
-    'SENDING A FILE (PDF, doc, sheet, image) into this group: your text messages CANNOT carry an attachment. The ONE way to deliver a file is to emit a marker `[[SEND_FILE <absolute path>]]` on its own — the system uploads that file (it must live under the project directory) and removes the marker from your message. So: put the file somewhere in the project, then emit the marker. NEVER say you have sent, attached, or delivered a file unless you actually emitted a `[[SEND_FILE ...]]` marker for it in THIS reply — claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.',
+    `SENDING A FILE (PDF, doc, sheet, image): your text messages CANNOT carry an attachment. To deliver a file INTO THIS GROUP, emit \`[[SEND_FILE <absolute path>]]\` on its own — the system uploads that file (it must live under the project directory) and removes the marker. To deliver a file to ${senderName}'s PRIVATE DM instead ("send it to me privately", "na priv"), emit \`[[SEND_FILE_DM <absolute path>]]\` — same rules, goes only to the person whose message you are answering. NEVER say you have sent, attached, or delivered a file — to the group OR to a DM — unless you actually emitted the matching marker in THIS reply; claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.`,
     'MAKING A PDF: use the `render_pdf` tool (pdf-mcp) — give it a markdown file or inline markdown and it returns a clean, correctly typeset PDF (tables, accents and Unicode all render right). NEVER hand-write raw PDF bytes or a Python PDF builder — that path produces blank pages and broken tables. After rendering, call `preview_pdf` and Read the returned image to SEE the result before you deliver it, especially when asked to check it visually. Then deliver it with the `[[SEND_FILE ...]]` marker above.',
     target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
     target && target.docPath ? `\n\nThe "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
@@ -847,6 +847,13 @@ const MAX_PARTS = num('GROUP_MAX_PARTS', 5);
 // still-streaming partial marker waits for the rest.
 const SEND_FILE_RE = /`{0,3}\[\[\s*SEND_FILE\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
 const MAX_FILES = num('GROUP_MAX_FILES', 3);
+
+// DM variant (caught live 2026-07-12: "wyślij mi to w DM" had NO mechanism — the
+// brain claimed a DM send it couldn't make, twice). [[SEND_FILE_DM <path>]]
+// uploads the file to the REQUESTER's private DM instead of the group. The
+// destination is ALWAYS the target message's from_id — resolved by the watcher,
+// never parsed from brain output (no fan-out). Same PROJECT_DIR confinement.
+const SEND_FILE_DM_RE = /`{0,3}\[\[\s*SEND_FILE_DM\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
 
 // Private-task delegation marker (Phase 1, D2 layer 3): the group brain cannot
 // touch private trees, so when the requester asks for THEIR OWN private data it
@@ -911,6 +918,19 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     // rather than letting the brain's "here's the file" text stand as a lie.
     const flushFiles = () => {
       let m;
+      // DM variant first (no regex overlap — the group marker requires whitespace
+      // right after SEND_FILE — but handling it first keeps the intent obvious).
+      while (files < MAX_FILES && (m = text.match(SEND_FILE_DM_RE))) {
+        const filePath = m[1].trim();
+        text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+        files += 1;
+        startTyping();
+        sendGroupDocument(target.from_id, filePath, { logKind: 'group' })
+          .then((r) => {
+            if (!r.ok) sendTelegramMessage(group.chatId, `(couldn't deliver that file to the DM — ${r.error})`, { logKind: 'group' }).catch(() => {});
+          })
+          .catch(() => {});
+      }
       while (files < MAX_FILES && (m = text.match(SEND_FILE_RE))) {
         const filePath = m[1].trim();
         text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
@@ -935,9 +955,9 @@ function groupCompose(group, ctxMsgs, target, session = null) {
           if (info && info.sessionId) capturedSessionId = info.sessionId;
           extractPrivateTask();
           flushFiles();
-          // Strip any residual SEND_FILE / PRIVATE_TASK markers (e.g. beyond the
-          // caps) so a raw marker never leaks into the posted text.
-          text = text.replace(/`{0,3}\[\[\s*SEND_FILE\s+[^\]\n]+?\s*\]\]`{0,3}/gi, '');
+          // Strip any residual SEND_FILE / SEND_FILE_DM / PRIVATE_TASK markers
+          // (e.g. beyond the caps) so a raw marker never leaks into posted text.
+          text = text.replace(/`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+[^\]\n]+?\s*\]\]`{0,3}/gi, '');
           text = text.replace(/`{0,3}\[\[\s*PRIVATE_TASK\s+[\s\S]{1,600}?\s*\]\]`{0,3}/gi, '');
           finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, privateTask, sessionId: capturedSessionId });
         },
@@ -974,7 +994,7 @@ async function runPrivateDelegate(chatId, group, target, task) {
       const timer = setTimeout(() => finish(null), DELEGATE_TIMEOUT);
       try {
         proc = runClaudeTurn({
-          message: `[PRIVATE TASK — delegated from the team group chat "${clip(group.title || chatId, 40)}"] ${senderName} asked there for something that needs their PRIVATE space, which group turns cannot touch. Do it now, in their private scope, and write the result as a direct Telegram DM to ${senderName} (plain text, their language, no preamble — your final output IS the DM):\n\n${clip(task, 600)}`,
+          message: `[PRIVATE TASK — delegated from the team group chat "${clip(group.title || chatId, 40)}"] ${senderName} asked there for something that needs their PRIVATE space, which group turns cannot touch. Do it now, in their private scope, and write the result as a direct Telegram DM to ${senderName} (plain text, their language, no preamble, no meta-commentary about this task — your final output IS the DM, written as if you were simply replying to them). To attach a file, emit \`[[SEND_FILE <absolute path under the project>]]\` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker:\n\n${clip(task, 600)}`,
           actor: member.slug,
           actorName: senderName,
           actorIsAdmin: member.role === 'admin',
@@ -987,8 +1007,21 @@ async function runPrivateDelegate(chatId, group, target, task) {
       } catch { finish(null); }
     });
     if (result) {
-      await sendTelegramMessage(target.from_id, finalizeReply(result), { logKind: 'group' });
-      process.stderr.write(`[group-watcher] private delegate for ${member.slug} delivered to DM\n`);
+      // Deliver any [[SEND_FILE …]] attachments the delegate emitted (to the
+      // requester's DM — same confinement as group uploads), then the text.
+      let dmText = result;
+      let m, sentFiles = 0;
+      const DM_FILE_RE = /`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
+      while (sentFiles < MAX_FILES && (m = dmText.match(DM_FILE_RE))) {
+        const fp = m[1].trim();
+        dmText = dmText.slice(0, m.index) + dmText.slice(m.index + m[0].length);
+        sentFiles += 1;
+        const r = await sendGroupDocument(target.from_id, fp, { logKind: 'group' }).catch(() => ({ ok: false, error: 'send crashed' }));
+        if (!r.ok) dmText += `\n(nie udało się załączyć pliku: ${r.error})`;
+      }
+      dmText = finalizeReply(dmText);
+      if (dmText) await sendTelegramMessage(target.from_id, dmText, { logKind: 'group' });
+      process.stderr.write(`[group-watcher] private delegate for ${member.slug} delivered to DM (${sentFiles} file(s))\n`);
     } else {
       // The delegate died — the requester was told "it's headed to your DM", so
       // a silent failure here would be a broken promise. One short group notice.
