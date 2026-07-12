@@ -212,6 +212,38 @@
       }
     },
     {
+      "id": "parallel",
+      "label": "Parallel Search",
+      "logo": "/integrations/parallel.png",
+      "description": "Real-time web search and content extraction for research via Parallel's official hosted MCP server. Open server, no account needed — activate and it just works.",
+      "category": "ai",
+      "fields": [],
+      "mcp": {
+        "type": "http",
+        "url": "https://search.parallel.ai/mcp",
+        "name": "parallel",
+        "allowedHosts": [
+          "search.parallel.ai"
+        ]
+      }
+    },
+    {
+      "id": "cryptocom",
+      "label": "Crypto.com",
+      "logo": "/integrations/cryptocom.png",
+      "description": "Real-time crypto prices, order books, conversions, and candlestick charts via Crypto.com's official hosted MCP server. Open market-data server — activate and it just works.",
+      "category": "commerce",
+      "fields": [],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.crypto.com/market-data/mcp",
+        "name": "cryptocom",
+        "allowedHosts": [
+          "mcp.crypto.com"
+        ]
+      }
+    },
+    {
       "id": "telegram",
       "label": "Telegram",
       "logo": "/integrations/telegram.svg",
@@ -964,7 +996,7 @@
     {
       "id": "monday",
       "label": "monday.com",
-      "logo": "/integrations/monday.svg",
+      "logo": "/integrations/monday.png",
       "description": "Boards, items, and updates via monday.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "productivity",
       "fields": [
@@ -1119,7 +1151,7 @@
     {
       "id": "klaviyo",
       "label": "Klaviyo",
-      "logo": "/integrations/klaviyo.svg",
+      "logo": "/integrations/klaviyo.png",
       "description": "Campaigns, flows, lists, and metrics via Klaviyo's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "marketing",
       "fields": [
@@ -1135,6 +1167,28 @@
         "name": "klaviyo",
         "allowedHosts": [
           "mcp.klaviyo.com"
+        ]
+      }
+    },
+    {
+      "id": "mailchimp",
+      "label": "Mailchimp",
+      "logo": "/integrations/mailchimp.svg",
+      "description": "Audiences, campaigns, and reports via Mailchimp's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "marketing",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Mailchimp connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://ai-inc.mailchimp.com/claude/mcp/v2",
+        "name": "mailchimp",
+        "allowedHosts": [
+          "ai-inc.mailchimp.com"
         ]
       }
     },
@@ -1340,7 +1394,7 @@
     {
       "id": "canva",
       "label": "Canva",
-      "logo": "/integrations/canva.svg",
+      "logo": "/integrations/canva.png",
       "description": "Designs and brand assets via Canva's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "content",
       "fields": [
@@ -1362,7 +1416,7 @@
     {
       "id": "amplitude",
       "label": "Amplitude",
-      "logo": "/integrations/amplitude.svg",
+      "logo": "/integrations/amplitude.png",
       "description": "Product analytics, charts, and cohorts via Amplitude's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "marketing",
       "fields": [
