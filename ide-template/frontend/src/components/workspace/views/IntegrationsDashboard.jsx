@@ -173,34 +173,65 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     return reloadApi();
   }, [reloadApi]);
 
+  // Lightweight local toasts — immediate feedback for one-click/open activations
+  // so the user always knows what happened (the SSE toast stream is for
+  // server-pushed events, too heavy for a click confirmation).
+  const [toasts, setToasts] = useState([]);
+  const toastSeq = useRef(0);
+  const dismissToast = useCallback((id) => setToasts(t => t.filter(x => x.id !== id)), []);
+  const pushToast = useCallback((text, kind = 'ok', ttl = 4500) => {
+    const id = ++toastSeq.current;
+    setToasts(t => [...t, { id, text, kind }]);
+    if (ttl) setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ttl);
+    return id;
+  }, []);
+
   const openActivate = useCallback((integration) => {
+    const label = integration.label || integration.id;
     // Remote-MCP OAuth entries skip the fields modal entirely: the whole
     // activation is the provider consent popup → server-side callback
     // (routes/integrations.js). The popup must open synchronously inside
     // this click handler or popup blockers eat it.
     if (isRemoteMcpOauth(integration)) {
-      window.open(
+      const popup = window.open(
         `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start`,
         `oauth-${integration.id}`,
         'popup,width=560,height=720',
       );
+      // The popup postMessages us on success (handled below). As a fallback for
+      // when it can't reach the opener, revalidate once when it closes — a
+      // single scoped refetch, NOT a blanket focus listener (that caused the
+      // page to refresh on every tab switch).
+      if (popup) {
+        const timer = setInterval(() => {
+          if (popup.closed) { clearInterval(timer); reload(); }
+        }, 700);
+        setTimeout(() => clearInterval(timer), 300_000);
+      }
       return;
     }
     // Open (no-auth) MCP servers have nothing to configure — activate directly,
-    // no modal, no popup. The tile flips to Active on reload.
+    // no modal, no popup. Toast gives immediate feedback (no scroll jump).
     if (isOpenServer(integration)) {
+      const pending = pushToast(`Activating ${label}…`, 'pending', 0);
       fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: {} }),
-      }).then(() => reload()).catch(() => {});
+      }).then(async (r) => {
+        dismissToast(pending);
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { pushToast(d.error || `Couldn't activate ${label}.`, 'error'); return; }
+        pushToast(d.restarting ? `${label} connected — updating the assistant (~15s)` : `${label} connected`, 'ok');
+        reload();
+      }).catch(() => { dismissToast(pending); pushToast('Could not reach the server.', 'error'); });
       return;
     }
     const next = new URLSearchParams(searchParams);
     next.set('activate', integration.id);
     setSearchParams(next);
-  }, [searchParams, setSearchParams, reload]);
+  }, [searchParams, setSearchParams, reload, pushToast, dismissToast]);
 
   const closeActivate = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -209,26 +240,22 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     setActivating(null);
   }, [searchParams, setSearchParams]);
 
-  // Refresh the tiles after an OAuth popup finishes so the card flips to
-  // Active without a manual page reload. Two triggers, either is enough:
-  //   1. the popup's landing page postMessages us (oauthResultPage in
-  //      routes/integrations.js);
-  //   2. window regains focus when the popup closes — covers the case where
-  //      the popup couldn't reach window.opener.
-  // Declared after `reload` so its [reload] dep isn't read in the TDZ.
+  // The OAuth popup's landing page postMessages us when the flow finishes
+  // (oauthResultPage in routes/integrations.js) — flip the tile to Active and
+  // toast the result. NO window 'focus' listener: that fired reload() on every
+  // tab switch, which is what made the page refresh for no reason.
   useEffect(() => {
     const onMessage = (e) => {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type !== 'integration-oauth') return;
+      const label = integrations.find(i => i.id === e.data.id)?.label || 'Integration';
+      if (e.data.ok) pushToast(`${label} connected — updating the assistant (~15s)`, 'ok');
+      else pushToast(`${label} didn't connect. Try again.`, 'error');
       reload();
     };
     window.addEventListener('message', onMessage);
-    window.addEventListener('focus', reload);
-    return () => {
-      window.removeEventListener('message', onMessage);
-      window.removeEventListener('focus', reload);
-    };
-  }, [reload]);
+    return () => window.removeEventListener('message', onMessage);
+  }, [reload, pushToast, integrations]);
 
   // First-ever mount with no cache hit → skeleton. Subsequent tab switches
   // have data immediately and revalidate silently in the background.
@@ -438,6 +465,43 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           onClose={() => setSettingsFor(null)}
           onSuccess={() => { setSettingsFor(null); reload(); }}
         />
+      )}
+
+      {/* Local toast stack — connection + assistant-restart feedback. Fixed
+          overlay so it never shifts page layout. */}
+      {toasts.length > 0 && (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex flex-col gap-2">
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+              className={cn(
+                'pointer-events-auto flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium shadow-lg backdrop-blur',
+                t.kind === 'error'
+                  ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                  : t.kind === 'pending'
+                    ? 'border-border/60 bg-card/95 text-foreground/80'
+                    : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+              )}
+            >
+              {t.kind === 'ok'      && <CheckCircle2 className="size-4 shrink-0" strokeWidth={2.2} />}
+              {t.kind === 'pending' && <Loader2 className="size-4 shrink-0 animate-spin" strokeWidth={2.2} />}
+              {t.kind === 'error'   && <AlertTriangle className="size-4 shrink-0" strokeWidth={2.2} />}
+              <span>{t.text}</span>
+              <button
+                type="button"
+                onClick={() => dismissToast(t.id)}
+                className="ml-1 -mr-1 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
+                aria-label="Dismiss"
+              >
+                <X className="size-3.5" strokeWidth={2} />
+              </button>
+            </motion.div>
+          ))}
+        </div>
       )}
     </div>
   );
