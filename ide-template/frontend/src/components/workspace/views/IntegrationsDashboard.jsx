@@ -530,39 +530,23 @@ function Marketplace({
         })}
       </div>
 
-      {/* Result grid OR empty state. Two labeled groups: one-click OAuth
-          connections (remote-MCP, no credentials to paste) surface above the
-          classic paste-a-key integrations so the effortless path is the
-          first thing an operator sees. */}
+      {/* Single alphabetical grid — no one-click/manual split. */}
       {filtered > 0 ? (
-        [
-          { key: 'one-click', label: 'One-click connect', hint: 'Sign in and approve (or just activate) — no API keys.', list: items.filter(i => isOneClick(i)) },
-          { key: 'manual',    label: 'Manual setup',      hint: 'Needs an API key or token from the provider.',          list: items.filter(i => !isOneClick(i)) },
-        ].filter(g => g.list.length > 0).map(group => (
-        <div key={group.key} className="flex flex-col gap-2.5">
-          <div className="flex items-baseline gap-2.5">
-            <div className="text-[12px] font-semibold uppercase tracking-wider text-foreground/70">{group.label}</div>
-            {group.key === 'one-click' && (
-              <span className="rounded-full bg-violet-500/12 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
-            )}
-            <div className="text-[11.5px] text-muted-foreground/65">{group.hint}</div>
-          </div>
-          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
-          {group.list.map((integration) => (
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+          {items.map((integration) => (
             <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
               <IntegrationTile
                 integration={integration}
                 ready={ready}
                 canManage={canManage}
+                showStatus={false}
                 onActivate={() => onActivate(integration)}
                 onRemove={() => onRemove(integration)}
                 onSettings={() => onSettings(integration)}
               />
             </motion.div>
           ))}
-          </div>
         </div>
-        ))
       ) : (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-6 py-10 text-center">
           <Search className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
@@ -590,11 +574,12 @@ function Marketplace({
 
 // ─── Tile ──────────────────────────────────────────────────────────────────
 
-function IntegrationTile({ integration, ready, canManage = true, onActivate, onRemove, onSettings }) {
+function IntegrationTile({ integration, ready, canManage = true, showStatus = true, onActivate, onRemove, onSettings }) {
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
   const hasSettings  = isActive && (integration.fields || []).some(f => f.globalForMulti);
+  const isBeta       = isOneClick(integration);   // provider-hosted MCP — still in beta
 
   return (
     <div className={cn(
@@ -607,18 +592,25 @@ function IntegrationTile({ integration, ready, canManage = true, onActivate, onR
       {/* Header — logo + status pill */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
         <Logo src={integration.logo} alt={integration.label} dim={isComingSoon || cantActivate} />
-        {isActive && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-            <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
-            Active
-          </span>
-        )}
-        {isComingSoon && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-            <Clock className="size-2.5" strokeWidth={2.5} />
-            Soon
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {isBeta && !isComingSoon && (
+            <span className="inline-flex items-center rounded-full bg-violet-500/12 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+              Beta
+            </span>
+          )}
+          {isActive && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
+              Active
+            </span>
+          )}
+          {isComingSoon && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+              <Clock className="size-2.5" strokeWidth={2.5} />
+              Soon
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -628,7 +620,7 @@ function IntegrationTile({ integration, ready, canManage = true, onActivate, onR
           {isComingSoon ? (integration.comingSoonReason || integration.description) : integration.description}
         </div>
 
-        {isActive && (
+        {isActive && showStatus && (
           <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
             {integration.multi ? (
               <span className="text-[11.5px] text-foreground/75">
