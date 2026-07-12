@@ -26,12 +26,29 @@
  */
 
 import { auth, refreshAuthorization, discoverOAuthProtectedResourceMetadata, discoverAuthorizationServerMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from '../config.js';
 import * as catalog from './catalog.js';
 import * as store from './store.js';
+
+// workspace-api has no direct egress; its outbound must go through the egress
+// proxy. The OAuth broker talks to provider hosts (discovery, DCR, token,
+// refresh) BEFORE the integration is active — so the provider host is NOT yet
+// on the strict per-integration allowlist (that's written on activation). We
+// route these fetches through the proxy's OPEN listener (the same path
+// Playwright browsing uses), which permits any public host without per-host
+// allowlisting, and blocks RFC1918/loopback. Scoped to the OAuth SDK calls via
+// fetchFn so the rest of wsapi (incl. its loopback fetches) is untouched.
+//
+// Set MCP_OAUTH_PROXY_URL='' to disable (local dev with direct internet).
+const OAUTH_PROXY_URL = process.env.MCP_OAUTH_PROXY_URL ?? 'http://egress-proxy:3130';
+const oauthDispatcher = OAUTH_PROXY_URL ? new ProxyAgent(OAUTH_PROXY_URL) : undefined;
+const proxyFetch = oauthDispatcher
+  ? (url, init) => undiciFetch(url, { ...init, dispatcher: oauthDispatcher })
+  : undefined;   // undefined → SDK falls back to its default global fetch
 
 const DIR          = process.env.WSAPI_STORE_DIR || join(PROJECT_DIR, '.integrations');
 const CLIENTS_FILE = join(DIR, 'mcp-oauth-clients.json');
@@ -86,10 +103,10 @@ async function authServerFor(serverUrl) {
   if (hit && Date.now() - hit.fetchedAt < 3600_000) return hit;
   let asUrl = serverUrl;
   try {
-    const prm = await discoverOAuthProtectedResourceMetadata(serverUrl);
+    const prm = await discoverOAuthProtectedResourceMetadata(serverUrl, undefined, proxyFetch);
     if (prm?.authorization_servers?.length) asUrl = prm.authorization_servers[0];
   } catch { /* some servers skip RFC 9728; AS then defaults to the MCP origin */ }
-  const metadata = await discoverAuthorizationServerMetadata(asUrl);
+  const metadata = await discoverAuthorizationServerMetadata(asUrl, { fetchFn: proxyFetch });
   const entry = { asUrl, metadata, fetchedAt: Date.now() };
   discovery.set(serverUrl, entry);
   return entry;
@@ -155,7 +172,7 @@ export async function startAuth(id, baseUrl) {
   const flow = { state: randomBytes(24).toString('base64url') };
   const provider = makeProvider(id, redirectUrl, flow);
 
-  const result = await auth(provider, { serverUrl: cat.mcp.url });
+  const result = await auth(provider, { serverUrl: cat.mcp.url, fetchFn: proxyFetch });
   if (result !== 'REDIRECT' || !flow.authorizeUrl) {
     throw new Error(`unexpected auth result for ${id}: ${result}`);
   }
@@ -184,7 +201,7 @@ export async function handleCallback(state, code) {
 
   const flow = { state, verifier: flow0.verifier };
   const provider = makeProvider(flow0.id, flow0.redirectUrl, flow);
-  const result = await auth(provider, { serverUrl: flow0.serverUrl, authorizationCode: code });
+  const result = await auth(provider, { serverUrl: flow0.serverUrl, authorizationCode: code, fetchFn: proxyFetch });
   if (result !== 'AUTHORIZED' || !flow.tokens) {
     throw new Error(`token exchange failed for ${flow0.id}: ${result}`);
   }
@@ -234,6 +251,7 @@ export async function getFreshToken(id) {
         clientInformation,
         refreshToken: tokens.refresh_token,
         resource: new URL(cat.mcp.url),
+        fetchFn: proxyFetch,
       });
       const next = {
         access_token:  t.access_token,
