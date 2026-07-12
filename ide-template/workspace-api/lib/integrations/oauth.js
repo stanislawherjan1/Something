@@ -26,7 +26,7 @@
  */
 
 import { auth, refreshAuthorization, discoverOAuthProtectedResourceMetadata, discoverAuthorizationServerMetadata } from '@modelcontextprotocol/sdk/client/auth.js';
-import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { ProxyAgent } from 'undici';
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -46,8 +46,12 @@ import * as store from './store.js';
 // Set MCP_OAUTH_PROXY_URL='' to disable (local dev with direct internet).
 const OAUTH_PROXY_URL = process.env.MCP_OAUTH_PROXY_URL ?? 'http://egress-proxy:3130';
 const oauthDispatcher = OAUTH_PROXY_URL ? new ProxyAgent(OAUTH_PROXY_URL) : undefined;
+// Use the GLOBAL fetch (not undici's exported fetch) so the SDK's
+// `input instanceof Response` checks pass — undici's Response is a different
+// class, which made the SDK's error parser stringify it to "[object Response]"
+// on any non-2xx. Node's global fetch still honours undici's `dispatcher`.
 const proxyFetch = oauthDispatcher
-  ? (url, init) => undiciFetch(url, { ...init, dispatcher: oauthDispatcher })
+  ? (url, init) => fetch(url, { ...init, dispatcher: oauthDispatcher })
   : undefined;   // undefined → SDK falls back to its default global fetch
 
 const DIR          = process.env.WSAPI_STORE_DIR || join(PROJECT_DIR, '.integrations');
