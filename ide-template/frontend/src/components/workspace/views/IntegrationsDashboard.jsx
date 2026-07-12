@@ -10,7 +10,8 @@ import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
 import { SkeletonCardGrid } from '@/components/ui/Skeleton';
-import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } from '../RestartBanners';
+import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases, RESTART_WINDOW_MS } from '../RestartBanners';
+import { Plus as PlusIcon } from 'lucide-react';
 
 /**
  * Substitute {{key}} occurrences in `text` with values from `vars`. Used to
@@ -185,6 +186,17 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     if (ttl) setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ttl);
     return id;
   }, []);
+  // A single progress toast for the bot restart the activation triggers —
+  // replaces the old in-modal RestartingBanner/DoneBanner so every path funnels
+  // through toasts. Bar fills over the restart window, then flips to "ready".
+  const pushRestartToast = useCallback(() => {
+    const id = ++toastSeq.current;
+    setToasts(t => [...t, { id, kind: 'progress', text: 'Updating the assistant…', duration: RESTART_WINDOW_MS }]);
+    setTimeout(() => {
+      setToasts(t => t.map(x => x.id === id ? { ...x, kind: 'ok', text: 'Assistant ready' } : x));
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2500);
+    }, RESTART_WINDOW_MS);
+  }, []);
 
   const openActivate = useCallback((integration) => {
     const label = integration.label || integration.id;
@@ -223,7 +235,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         dismissToast(pending);
         const d = await r.json().catch(() => ({}));
         if (!r.ok) { pushToast(d.error || `Couldn't activate ${label}.`, 'error'); return; }
-        pushToast(d.restarting ? `${label} connected — updating the assistant (~15s)` : `${label} connected`, 'ok');
+        pushToast(`${label} connected`, 'ok');
+        if (d.restarting) pushRestartToast();
         reload();
       }).catch(() => { dismissToast(pending); pushToast('Could not reach the server.', 'error'); });
       return;
@@ -231,7 +244,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     const next = new URLSearchParams(searchParams);
     next.set('activate', integration.id);
     setSearchParams(next);
-  }, [searchParams, setSearchParams, reload, pushToast, dismissToast]);
+  }, [searchParams, setSearchParams, reload, pushToast, dismissToast, pushRestartToast]);
 
   const closeActivate = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -249,13 +262,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type !== 'integration-oauth') return;
       const label = integrations.find(i => i.id === e.data.id)?.label || 'Integration';
-      if (e.data.ok) pushToast(`${label} connected — updating the assistant (~15s)`, 'ok');
+      if (e.data.ok) { pushToast(`${label} connected`, 'ok'); pushRestartToast(); }
       else pushToast(`${label} didn't connect. Try again.`, 'error');
       reload();
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [reload, pushToast, integrations]);
+  }, [reload, pushToast, pushRestartToast, integrations]);
 
   // First-ever mount with no cache hit → skeleton. Subsequent tab switches
   // have data immediately and revalidate silently in the background.
@@ -479,17 +492,17 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               exit={{ opacity: 0 }}
               transition={{ type: 'spring', stiffness: 340, damping: 28 }}
               className={cn(
-                'pointer-events-auto flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-medium shadow-lg backdrop-blur',
+                'pointer-events-auto relative flex items-center gap-2.5 overflow-hidden rounded-lg border px-3.5 py-2.5 text-[13px] font-medium shadow-lg backdrop-blur',
                 t.kind === 'error'
                   ? 'border-destructive/30 bg-destructive/10 text-destructive'
-                  : t.kind === 'pending'
+                  : (t.kind === 'pending' || t.kind === 'progress')
                     ? 'border-border/60 bg-card/95 text-foreground/80'
                     : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
               )}
             >
-              {t.kind === 'ok'      && <CheckCircle2 className="size-4 shrink-0" strokeWidth={2.2} />}
-              {t.kind === 'pending' && <Loader2 className="size-4 shrink-0 animate-spin" strokeWidth={2.2} />}
-              {t.kind === 'error'   && <AlertTriangle className="size-4 shrink-0" strokeWidth={2.2} />}
+              {t.kind === 'ok'        && <CheckCircle2 className="size-4 shrink-0" strokeWidth={2.2} />}
+              {(t.kind === 'pending' || t.kind === 'progress') && <Loader2 className="size-4 shrink-0 animate-spin" strokeWidth={2.2} />}
+              {t.kind === 'error'     && <AlertTriangle className="size-4 shrink-0" strokeWidth={2.2} />}
               <span>{t.text}</span>
               <button
                 type="button"
@@ -499,6 +512,16 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               >
                 <X className="size-3.5" strokeWidth={2} />
               </button>
+              {t.kind === 'progress' && (
+                <div className="absolute inset-x-0 bottom-0 h-[2.5px] bg-border/40">
+                  <motion.div
+                    className="h-full bg-foreground/45"
+                    initial={{ width: '0%' }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: (t.duration || RESTART_WINDOW_MS) / 1000, ease: 'linear' }}
+                  />
+                </div>
+              )}
             </motion.div>
           ))}
         </div>
@@ -618,19 +641,17 @@ function Marketplace({
         })}
       </div>
 
-      {/* Single alphabetical grid — no one-click/manual split. */}
+      {/* Compact single alphabetical grid — 2 columns of dense rows. */}
       {filtered > 0 ? (
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
           {items.map((integration) => (
             <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
-              <IntegrationTile
+              <CompactTile
                 integration={integration}
                 ready={ready}
                 canManage={canManage}
-                showStatus={false}
                 onActivate={() => onActivate(integration)}
                 onRemove={() => onRemove(integration)}
-                onSettings={() => onSettings(integration)}
               />
             </motion.div>
           ))}
@@ -661,6 +682,63 @@ function Marketplace({
 }
 
 // ─── Tile ──────────────────────────────────────────────────────────────────
+
+// Compact horizontal row for the Marketplace grid — logo + name (+ inline
+// Beta/Active/Soon tag) + one-line description + a round action button. Denser
+// than the card so far more fits at once.
+function CompactTile({ integration, ready, canManage = true, onActivate, onRemove }) {
+  const isActive     = integration.active;
+  const isComingSoon = !!integration.comingSoon;
+  const cantActivate = !ready && !isActive && !isComingSoon;
+  const isBeta       = isOneClick(integration);
+  const desc         = integration.tagline || integration.description;
+  const btn = 'flex size-8 shrink-0 items-center justify-center rounded-full border transition-all';
+
+  return (
+    <div className={cn(
+      'group flex items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 transition-all',
+      isActive                            ? 'border-emerald-500/25' :
+      (isComingSoon || cantActivate)      ? 'border-border/40' :
+                                            'border-border/60 hover:border-foreground/20 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
+    )}>
+      <Logo src={integration.logo} alt={integration.label} dim={isComingSoon || cantActivate} />
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-[13.5px] font-semibold text-foreground/90">{integration.label}</span>
+          {isBeta && !isComingSoon && !isActive && (
+            <span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
+          )}
+          {isActive && (
+            <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Active</span>
+          )}
+          {isComingSoon && (
+            <span className="shrink-0 rounded-full bg-muted/70 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80">Soon</span>
+          )}
+        </div>
+        <div className="truncate text-[12px] leading-snug text-muted-foreground/80">
+          {isComingSoon ? (integration.comingSoonReason || desc) : desc}
+        </div>
+      </div>
+
+      {!canManage   ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')}><Lock className="size-3.5" strokeWidth={1.75} /></span>
+       : isComingSoon ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')}><Clock className="size-3.5" strokeWidth={1.75} /></span>
+       : cantActivate ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
+       : isActive     ? (
+          <button type="button" onClick={onRemove} title="Remove" aria-label="Remove"
+            className={cn(btn, 'border-emerald-500/30 text-emerald-600 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive dark:text-emerald-400')}>
+            <CheckCircle2 className="size-4 group-hover:hidden" strokeWidth={2} />
+            <Trash2 className="hidden size-3.5 group-hover:block" strokeWidth={1.9} />
+          </button>
+        ) : (
+          <button type="button" onClick={onActivate} title={isOneClick(integration) ? 'Connect' : 'Add'} aria-label="Add"
+            className={cn(btn, 'border-border/60 text-foreground/55 hover:border-foreground/40 hover:bg-foreground hover:text-background active:scale-95')}>
+            <PlusIcon className="size-4" strokeWidth={2} />
+          </button>
+        )}
+    </div>
+  );
+}
 
 function IntegrationTile({ integration, ready, canManage = true, showStatus = true, onActivate, onRemove, onSettings }) {
   const isActive     = integration.active;
