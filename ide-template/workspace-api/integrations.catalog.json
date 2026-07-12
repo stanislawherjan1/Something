@@ -895,28 +895,6 @@
       }
     },
     {
-      "id": "asana",
-      "label": "Asana",
-      "logo": "/integrations/asana.svg",
-      "description": "Tasks, projects, and goals via Asana's official hosted MCP server. Connects with one click — sign in to Asana and approve; no API keys to paste.",
-      "category": "productivity",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Asana connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.asana.com/v2/mcp",
-        "name": "asana",
-        "allowedHosts": [
-          "mcp.asana.com"
-        ]
-      }
-    },
-    {
       "id": "linear",
       "label": "Linear",
       "logo": "/integrations/linear.svg",
@@ -957,28 +935,6 @@
         "name": "notion",
         "allowedHosts": [
           "mcp.notion.com"
-        ]
-      }
-    },
-    {
-      "id": "clickup",
-      "label": "ClickUp",
-      "logo": "/integrations/clickup.svg",
-      "description": "Tasks, docs, and goals via ClickUp's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "ClickUp connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.clickup.com/mcp",
-        "name": "clickup",
-        "allowedHosts": [
-          "mcp.clickup.com"
         ]
       }
     },
@@ -1028,52 +984,6 @@
       }
     },
     {
-      "id": "figma",
-      "label": "Figma",
-      "logo": "/integrations/figma.svg",
-      "description": "Design files and components via Figma's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "content",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Figma connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.figma.com/mcp",
-        "name": "figma",
-        "allowedHosts": [
-          "mcp.figma.com",
-          "api.figma.com"
-        ]
-      }
-    },
-    {
-      "id": "vercel",
-      "label": "Vercel",
-      "logo": "/integrations/vercel.svg",
-      "description": "Deployments, projects, and logs via Vercel's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "dev",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Vercel connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.vercel.com/",
-        "name": "vercel",
-        "allowedHosts": [
-          "mcp.vercel.com",
-          "vercel.com"
-        ]
-      }
-    },
-    {
       "id": "supabase",
       "label": "Supabase",
       "logo": "/integrations/supabase.svg",
@@ -1115,52 +1025,6 @@
         "name": "paypal",
         "allowedHosts": [
           "mcp.paypal.com"
-        ]
-      }
-    },
-    {
-      "id": "square",
-      "label": "Square",
-      "logo": "/integrations/square.svg",
-      "description": "Payments, catalog, and customers via Square's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "commerce",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Square connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.squareup.com/sse",
-        "name": "square",
-        "allowedHosts": [
-          "mcp.squareup.com"
-        ],
-        "transport": "sse"
-      }
-    },
-    {
-      "id": "dropbox",
-      "label": "Dropbox",
-      "logo": "/integrations/dropbox.svg",
-      "description": "Files, folders, and sharing via Dropbox's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Dropbox connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.dropbox.com/mcp",
-        "name": "dropbox",
-        "allowedHosts": [
-          "mcp.dropbox.com",
-          "www.dropbox.com"
         ]
       }
     },
