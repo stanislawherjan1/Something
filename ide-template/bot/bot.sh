@@ -935,12 +935,51 @@ else:
 # it as a command. v2 anchors on the first `bot.command('start'` (plugin
 # already registers /start before bot.on) so our /restart sits in the
 # command-filter cluster.
-v1_restart_pattern = re.compile(
-    r'\n?// // CC-BOT-PATCH: restart command \+ slash menu\n\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}\n\n?',
-    re.DOTALL,
-)
-if v1_restart_pattern.search(content):
-    content = v1_restart_pattern.sub('', content)
+def _strip_marked_blocks(text, marker):
+    """Remove EVERY `// <marker>\n{ ... }` block by brace-counting (string- and
+    template-literal-aware), not a regex — the old regex couldn't match the
+    block's nested braces, so the idempotent remove silently failed and copies
+    piled up (100+ on long-lived bots). Returns (text, count_removed)."""
+    removed = 0
+    while True:
+        i = text.find(marker)
+        if i == -1:
+            break
+        b = text.find('{', i)
+        if b == -1:                       # marker with no block — drop the line
+            nl = text.find('\n', i)
+            text = text[:i] + (text[nl + 1:] if nl != -1 else '')
+            removed += 1
+            continue
+        depth, j, quote, esc = 0, b, None, False
+        while j < len(text):
+            c = text[j]
+            if esc:
+                esc = False
+            elif c == '\\':
+                esc = True
+            elif quote:
+                if c == quote:
+                    quote = None
+            elif c in ('"', "'", '`'):
+                quote = c
+            elif c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    j += 1
+                    break
+            j += 1
+        end = j
+        while end < len(text) and text[end] in '\r\n':
+            end += 1
+        text = text[:i] + text[end:]
+        removed += 1
+    return text, removed
+
+content, _v1_removed = _strip_marked_blocks(content, '// // CC-BOT-PATCH: restart command + slash menu\n')
+if _v1_removed:
     changed = True
     print('[bot] restart command: removed v1 (was anchored post-handlers)')
 
@@ -948,12 +987,8 @@ if v1_restart_pattern.search(content):
 # setMyCommands call that got overridden by the plugin's
 # all_private_chats-scope call). Strip it so the v3 layout below
 # applies cleanly on the next deploy.
-v2_restart_pattern = re.compile(
-    r'\n?// // CC-BOT-PATCH: restart command \+ slash menu v2\n\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}\n\n?',
-    re.DOTALL,
-)
-if v2_restart_pattern.search(content):
-    content = v2_restart_pattern.sub('', content)
+content, _v2_removed = _strip_marked_blocks(content, '// // CC-BOT-PATCH: restart command + slash menu v2')
+if _v2_removed:
     changed = True
     print('[bot] restart command: removed v2 (own setMyCommands ignored due to scope priority)')
 
@@ -967,12 +1002,11 @@ if v2_restart_pattern.search(content):
 # (matched by the marker line + the {...} that follows), wipe it, then
 # apply the current body. Net: re-patching is idempotent AND auto-updating.
 tg_restart_marker = '// CC-BOT-PATCH: restart command v3'
-v3_existing_pattern = re.compile(
-    r'\n?// ' + re.escape(tg_restart_marker.replace('// ', '')) + r'\n\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}\n\n?',
-    re.DOTALL,
-)
-if v3_existing_pattern.search(content):
-    content = v3_existing_pattern.sub('', content)
+# Brace-counting strip (was a single-nesting-level regex that NEVER matched
+# the 3-deep injected body, while the reinject below is unconditional →
+# one extra copy per bot restart; a fleet host was found with 48 copies).
+content, _v3_removed = _strip_marked_blocks(content, '// ' + tg_restart_marker)
+if _v3_removed:
     changed = True
     # No log line here — we'll print the "patched" line after reinject
     # so a single restart shows one event per patch, not two.
@@ -1080,12 +1114,8 @@ else:
 # Idempotency: marker check + remove old version before reinjecting, so
 # the bot.sh runs idempotently on every container restart.
 correct_marker = '// CC-BOT-PATCH: correct command v1'
-correct_existing_pattern = re.compile(
-    r'\n?// ' + re.escape(correct_marker.replace('// ', '')) + r'\n\{[^{}]*?(?:\{[^{}]*?\}[^{}]*?)*\}\n\n?',
-    re.DOTALL,
-)
-if correct_existing_pattern.search(content):
-    content = correct_existing_pattern.sub('', content)
+content, _correct_removed = _strip_marked_blocks(content, '// ' + correct_marker)
+if _correct_removed:
     changed = True
 
 correct_inject = (
@@ -1161,48 +1191,6 @@ else:
 # review/approve/reject command is gone. This block only STRIPS any command
 # a previous bot version injected (idempotent marker check); it never adds.
 memory_marker = '// CC-BOT-PATCH: memory command v1'
-def _strip_marked_blocks(text, marker):
-    """Remove EVERY `// <marker>\n{ ... }` block by brace-counting (string- and
-    template-literal-aware), not a regex — the old regex couldn't match the
-    block's nested braces, so the idempotent remove silently failed and copies
-    piled up (100+ on long-lived bots). Returns (text, count_removed)."""
-    removed = 0
-    while True:
-        i = text.find(marker)
-        if i == -1:
-            break
-        b = text.find('{', i)
-        if b == -1:                       # marker with no block — drop the line
-            nl = text.find('\n', i)
-            text = text[:i] + (text[nl + 1:] if nl != -1 else '')
-            removed += 1
-            continue
-        depth, j, quote, esc = 0, b, None, False
-        while j < len(text):
-            c = text[j]
-            if esc:
-                esc = False
-            elif c == '\\':
-                esc = True
-            elif quote:
-                if c == quote:
-                    quote = None
-            elif c in ('"', "'", '`'):
-                quote = c
-            elif c == '{':
-                depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    j += 1
-                    break
-            j += 1
-        end = j
-        while end < len(text) and text[end] in '\r\n':
-            end += 1
-        text = text[:i] + text[end:]
-        removed += 1
-    return text, removed
 
 content, _mem_removed = _strip_marked_blocks(content, memory_marker)
 if _mem_removed:
