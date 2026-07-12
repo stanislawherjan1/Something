@@ -139,6 +139,9 @@ export default function integrationsRouter() {
         globalFieldValues,
       };
     });
+    // no-store so the dashboard's post-OAuth refetch always sees the freshly
+    // activated integration instead of a cached (still-inactive) response.
+    res.set('Cache-Control', 'no-store');
     res.json({
       ready:        isReady(),
       readyError:   isReady() ? null : readinessError(),

@@ -1117,6 +1117,28 @@
       }
     },
     {
+      "id": "cloudflare",
+      "label": "Cloudflare",
+      "logo": "/integrations/cloudflare.svg",
+      "description": "Manage Workers, KV, R2, D1, and account resources via Cloudflare's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Cloudflare connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://bindings.mcp.cloudflare.com/mcp",
+        "name": "cloudflare",
+        "allowedHosts": [
+          "bindings.mcp.cloudflare.com"
+        ]
+      }
+    },
+    {
       "id": "google-workspace",
       "label": "Google Workspace",
       "logo": "/integrations/gworkspace.svg",

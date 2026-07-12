@@ -33,6 +33,16 @@ import { join } from 'node:path';
 import { PROJECT_DIR } from '../config.js';
 import * as catalog from './catalog.js';
 import * as store from './store.js';
+import { resolve as resolveBranding } from '../branding.js';
+
+// Name shown on the provider's OAuth consent screen ("<name> wants access").
+// Use the workspace's own bot name, not a hardcoded product name.
+function brandedClientName() {
+  let name = '';
+  try { name = (resolveBranding().botName || '').trim(); } catch {}
+  if (!name || name.toLowerCase() === 'assistant') return 'Assistant';
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 // workspace-api has no direct egress; its outbound must go through the egress
 // proxy. The OAuth broker talks to provider hosts (discovery, DCR, token,
@@ -125,7 +135,7 @@ function makeProvider(id, redirectUrl, flow) {
     get redirectUrl() { return redirectUrl; },
     get clientMetadata() {
       return {
-        client_name: 'Something Integrations',
+        client_name: brandedClientName(),
         redirect_uris: [redirectUrl],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],

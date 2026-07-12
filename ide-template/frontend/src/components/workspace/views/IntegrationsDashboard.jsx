@@ -192,10 +192,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     return reloadApi();
   }, [reloadApi]);
 
-  // The OAuth popup's landing page postMessages us when the flow finishes
-  // (see oauthResultPage in routes/integrations.js) — refresh so the tile
-  // flips to active without a manual reload. Declared after `reload` so its
-  // [reload] dependency isn't read in the temporal dead zone during render.
+  // Refresh the tiles after an OAuth popup finishes so the card flips to
+  // Active without a manual page reload. Two triggers, either is enough:
+  //   1. the popup's landing page postMessages us (oauthResultPage in
+  //      routes/integrations.js);
+  //   2. window regains focus when the popup closes — covers the case where
+  //      the popup couldn't reach window.opener.
+  // Declared after `reload` so its [reload] dep isn't read in the TDZ.
   useEffect(() => {
     const onMessage = (e) => {
       if (e.origin !== window.location.origin) return;
@@ -203,7 +206,11 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       reload();
     };
     window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
+    window.addEventListener('focus', reload);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      window.removeEventListener('focus', reload);
+    };
   }, [reload]);
 
   // First-ever mount with no cache hit → skeleton. Subsequent tab switches
