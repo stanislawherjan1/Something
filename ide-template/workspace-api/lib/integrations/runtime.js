@@ -32,6 +32,7 @@ import { issueGrant } from './broker.js';
 // MCP /proc/<pid>/environ.
 const MCP_RUNNER_BIN = process.env.MCP_RUNNER_BIN || '/usr/local/bin/mcp-runner';
 const BROKER_SOCKET  = process.env.BROKER_SOCKET || '/var/wsapi-store/run/broker.sock';
+const AUTH_HELPER_BIN = process.env.MCP_AUTH_HELPER_BIN || '/opt/ide/mcp-auth-helper.sh';
 
 const HOME = process.env.HOME || '/home/coder';
 const CLAUDE_CONFIG = process.env.CLAUDE_CONFIG_PATH || join(HOME, '.claude.json');
@@ -147,6 +148,33 @@ export function syncMcpServers() {
   for (const id of store.activeIds()) {
     const cat = catalog.get(id);
     if (!cat || !cat.mcp) continue;          // Telegram has no MCP — handled separately
+
+    // ─── Remote path (`mcp.type: "http"`) ───────────────────────────────
+    // The MCP server is hosted by the provider; nothing spawns locally, so
+    // no mcp-runner and no broker nonce. Claude Code connects over HTTPS
+    // (through the egress proxy — the host must be in mcp.allowedHosts) and
+    // gets its Authorization header from mcp-auth-helper.sh, which asks
+    // wsapi for a fresh access token at connect time. Only the short-lived
+    // access token ever reaches the Claude Code process; refresh tokens
+    // stay in the encrypted store (lib/integrations/oauth.js).
+    if (cat.mcp.type === 'http') {
+      const { name, url } = cat.mcp;
+      if (!name || !url) continue;
+      // Open servers (no remote-mcp-oauth field — e.g. Microsoft Learn,
+      // Context7) need no Authorization header, so no helper: an entry
+      // whose helper 401s at wsapi would flip the server to "needs auth".
+      const needsAuth = (cat.fields || []).some(f => f.type === 'remote-mcp-oauth');
+      next[name] = {
+        // Most providers speak Streamable HTTP; a few (Square) are SSE-only —
+        // the catalog marks those with `transport: "sse"`.
+        type: cat.mcp.transport === 'sse' ? 'sse' : 'http',
+        url,
+        ...(needsAuth ? { headersHelper: `${AUTH_HELPER_BIN} ${id}` } : {}),
+        [MANAGED_MARKER]: true,
+      };
+      continue;
+    }
+
     const { extraEnv = {}, inheritEnv = [], services } = cat.mcp;
     const isLegacy = cat.mcp.command && cat.mcp.command !== 'node';
 

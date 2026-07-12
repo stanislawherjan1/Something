@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
+import * as oauthBroker from '../lib/integrations/oauth.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
@@ -75,6 +76,25 @@ export default function internalRouter() {
     } catch (err) {
       process.stderr.write(`[internal] sync-mcp failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Access token for a remote-MCP integration, consumed by mcp-auth-helper.sh
+  // (Claude Code's headersHelper). Returns the exact JSON header map the CLI
+  // expects, so the helper can pass the body straight through. Only the
+  // short-lived ACCESS token crosses this boundary — refresh tokens never
+  // leave workspace-api (lib/integrations/oauth.js refreshes server-side when
+  // <2 min of life remain). 401 + reauth flag when the grant is dead so the
+  // dashboard can show Reconnect; the helper then emits nothing and the MCP
+  // server simply stays unavailable for that turn.
+  router.get('/internal/mcp-token/:id', loopbackOnly, async (req, res) => {
+    try {
+      const token = await oauthBroker.getFreshToken(req.params.id);
+      return res.json({ Authorization: `Bearer ${token}` });
+    } catch (err) {
+      const status = err.code === 'reauth_required' ? 401 : 500;
+      if (status === 500) process.stderr.write(`[internal] mcp-token ${req.params.id}: ${err.message}\n`);
+      return res.status(status).json({ error: err.message, reauth: err.code === 'reauth_required' });
     }
   });
 

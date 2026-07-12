@@ -99,6 +99,17 @@ function CopyableCode({ children }) {
 // machine-readable values (`ai`, `marketing`, …); the UI gets a Capital-
 // case display string. Keep this in sync with the categories actually
 // used by integrations.catalog.json.
+// Remote-MCP OAuth integrations (catalog `mcp.type: "http"` + a
+// remote-mcp-oauth field) activate via a provider consent popup instead of
+// the credentials modal. Open remote servers (http type, no oauth field,
+// e.g. Microsoft Learn) activate through the normal zero-field modal.
+const isRemoteMcpOauth = (integration) =>
+  (integration?.fields || []).some(f => f.type === 'remote-mcp-oauth');
+
+// Anything served by a provider-hosted MCP — OAuth or open — is "one-click"
+// in the marketplace: nothing to paste either way.
+const isOneClick = (integration) => integration?.mcp?.type === 'http';
+
 const CATEGORY_LABELS = {
   ai:           'AI',
   commerce:     'Commerce',
@@ -131,13 +142,48 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram'), [data]);
   // Sync URL → activating state. When ?activate=<id> changes, find the
   // matching integration tile and open the activation modal on it.
+  // Remote-MCP OAuth entries have no modal — a deep link can't open their
+  // popup either (no user gesture → popup blocker), so just drop the param
+  // and let the user click Connect on the highlighted tile.
   useEffect(() => {
     if (!activateId) { setActivating(null); return; }
     const match = integrations.find(i => i.id === activateId);
-    if (match && isAdmin) setActivating(match);   // members can't activate
-  }, [activateId, integrations, isAdmin]);
+    if (!match || !isAdmin) return;               // members can't activate
+    if (isRemoteMcpOauth(match)) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('activate');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    setActivating(match);
+  }, [activateId, integrations, isAdmin, searchParams, setSearchParams]);
+
+  // The OAuth popup's landing page postMessages us when the flow finishes
+  // (see oauthResultPage in routes/integrations.js) — refresh so the tile
+  // flips to active without a manual reload.
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== 'integration-oauth') return;
+      reload();
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [reload]);
 
   const openActivate = useCallback((integration) => {
+    // Remote-MCP OAuth entries skip the fields modal entirely: the whole
+    // activation is the provider consent popup → server-side callback
+    // (routes/integrations.js). The popup must open synchronously inside
+    // this click handler or popup blockers eat it.
+    if (isRemoteMcpOauth(integration)) {
+      window.open(
+        `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start`,
+        `oauth-${integration.id}`,
+        'popup,width=560,height=720',
+      );
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     next.set('activate', integration.id);
     setSearchParams(next);
@@ -483,10 +529,25 @@ function Marketplace({
         })}
       </div>
 
-      {/* Result grid OR empty state */}
+      {/* Result grid OR empty state. Two labeled groups: one-click OAuth
+          connections (remote-MCP, no credentials to paste) surface above the
+          classic paste-a-key integrations so the effortless path is the
+          first thing an operator sees. */}
       {filtered > 0 ? (
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
-          {items.map((integration) => (
+        [
+          { key: 'one-click', label: 'One-click connect', hint: 'Sign in and approve (or just activate) — no API keys.', list: items.filter(i => isOneClick(i)) },
+          { key: 'manual',    label: 'Manual setup',      hint: 'Needs an API key or token from the provider.',          list: items.filter(i => !isOneClick(i)) },
+        ].filter(g => g.list.length > 0).map(group => (
+        <div key={group.key} className="flex flex-col gap-2.5">
+          <div className="flex items-baseline gap-2.5">
+            <div className="text-[12px] font-semibold uppercase tracking-wider text-foreground/70">{group.label}</div>
+            {group.key === 'one-click' && (
+              <span className="rounded-full bg-violet-500/12 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
+            )}
+            <div className="text-[11.5px] text-muted-foreground/65">{group.hint}</div>
+          </div>
+          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+          {group.list.map((integration) => (
             <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
               <IntegrationTile
                 integration={integration}
@@ -498,7 +559,9 @@ function Marketplace({
               />
             </motion.div>
           ))}
+          </div>
         </div>
+        ))
       ) : (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-6 py-10 text-center">
           <Search className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
@@ -637,7 +700,7 @@ function IntegrationTile({ integration, ready, canManage = true, onActivate, onR
             onClick={onActivate}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
-            Activate
+            {isRemoteMcpOauth(integration) ? 'Connect' : 'Activate'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </button>
         )}

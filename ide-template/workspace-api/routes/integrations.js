@@ -23,6 +23,7 @@ import * as catalog from '../lib/integrations/catalog.js';
 import * as store from '../lib/integrations/store.js';
 import * as runtime from '../lib/integrations/runtime.js';
 import * as team from '../lib/team.js';
+import * as oauth from '../lib/integrations/oauth.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
 import { isReady, readinessError } from '../lib/integrations/crypto.js';
 
@@ -91,6 +92,28 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Tiny self-closing page the OAuth popup lands on. postMessage tells the
+// dashboard (window.opener, same origin) to refresh the card; the fallback
+// text covers popup-blocker → same-tab navigations.
+function oauthResultPage(ok, message, id) {
+  const payload = JSON.stringify({ type: 'integration-oauth', ok, id: id || null });
+  return `<!doctype html><meta charset="utf-8"><title>${ok ? 'Connected' : 'Connection failed'}</title>
+<body style="font-family:system-ui;display:grid;place-items:center;height:90vh;margin:0">
+<div style="text-align:center;max-width:28rem">
+<h2>${ok ? 'Connected ✓' : 'Connection failed'}</h2>
+<p>${ok ? 'You can close this window.' : (message || 'Something went wrong.')}</p>
+</div>
+<script>
+try { if (window.opener) window.opener.postMessage(${payload}, window.location.origin); } catch (e) {}
+if (${ok ? 'true' : 'false'}) setTimeout(() => window.close(), 800);
+</script>
+</body>`;
+}
+
 export default function integrationsRouter() {
   const router = Router();
 
@@ -121,6 +144,74 @@ export default function integrationsRouter() {
       readyError:   isReady() ? null : readinessError(),
       integrations: items,
     });
+  });
+
+  // ─── Remote-MCP OAuth (catalog entries with mcp.type === "http") ─────────
+  //
+  // workspace-api is the OAuth client (MCP-spec discovery + DCR + PKCE via
+  // lib/integrations/oauth.js); the popup flow is:
+  //   dashboard opens GET /integrations/:id/oauth/start in a popup
+  //     → 302 to the provider's consent page
+  //     → provider redirects to GET /integrations/oauth/callback?code&state
+  //     → tokens land in the encrypted store, MCP config + egress sync,
+  //       page postMessages the opener and closes itself.
+
+  // The popup rides the admin's session cookies, so requireAdmin holds here.
+  router.get('/integrations/:id/oauth/start', requireAdmin, readyOr503, rateLimit, async (req, res) => {
+    const id = req.params.id;
+    const cat = catalog.get(id);
+    if (!cat?.mcp || cat.mcp.type !== 'http') {
+      return res.status(404).json({ error: 'Not a remote-MCP integration.' });
+    }
+    // Public origin for the redirect_uri: explicit env wins, else the
+    // Caddy-forwarded host of this very request. Both resolve to the
+    // client's own domain — the self-hosted constraint (no operator-side
+    // redirector) is structural here.
+    const host = process.env.FRONTEND_DOMAIN || req.get('x-forwarded-host') || req.get('host');
+    try {
+      const authorizeUrl = await oauth.startAuth(id, `https://${host}`);
+      return res.redirect(authorizeUrl);
+    } catch (err) {
+      process.stderr.write(`[integrations] oauth start ${id}: ${err.message}\n`);
+      return res.status(502).send(oauthResultPage(false, `Could not reach the provider: ${escapeHtml(err.message)}`));
+    }
+  });
+
+  // No requireAdmin: the provider's redirect carries no session guarantee we
+  // control. The single-use `state` param — minted in startAuth, bound to one
+  // pending flow, 10-min TTL — is what authenticates this request (plus PKCE
+  // on the code exchange itself).
+  router.get('/integrations/oauth/callback', readyOr503, rateLimit, async (req, res) => {
+    const { code, state, error, error_description: desc } = req.query;
+    if (error) {
+      return res.status(400).send(oauthResultPage(false, `Provider returned: ${escapeHtml(String(desc || error))}`));
+    }
+    if (typeof code !== 'string' || typeof state !== 'string') {
+      return res.status(400).send(oauthResultPage(false, 'Missing code or state parameter.'));
+    }
+    let id;
+    try {
+      id = await oauth.handleCallback(state, code);
+    } catch (err) {
+      process.stderr.write(`[integrations] oauth callback: ${err.message}\n`);
+      return res.status(400).send(oauthResultPage(false, escapeHtml(err.message)));
+    }
+
+    // Mirror the PUT post-activation recipe: optional skill, MCP config,
+    // egress allowlist, bot restart when the mcpServers block changed.
+    try { runtime.installOptionalSkill(id); } catch {}
+    let changed = false;
+    try { ({ changed } = runtime.syncMcpServers()); }
+    catch (err) {
+      process.stderr.write(`[integrations] oauth sync ${id}: ${err.message}\n`);
+    }
+    try { writeAllowedHostsFile(); }
+    catch (err) {
+      process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`);
+    }
+    if (changed) { try { await runtime.restartBot(); } catch {} }
+
+    return res.send(oauthResultPage(true, null, id));
   });
 
   // PUT — activate one integration. Body shape: { fields: { NAME: value, ... } }
@@ -311,6 +402,12 @@ export default function integrationsRouter() {
     if (!store.isActive(id)) return res.status(404).json({ error: `${cat.label} is not active.` });
 
     store.remove(id);
+
+    // Remote-MCP integrations: also drop the DCR client registration so a
+    // future Connect starts from a clean registration.
+    if (cat.mcp?.type === 'http') {
+      try { oauth.forgetClient(id); } catch {}
+    }
 
     try { runtime.unlinkFiles(id); }
     catch (err) {

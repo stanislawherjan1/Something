@@ -425,12 +425,13 @@ ENV BOT_NAME=bot
 COPY bot/bot.sh /opt/ide/bot.sh
 COPY bot/bot-notify.sh /opt/ide/bot-notify.sh
 COPY bot/web-notify.sh /opt/ide/web-notify.sh
+COPY bot/mcp-auth-helper.sh /opt/ide/mcp-auth-helper.sh
 COPY bot/bot-relay.sh /opt/ide/bot-relay.sh
 COPY bot/reminder-monitor.sh /opt/ide/reminder-monitor.sh
 COPY bot/recent-snapshot-monitor.sh /opt/ide/recent-snapshot-monitor.sh
 COPY bot/browser-watchdog.sh /opt/ide/browser-watchdog.sh
 COPY bot/ecosystem.config.js /opt/ide/ecosystem.config.js
-RUN chmod +x /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/bot-relay.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
+RUN chmod +x /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/mcp-auth-helper.sh /opt/ide/bot-relay.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
 
 # === LAYER 9: Entrypoint ===
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

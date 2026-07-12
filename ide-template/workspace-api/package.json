@@ -9,6 +9,7 @@
     "test": "node lib/group-brain.test.mjs && node lib/memory-concept.test.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "archiver": "^7.0.1",
     "chokidar": "^5.0.0",
     "cookie-parser": "^1.4.7",
