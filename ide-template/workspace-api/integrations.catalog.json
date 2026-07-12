@@ -1139,6 +1139,227 @@
       }
     },
     {
+      "id": "stripe",
+      "label": "Stripe",
+      "logo": "/integrations/stripe.svg",
+      "description": "Payments, invoices, customers, and subscriptions via Stripe's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "commerce",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Stripe connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.stripe.com/",
+        "name": "stripe",
+        "allowedHosts": [
+          "mcp.stripe.com"
+        ]
+      }
+    },
+    {
+      "id": "atlassian",
+      "label": "Atlassian",
+      "logo": "/integrations/atlassian.svg",
+      "description": "Jira issues and Confluence pages via Atlassian's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Atlassian connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.atlassian.com/v1/sse",
+        "name": "atlassian",
+        "allowedHosts": [
+          "mcp.atlassian.com"
+        ],
+        "transport": "sse"
+      }
+    },
+    {
+      "id": "airtable",
+      "label": "Airtable",
+      "logo": "/integrations/airtable.svg",
+      "description": "Bases, tables, and records via Airtable's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "productivity",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Airtable connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.airtable.com/mcp",
+        "name": "airtable",
+        "allowedHosts": [
+          "mcp.airtable.com"
+        ]
+      }
+    },
+    {
+      "id": "zapier",
+      "label": "Zapier",
+      "logo": "/integrations/zapier.svg",
+      "description": "Reach ~7,000 apps through your own Zapier account via Zapier's official hosted MCP. One-click connect; note Zapier meters MCP calls against your Zapier plan.",
+      "category": "productivity",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Zapier connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.zapier.com/api/mcp/mcp",
+        "name": "zapier",
+        "allowedHosts": [
+          "mcp.zapier.com"
+        ]
+      }
+    },
+    {
+      "id": "sentry",
+      "label": "Sentry",
+      "logo": "/integrations/sentry.svg",
+      "description": "Errors, issues, and releases via Sentry's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Sentry connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.sentry.dev/mcp",
+        "name": "sentry",
+        "allowedHosts": [
+          "mcp.sentry.dev"
+        ]
+      }
+    },
+    {
+      "id": "webflow",
+      "label": "Webflow",
+      "logo": "/integrations/webflow.svg",
+      "description": "Sites, CMS items, and publishing via Webflow's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "content",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Webflow connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.webflow.com/mcp",
+        "name": "webflow",
+        "allowedHosts": [
+          "mcp.webflow.com"
+        ]
+      }
+    },
+    {
+      "id": "netlify",
+      "label": "Netlify",
+      "logo": "/integrations/netlify.svg",
+      "description": "Sites, deploys, and forms via Netlify's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Netlify connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://netlify-mcp.netlify.app/mcp",
+        "name": "netlify",
+        "allowedHosts": [
+          "netlify-mcp.netlify.app"
+        ]
+      }
+    },
+    {
+      "id": "neon",
+      "label": "Neon",
+      "logo": "/integrations/neon.svg",
+      "description": "Serverless Postgres branches and queries via Neon's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Neon connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.neon.tech/mcp",
+        "name": "neon",
+        "allowedHosts": [
+          "mcp.neon.tech"
+        ]
+      }
+    },
+    {
+      "id": "canva",
+      "label": "Canva",
+      "logo": "/integrations/canva.svg",
+      "description": "Designs and brand assets via Canva's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "content",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Canva connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.canva.com/mcp",
+        "name": "canva",
+        "allowedHosts": [
+          "mcp.canva.com"
+        ]
+      }
+    },
+    {
+      "id": "amplitude",
+      "label": "Amplitude",
+      "logo": "/integrations/amplitude.svg",
+      "description": "Product analytics, charts, and cohorts via Amplitude's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "marketing",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Amplitude connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.amplitude.com/mcp",
+        "name": "amplitude",
+        "allowedHosts": [
+          "mcp.amplitude.com"
+        ]
+      }
+    },
+    {
       "id": "google-workspace",
       "label": "Google Workspace",
       "logo": "/integrations/gworkspace.svg",
