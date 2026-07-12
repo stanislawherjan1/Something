@@ -65,7 +65,13 @@ const DOMAIN        = process.env.SHOPIFY_STORE_DOMAIN;
 const CLIENT_ID     = process.env.SHOPIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 const APP_NAME      = process.env.SHOPIFY_APP_NAME ?? 'shopify-mcp';
-const API_VERSION   = '2025-01';
+// Shopify sunsets API versions QUARTERLY (each lives ~12 months). When the
+// pinned version dies, Shopify silently serves the oldest supported one — and
+// mutations start failing on fields removed in the meantime (caught live
+// 2026-07-12: create_product exploded on ProductInput.variants after the
+// 2025-01 pin expired). Bump this roughly yearly and re-check the mutations
+// against the version's release notes.
+const API_VERSION   = '2026-01';
 
 if (!DOMAIN || !CLIENT_ID || !CLIENT_SECRET) {
   console.error('[shopify-mcp] Missing SHOPIFY_STORE_DOMAIN, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET');
@@ -1297,24 +1303,37 @@ async function handleTool(name, args) {
       if (args.tags)         input.tags            = args.tags;
       input.status = args.status ?? 'DRAFT';
 
-      const variants = [];
-      if (args.price || args.sku) {
-        const v = {};
-        if (args.price) v.price = args.price;
-        if (args.sku)   v.inventoryItem = { sku: args.sku };
-        variants.push(v);
-      }
-      if (variants.length) input.variants = variants;
-
+      // ProductInput.variants no longer exists (removed with Shopify's new
+      // product model; every create with price/sku 500'd once the old API pin
+      // expired — caught live 2026-07-12). Modern flow: create the bare
+      // product (Shopify auto-creates its default variant), then set
+      // price/sku ON that default variant via productVariantsBulkUpdate —
+      // the same mutation family the rest of this file already uses.
       const { productCreate } = await gql(`
         mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
-            product { id title status handle }
+            product { id title status handle variants(first: 1) { nodes { id } } }
             userErrors { field message }
           }
         }`, { input });
       if (productCreate.userErrors.length) throw new Error(productCreate.userErrors.map(e => e.message).join('; '));
       const product = productCreate.product;
+
+      if (args.price || args.sku) {
+        const defaultVariantId = product.variants?.nodes?.[0]?.id;
+        if (!defaultVariantId) throw new Error('product created but its default variant was not returned — set price/sku via add_product_variants');
+        const v = { id: defaultVariantId };
+        if (args.price) v.price = args.price;
+        if (args.sku)   v.inventoryItem = { sku: args.sku };
+        const { productVariantsBulkUpdate } = await gql(`
+          mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+              productVariants { id price }
+              userErrors { field message }
+            }
+          }`, { productId: product.id, variants: [v] });
+        if (productVariantsBulkUpdate.userErrors.length) throw new Error(productVariantsBulkUpdate.userErrors.map(e => e.message).join('; '));
+      }
 
       // Auto-publish if requested
       if (args.publish) {
