@@ -54,7 +54,7 @@ import { USERS_DIR } from './scope-rule.js';
 // via Read / memory_grep when a turn names the concept. Same rule for
 // topics/ and threads/. Only the tight, role-keyed summary cards below are
 // preloaded; the 7 cards hold a one-line `→ concepts/<slug>.md` pointer, never
-// the depth. See docs/memory-evolution-plan.md.
+// the depth.
 const LOAD_ORDER = [
   { id: 'AGENT_IDENTITY',   path: 'AGENT_IDENTITY.md' },
   { id: 'AGENT_TOOLS',      path: 'AGENT_TOOLS.md' },
