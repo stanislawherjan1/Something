@@ -988,40 +988,54 @@ async function runPrivateDelegate(chatId, group, target, task) {
   }
   try {
     const senderName = member.displayName || member.slug;
+    const pendingFiles = [];   // [[SEND_FILE …]] paths harvested from the delegate's stream
     const result = await new Promise((resolve) => {
-      let out = '', done = false, proc = null;
+      // Only the text AFTER the last tool call becomes the DM. The model narrates
+      // its plan between tool calls ("Checking if the file exists…", "Got the
+      // token…") and a naive accumulator glued all of it into the delivered
+      // message — caught live 2026-07-12, a DM full of internal monologue. Each
+      // tool start stashes-and-resets the buffer; the final segment (or the last
+      // non-empty one) is the actual reply.
+      let out = '', lastSegment = '', done = false, proc = null;
+      // File markers are harvested from the STREAM (not the final text), so a
+      // marker emitted before a later tool call survives the segment resets.
+      const DM_FILE_RE = /`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
+      const harvestFiles = () => {
+        let m;
+        while (pendingFiles.length < MAX_FILES && (m = out.match(DM_FILE_RE))) {
+          pendingFiles.push(m[1].trim());
+          out = out.slice(0, m.index) + out.slice(m.index + m[0].length);
+        }
+      };
       const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
       const timer = setTimeout(() => finish(null), DELEGATE_TIMEOUT);
       try {
         proc = runClaudeTurn({
-          message: `[PRIVATE TASK — delegated from the team group chat "${clip(group.title || chatId, 40)}"] ${senderName} asked there for something that needs their PRIVATE space, which group turns cannot touch. Do it now, in their private scope, and write the result as a direct Telegram DM to ${senderName} (plain text, their language, no preamble, no meta-commentary about this task — your final output IS the DM, written as if you were simply replying to them). To attach a file, emit \`[[SEND_FILE <absolute path under the project>]]\` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker:\n\n${clip(task, 600)}`,
+          message: `[PRIVATE TASK — delegated from the team group chat "${clip(group.title || chatId, 40)}"] ${senderName} asked there for something that needs their PRIVATE space, which group turns cannot touch. Do it now, in their private scope, and write the result as a direct Telegram DM to ${senderName} (plain text, THEIR language, no preamble, no meta-commentary about this task or your tooling — your final output IS the DM, written as if you were simply replying to them). To attach a file, emit \`[[SEND_FILE <absolute path under the project>]]\` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker. NEVER read or use the Telegram bot token or call the Telegram API yourself — file delivery goes ONLY through the marker:\n\n${clip(task, 600)}`,
           actor: member.slug,
           actorName: senderName,
           actorIsAdmin: member.role === 'admin',
           teammates: [],
-          onText: (t) => { out += t; },
-          onToolStart: () => {}, onToolEnd: () => {}, onImage: () => {},
+          onText: (t) => { out += t; harvestFiles(); },
+          onToolStart: () => { if (out.trim()) lastSegment = out; out = ''; },
+          onToolEnd: () => {}, onImage: () => {},
           onError: () => finish(null),
-          onDone: () => finish(out.trim()),
+          onDone: () => { harvestFiles(); finish((out.trim() ? out : lastSegment).trim()); },
         });
       } catch { finish(null); }
     });
-    if (result) {
-      // Deliver any [[SEND_FILE …]] attachments the delegate emitted (to the
-      // requester's DM — same confinement as group uploads), then the text.
-      let dmText = result;
-      let m, sentFiles = 0;
-      const DM_FILE_RE = /`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
-      while (sentFiles < MAX_FILES && (m = dmText.match(DM_FILE_RE))) {
-        const fp = m[1].trim();
-        dmText = dmText.slice(0, m.index) + dmText.slice(m.index + m[0].length);
-        sentFiles += 1;
+    if (result || pendingFiles.length) {
+      // Attachments first (harvested from the stream — same PROJECT_DIR
+      // confinement as group uploads), then the text.
+      let dmText = String(result || '');
+      for (const fp of pendingFiles) {
         const r = await sendGroupDocument(target.from_id, fp, { logKind: 'group' }).catch(() => ({ ok: false, error: 'send crashed' }));
         if (!r.ok) dmText += `\n(nie udało się załączyć pliku: ${r.error})`;
       }
-      dmText = finalizeReply(dmText);
+      // Belt: strip any marker that somehow survived into the final text.
+      dmText = finalizeReply(dmText.replace(/`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+[^\]\n]+?\s*\]\]`{0,3}/gi, ''));
       if (dmText) await sendTelegramMessage(target.from_id, dmText, { logKind: 'group' });
-      process.stderr.write(`[group-watcher] private delegate for ${member.slug} delivered to DM (${sentFiles} file(s))\n`);
+      process.stderr.write(`[group-watcher] private delegate for ${member.slug} delivered to DM (${pendingFiles.length} file(s))\n`);
     } else {
       // The delegate died — the requester was told "it's headed to your DM", so
       // a silent failure here would be a broken promise. One short group notice.
