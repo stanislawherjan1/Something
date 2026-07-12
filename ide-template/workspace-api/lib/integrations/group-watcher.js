@@ -801,7 +801,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     '',
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
     '',
-    `SENDING A FILE (PDF, doc, sheet, image): your text messages CANNOT carry an attachment. To deliver a file INTO THIS GROUP, emit \`[[SEND_FILE <absolute path>]]\` on its own — the system uploads that file (it must live under the project directory) and removes the marker. To deliver a file to ${senderName}'s PRIVATE DM instead ("send it to me privately", "na priv"), emit \`[[SEND_FILE_DM <absolute path>]]\` — same rules, goes only to the person whose message you are answering. NEVER say you have sent, attached, or delivered a file — to the group OR to a DM — unless you actually emitted the matching marker in THIS reply; claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.`,
+    `SENDING A FILE (PDF, doc, sheet, image): your text messages CANNOT carry an attachment. To deliver a file INTO THIS GROUP, emit \`[[SEND_FILE <absolute path>]]\` on its own — the system uploads that file (it must live under the project directory) and removes the marker. To deliver a file to ${senderName}'s PRIVATE DM instead, emit \`[[SEND_FILE_DM <absolute path>]]\` — same rules, goes only to the person whose message you are answering. CHOOSING THE DESTINATION: "send it to ME" (in any language) means their DM — default to \`[[SEND_FILE_DM]]\`; upload into the group only when they clearly want it shared with everyone here — and NEVER deliver the same file to both unless explicitly asked. NEVER say you have sent, attached, or delivered a file — to the group OR to a DM — unless you actually emitted the matching marker in THIS reply; claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.`,
     'MAKING A PDF: use the `render_pdf` tool (pdf-mcp) — give it a markdown file or inline markdown and it returns a clean, correctly typeset PDF (tables, accents and Unicode all render right). NEVER hand-write raw PDF bytes or a Python PDF builder — that path produces blank pages and broken tables. After rendering, call `preview_pdf` and Read the returned image to SEE the result before you deliver it, especially when asked to check it visually. Then deliver it with the `[[SEND_FILE ...]]` marker above.',
     target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
     target && target.docPath ? `\n\nThe "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
@@ -874,6 +874,7 @@ function isSilentPrefix(s) {
 function groupCompose(group, ctxMsgs, target, session = null) {
   return new Promise((resolve) => {
     let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
+    let filesDm = 0;   // subset of `files` that went to the requester's DM (observability)
     let privateTask = null, capturedSessionId = null;
     // Capture ONE [[PRIVATE_TASK …]] marker (first wins) and strip every
     // occurrence from the outgoing text. Requires the closing ]] — a
@@ -923,7 +924,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
       while (files < MAX_FILES && (m = text.match(SEND_FILE_DM_RE))) {
         const filePath = m[1].trim();
         text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
-        files += 1;
+        files += 1; filesDm += 1;
         startTyping();
         sendGroupDocument(target.from_id, filePath, { logKind: 'group' })
           .then((r) => {
@@ -959,7 +960,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
           // (e.g. beyond the caps) so a raw marker never leaks into posted text.
           text = text.replace(/`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+[^\]\n]+?\s*\]\]`{0,3}/gi, '');
           text = text.replace(/`{0,3}\[\[\s*PRIVATE_TASK\s+[\s\S]{1,600}?\s*\]\]`{0,3}/gi, '');
-          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, privateTask, sessionId: capturedSessionId });
+          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, sessionId: capturedSessionId });
         },
       }, { resumed: !!(session && session.sessionId) }));
       startTyping();   // typing from turn start — the gate already decided this message is for the bot
@@ -1030,7 +1031,7 @@ async function runPrivateDelegate(chatId, group, target, task) {
       let dmText = String(result || '');
       for (const fp of pendingFiles) {
         const r = await sendGroupDocument(target.from_id, fp, { logKind: 'group' }).catch(() => ({ ok: false, error: 'send crashed' }));
-        if (!r.ok) dmText += `\n(nie udało się załączyć pliku: ${r.error})`;
+        if (!r.ok) dmText += `\n(couldn't attach the file: ${r.error})`;
       }
       // Belt: strip any marker that somehow survived into the final text.
       dmText = finalizeReply(dmText.replace(/`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+[^\]\n]+?\s*\]\]`{0,3}/gi, ''));
@@ -1222,7 +1223,12 @@ async function flush(chatId) {
   if (emptyFinal) {
     // Everything already went out as [[SEND]] parts and/or [[SEND_FILE]] uploads —
     // nothing left for a final message. It DID act; record context for next turn.
-    const summary = [reply.parts > 0 ? `${reply.parts} parts` : null, reply.files > 0 ? `${reply.files} file(s)` : null].filter(Boolean).join(' + ');
+    const groupFiles = (reply.files || 0) - (reply.filesDm || 0);
+    const summary = [
+      reply.parts > 0 ? `${reply.parts} parts` : null,
+      groupFiles > 0 ? `${groupFiles} group-file(s)` : null,
+      reply.filesDm > 0 ? `${reply.filesDm} dm-file(s)` : null,
+    ].filter(Boolean).join(' + ');
     pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: `(replied: ${summary})` });
     fireDelegate();
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${summary}, no trailing)` });
