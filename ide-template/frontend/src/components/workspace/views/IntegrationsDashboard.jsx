@@ -158,19 +158,6 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     setActivating(match);
   }, [activateId, integrations, isAdmin, searchParams, setSearchParams]);
 
-  // The OAuth popup's landing page postMessages us when the flow finishes
-  // (see oauthResultPage in routes/integrations.js) — refresh so the tile
-  // flips to active without a manual reload.
-  useEffect(() => {
-    const onMessage = (e) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type !== 'integration-oauth') return;
-      reload();
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [reload]);
-
   const openActivate = useCallback((integration) => {
     // Remote-MCP OAuth entries skip the fields modal entirely: the whole
     // activation is the provider consent popup → server-side callback
@@ -204,6 +191,20 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     invalidate('/api/integrations');
     return reloadApi();
   }, [reloadApi]);
+
+  // The OAuth popup's landing page postMessages us when the flow finishes
+  // (see oauthResultPage in routes/integrations.js) — refresh so the tile
+  // flips to active without a manual reload. Declared after `reload` so its
+  // [reload] dependency isn't read in the temporal dead zone during render.
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== 'integration-oauth') return;
+      reload();
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [reload]);
 
   // First-ever mount with no cache hit → skeleton. Subsequent tab switches
   // have data immediately and revalidate silently in the background.
