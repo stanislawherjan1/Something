@@ -996,7 +996,7 @@
     {
       "id": "monday",
       "label": "monday.com",
-      "logo": "/integrations/monday.png",
+      "logo": "/integrations/monday.svg",
       "description": "Boards, items, and updates via monday.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "productivity",
       "fields": [
@@ -1394,7 +1394,7 @@
     {
       "id": "canva",
       "label": "Canva",
-      "logo": "/integrations/canva.png",
+      "logo": "/integrations/canva.svg",
       "description": "Designs and brand assets via Canva's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "content",
       "fields": [
@@ -1416,7 +1416,7 @@
     {
       "id": "amplitude",
       "label": "Amplitude",
-      "logo": "/integrations/amplitude.png",
+      "logo": "/integrations/amplitude.svg",
       "description": "Product analytics, charts, and cohorts via Amplitude's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
       "category": "marketing",
       "fields": [
