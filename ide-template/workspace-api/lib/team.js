@@ -669,6 +669,36 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
   return getGroup(id);
 }
 
+/**
+ * Silently refresh group metadata observed at runtime — the live chat title
+ * (Telegram groups get renamed; the registry used to freeze the name from
+ * registration day) and the auto-pinned reply language (group-watcher pins it
+ * from the gate's language verdicts). Writes only on a REAL change and emits no
+ * audit event: this is drift-sync, not an operator action. Returns true if it wrote.
+ */
+export function touchGroupMeta(chatId, { title, language } = {}) {
+  const id = normalizeGroupId(chatId);
+  if (!id) return false;
+  const cfg = readConfig();
+  if (!cfg.groups || !cfg.groups[id]) return false;
+  const g = cfg.groups[id];
+  let changed = false;
+  if (title != null && String(title).slice(0, 120) !== (g.title || '')) {
+    g.title = String(title).slice(0, 120);
+    changed = true;
+  }
+  if (language != null && String(language).slice(0, 40) !== (g.language || '')) {
+    g.language = String(language).slice(0, 40);
+    changed = true;
+  }
+  if (!changed) return false;
+  g.updatedAt = new Date().toISOString();
+  cfg.updatedAt = g.updatedAt;
+  writeConfig(cfg);
+  writeChannelsCard();
+  return true;
+}
+
 /** Remove an allow-listed group. Returns true if it existed. */
 export function removeGroup(chatId, actor) {
   const id = normalizeGroupId(chatId);

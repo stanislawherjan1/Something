@@ -39,7 +39,7 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
-export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -85,7 +85,14 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
     // bleed it can cause is still handled by the memory-loader guidance (treat
     // it as a DIFFERENT conversation; ask when ambiguous).
     const isTgOperator = actor === primaryAdminSlug();
-    const baseExclude = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
+    let baseExclude = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
+    // GROUP CONTEXT (group-mode v2, D2): the prefix must carry NOTHING private —
+    // the turn's session is shared across senders and its output is public to
+    // the group. Exclude the whole USER tier (the sender's private profile
+    // cards) and both RECENT_* surfaces, regardless of who is speaking. The
+    // scope-guard hook hard-blocks private READS at tool time; this closes the
+    // other door (private cards preloaded into the prompt).
+    if (groupContext) baseExclude = ['RECENT_WEB', 'RECENT_TELEGRAM', 'USER_INDEX', 'USER_PROFILE', 'USER_PREFERENCES', 'USER_RELATIONSHIPS', 'USER_REFLECTIONS'];
     // Callers can force EXTRA exclusions: the group brain passes ['USER_INDEX'] so a
     // PUBLIC group reply never advertises the sender's private pages (the group
     // reply is visible to everyone; private depth stays available 1:1 / in a DM).
@@ -111,7 +118,18 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // hard boundary (global-claude.md "Team workspace") resolve to the right
   // person. Skipped in solo ('default') — absence of an [ACTOR] line is the
   // single-user signal the system prompt keys on.
-  if (actor && actor !== 'default') {
+  if (groupContext && actor && actor !== 'default') {
+    // GROUP-CONTEXT [ACTOR] variant: attribution WITHOUT the private-profile
+    // plumbing. The 1:1 block below instructs the model to lean on USER_* cards
+    // — which are deliberately absent from a group prefix — and describes the
+    // sender's private tree as reachable, which in a group turn it is not.
+    const me = actorName || 'this teammate';
+    const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
+    args.push('--append-system-prompt',
+      `[ACTOR ${who}] You are replying in a shared GROUP conversation; the message you are answering was written by ${me}. "I", "me", "my" in that message mean ${me}. ` +
+      `This is a SHARED context: you act on the shared workspace (the project root) only. NO private space is accessible here — not other teammates' and not ${me}'s own (their profile cards are not loaded and private paths are blocked): the group context is shared, so nothing private may enter it. ` +
+      `If ${me} asks for something that needs THEIR OWN private files, notes, or memory, emit the [[PRIVATE_TASK ...]] marker (per your instructions) so it runs privately and reaches them in a DM — never try to read private paths here, and never present a guess as their private data.`);
+  } else if (actor && actor !== 'default') {
     const me = actorName || 'this user';
     const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
     const mates = (Array.isArray(teammates) ? teammates : [])
@@ -184,7 +202,12 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // no migration). The clone carries broker nonces, so it's written 0600 in
   // wsapi's own home (claude runs as wsapi and reads it). Per-actor file → no
   // cross-actor race; falls back to the shared config (logged) on any error.
-  if (actor && actor !== 'default' && !actorIsAdmin && /^[a-z0-9-]+$/.test(actor)) {
+  // Group-context turns SKIP the per-user KG clone: pointing the memory MCP at
+  // the sender's private kg.jsonl would feed their private entities into a
+  // shared, publicly-replying context (the KG bypasses the path scope-guard).
+  // They use the shared workspace KG instead — the same store the operator's
+  // group turns always used.
+  if (!groupContext && actor && actor !== 'default' && !actorIsAdmin && /^[a-z0-9-]+$/.test(actor)) {
     try {
       const cfg = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'));
       const mem = cfg.mcpServers && cfg.mcpServers.memory;
@@ -228,6 +251,9 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // claude's internal --resume id). Absent on Telegram / pre-session turns.
   if (webSessionId) childEnv.IDE_SESSION_ID = String(webSessionId);
   childEnv.IDE_ACTOR_IS_ADMIN = actorIsAdmin ? '1' : '0';
+  // Group-context flag for the scope-guard hook: hard-blocks ALL private trees
+  // (including the sender's own and an admin's) — see hooks/scope-guard.mjs.
+  if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
 
   const proc = spawn(CLAUDE_BIN, args, {
     cwd: PROJECT_DIR,

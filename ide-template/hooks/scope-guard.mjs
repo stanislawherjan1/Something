@@ -99,15 +99,23 @@ function pathsFromTool(toolName, input) {
 }
 
 async function main() {
+  // GROUP CONTEXT (group-mode v2, D2): a group turn's reply is public to the
+  // whole group and its session is shared across turns run as different senders,
+  // so NO private tree may enter it — not the sender's own, not an admin's. The
+  // flag comes from env like the actor vars (set per-spawn by claude.js when
+  // group-watcher passes groupContext: true). A group turn is NEVER exempt below.
+  const groupCtx = process.env.IDE_GROUP_CONTEXT === '1';
+
   // Enforce for EVERY turn that carries a real actor slug — INCLUDING admins and
   // the operator brain. Through the bot + UI, no one reads one member's private
   // tree to serve another, even an admin: an admin's out-of-band escape is raw
   // DB/SSH on their own box, not the product surfaces. (Was admin-exempt; that
   // let two admins + the operator brain read each other's private memory.)
   // Exempt only a slug-less context (solo brain, or an internal non-web-chat
-  // claude such as the reflect runs) and the legacy 'default' actor.
+  // claude such as the reflect runs) and the legacy 'default' actor — and even
+  // those only OUTSIDE group context.
   const ownSlug = process.env.IDE_ACTOR_SLUG;
-  if (!ownSlug || ownSlug === 'default') process.exit(0);
+  if (!groupCtx && (!ownSlug || ownSlug === 'default')) process.exit(0);
 
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;
@@ -116,7 +124,7 @@ async function main() {
 
   // Resolve relative to this hook's own location — hooks/ and workspace-api/
   // are siblings both in the repo and in the image (/opt/ide/*).
-  const { pathInScope } = await import(new URL('../workspace-api/lib/scope-rule.js', import.meta.url));
+  const { pathInScope, pathInGroupScope } = await import(new URL('../workspace-api/lib/scope-rule.js', import.meta.url));
 
   const toolName = data.tool_name || data.toolName || '';
   const input    = data.tool_input || data.toolInput || {};
@@ -124,13 +132,21 @@ async function main() {
   for (const p of pathsFromTool(toolName, input)) {
     const rel = relInProject(p);
     if (rel == null) continue;
-    if (!pathInScope(rel, { isAdmin: false, ownSlug })) {
-      process.stderr.write(
-        `Blocked: "${p}" is another teammate's private space (their "Your Files"). ` +
-        `You may only access Shared Files and your own files. Don't reveal the path. ` +
-        `To the user, frame this as PRIVACY, not a limitation — you're capable, you ` +
-        `just keep everyone's space private (say something like "that's between you ` +
-        `and them"); never say "I don't have access" or "I can't see it".`,
+    const inScope = groupCtx
+      ? pathInGroupScope(rel)
+      : pathInScope(rel, { isAdmin: false, ownSlug });
+    if (!inScope) {
+      process.stderr.write(groupCtx
+        ? `Blocked: "${p}" is a PRIVATE space and this is a GROUP conversation — nothing ` +
+          `private may enter a group turn, not even the requester's own files (the group ` +
+          `context is shared). Use only the shared workspace here. If the requester asked ` +
+          `about THEIR OWN private data, emit a [[PRIVATE_TASK ...]] marker so it runs ` +
+          `privately and lands in their DM; otherwise say each person's space is theirs.`
+        : `Blocked: "${p}" is another teammate's private space (their "Your Files"). ` +
+          `You may only access Shared Files and your own files. Don't reveal the path. ` +
+          `To the user, frame this as PRIVACY, not a limitation — you're capable, you ` +
+          `just keep everyone's space private (say something like "that's between you ` +
+          `and them"); never say "I don't have access" or "I can't see it".`,
       );
       process.exit(2);   // block the tool call
     }
