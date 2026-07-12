@@ -1470,13 +1470,25 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
 
 # 5. Wait for plugin to be ready, auto-accepting prompts along the way
 (
+    READY=0
     for i in $(seq 1 20); do
         sleep 3
         PANE=$(tmux -L "$SESSION" capture-pane -t "$SESSION" -p 2>/dev/null || echo "")
 
-        if echo "$PANE" | grep -q "Listening for channel messages"; then
-            log "Claude is listening for channel messages."
+        # Readiness, two signals (either counts):
+        #  - the "Listening for channel messages" banner (claude-code ≤2.1.128;
+        #    2.1.207 no longer prints it — caught 2026-07-12 when the online
+        #    notification silently stopped firing after the CLI bump), or
+        #  - the plugin's OWN pid file with a live process behind it — the
+        #    poller writes it on startup, version-independent (the launch
+        #    section above clears any stale copy, so its existence here means
+        #    THIS session's plugin came up).
+        PLUGIN_PID=$(cat "$PLUGIN_PID_FILE" 2>/dev/null || echo "")
+        if echo "$PANE" | grep -q "Listening for channel messages" \
+           || { [ -n "$PLUGIN_PID" ] && kill -0 "$PLUGIN_PID" 2>/dev/null; }; then
+            log "Telegram plugin is up (pid=${PLUGIN_PID:-pane-banner})."
             notify "Bot is online and listening."
+            READY=1
             break
         fi
 
@@ -1502,6 +1514,11 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
             exit 1
         fi
     done
+    # Never give up silently: the 2026-07-12 CLI bump hid readiness for a day
+    # because this loop timed out with no trace.
+    if [ "$READY" != "1" ]; then
+        log "WARN: readiness not confirmed within 60s (no banner, no live plugin pid) — bot may still come up; check the tmux pane"
+    fi
 ) &
 
 # 6. Monitor: keep script alive + auto-dismiss known interactive blockers.

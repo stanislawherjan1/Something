@@ -69,9 +69,9 @@ RUN groupadd -g 1100 workspace && \
     chown bot:botshare /home/bot && \
     chmod 0771 /home/bot
 
-# === LAYER 1: System packages (Node.js 20, rclone, tmux, socat) ===
+# === LAYER 1: System packages (Node.js 22, rclone, tmux, socat) ===
 # build-essential added so the setuid wrappers compile in LAYER 1b.
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     nodejs \
@@ -138,7 +138,9 @@ RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/
 # install.cjs only does a local hardlink — no network, no github CDN
 # — so dropping the flag is safe on every Hetzner host we deploy to.
 # pm2 stays with --ignore-scripts (no postinstall it needs).
-RUN npm install -g @anthropic-ai/claude-code@2.1.128 && \
+# NOTE: claude-code ≥2.1.200 requires node >=22 — LAYER 1's nodesource
+# pin (setup_22.x) and this version move together.
+RUN npm install -g @anthropic-ai/claude-code@2.1.207 && \
     mkdir -p /home/coder/.npm-global && \
     npm install -g pm2 --prefix /home/coder/.npm-global --ignore-scripts
 
