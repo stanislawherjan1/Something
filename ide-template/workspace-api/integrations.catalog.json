@@ -1073,6 +1073,28 @@
       }
     },
     {
+      "id": "calendly",
+      "label": "Calendly",
+      "logo": "/integrations/calendly.svg",
+      "description": "Scheduled events, invitees, and availability via Calendly's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "productivity",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Calendly connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.calendly.com/mcp",
+        "name": "calendly",
+        "allowedHosts": [
+          "mcp.calendly.com"
+        ]
+      }
+    },
+    {
       "id": "wix",
       "label": "Wix",
       "logo": "/integrations/wix.svg",
