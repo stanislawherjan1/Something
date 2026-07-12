@@ -700,7 +700,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             onClick={onActivate}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
-            {isRemoteMcpOauth(integration) ? 'Connect' : 'Activate'}
+            {isRemoteMcpOauth(integration) ? 'One-click connect' : 'Activate'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </button>
         )}
