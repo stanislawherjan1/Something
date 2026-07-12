@@ -230,7 +230,7 @@
     {
       "id": "cryptocom",
       "label": "Crypto.com",
-      "logo": "/integrations/cryptocom.png",
+      "logo": "/integrations/cryptocom.svg",
       "description": "Real-time crypto prices, order books, conversions, and candlestick charts via Crypto.com's official hosted MCP server. Open market-data server — activate and it just works.",
       "category": "finance",
       "fields": [],
@@ -1671,13 +1671,51 @@
       "id": "substack",
       "label": "Substack",
       "logo": "/integrations/substack.svg",
-      "description": "Read public Substack content — list a publication's archive, read posts, look up authors, and follow Notes. No credentials needed; read-only.",
+      "description": "Read public Substack content, and — if you sign in — draft, edit, publish and schedule posts and Notes on your own publication. Reading needs no credentials.",
       "category": "content",
-      "fields": [],
+      "fields": [
+        {
+          "name": "SUBSTACK_SID",
+          "label": "Session cookie (optional — only for writing)",
+          "type": "secret",
+          "optional": true,
+          "placeholder": "the substack.sid cookie value",
+          "helper": "Leave empty for read-only. To let the bot draft/publish on YOUR account, paste the substack.sid cookie. It equals your password — anyone with it controls the account. Stored encrypted."
+        },
+        {
+          "name": "SUBSTACK_PUBLICATION_URL",
+          "label": "Publication URL (optional)",
+          "type": "text",
+          "optional": true,
+          "placeholder": "https://yourname.substack.com",
+          "helper": "Only needed if you write to more than one publication, or auto-detection picks the wrong one. Otherwise leave empty — it is detected from your cookie."
+        },
+        {
+          "name": "SUBSTACK_ALLOW_PUBLISH",
+          "label": "Allow publishing",
+          "type": "select",
+          "optional": true,
+          "default": "no",
+          "globalForMulti": true,
+          "options": [
+            { "value": "no",  "label": "No — drafts only" },
+            { "value": "yes", "label": "Yes — allow publish/schedule/Notes" }
+          ],
+          "helper": "Off by default: the bot can create and edit drafts, but cannot publish, schedule, or post Notes to the public. Turn on only when you want the bot to be able to go live on its own."
+        }
+      ],
       "steps": [
         {
-          "title": "Just hit Activate",
-          "body": "No credentials needed — click Activate. The bot can then read any public Substack post, list a publication's archive, look up authors, and follow Notes. A `substack-research` skill installs automatically to help find and synthesise posts."
+          "title": "Read-only? Just hit Activate",
+          "body": "Leave every field empty and click Activate. The bot can then read any public Substack post, list an archive, look up authors, and follow Notes. A `substack-research` skill installs automatically."
+        },
+        {
+          "title": "Want the bot to write? Grab your session cookie",
+          "body": "Sign in at [substack.com](https://substack.com) in your browser. Open DevTools (**F12**) → **Application** (Chrome) or **Storage** (Firefox) → **Cookies** → `https://substack.com` → find **`substack.sid`** and copy its **Value**. Paste it into *Session cookie* below.\n\n⚠️ This cookie is as powerful as your password. Only paste it on a workspace you trust; you can revoke it any time by signing out of Substack everywhere."
+        },
+        {
+          "title": "Decide if the bot may publish",
+          "body": "*Allow publishing* stays **off** by default — the safe choice. The bot can prepare drafts and you hit Publish yourself in Substack. Flip it **on** only if you want the bot to publish, schedule, or post Notes without you. A `substack-writer` skill installs to keep it draft-first."
         }
       ],
       "mcp": {
@@ -1685,6 +1723,11 @@
         "args": [
           "{appsDir}/substack-mcp/index.js"
         ],
+        "envMap": {
+          "SUBSTACK_SID": "SUBSTACK_SID",
+          "SUBSTACK_PUBLICATION_URL": "SUBSTACK_PUBLICATION_URL",
+          "SUBSTACK_ALLOW_PUBLISH": "SUBSTACK_ALLOW_PUBLISH"
+        },
         "name": "substack",
         "allowedHosts": [
           "substack.com",
