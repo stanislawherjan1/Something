@@ -110,9 +110,16 @@ const isRemoteMcpOauth = (integration) =>
 // in the marketplace: nothing to paste either way.
 const isOneClick = (integration) => integration?.mcp?.type === 'http';
 
+// Open (no-auth) MCP servers: hosted, no OAuth, no fields — activate directly.
+const isOpenServer = (integration) =>
+  integration?.mcp?.type === 'http' &&
+  !isRemoteMcpOauth(integration) &&
+  !((integration?.fields || []).length);
+
 const CATEGORY_LABELS = {
   ai:           'AI',
   commerce:     'Commerce',
+  finance:      'Finance',
   marketing:    'Marketing',
   productivity: 'Productivity',
   messaging:    'Messaging',
@@ -158,6 +165,14 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     setActivating(match);
   }, [activateId, integrations, isAdmin, searchParams, setSearchParams]);
 
+  // Mutations (activate/remove) call `reload()` to refresh; the shared cache
+  // means any open dashboard tab updates in lockstep. Declared before
+  // openActivate so the open-server direct-activate can use it (no TDZ).
+  const reload = useCallback(() => {
+    invalidate('/api/integrations');
+    return reloadApi();
+  }, [reloadApi]);
+
   const openActivate = useCallback((integration) => {
     // Remote-MCP OAuth entries skip the fields modal entirely: the whole
     // activation is the provider consent popup → server-side callback
@@ -171,10 +186,21 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       );
       return;
     }
+    // Open (no-auth) MCP servers have nothing to configure — activate directly,
+    // no modal, no popup. The tile flips to Active on reload.
+    if (isOpenServer(integration)) {
+      fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {} }),
+      }).then(() => reload()).catch(() => {});
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     next.set('activate', integration.id);
     setSearchParams(next);
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, reload]);
 
   const closeActivate = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -182,15 +208,6 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     setSearchParams(next);
     setActivating(null);
   }, [searchParams, setSearchParams]);
-
-  // Tab switches reuse cached data (skeleton only on the very first mount).
-  // Mutations (activate/remove) call `reload()` to refresh; the cache is
-  // shared across all `useApi('/api/integrations')` mounts via the module-
-  // level Map, so any open dashboard tab updates in lockstep.
-  const reload = useCallback(() => {
-    invalidate('/api/integrations');
-    return reloadApi();
-  }, [reloadApi]);
 
   // Refresh the tiles after an OAuth popup finishes so the card flips to
   // Active without a manual page reload. Two triggers, either is enough:
@@ -254,7 +271,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       const c = i.category || 'other';
       counts.set(c, (counts.get(c) || 0) + 1);
     }
-    const ordered = ['ai', 'commerce', 'marketing', 'productivity', 'dev', 'messaging', 'content', 'other'];
+    const ordered = ['ai', 'commerce', 'finance', 'marketing', 'productivity', 'dev', 'messaging', 'content', 'other'];
     const items = [{ id: 'all', label: 'All', count: catalog.length }];
     for (const c of ordered) {
       const n = counts.get(c);
@@ -700,7 +717,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             onClick={onActivate}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
-            {isRemoteMcpOauth(integration) ? 'One-click connect' : 'Activate'}
+            {isOneClick(integration) ? 'One-click connect' : 'Activate'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </button>
         )}

@@ -232,7 +232,7 @@
       "label": "Crypto.com",
       "logo": "/integrations/cryptocom.png",
       "description": "Real-time crypto prices, order books, conversions, and candlestick charts via Crypto.com's official hosted MCP server. Open market-data server — activate and it just works.",
-      "category": "commerce",
+      "category": "finance",
       "fields": [],
       "mcp": {
         "type": "http",
