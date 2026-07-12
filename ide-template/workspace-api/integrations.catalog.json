@@ -38,7 +38,8 @@
         "allowedHosts": [
           "api.x.ai"
         ]
-      }
+      },
+      "tagline": "xAI Grok chat"
     },
     {
       "id": "openai",
@@ -81,7 +82,8 @@
         "allowedHosts": [
           "api.openai.com"
         ]
-      }
+      },
+      "tagline": "OpenAI models"
     },
     {
       "id": "gemini-chat",
@@ -120,7 +122,8 @@
         "allowedHosts": [
           "generativelanguage.googleapis.com"
         ]
-      }
+      },
+      "tagline": "Google Gemini chat"
     },
     {
       "id": "gemini-image",
@@ -164,7 +167,8 @@
         "allowedHosts": [
           "generativelanguage.googleapis.com"
         ]
-      }
+      },
+      "tagline": "Gemini image generation"
     },
     {
       "id": "seedream",
@@ -209,7 +213,8 @@
           "ark.ap-southeast.bytepluses.com",
           "ark.eu-west.bytepluses.com"
         ]
-      }
+      },
+      "tagline": "Seedream image generation"
     },
     {
       "id": "parallel",
@@ -225,7 +230,8 @@
         "allowedHosts": [
           "search.parallel.ai"
         ]
-      }
+      },
+      "tagline": "Real-time web search"
     },
     {
       "id": "cryptocom",
@@ -241,7 +247,8 @@
         "allowedHosts": [
           "mcp.crypto.com"
         ]
-      }
+      },
+      "tagline": "Crypto prices and charts"
     },
     {
       "id": "telegram",
@@ -387,7 +394,8 @@
         "allowedHosts": [
           "{{SHOPIFY_STORE_DOMAIN}}"
         ]
-      }
+      },
+      "tagline": "Products, orders, customers"
     },
     {
       "id": "meta-ads",
@@ -469,7 +477,8 @@
         "allowedHosts": [
           "graph.facebook.com"
         ]
-      }
+      },
+      "tagline": "Meta ad campaigns"
     },
     {
       "id": "google-ads",
@@ -538,7 +547,8 @@
           "googleads.googleapis.com",
           "oauth2.googleapis.com"
         ]
-      }
+      },
+      "tagline": "Google Ads campaigns"
     },
     {
       "id": "email-imap",
@@ -670,7 +680,8 @@
         "allowedHosts": [
           "{{EMAIL_HOSTS_RESOLVED}}"
         ]
-      }
+      },
+      "tagline": "Read and send email"
     },
     {
       "id": "ga4",
@@ -733,7 +744,8 @@
           "analyticsdata.googleapis.com",
           "oauth2.googleapis.com"
         ]
-      }
+      },
+      "tagline": "Google Analytics 4"
     },
     {
       "id": "signwell",
@@ -772,7 +784,8 @@
         "allowedHosts": [
           "www.signwell.com"
         ]
-      }
+      },
+      "tagline": "E-signature documents"
     },
     {
       "id": "github",
@@ -863,7 +876,8 @@
           "objects.githubusercontent.com",
           "codeload.github.com"
         ]
-      }
+      },
+      "tagline": "Repos, issues, pull requests"
     },
     {
       "id": "trello",
@@ -924,7 +938,8 @@
           "api.trello.com",
           "trello-attachments.s3.amazonaws.com"
         ]
-      }
+      },
+      "tagline": "Boards, cards, lists"
     },
     {
       "id": "linear",
@@ -946,7 +961,8 @@
         "allowedHosts": [
           "mcp.linear.app"
         ]
-      }
+      },
+      "tagline": "Issues, projects, cycles"
     },
     {
       "id": "notion",
@@ -968,7 +984,8 @@
         "allowedHosts": [
           "mcp.notion.com"
         ]
-      }
+      },
+      "tagline": "Pages, databases, search"
     },
     {
       "id": "todoist",
@@ -991,7 +1008,8 @@
           "ai.todoist.net",
           "todoist.com"
         ]
-      }
+      },
+      "tagline": "Tasks and projects"
     },
     {
       "id": "monday",
@@ -1013,7 +1031,8 @@
         "allowedHosts": [
           "mcp.monday.com"
         ]
-      }
+      },
+      "tagline": "Boards, items, updates"
     },
     {
       "id": "supabase",
@@ -1036,7 +1055,8 @@
           "mcp.supabase.com",
           "api.supabase.com"
         ]
-      }
+      },
+      "tagline": "Postgres, auth, functions"
     },
     {
       "id": "paypal",
@@ -1058,7 +1078,8 @@
         "allowedHosts": [
           "mcp.paypal.com"
         ]
-      }
+      },
+      "tagline": "Payments and invoices"
     },
     {
       "id": "miro",
@@ -1080,7 +1101,8 @@
         "allowedHosts": [
           "mcp.miro.com"
         ]
-      }
+      },
+      "tagline": "Boards and diagrams"
     },
     {
       "id": "calcom",
@@ -1102,7 +1124,8 @@
         "allowedHosts": [
           "mcp.cal.com"
         ]
-      }
+      },
+      "tagline": "Bookings and availability"
     },
     {
       "id": "calendly",
@@ -1124,7 +1147,8 @@
         "allowedHosts": [
           "mcp.calendly.com"
         ]
-      }
+      },
+      "tagline": "Scheduling and invitees"
     },
     {
       "id": "wix",
@@ -1146,7 +1170,8 @@
         "allowedHosts": [
           "mcp.wix.com"
         ]
-      }
+      },
+      "tagline": "Sites, stores, orders"
     },
     {
       "id": "klaviyo",
@@ -1168,7 +1193,8 @@
         "allowedHosts": [
           "mcp.klaviyo.com"
         ]
-      }
+      },
+      "tagline": "Campaigns, flows, lists"
     },
     {
       "id": "mailchimp",
@@ -1190,7 +1216,8 @@
         "allowedHosts": [
           "ai-inc.mailchimp.com"
         ]
-      }
+      },
+      "tagline": "Audiences and campaigns"
     },
     {
       "id": "cloudflare",
@@ -1212,7 +1239,8 @@
         "allowedHosts": [
           "bindings.mcp.cloudflare.com"
         ]
-      }
+      },
+      "tagline": "Workers, KV, R2, DNS"
     },
     {
       "id": "stripe",
@@ -1234,7 +1262,8 @@
         "allowedHosts": [
           "mcp.stripe.com"
         ]
-      }
+      },
+      "tagline": "Payments and subscriptions"
     },
     {
       "id": "atlassian",
@@ -1257,7 +1286,8 @@
           "mcp.atlassian.com"
         ],
         "transport": "sse"
-      }
+      },
+      "tagline": "Jira and Confluence"
     },
     {
       "id": "airtable",
@@ -1279,7 +1309,8 @@
         "allowedHosts": [
           "mcp.airtable.com"
         ]
-      }
+      },
+      "tagline": "Bases, tables, records"
     },
     {
       "id": "zapier",
@@ -1301,7 +1332,8 @@
         "allowedHosts": [
           "mcp.zapier.com"
         ]
-      }
+      },
+      "tagline": "7,000+ apps via Zapier"
     },
     {
       "id": "sentry",
@@ -1323,7 +1355,8 @@
         "allowedHosts": [
           "mcp.sentry.dev"
         ]
-      }
+      },
+      "tagline": "Errors and releases"
     },
     {
       "id": "webflow",
@@ -1345,7 +1378,8 @@
         "allowedHosts": [
           "mcp.webflow.com"
         ]
-      }
+      },
+      "tagline": "Sites, CMS, publishing"
     },
     {
       "id": "netlify",
@@ -1367,7 +1401,8 @@
         "allowedHosts": [
           "netlify-mcp.netlify.app"
         ]
-      }
+      },
+      "tagline": "Sites, deploys, forms"
     },
     {
       "id": "neon",
@@ -1389,7 +1424,8 @@
         "allowedHosts": [
           "mcp.neon.tech"
         ]
-      }
+      },
+      "tagline": "Postgres branches and SQL"
     },
     {
       "id": "canva",
@@ -1411,7 +1447,8 @@
         "allowedHosts": [
           "mcp.canva.com"
         ]
-      }
+      },
+      "tagline": "Designs and brand assets"
     },
     {
       "id": "amplitude",
@@ -1433,7 +1470,8 @@
         "allowedHosts": [
           "mcp.amplitude.com"
         ]
-      }
+      },
+      "tagline": "Product analytics and charts"
     },
     {
       "id": "google-workspace",
@@ -1557,7 +1595,8 @@
           "oauth2.googleapis.com",
           "*.googleusercontent.com"
         ]
-      }
+      },
+      "tagline": "Gmail, Drive, Calendar"
     },
     {
       "id": "docs-comments",
@@ -1626,7 +1665,8 @@
           "*.google.fr",
           "*.google.com.au"
         ]
-      }
+      },
+      "tagline": "Google Docs comments"
     },
     {
       "id": "x",
@@ -1665,7 +1705,8 @@
         "allowedHosts": [
           "api.twitterapi.io"
         ]
-      }
+      },
+      "tagline": "Post and read on X"
     },
     {
       "id": "substack",
@@ -1698,8 +1739,14 @@
           "default": "no",
           "globalForMulti": true,
           "options": [
-            { "value": "no",  "label": "No — drafts only" },
-            { "value": "yes", "label": "Yes — allow publish/schedule/Notes" }
+            {
+              "value": "no",
+              "label": "No — drafts only"
+            },
+            {
+              "value": "yes",
+              "label": "Yes — allow publish/schedule/Notes"
+            }
           ],
           "helper": "Off by default: the bot can create and edit drafts, but cannot publish, schedule, or post Notes to the public. Turn on only when you want the bot to be able to go live on its own."
         }
@@ -1733,7 +1780,8 @@
           "substack.com",
           "*.substack.com"
         ]
-      }
+      },
+      "tagline": "Read and publish posts"
     }
   ]
 }

@@ -455,10 +455,11 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         <ActivateModal
           integration={activating}
           onClose={closeActivate}
-          onSuccess={() => {
-            // ActivateModal already drove the restart inline through the
-            // runRestartPhases helper, so we just close + refresh here.
+          onSuccess={(data) => {
+            const label = activating?.label || 'Integration';
             closeActivate();
+            pushToast(`${label} connected`, 'ok');
+            if (data?.restarting) pushRestartToast();
             reload();
           }}
         />
@@ -1392,8 +1393,9 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      await runRestartPhases({ response: data, setPhase, setRestartFailed });
-      onSuccess();
+      // Close immediately; the dashboard shows "connected" + the restart
+      // progress toast (unified with one-click/open flows).
+      onSuccess(data);
     } catch (err) {
       setError(err.message);
       setPhase('idle');
