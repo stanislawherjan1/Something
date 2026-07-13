@@ -718,13 +718,12 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
   const cantActivate = !ready && !isActive && !isComingSoon;
   const isBeta       = isOneClick(integration) && integration.beta !== false;
   const desc         = integration.tagline || integration.description;
-  const btn = 'flex size-8 shrink-0 items-center justify-center rounded-full border transition-all';
+  const btn = 'flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors';
 
   return (
     <div className={cn(
-      'group flex items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 transition-all',
-      (isComingSoon || cantActivate)      ? 'border-border/40' :
-                                            'border-border/60 hover:border-foreground/20 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
+      'group flex items-center gap-3 rounded-lg border bg-card px-3.5 py-2.5 transition-colors',
+      (isComingSoon || cantActivate) ? 'border-border/40' : 'border-border/50 hover:border-border',
     )}>
       <Logo src={integration.logo} alt={integration.label} dim={isComingSoon || cantActivate} />
 
@@ -751,14 +750,14 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
        : cantActivate ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
        : isActive     ? (
           <button type="button" onClick={onRemove} title="Remove" aria-label="Remove"
-            className={cn(btn, 'border-emerald-500/30 text-emerald-600 hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive dark:text-emerald-400')}>
-            <CheckCircle2 className="size-4 group-hover:hidden" strokeWidth={2} />
-            <Trash2 className="hidden size-3.5 group-hover:block" strokeWidth={1.9} />
+            className={cn(btn, 'border-border/50 text-foreground/50 hover:bg-muted/50 hover:text-foreground/70')}>
+            <CheckCircle2 className="size-4 group-hover:hidden" strokeWidth={1.9} />
+            <Trash2 className="hidden size-3.5 group-hover:block" strokeWidth={1.75} />
           </button>
         ) : (
           <button type="button" onClick={onActivate} title={isOneClick(integration) ? 'Connect' : 'Add'} aria-label="Add"
-            className={cn(btn, 'border-border/60 text-foreground/55 hover:border-foreground/40 hover:bg-foreground hover:text-background active:scale-95')}>
-            <PlusIcon className="size-4" strokeWidth={2} />
+            className={cn(btn, 'border-border/50 text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground/70')}>
+            <PlusIcon className="size-4" strokeWidth={1.9} />
           </button>
         )}
     </div>
