@@ -535,13 +535,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           left = integration + install check, right = bot restart status, and a
           full-width progress line at the very bottom edge. */}
       {toasts.some(t => t.kind === 'activation') && (
-        <div className="pointer-events-none fixed inset-x-0 top-6 z-[70] flex flex-col items-center gap-2 px-4">
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex flex-col items-center gap-2 px-4">
           {toasts.filter(t => t.kind === 'activation').map((t) => (
             <motion.div
               key={t.id}
-              initial={{ y: -24, opacity: 0 }}
+              initial={{ y: 24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -24, opacity: 0 }}
+              exit={{ y: 24, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="pointer-events-auto relative w-[60%] max-w-3xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur"
             >
