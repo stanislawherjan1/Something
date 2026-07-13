@@ -191,11 +191,35 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // through toasts. Bar fills over the restart window, then flips to "ready".
   const pushRestartToast = useCallback(() => {
     const id = ++toastSeq.current;
-    setToasts(t => [...t, { id, kind: 'progress', text: 'Updating the assistant…', duration: RESTART_WINDOW_MS }]);
+    setToasts(t => [...t, { id, kind: 'progress', text: `Updating ${botDisplayName}…`, duration: RESTART_WINDOW_MS }]);
     setTimeout(() => {
-      setToasts(t => t.map(x => x.id === id ? { ...x, kind: 'ok', text: 'Assistant ready' } : x));
+      setToasts(t => t.map(x => x.id === id ? { ...x, kind: 'ok', text: `${botDisplayName} is ready` } : x));
       setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2500);
     }, RESTART_WINDOW_MS);
+  }, [botDisplayName]);
+
+  // Rich activation bar: left = logo + name + a circle that ticks to a check
+  // once connected; right = the bot-restart status with a progress bar that
+  // fills over the restart window, then flips to "ready". The bar lingers a
+  // beat after the restart finishes, then dismisses.
+  const pushActivationToast = useCallback((integration, restarting = true) => {
+    const id = ++toastSeq.current;
+    setToasts(t => [...t, {
+      id, kind: 'activation',
+      logo: integration.logo, label: integration.label || integration.id,
+      left: 'activating', right: restarting ? 'restarting' : 'idle',
+      duration: RESTART_WINDOW_MS,
+    }]);
+    // left: circle → check after a short beat
+    setTimeout(() => setToasts(t => t.map(x => x.id === id ? { ...x, left: 'connected' } : x)), 550);
+    if (restarting) {
+      setTimeout(() => {
+        setToasts(t => t.map(x => x.id === id ? { ...x, right: 'ready' } : x));
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 1800);   // lingers after restart
+      }, RESTART_WINDOW_MS);
+    } else {
+      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
+    }
   }, []);
 
   const openActivate = useCallback((integration) => {
@@ -225,20 +249,17 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     // Open (no-auth) MCP servers have nothing to configure — activate directly,
     // no modal, no popup. Toast gives immediate feedback (no scroll jump).
     if (isOpenServer(integration)) {
-      const pending = pushToast(`Activating ${label}…`, 'pending', 0);
       fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields: {} }),
       }).then(async (r) => {
-        dismissToast(pending);
         const d = await r.json().catch(() => ({}));
         if (!r.ok) { pushToast(d.error || `Couldn't activate ${label}.`, 'error'); return; }
-        pushToast(`${label} connected`, 'ok');
-        if (d.restarting) pushRestartToast();
+        pushActivationToast(integration, !!d.restarting);
         reload();
-      }).catch(() => { dismissToast(pending); pushToast('Could not reach the server.', 'error'); });
+      }).catch(() => pushToast('Could not reach the server.', 'error'));
       return;
     }
     const next = new URLSearchParams(searchParams);
@@ -261,14 +282,15 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     const onMessage = (e) => {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type !== 'integration-oauth') return;
-      const label = integrations.find(i => i.id === e.data.id)?.label || 'Integration';
-      if (e.data.ok) { pushToast(`${label} connected`, 'ok'); pushRestartToast(); }
+      const integ = integrations.find(i => i.id === e.data.id);
+      const label = integ?.label || 'Integration';
+      if (e.data.ok) pushActivationToast(integ || { label, logo: null }, true);
       else pushToast(`${label} didn't connect. Try again.`, 'error');
       reload();
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [reload, pushToast, pushRestartToast, integrations]);
+  }, [reload, pushToast, pushActivationToast, integrations]);
 
   // First-ever mount with no cache hit → skeleton. Subsequent tab switches
   // have data immediately and revalidate silently in the background.
@@ -456,10 +478,9 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           integration={activating}
           onClose={closeActivate}
           onSuccess={(data) => {
-            const label = activating?.label || 'Integration';
+            const integ = activating;
             closeActivate();
-            pushToast(`${label} connected`, 'ok');
-            if (data?.restarting) pushRestartToast();
+            pushActivationToast(integ, !!data?.restarting);
             reload();
           }}
         />
@@ -487,37 +508,77 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         />
       )}
 
-      {/* Dev-only toast simulator — stripped from production builds via
-          import.meta.env.DEV. Lets you preview each toast without a real
-          activation while polishing the UI locally (npm run dev:mock). */}
+      {/* Dev-only toast simulator — top so it never covers the marketplace.
+          Stripped from production builds via import.meta.env.DEV. */}
       {import.meta.env.DEV && (
-        <div className="fixed bottom-5 left-5 z-[70] flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card/95 p-2 shadow-lg backdrop-blur">
-          <div className="px-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground/55">Toast preview · dev</div>
-          <div className="flex flex-wrap gap-1.5">
-            {[
-              ['✓ connected', () => pushToast('Notion connected', 'ok')],
-              ['⟳ restart bar', () => pushRestartToast()],
-              ['… pending', () => pushToast('Activating Crypto.com…', 'pending', 0)],
-              ['✕ error', () => pushToast("Couldn't activate Crypto.com.", 'error')],
-            ].map(([label, fn]) => (
-              <button
-                key={label}
-                type="button"
-                onClick={fn}
-                className="rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] font-medium text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="fixed left-1/2 top-3 z-[80] flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-border/60 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
+          <span className="px-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground/55">Toast preview · dev</span>
+          {[
+            ['activation bar', () => pushActivationToast({ logo: '/integrations/notion.svg', label: 'Notion' }, true)],
+            ['✓ ok', () => pushToast('Notion connected', 'ok')],
+            ['⟳ restart', () => pushRestartToast()],
+            ['✕ error', () => pushToast("Couldn't activate Crypto.com.", 'error')],
+          ].map(([label, fn]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={fn}
+              className="rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] font-medium text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40"
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Local toast stack — connection + assistant-restart feedback. Fixed
-          overlay so it never shifts page layout. */}
-      {toasts.length > 0 && (
-        <div className="pointer-events-none fixed bottom-5 right-5 z-[70] flex flex-col gap-2">
-          {toasts.map((t) => (
+      {/* Activation bar — full-width dock at the bottom. Slides up on connect,
+          left = integration + install check, right = bot restart status, and a
+          full-width progress line at the very bottom edge. */}
+      {toasts.some(t => t.kind === 'activation') && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex flex-col">
+          {toasts.filter(t => t.kind === 'activation').map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
+              className="pointer-events-auto relative border-t border-border/60 bg-card/95 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur"
+            >
+              <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Logo src={t.logo} alt={t.label} size="size-9" imgSize="size-5" />
+                  <div className="min-w-0">
+                    <div className="truncate text-[14px] font-semibold text-foreground/90">{t.label}</div>
+                    <div className="mt-0.5 flex items-center gap-1 text-[12px]">
+                      {t.left === 'activating'
+                        ? <><Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/60" strokeWidth={2.2} /><span className="text-muted-foreground/70">Installing…</span></>
+                        : <><CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="font-medium text-emerald-600 dark:text-emerald-400">Installed</span></>}
+                    </div>
+                  </div>
+                </div>
+                {t.right !== 'idle' && (
+                  <div className="flex shrink-0 items-center gap-2">
+                    {t.right === 'restarting'
+                      ? <><Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground/70" strokeWidth={2.2} /><span className="text-[13px] text-muted-foreground/85">{botDisplayName} restarting…</span></>
+                      : <><CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="text-[13px] text-muted-foreground/85">{botDisplayName} is ready</span></>}
+                  </div>
+                )}
+              </div>
+              {t.right === 'restarting' && (
+                <div className="absolute inset-x-0 bottom-0 h-[3px] bg-border/30">
+                  <motion.div className="h-full bg-foreground/40" initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: (t.duration || RESTART_WINDOW_MS) / 1000, ease: 'linear' }} />
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Corner toasts — errors, remove, standalone restart. */}
+      {toasts.some(t => t.kind !== 'activation') && (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-[71] flex flex-col items-end gap-2">
+          {toasts.filter(t => t.kind !== 'activation').map((t) => (
             <motion.div
               key={t.id}
               initial={{ opacity: 0, y: 12, scale: 0.97 }}
@@ -537,22 +598,12 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               {(t.kind === 'pending' || t.kind === 'progress') && <Loader2 className="size-4 shrink-0 animate-spin" strokeWidth={2.2} />}
               {t.kind === 'error'     && <AlertTriangle className="size-4 shrink-0" strokeWidth={2.2} />}
               <span>{t.text}</span>
-              <button
-                type="button"
-                onClick={() => dismissToast(t.id)}
-                className="ml-1 -mr-1 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
-                aria-label="Dismiss"
-              >
+              <button type="button" onClick={() => dismissToast(t.id)} className="ml-1 -mr-1 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100" aria-label="Dismiss">
                 <X className="size-3.5" strokeWidth={2} />
               </button>
               {t.kind === 'progress' && (
                 <div className="absolute inset-x-0 bottom-0 h-[2.5px] bg-border/40">
-                  <motion.div
-                    className="h-full bg-foreground/45"
-                    initial={{ width: '0%' }}
-                    animate={{ width: '100%' }}
-                    transition={{ duration: (t.duration || RESTART_WINDOW_MS) / 1000, ease: 'linear' }}
-                  />
+                  <motion.div className="h-full bg-foreground/45" initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: (t.duration || RESTART_WINDOW_MS) / 1000, ease: 'linear' }} />
                 </div>
               )}
             </motion.div>
@@ -882,7 +933,7 @@ function logoUrl(src) {
   return `${base}${src.startsWith('/') ? src : '/' + src}`;
 }
 
-function Logo({ src, alt, dim }) {
+function Logo({ src, alt, dim, size = 'size-12', imgSize = 'size-7' }) {
   const [errored, setErrored] = useState(false);
   const url = logoUrl(src);
   // Logo tile is always a solid-white square in both themes. The brand
@@ -892,7 +943,8 @@ function Logo({ src, alt, dim }) {
   return (
     <div
       className={cn(
-        'flex size-12 shrink-0 items-center justify-center rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+        'flex shrink-0 items-center justify-center rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+        size,
         dim && 'opacity-50 grayscale',
       )}
     >
@@ -905,7 +957,7 @@ function Logo({ src, alt, dim }) {
           src={url}
           alt=""
           onError={() => setErrored(true)}
-          className="size-7 object-contain"
+          className={cn('object-contain', imgSize)}
         />
       )}
     </div>
