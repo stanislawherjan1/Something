@@ -543,7 +543,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="pointer-events-auto relative w-[75%] max-w-4xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur"
+              className="pointer-events-auto relative w-[60%] max-w-3xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur"
             >
               <div className="flex w-full items-center justify-between gap-4 px-5 py-3">
                 <div className="flex min-w-0 items-center gap-3">
