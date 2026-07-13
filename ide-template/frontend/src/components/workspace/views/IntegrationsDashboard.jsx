@@ -548,13 +548,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               <div className="flex w-full items-center justify-between gap-4 px-5 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <Logo src={t.logo} alt={t.label} size="size-9" imgSize="size-5" />
-                  <div className="min-w-0">
-                    <div className="truncate text-[14px] font-semibold text-foreground/90">{t.label}</div>
-                    <div className="mt-0.5 flex items-center gap-1 text-[12px]">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[14px] font-semibold text-foreground/90">{t.label}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-[12px]">
                       {t.left === 'activating'
                         ? <><Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/60" strokeWidth={2.2} /><span className="text-muted-foreground/70">Installing…</span></>
                         : <><CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="font-medium text-emerald-600 dark:text-emerald-400">Installed</span></>}
-                    </div>
+                    </span>
                   </div>
                 </div>
                 {t.right !== 'idle' && (
