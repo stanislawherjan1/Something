@@ -231,7 +231,8 @@
           "search.parallel.ai"
         ]
       },
-      "tagline": "Real-time web search"
+      "tagline": "Real-time web search",
+      "beta": false
     },
     {
       "id": "cryptocom",
@@ -555,7 +556,7 @@
       "label": "Email (IMAP)",
       "logo": "/integrations/email.svg",
       "description": "Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by exposure.",
-      "category": "messaging",
+      "category": "productivity",
       "multi": true,
       "itemLabel": "Account",
       "minItems": 1,
@@ -985,7 +986,8 @@
           "mcp.notion.com"
         ]
       },
-      "tagline": "Pages, databases, search"
+      "tagline": "Pages, databases, search",
+      "beta": false
     },
     {
       "id": "todoist",
@@ -1102,7 +1104,8 @@
           "mcp.miro.com"
         ]
       },
-      "tagline": "Boards and diagrams"
+      "tagline": "Boards and diagrams",
+      "beta": false
     },
     {
       "id": "calcom",

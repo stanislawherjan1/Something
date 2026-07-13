@@ -123,7 +123,6 @@ const CATEGORY_LABELS = {
   finance:      'Finance',
   marketing:    'Marketing',
   productivity: 'Productivity',
-  messaging:    'Messaging',
   content:      'Content',
   dev:          'Dev',
   other:        'Other',
@@ -311,7 +310,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       const c = i.category || 'other';
       counts.set(c, (counts.get(c) || 0) + 1);
     }
-    const ordered = ['ai', 'commerce', 'finance', 'marketing', 'productivity', 'dev', 'messaging', 'content', 'other'];
+    const ordered = ['ai', 'commerce', 'finance', 'marketing', 'productivity', 'dev', 'content', 'other'];
     const items = [{ id: 'all', label: 'All', count: catalog.length }];
     for (const c of ordered) {
       const n = counts.get(c);
@@ -717,14 +716,13 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
-  const isBeta       = isOneClick(integration);
+  const isBeta       = isOneClick(integration) && integration.beta !== false;
   const desc         = integration.tagline || integration.description;
   const btn = 'flex size-8 shrink-0 items-center justify-center rounded-full border transition-all';
 
   return (
     <div className={cn(
       'group flex items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 transition-all',
-      isActive                            ? 'border-emerald-500/25' :
       (isComingSoon || cantActivate)      ? 'border-border/40' :
                                             'border-border/60 hover:border-foreground/20 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
     )}>
@@ -772,7 +770,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
   const hasSettings  = isActive && (integration.fields || []).some(f => f.globalForMulti);
-  const isBeta       = isOneClick(integration);   // provider-hosted MCP — still in beta
+  const isBeta       = isOneClick(integration) && integration.beta !== false;   // provider-hosted MCP — still in beta
 
   return (
     <div className={cn(
