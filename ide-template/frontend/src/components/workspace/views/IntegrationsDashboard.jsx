@@ -535,17 +535,17 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           left = integration + install check, right = bot restart status, and a
           full-width progress line at the very bottom edge. */}
       {toasts.some(t => t.kind === 'activation') && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex flex-col">
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex flex-col items-center gap-2 px-4">
           {toasts.filter(t => t.kind === 'activation').map((t) => (
             <motion.div
               key={t.id}
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', stiffness: 260, damping: 30 }}
-              className="pointer-events-auto relative border-t border-border/60 bg-card/95 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="pointer-events-auto relative w-[75%] max-w-4xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur"
             >
-              <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-3">
+              <div className="flex w-full items-center justify-between gap-4 px-5 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <Logo src={t.logo} alt={t.label} size="size-9" imgSize="size-5" />
                   <div className="min-w-0">
