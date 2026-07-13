@@ -556,7 +556,7 @@
       "label": "Email (IMAP)",
       "logo": "/integrations/email.svg",
       "description": "Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by exposure.",
-      "category": "productivity",
+      "category": "messaging",
       "multi": true,
       "itemLabel": "Account",
       "minItems": 1,

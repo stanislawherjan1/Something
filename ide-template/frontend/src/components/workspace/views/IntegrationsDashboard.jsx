@@ -123,6 +123,7 @@ const CATEGORY_LABELS = {
   finance:      'Finance',
   marketing:    'Marketing',
   productivity: 'Productivity',
+  messaging:    'Messaging',
   content:      'Content',
   dev:          'Dev',
   other:        'Other',
@@ -310,25 +311,29 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       const c = i.category || 'other';
       counts.set(c, (counts.get(c) || 0) + 1);
     }
-    const ordered = ['ai', 'commerce', 'finance', 'marketing', 'productivity', 'dev', 'content', 'other'];
+    // Alphabetical by display label; "Other" always last.
+    const cats = [...counts.keys()].sort((a, b) => {
+      if (a === 'other') return 1;
+      if (b === 'other') return -1;
+      return (CATEGORY_LABELS[a] || a).localeCompare(CATEGORY_LABELS[b] || b);
+    });
     const items = [{ id: 'all', label: 'All', count: catalog.length }];
-    for (const c of ordered) {
-      const n = counts.get(c);
-      if (n) items.push({ id: c, label: CATEGORY_LABELS[c] || c, count: n });
-    }
+    for (const c of cats) items.push({ id: c, label: CATEGORY_LABELS[c] || c, count: counts.get(c) });
     return items;
   }, [catalog]);
 
   // Filter + sort the catalog list. Search hits label + description, case-
   // insensitive. Sort puts comingSoon last; otherwise alpha by label.
+  // Search-only filter — the marketplace groups the result into category
+  // sections, so there's no category chip to filter by anymore.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return catalog
       .filter(i => {
-        if (category !== 'all' && (i.category || 'other') !== category) return false;
         if (!q) return true;
         return (
           (i.label || '').toLowerCase().includes(q) ||
+          (i.tagline || '').toLowerCase().includes(q) ||
           (i.description || '').toLowerCase().includes(q) ||
           (i.id || '').toLowerCase().includes(q)
         );
@@ -338,7 +343,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         if (cs !== 0) return cs;
         return (a.label || '').localeCompare(b.label || '');
       });
-  }, [catalog, query, category]);
+  }, [catalog, query]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -432,17 +437,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               <div className={cn(tab !== 'marketplace' && 'hidden')}>
                 <Marketplace
                   facets={facets}
-                  category={category}
-                  onCategory={setCategory}
                   query={query}
                   onQuery={setQuery}
                   items={filtered}
-                  totalAvailable={catalog.length}
                   ready={ready}
                   canManage={isAdmin}
                   onActivate={openActivate}
                   onRemove={(i) => setRemoving(i)}
-                  onSettings={(i) => setSettingsFor(i)}
                 />
               </div>
             </>
@@ -468,7 +469,13 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         <RemoveDialog
           integration={removing}
           onClose={() => setRemoving(null)}
-          onSuccess={() => { setRemoving(null); reload(); }}
+          onSuccess={(data) => {
+            const label = removing?.label || 'Integration';
+            setRemoving(null);
+            pushToast(`${label} removed`, 'ok');
+            if (data?.restarting) pushRestartToast();
+            reload();
+          }}
         />
       )}
 
@@ -599,19 +606,9 @@ function Tabs({ value, onChange, items }) {
 // ─── Marketplace (Available section: search + category chips + grid) ─────
 
 function Marketplace({
-  facets, category, onCategory, query, onQuery,
-  items, ready, canManage, onActivate, onRemove, onSettings,
+  facets, query, onQuery,
+  items, ready, canManage, onActivate, onRemove,
 }) {
-  const filtered = items.length;
-  // The filter context for the empty-state message — distinguish "no
-  // results for search" from "no items in this category" from "nothing
-  // catalog at all" so the operator gets a useful next step.
-  const filterContext = query.trim()
-    ? { kind: 'search',   value: query.trim() }
-    : category !== 'all'
-      ? { kind: 'category', value: facets.find(f => f.id === category)?.label || category }
-      : null;
-
   return (
     <div className="flex flex-col gap-4">
       {/* Search input — keyboard-focus highlight via foreground ring so it
@@ -639,66 +636,49 @@ function Marketplace({
         )}
       </div>
 
-      {/* Category chips — match the SkillsDashboard tag-filter bar exactly
-          (rounded-md, border-foreground/45 on active, muted background).
-          Subtle "this is selected" instead of a heavy black pill. */}
-      <div className="flex flex-wrap items-center gap-2">
-        {facets.map((f) => {
-          const isActive = category === f.id;
-          return (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => onCategory(f.id)}
-              aria-pressed={isActive}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] font-medium leading-none transition-colors',
-                isActive
-                  ? 'border-foreground/45 bg-muted/70 text-foreground hover:bg-muted/85'
-                  : 'border-border/55 bg-card text-foreground/80 hover:border-foreground/30 hover:bg-muted/40',
-              )}
-            >
-              <span className="leading-none">{f.label}</span>
-              <span className={cn('leading-none text-[10.5px] tabular-nums', isActive ? 'text-muted-foreground/85' : 'text-muted-foreground/65')}>
-                {f.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Compact single alphabetical grid — 2 columns of dense rows. */}
-      {filtered > 0 ? (
-        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
-          {items.map((integration) => (
-            <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
-              <CompactTile
-                integration={integration}
-                ready={ready}
-                canManage={canManage}
-                onActivate={() => onActivate(integration)}
-                onRemove={() => onRemove(integration)}
-              />
-            </motion.div>
-          ))}
+      {/* Grouped into category sections (header + 2-col grid), ordered by the
+          facet order. Replaces the top filter chips — you scroll by category. */}
+      {items.length > 0 ? (
+        <div className="flex flex-col gap-6">
+          {facets.filter(f => f.id !== 'all').map((f) => {
+            const group = items.filter(i => (i.category || 'other') === f.id);
+            if (!group.length) return null;
+            return (
+              <div key={f.id} className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-2 px-0.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{f.label}</span>
+                  <span className="text-[10.5px] tabular-nums text-muted-foreground/45">{group.length}</span>
+                </div>
+                <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+                  {group.map((integration) => (
+                    <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                      <CompactTile
+                        integration={integration}
+                        ready={ready}
+                        canManage={canManage}
+                        onActivate={() => onActivate(integration)}
+                        onRemove={() => onRemove(integration)}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-6 py-10 text-center">
           <Search className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
           <div className="text-[13.5px] font-medium text-foreground/85">
-            {filterContext?.kind === 'search'
-              ? <>No integrations match "{filterContext.value}"</>
-              : filterContext?.kind === 'category'
-                ? <>No integrations in {filterContext.value}</>
-                : 'Nothing in the marketplace yet'}
+            {query.trim() ? <>No integrations match "{query.trim()}"</> : 'Nothing in the marketplace yet'}
           </div>
-          {filterContext && (
+          {query.trim() && (
             <button
               type="button"
-              onClick={() => { onQuery(''); onCategory('all'); }}
+              onClick={() => onQuery('')}
               className="mt-1 inline-flex items-center gap-1 rounded-md border border-border/55 bg-background px-3 py-1.5 text-[12.5px] text-foreground/80 transition-colors hover:bg-muted/40"
             >
-              Show all
+              Clear search
             </button>
           )}
         </div>
@@ -1919,76 +1899,57 @@ function PermissionRow({ field, value, onChange, disabled }) {
 // `title`/`body`/`confirmLabel`/`busyLabel`/`doneLabel` are optional copy
 // overrides — defaults keep the Integrations "Remove" wording; AI-Settings
 // Telegram reuses this dialog with "Disconnect" wording.
-export function RemoveDialog({ integration, onClose, onSuccess, title, body, confirmLabel, busyLabel, doneLabel }) {
-  const [phase, setPhase] = useState('idle');
-  const [restartFailed, setRestartFailed] = useState(false);
+export function RemoveDialog({ integration, onClose, onSuccess, title, body, confirmLabel, busyLabel }) {
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const busy = phase !== 'idle';
 
   const remove = async () => {
     setError(null);
-    setRestartFailed(false);
-    setPhase('saving');
+    setBusy(true);
     try {
       const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, { method: 'DELETE' });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      await runRestartPhases({ response: data, setPhase, setRestartFailed });
-      onSuccess();
+      // Close immediately; the dashboard toasts the result + restart progress.
+      onSuccess(data);
     } catch (err) {
       setError(err.message);
-      setPhase('idle');
+      setBusy(false);
     }
   };
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`Remove ${integration.label}`}>
-      <div className="w-full max-w-lg overflow-hidden rounded-lg bg-background shadow-2xl">
-        <div className="flex items-start gap-4 px-7 py-7">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-destructive/10">
-            <Trash2 className="size-4 text-destructive" strokeWidth={2} />
+      <div className="w-full max-w-md overflow-hidden rounded-lg border border-border/60 bg-background shadow-xl">
+        <div className="px-6 py-5">
+          <div className="text-[15px] font-semibold text-foreground">{title || `Remove ${integration.label}?`}</div>
+          <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/80">
+            {body || "This deactivates the integration and erases its stored credentials. You can reconnect it any time."}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-semibold text-foreground">{title || `Remove ${integration.label}?`}</div>
-            <div className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
-              {body || "This deactivates the integration and erases the stored credentials. To use it again, you'll need to enter a new key."}
+          {error && (
+            <div className="mt-3 rounded-md border border-destructive/25 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">
+              {error}
             </div>
-            {error && (
-              <div className="mt-4 rounded border border-destructive/25 bg-destructive/[0.04] px-3 py-2 text-[12px] text-destructive">
-                {error}
-              </div>
-            )}
-          </div>
+          )}
         </div>
-        <div className="flex flex-col gap-3 border-t border-border/50 bg-muted/20 px-7 py-4">
-          {phase === 'restarting' && <RestartingBanner />}
-          {phase === 'done' && !restartFailed && <DoneBanner />}
-          {restartFailed && <RestartFailedBanner />}
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="rounded px-4 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground/85 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={remove}
-              disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded bg-destructive px-5 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-95 disabled:opacity-50"
-            >
-              {(phase === 'saving' || phase === 'restarting') && <Loader2 className="size-3.5 animate-spin" />}
-              {phase === 'saving'
-                ? (busyLabel || 'Removing…')
-                : phase === 'restarting'
-                  ? 'Restarting bot…'
-                  : phase === 'done'
-                    ? (restartFailed ? (doneLabel || 'Removed') : 'Done')
-                    : (confirmLabel || 'Remove')}
-            </button>
-          </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border/50 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md px-3.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={remove}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/25 bg-destructive/10 px-3.5 py-1.5 text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/[0.16] disabled:opacity-50"
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            {busy ? (busyLabel || 'Removing…') : (confirmLabel || 'Remove')}
+          </button>
         </div>
       </div>
     </ModalShell>
