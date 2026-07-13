@@ -511,7 +511,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       {/* Dev-only toast simulator — top so it never covers the marketplace.
           Stripped from production builds via import.meta.env.DEV. */}
       {import.meta.env.DEV && (
-        <div className="fixed left-1/2 top-3 z-[80] flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-border/60 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
+        <div className="fixed left-3 top-3 z-[80] flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
           <span className="px-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground/55">Toast preview · dev</span>
           {[
             ['activation bar', () => pushActivationToast({ logo: '/integrations/notion.svg', label: 'Notion' }, true)],
@@ -535,26 +535,26 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           left = integration + install check, right = bot restart status, and a
           full-width progress line at the very bottom edge. */}
       {toasts.some(t => t.kind === 'activation') && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex flex-col items-center gap-2 px-4">
+        <div className="pointer-events-none fixed inset-x-0 top-6 z-[70] flex flex-col items-center gap-2 px-4">
           {toasts.filter(t => t.kind === 'activation').map((t) => (
             <motion.div
               key={t.id}
-              initial={{ y: 24, opacity: 0 }}
+              initial={{ y: -24, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 24, opacity: 0 }}
+              exit={{ y: -24, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               className="pointer-events-auto relative w-[60%] max-w-3xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur"
             >
               <div className="flex w-full items-center justify-between gap-4 px-5 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <Logo src={t.logo} alt={t.label} size="size-9" imgSize="size-5" />
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-[14px] font-semibold text-foreground/90">{t.label}</span>
-                    <span className="flex shrink-0 items-center gap-1 text-[12px]">
+                  <div className="min-w-0">
+                    <div className="truncate text-[14px] font-semibold text-foreground/90">{t.label}</div>
+                    <div className="mt-0.5 flex items-center gap-1 text-[12px]">
                       {t.left === 'activating'
                         ? <><Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/60" strokeWidth={2.2} /><span className="text-muted-foreground/70">Installing…</span></>
                         : <><CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="font-medium text-emerald-600 dark:text-emerald-400">Installed</span></>}
-                    </span>
+                    </div>
                   </div>
                 </div>
                 {t.right !== 'idle' && (
