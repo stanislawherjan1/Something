@@ -217,28 +217,18 @@ Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914
 ## Integrations
 
 <p align="center">
-  <img src="assets/integrations.png" alt="Shopify · Gmail · Gemini · Google Ads · Meta, and more" width="820" />
+  <img src="assets/integrations.png" alt="Shopify · Notion · Stripe · GitHub · Linear · Google Workspace · Airtable · Miro · Cloudflare · Sentry, and many more" width="820" />
 </p>
 
 <br/>
 
-| Integration | What it gives your coworker |
-|---|---|
-| Shopify | Orders, products, inventory; draft orders, fulfillments |
-| Meta Ads | Instagram + Facebook ads, campaigns, audiences, Page/IG insights |
-| Google Ads | Campaigns, ad groups, keywords, Keyword Planner, reports |
-| Google Analytics 4 | Traffic, events, conversions, queried from chat |
-| Google Workspace | Docs, Sheets, Calendar, Drive, Slides, Tasks, one OAuth, six services |
-| Email (IMAP) | Multi-account inbox (Gmail / Zoho / custom); read by default, sending opt-in |
-| Trello | Cards, comments, labels, move between columns |
-| GitHub | Repos, issues, pull requests |
-| Substack | Posts, authors, Notes; optional write access |
-| X | Tweets, profiles, replies, mentions (via twitterapi.io) |
-| Grok (xAI) | Live X + web search, real-time takes, fact-checks |
-| OpenAI (GPT) · Gemini | Second opinions from GPT-5 / Gemini 2.5 |
-| Image generation | Seedream 4.5 + Google Imagen 3 / Gemini, generate & edit |
-| SignWell | Send documents for e-signature |
-| Docs Comments | Inline comments anchored to text in Google Docs |
+**One-click — sign in, no keys to paste.** Two dozen provider-hosted MCP servers connect with a single popup: sign in, approve, done. No API keys, and nothing for whoever deploys the product to register — the workspace-api OAuth broker registers itself on the fly (Dynamic Client Registration) and completes the flow on the client's own domain.
+
+> Notion · Stripe · Linear · Airtable · Miro · monday.com · Todoist · Cal.com · Calendly · PayPal · Klaviyo · Mailchimp · Cloudflare · Atlassian (Jira/Confluence) · Sentry · Netlify · Neon · Supabase · Webflow · Canva · Zapier · Amplitude · Wix · Firecrawl · Parallel Search · Crypto.com
+
+**Bring your own credentials.** The rest paste a key, token, or file once — encrypted at rest:
+
+> Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · Substack · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
 You activate each one from the Integrations dashboard, no redeploy, no `.env` editing. Credentials are encrypted at rest; removing an integration wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 

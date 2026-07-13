@@ -11,7 +11,51 @@ setup, the user flow, and the security model.
 
 Activated from the **Integrations** dashboard — no redeploy.
 `ide-template/workspace-api/integrations.catalog.json` is the source of truth;
-this table mirrors it.
+these tables mirror it. Two kinds:
+
+### One-click — sign in, no keys to paste
+
+Provider-hosted **remote MCP servers**. Activation is a single popup: the user
+signs in to the provider and approves; the workspace-api OAuth broker registers
+itself (Dynamic Client Registration), completes PKCE on the client's own domain,
+and feeds the token to the MCP via a `headersHelper` — **no operator setup, no
+API keys**. See [Remote-MCP one-click OAuth](#remote-mcp-one-click-oauth) for how
+it works. `open` = no auth at all (keyless hosted server, instant-activate).
+
+| Integration | What it does | Auth |
+|---|---|---|
+| **Airtable** | Bases, tables, records | OAuth |
+| **Amplitude** | Product analytics and charts | OAuth |
+| **Atlassian** | Jira and Confluence | OAuth |
+| **Cal.com** | Bookings and availability | OAuth |
+| **Calendly** | Scheduling and invitees | OAuth |
+| **Canva** | Designs and brand assets | OAuth |
+| **Cloudflare** | Workers, KV, R2, DNS | OAuth |
+| **Crypto.com** | Crypto prices and charts | open |
+| **Firecrawl** | Scrape, crawl, and search the web | OAuth |
+| **Klaviyo** | Campaigns, flows, lists | OAuth |
+| **Linear** | Issues, projects, cycles | OAuth |
+| **Mailchimp** | Audiences and campaigns | OAuth |
+| **Miro** | Boards and diagrams | OAuth |
+| **monday.com** | Boards, items, updates | OAuth |
+| **Neon** | Postgres branches and SQL | OAuth |
+| **Netlify** | Sites, deploys, forms | OAuth |
+| **Notion** | Pages, databases, search | OAuth |
+| **Parallel Search** | Real-time web search | open |
+| **PayPal** | Payments and invoices | OAuth |
+| **Sentry** | Errors and releases | OAuth |
+| **Stripe** | Payments and subscriptions | OAuth |
+| **Supabase** | Postgres, auth, functions | OAuth |
+| **Todoist** | Tasks and projects | OAuth |
+| **Webflow** | Sites, CMS, publishing | OAuth |
+| **Wix** | Sites, stores, orders | OAuth |
+| **Zapier** | 7,000+ apps via Zapier | OAuth |
+
+### Bring your own credentials
+
+Self-hosted MCPs or provider APIs that need a key, token, or file you paste once
+(encrypted at rest). Some — Google Workspace, Meta, Google Ads — need a
+provider-side app the operator provisions; those steps are documented below.
 
 | Integration | What it does |
 |---|---|
@@ -77,6 +121,61 @@ project-data volume                            /home/coder/project/.integrations
 1. **Master key** — owned by host root, mounted read-only into the container. Lives in `/srv/<ide>/secrets/`, deliberately separate from `.env` and from the project tree so the blast radius of any single backup leak is bounded.
 2. **Encrypted credentials store** — under `PROJECT_DIR/.integrations/credentials.json`. Each field encrypted with a fresh IV; tampered ciphertext fails to decrypt rather than leaking garbage. `HARD_HIDDEN` so the file API never returns it even with `?include_hidden=true`.
 3. **Config files** — credentials that an MCP reads as a path (email accounts.json, GA4 service-account JSON) get materialised under `/home/coder/.integrations-data/` (writable mount). Atomically written, mode 0600, deleted on remove.
+
+## Remote-MCP one-click OAuth
+
+The one-click providers in the first table above don't ship a per-provider MCP —
+they're **official provider-hosted remote MCP servers**, wired through a small
+OAuth broker inside workspace-api. This is what makes "add an integration"
+a sign-in popup instead of a key-paste, and — crucially — adds **zero setup for
+whoever deploys the product**: no operator has to register an OAuth app anywhere.
+
+**How a connect flows:**
+
+1. **Catalog entry** carries `mcp: { type: "http", url, allowedHosts }` and a
+   single field of type `remote-mcp-oauth`. That's the whole declaration — no
+   client IDs, no secrets.
+2. **Start** — admin clicks Activate → popup to
+   `GET /api/integrations/:id/oauth/start`. The broker
+   (`lib/integrations/oauth.js`, on the MCP SDK's `auth`) runs RFC 9728/8414
+   **discovery** from the MCP URL, then **Dynamic Client Registration** (RFC 7591)
+   against the provider's authorization server — registering *this client's own
+   domain* as the redirect URI on the fly. PKCE (S256) throughout.
+3. **Callback** — the provider redirects to `GET /api/integrations/oauth/callback`,
+   a **public** route (the provider redirect carries no session cookie) that is
+   `state`-validated. The broker exchanges the code, encrypts the tokens into the
+   same credentials store, and `postMessage`s the opener so the dashboard flips
+   the tile to Active without a reload.
+4. **Runtime** — `syncMcpServers` writes an `.mcp.json`/`~/.claude.json` entry
+   with `type: "http"` and a `headersHelper` (`bot/mcp-auth-helper.sh`). Claude
+   Code calls the helper to fetch the current bearer from the loopback route
+   `GET /api/internal/mcp-token/:id`, and **re-runs it once on a 401** (Claude
+   Code ≥ 2.1.193), so a silently-expired token refreshes mid-session. The broker
+   refreshes with the stored refresh token on demand.
+
+**Egress split.** workspace-api has no direct outbound; the broker's OAuth
+fetches (discovery, registration, token) go through the egress **OPEN** listener
+`egress-proxy:3130` (any public host, RFC1918 blocked) via an undici `ProxyAgent`
+set as the SDK's `fetchFn`. The bot's actual MCP connection is gated by the
+**strict** allowlist — so every one-click entry must list its MCP host in
+`mcp.allowedHosts` (that's the only host the bot dials; the auth-server host can
+differ and still works, because broker fetches use the open listener).
+
+**Gotchas** that are easy to trip on:
+
+- The broker **must use the global `fetch`** with `{ dispatcher }`, not undici's
+  `fetch` — the SDK does `input instanceof Response` in `parseErrorResponse`, and
+  an undici `Response` fails that check, surfacing as `"[object Response]"` on any
+  non-2xx.
+- A `registration_endpoint` existing in discovery **≠ open DCR**. Verify each
+  provider by POSTing a registration against the *production* redirect URI before
+  shipping it — some gate DCR to whitelisted partners and will 4xx.
+- `pm2 restart` does **not** reload the catalog JSON; a catalog change needs a
+  `docker restart` of the container.
+
+**When a hosted MCP doesn't exist** (Shopify Admin, Google Ads) or the provider
+forces pre-provisioned creds (Google Workspace's own GCP project), the
+integration stays in the second table — a bring-your-own-credentials MCP.
 
 ## Catalog
 

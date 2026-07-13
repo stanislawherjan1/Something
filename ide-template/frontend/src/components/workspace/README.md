@@ -200,9 +200,20 @@ Pills with a URL are `<a target="_blank">` with a `Globe` icon on the left and a
 [`views/IntegrationsDashboard.jsx`](views/IntegrationsDashboard.jsx) is the
 front-end side of the self-service integrations system. The dashboard reads
 `/api/integrations` (catalog + active state), renders one tile per
-integration in a responsive grid (`auto-fill, minmax(260px, 1fr)`) split
-into **Active** and **Available** sections, and pops a wide modal on
-**Activate**.
+integration split into **Active** and a category-sectioned **Marketplace**,
+and activates one of three ways depending on the catalog entry:
+
+- **One-click OAuth** (`mcp.type === "http"` + a `remote-mcp-oauth` field) —
+  no modal at all. Clicking Activate opens the provider's consent popup;
+  workspace-api's broker completes the flow on the client's own domain and
+  `postMessage`s back. This is the Notion/Stripe/Linear/… path. See
+  [Remote-MCP one-click OAuth](../../../../../docs/INTEGRATIONS.md#remote-mcp-one-click-oauth).
+- **Open server** (hosted MCP, no auth, no fields) — activates directly, no
+  modal, no popup.
+- **Bring-your-own-credentials** — pops the wide activate modal below.
+
+All feedback (connected, bot restart, errors) surfaces through a single
+bottom-centre **island** bar, not scattered toasts.
 
 The activate modal is two-column on desktop:
 

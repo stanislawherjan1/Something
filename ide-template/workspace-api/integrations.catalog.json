@@ -1785,6 +1785,29 @@
         ]
       },
       "tagline": "Read and publish posts"
+    },
+    {
+      "id": "firecrawl",
+      "label": "Firecrawl",
+      "logo": "/integrations/firecrawl.svg",
+      "description": "Web scraping, crawling, search, and structured extraction via Firecrawl's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "category": "ai",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Firecrawl connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.firecrawl.dev/v2/mcp",
+        "name": "firecrawl",
+        "allowedHosts": [
+          "mcp.firecrawl.dev"
+        ]
+      },
+      "tagline": "Scrape, crawl, and search the web"
     }
   ]
 }
