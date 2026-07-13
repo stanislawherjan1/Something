@@ -481,6 +481,32 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         />
       )}
 
+      {/* Dev-only toast simulator — stripped from production builds via
+          import.meta.env.DEV. Lets you preview each toast without a real
+          activation while polishing the UI locally (npm run dev:mock). */}
+      {import.meta.env.DEV && (
+        <div className="fixed bottom-5 left-5 z-[70] flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card/95 p-2 shadow-lg backdrop-blur">
+          <div className="px-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground/55">Toast preview · dev</div>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              ['✓ connected', () => pushToast('Notion connected', 'ok')],
+              ['⟳ restart bar', () => pushRestartToast()],
+              ['… pending', () => pushToast('Activating Crypto.com…', 'pending', 0)],
+              ['✕ error', () => pushToast("Couldn't activate Crypto.com.", 'error')],
+            ].map(([label, fn]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={fn}
+                className="rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] font-medium text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Local toast stack — connection + assistant-restart feedback. Fixed
           overlay so it never shifts page layout. */}
       {toasts.length > 0 && (
