@@ -1509,6 +1509,70 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
     fi
 ) &
 
+# ── Telegram plugin liveness watchdog ────────────────────────────────────
+# The channel plugin is an MCP-server child of claude. It sometimes dies —
+# SIGINT/disconnect/crash — and claude does NOT reconnect it. The session
+# stays up but the Telegram channel is DEAD: inbound messages never arrive
+# and nothing is sent. Seen silently for hours on two deployments
+# (2026-07-13, canary + one prod client) until a manual `docker restart`. This
+# watchdog detects a dead plugin and restarts the session (kill tmux → PM2
+# respawns bot.sh → fresh claude + reconnected plugin) so the channel heals
+# itself instead of waiting for the operator to notice.
+#
+# Only armed when the Telegram channel is expected (token → CHANNELS_ARG).
+# It first waits to SEE the plugin alive (so it never fights the startup
+# window before the pid file exists), then treats `grace` consecutive dead
+# reads as a real death — long enough to ride out the plugin's own
+# poller-replacement (pid-lock) reconnect, short enough to heal fast.
+if [ -n "$CHANNELS_ARG" ]; then
+(
+    plugin_alive() {
+        local pid cmd
+        pid=$(cat "$PLUGIN_PID_FILE" 2>/dev/null) || return 1
+        [ -n "$pid" ] || return 1
+        kill -0 "$pid" 2>/dev/null || return 1
+        # pid-reuse guard: if the pid was recycled by an unrelated process,
+        # the channel is really dead. Trust kill -0 when cmdline is unreadable.
+        cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || return 0
+        case "$cmd" in
+            ""|*telegram*|*node*|*bun*|*server.ts*) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
+    # Phase 1 — wait until the plugin is first seen alive (bounded ~200s).
+    seen=0
+    for _ in $(seq 1 40); do
+        sleep 5
+        tmux -L "$SESSION" has-session -t "$SESSION" 2>/dev/null || exit 0
+        if plugin_alive; then seen=1; break; fi
+    done
+    if [ "$seen" != "1" ]; then
+        log "plugin-watchdog: plugin never came up in ~200s — leaving recovery to the readiness path, not arming."
+        exit 0
+    fi
+    log "plugin-watchdog: Telegram plugin confirmed alive — monitoring channel health."
+
+    # Phase 2 — monitor. `grace` consecutive dead reads (~60s) → restart.
+    dead=0
+    while tmux -L "$SESSION" has-session -t "$SESSION" 2>/dev/null; do
+        sleep 30
+        if plugin_alive; then
+            dead=0
+        else
+            dead=$((dead + 1))
+            log "plugin-watchdog: Telegram plugin not alive (strike ${dead}/2)"
+            if [ "$dead" -ge 2 ]; then
+                log "plugin-watchdog: Telegram channel is DOWN — restarting session to reconnect the plugin."
+                notify "Telegram channel dropped — auto-restarting to reconnect." 2>/dev/null || true
+                tmux -L "$SESSION" kill-session -t "$SESSION" 2>/dev/null || true
+                exit 0
+            fi
+        fi
+    done
+) &
+fi
+
 # 6. Monitor: keep script alive + auto-dismiss known interactive blockers.
 # PM2 sees the bot alive via this loop. If tmux dies, script exits → PM2 restarts.
 #

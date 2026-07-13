@@ -140,6 +140,18 @@ RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/
 # pm2 stays with --ignore-scripts (no postinstall it needs).
 # NOTE: claude-code ≥2.1.200 requires node >=22 — LAYER 1's nodesource
 # pin (setup_22.x) and this version move together.
+# KNOWN RISK on ≥2.1.152 (deliberate, 2026-07-14): the CLI SIGINT-kills
+# type-less MCP servers (= channel plugins) on connection close, and a
+# channel-registration deadline (~5s) can be missed during Telegram
+# poller takeover (409 window after a stale getUpdates) → kill/retry
+# death-loop → channel dead until restart. Observed twice on 2.1.207 on
+# big/old sessions; fresh sessions survive the same triggers. We KEEP
+# 2.1.207 for its agent/workflow features and mitigate with bot.sh's
+# plugin-watchdog (auto-heals a dead channel in ~90s, verified live).
+# Bisected fallbacks if the watchdog fires too often: 2.1.150 (newest
+# without the kill behavior; boundary 2.1.150→2.1.152 via binary diff)
+# or 2.1.128 (weeks of stable fleet runtime). Durable fix = plugin-side:
+# register the channel before poller takeover — then newest CLIs are safe.
 RUN npm install -g @anthropic-ai/claude-code@2.1.207 && \
     mkdir -p /home/coder/.npm-global && \
     npm install -g pm2 --prefix /home/coder/.npm-global --ignore-scripts
@@ -427,11 +439,12 @@ COPY bot/bot-notify.sh /opt/ide/bot-notify.sh
 COPY bot/web-notify.sh /opt/ide/web-notify.sh
 COPY bot/mcp-auth-helper.sh /opt/ide/mcp-auth-helper.sh
 COPY bot/bot-relay.sh /opt/ide/bot-relay.sh
+COPY bot/tmux-inject.sh /opt/ide/tmux-inject.sh
 COPY bot/reminder-monitor.sh /opt/ide/reminder-monitor.sh
 COPY bot/recent-snapshot-monitor.sh /opt/ide/recent-snapshot-monitor.sh
 COPY bot/browser-watchdog.sh /opt/ide/browser-watchdog.sh
 COPY bot/ecosystem.config.js /opt/ide/ecosystem.config.js
-RUN chmod +x /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/mcp-auth-helper.sh /opt/ide/bot-relay.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
+RUN chmod +x /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/mcp-auth-helper.sh /opt/ide/bot-relay.sh /opt/ide/tmux-inject.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
 
 # === LAYER 9: Entrypoint ===
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

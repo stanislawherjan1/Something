@@ -70,14 +70,31 @@ esac
 
 [ ! -f "$TRANSCRIPT" ] && { log "transcript file missing, exit 0"; exit 0; }
 
-# Pull the last user message to check for silence-intent overrides.
-LAST_USER=$(tail -200 "$TRANSCRIPT" 2>/dev/null | jq -r '
-    select(.type == "user") |
-    if (.message.content | type) == "string"
-    then .message.content
-    else (.message.content[]? | select(.type == "text") | .text)
-    end
-' 2>/dev/null | tail -c 2000)
+# Pull ONLY the single most-recent user message — the one that actually
+# triggered this turn.
+#
+# BUG FIXED 2026-07-13 (silent-drop incident): the old extraction ran
+# `jq 'select(.type=="user") | .text'` over the last 200 lines and piped the
+# result through `tail -c 2000` — i.e. it concatenated the text of EVERY recent
+# user message. The whitelist grep below is line-anchored (`^\[REMINDER`), so it
+# matched whenever ANY line in that 2000-char blob started with a system prefix.
+# A single reminder/ambient frame injected minutes earlier therefore sat in the
+# tail and silently disabled reply-enforcement for a genuine Telegram turn. When
+# the model then answered with plain text instead of a reply() tool call, this
+# hook — the last line of defence — waved it through, and the user got silence
+# (observed live: 08:04–08:45, four unanswered messages).
+#
+# jq slurps the window, keeps only user messages that carry actual text (a
+# `<channel …>` inbound or a `[SYSTEM]` frame — pure tool_result turns have no
+# text and are skipped), and we take the LAST one: the trigger. Classification
+# below now judges that message alone.
+LAST_USER=$(tail -400 "$TRANSCRIPT" 2>/dev/null | jq -rc '
+    select(.type == "user")
+    | (.message.content) as $c
+    | (if ($c | type) == "string" then $c
+       else ($c | map(select(.type == "text") | .text) | join(" ")) end)
+    | select(. != null and (gsub("\\s"; "") | length) > 0)
+' 2>/dev/null | tail -1)
 
 # Operator explicitly asked for no reply → don't block.
 if echo "$LAST_USER" | grep -qiE '(nie wysyłaj|nie odpowiadaj|tylko zapisz|tylko notatk|don.t reply|only save|do not reply|skip reply)'; then
@@ -98,21 +115,51 @@ fi
 # Without this whitelist the hook blocked every internal-trigger turn,
 # claude retried, hook blocked again — infinite loop until tmux was killed.
 # Caught 2026-06-05 on canary right after first deploy.
-if echo "$LAST_USER" | grep -qE '^\[(REMINDER|REPO_AUDIT|MEMORY_INDEX|BACKUP|REFLECT_LEARNINGS|REFLECT_ORGANIZER|REFLECT_SUMMARY|SUGGESTIONS_CLEANUP|TMP_CLEANUP|CAPABILITY_TOUR|TASTE_RECALL|GROUP)'; then
+# A GENUINE Telegram inbound arrives wrapped as `<channel source="plugin:
+# telegram…">…</channel>`. If the trigger message is one of those, it ALWAYS
+# needs a reply — never let the system-frame whitelist below apply to it (belt
+# and braces now that LAST_USER is a single message).
+IS_CHANNEL=0
+echo "$LAST_USER" | grep -qiE '<channel |source="?plugin:telegram' && IS_CHANNEL=1
+
+# System triggers (reminders, periodic self-audits) arrive as user messages but
+# are the bot's own internal scheduling — they don't need a Telegram reply.
+# Whitelist by the [PREFIX] convention. NOTE: this now matches only when the
+# TRIGGER message itself is a system frame — a stale reminder elsewhere in the
+# transcript can no longer disable enforcement (2026-07-13 fix above).
+# Without this whitelist the hook blocked every internal-trigger turn, claude
+# retried, hook blocked again — infinite loop until tmux was killed (2026-06-05).
+if [ "$IS_CHANNEL" = "0" ] && echo "$LAST_USER" | grep -qE '^\[(REMINDER|AMBIENT|REPO_AUDIT|MEMORY_INDEX|BACKUP|REFLECT_LEARNINGS|REFLECT_ORGANIZER|REFLECT_SUMMARY|SUGGESTIONS_CLEANUP|TMP_CLEANUP|CAPABILITY_TOUR|TASTE_RECALL|GROUP)'; then
     log "system trigger ([${LAST_USER:1:25}...]), exit 0"
     exit 0
 fi
 
-# Pull telegram tool_uses from the most recent assistant turn.
-TG_SENDS=$(tail -200 "$TRANSCRIPT" 2>/dev/null | jq -r '
-    select(.type == "assistant") |
-    .message.content[]? |
-    select(.type == "tool_use") |
-    .name
-' 2>/dev/null | grep -c '^mcp__plugin_telegram_telegram__')
+# Count Telegram sends in THIS turn only — reply-tool calls that come AFTER the
+# most recent trigger user message.
+#
+# BUG FIXED 2026-07-13 (round 2): the old check counted telegram tool_uses across
+# the whole 200-line tail, so a reply sent in a PREVIOUS turn masked a MISSING
+# reply in the current one. Observed live: at 15:03 the hook logged "11 calls,
+# exit 0" (all from earlier turns) while the current turn sent nothing → 18-min
+# silence until the user prodded "haloooo". We now walk the window and reset the
+# counter at every trigger user message (a `<channel>` inbound or a `[SYSTEM]`
+# frame — never a bare tool_result), so only sends belonging to the latest turn
+# count. Same turn-scoping principle as the LAST_USER fix above.
+TG_SENDS=$(tail -400 "$TRANSCRIPT" 2>/dev/null | jq -r '
+    if .type == "user" then
+        ((.message.content) as $c
+         | (if ($c | type) == "string" then $c
+            else ($c | map(select(.type == "text") | .text) | join(" ")) end)
+         | if (gsub("\\s"; "") | length) > 0 then "TRIGGER" else empty end)
+    elif .type == "assistant" then
+        (.message.content[]?
+         | select(.type == "tool_use" and (.name | startswith("mcp__plugin_telegram_telegram__")))
+         | "TGSEND")
+    else empty end
+' 2>/dev/null | awk '/TRIGGER/{c=0; next} /TGSEND/{c++} END{print c+0}')
 
-if [ "$TG_SENDS" -gt 0 ]; then
-    log "telegram MCP send detected ($TG_SENDS calls), exit 0"
+if [ "${TG_SENDS:-0}" -gt 0 ]; then
+    log "telegram MCP send detected this turn ($TG_SENDS), exit 0"
     exit 0
 fi
 

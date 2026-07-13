@@ -48,6 +48,18 @@ if ! tmux -L "$SESSION" has-session -t "$SESSION" 2>/dev/null; then
     exit 2
 fi
 
+# Route through the serialized, idle-gated injector so a relay can never
+# interleave with a live user turn or a reminder (2026-07-13 incident). Its
+# exit codes line up with ours: 0 sent, 2 offline, 3 busy-timeout. On 3 the
+# caller keeps its durable raw-Telegram copy, so nothing is lost — we just
+# don't type over the live conversation.
+INJECT_SCRIPT="${INJECT_SCRIPT:-/opt/ide/tmux-inject.sh}"
+if [ -x "$INJECT_SCRIPT" ]; then
+    "$INJECT_SCRIPT" "$PAYLOAD"
+    exit $?
+fi
+
+# Fallback (helper missing — old image): preserve prior direct behaviour.
 tmux -L "$SESSION" send-keys -l -t "$SESSION" "$PAYLOAD"
 tmux -L "$SESSION" send-keys -t "$SESSION" Enter
 

@@ -16,6 +16,11 @@ TMUX_SESSION="$BOT_NAME"
 CHAT_ID="${TELEGRAM_ADMIN_CHAT_ID:-}"
 NOTIFY_SCRIPT="$HOME/bot-notify.sh"
 WEB_NOTIFY_SCRIPT="/opt/ide/web-notify.sh"
+# Serialized, idle-gated tmux injector — the ONLY path that may type into the
+# bot's Claude session (prevents reminder/user-turn interleaving). Overridable
+# for local dev; defaults to the deployed location alongside this script.
+INJECT_SCRIPT="${INJECT_SCRIPT:-/opt/ide/tmux-inject.sh}"
+export INJECT_MAX_WAIT_S="${INJECT_MAX_WAIT_S:-25}"
 
 log() { echo "[reminder-monitor] $*"; }
 
@@ -51,13 +56,21 @@ fire_operator() {
     # in global-claude.md). Everything else fires as a normal [REMINDER].
     local frame="REMINDER"
     [ "$urgency" = "ambient" ] && frame="AMBIENT"
+    # Route through the serialized, idle-gated injector (tmux-inject.sh) instead
+    # of a raw send-keys. That guarantees this reminder can never interleave with
+    # a live user turn or another injection (2026-07-13 incident). exit 3 =
+    # session stayed busy past the wait budget → DON'T type over the live turn;
+    # fall through to the same direct-API ladder used when the bot is offline, so
+    # the ping is delivered without corrupting the conversation.
+    local injected=1
     if tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
         log "Firing via tmux (channel=${channel} urgency=${urgency}): ${message}"
-        tmux -L "$TMUX_SOCKET" send-keys -l -t "$TMUX_SESSION" \
-            "[${frame} channel=${channel} chat_id=${CHAT_ID} | ${message}]"
-        tmux -L "$TMUX_SOCKET" send-keys -t "$TMUX_SESSION" Enter
-    else
-        log "Bot session offline (channel=${channel}) — using fallback"
+        "$INJECT_SCRIPT" "[${frame} channel=${channel} chat_id=${CHAT_ID} | ${message}]"
+        injected=$?
+        [ "$injected" = "3" ] && log "Session busy past ${INJECT_MAX_WAIT_S:-25}s — using direct fallback so the live turn isn't corrupted (channel=${channel})"
+    fi
+    if [ "$injected" != "0" ]; then
+        [ "$injected" = "1" ] && log "Bot session offline (channel=${channel}) — using fallback"
         case "$channel" in
             web)
                 if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
