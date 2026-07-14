@@ -282,9 +282,32 @@ d['mcpServers']['pdf'] = {
         'PROJECT_DIR': '/home/coder/project',
     },
 }
+# Reminders MCP — always-on set_reminder/list/cancel. Same local, non-broker
+# class as pdf above: syncMcpServers never lands it in /home/bot/.claude.json,
+# so without this block the bot brain has NO reminder tools — the planner
+# composes a day plan and then can't schedule any of it. Caught live
+# 2026-07-14 on a prod client ("Reminders MCP not connected — same as
+# previous days"); the canary only worked because the entry had been added
+# by hand during planner testing and the fix never landed here.
+d['mcpServers']['reminders'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/reminder-mcp/index.js'],
+    'env': {
+        'REMINDERS_FILE': '/home/coder/project/.reminders.json',
+    },
+}
+# Workspace-API MCP — always-on recent_messages / memory_grep / team tools.
+# Same rationale: local + non-broker → must be forced here.
+d['mcpServers']['workspace-api'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/workspace-api-mcp/index.js'],
+    'env': {
+        'WORKSPACE_API_URL': 'http://localhost:3001',
+    },
+}
 with open(p, 'w') as f:
     json.dump(d, f, indent=2)
-print('[entrypoint] Forced playwright + web-channel + pdf mcpServers entries in /home/bot/.claude.json')
+print('[entrypoint] Forced playwright + web-channel + pdf + reminders + workspace-api mcpServers entries in /home/bot/.claude.json')
 PY
         chown bot:botshare /home/bot/.claude.json 2>/dev/null || true
         chmod 0660         /home/bot/.claude.json 2>/dev/null || true
