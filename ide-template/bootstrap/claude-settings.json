@@ -3,6 +3,8 @@
   "_comment": "Bot-side ~/.claude/settings.json template. Deployed by entrypoint.sh to /home/coder/.claude/settings.json (and possibly /home/bot/.claude/settings.json depending on the bot uid setup). Hooks registered here fire for every CC session in the workspace.",
   "autoMemoryEnabled": false,
   "_autoMemoryEnabled_comment": "WS2: disables CC's native auto-memory system. The workspace has its own memory model at ~/project/memory/ — letting CC's native auto-memory run alongside creates two competing systems and instruction-level confusion. Per R.2 research outcome.",
+  "autoUpdates": false,
+  "_autoUpdates_comment": "2026-07-14: the CLI version is deliberately PINNED in the Dockerfile (channel-plugin kill regression in >=2.1.152 — see Dockerfile LAYER 2 comment). A live auto-update attempt was observed on a prod bot; had it succeeded it would have silently unpinned the fleet. Version bumps go through the Dockerfile + canary, never self-update.",
   "hooks": {
     "PreToolUse": [
       {
