@@ -43,6 +43,7 @@ import { requireActor } from '../lib/auth.js';
 import { activate, isActive } from '../lib/integrations/store.js';
 import { syncMcpServers } from '../lib/integrations/runtime.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
+import { publish as publishNotification } from '../lib/notify.js';
 
 const PROFILE_DIR        = '/var/wsapi-store/docs-comments-profile';
 // Last keep-alive probe result (written by recordSessionState from the
@@ -82,9 +83,40 @@ function profileHasSession() {
 // same fs so a concurrent /status read never sees a half-written file. Never throws.
 export function recordSessionState({ valid, host }) {
   try {
+    const nowValid = !!valid;
+    // Edge-triggered re-login ping. Google periodically forces a full "confirm
+    // it's you" re-auth (password + 2FA) on docs.google.com from a datacenter
+    // IP — it can't be automated, and the operator otherwise only discovers it
+    // when the NEXT add_comment fails ("connected but doesn't work"). When the
+    // keep-alive probe FLIPS from valid → expired we push one notification so
+    // they can re-login proactively. `notified` in the state file dedups to ONE
+    // ping per expiry episode (survives a wsapi restart) and re-arms once the
+    // session goes valid again. Never let a notify failure break state-write.
+    const prev = readSessionState();                 // {valid, notified} | null
+    const alreadyNotified = !!(prev && prev.notified);
+    const doPing = !nowValid && !alreadyNotified;
+
     const tmp = `${SESSION_STATE_FILE}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ valid: !!valid, host: host || '', checkedAt: Date.now() }), { mode: 0o640 });
+    writeFileSync(tmp, JSON.stringify({
+      valid: nowValid,
+      host: host || '',
+      checkedAt: Date.now(),
+      notified: nowValid ? false : true,           // invalid → mark notified so we ping once
+    }), { mode: 0o640 });
     renameSync(tmp, SESSION_STATE_FILE);
+
+    if (doPing) {
+      try {
+        publishNotification({
+          kind: 'integration',
+          title: 'Docs Comments — sign in to Google again',
+          body: 'Google asked to re-verify your account, so inline commenting is paused. Open Integrations → Docs Comments → Connect to Google and sign in (password + 2-step) to restore it.',
+          meta: { integration: 'docs-comments', reason: 'session-expired' },
+        });
+      } catch (e) {
+        process.stderr.write(`[docs-comments-login] re-login notify failed: ${e.message}\n`);
+      }
+    }
   } catch (err) {
     process.stderr.write(`[docs-comments-login] recordSessionState failed: ${err.message}\n`);
   }
