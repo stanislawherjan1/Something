@@ -87,6 +87,34 @@ export async function syncTelegramAllowedIds() {
 }
 
 /**
+ * Boot-time self-heal of the Telegram allow-list. Recomputes TELEGRAM_ALLOWED_IDS
+ * from the team roster and flushes it into the store + integrations.env WITHOUT a
+ * bot restart — bot.sh reads the fresh integrations.env on its own startup (it
+ * waits for wsapi-ready first), so no signal is needed.
+ *
+ * Why (2026-07-16): syncTelegramAllowedIds only runs on a roster edit. A member
+ * whose Telegram link predates that code path (or a sync whose bot-restart leg
+ * failed and was never retried) stays ON the roster but OFF the allow-list — the
+ * bot silently ignores their DMs and group messages. Seen live: a prod teammate
+ * was in the roster with the right chat id, yet TELEGRAM_ALLOWED_IDS was empty
+ * and allowFrom held only the admin. Reconciling from the roster on every boot
+ * makes "on the roster ⇒ allowed" always true, no matter how they were added.
+ */
+export function reconcileTelegramAllowedIdsAtBoot() {
+  if (!telegramActive()) return { skipped: 'telegram not active' };
+  try {
+    const ids = telegramAllowedIds();
+    const joined = ids.join(',') || NO_IDS_SENTINEL;
+    store.updateInternal('telegram', { TELEGRAM_ALLOWED_IDS: joined });
+    runtime.applyFiles('telegram');           // → {home}/.{bot}/integrations.env
+    return { ok: true, count: ids.length };
+  } catch (err) {
+    process.stderr.write(`[telegram-sync] boot allowed-ids reconcile failed: ${err.message}\n`);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Apply a change to the GROUP registry to the live bot. bot.sh seeds access.json's
  * `groups{}` from the .team-config.json registry at startup, and the plugin gates
  * outbound replies on `access.groups`, so restarting the bot makes a newly

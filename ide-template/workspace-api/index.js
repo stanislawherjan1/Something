@@ -52,6 +52,7 @@ import { syncMcpServers } from './lib/integrations/runtime.js';
 import { migrateFromLegacy } from './lib/integrations/migration.js';
 import { writeAllowedHostsFile } from './lib/integrations/egress.js';
 import { rehydrateRuntimeFiles } from './lib/setup.js';
+import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-sync.js';
 import { startBroker } from './lib/integrations/broker.js';
 import { decryptFor } from './lib/integrations/store.js';
 import { get as getCatalog } from './lib/integrations/catalog.js';
@@ -139,6 +140,17 @@ if (cryptoReady()) {
     else      process.stdout.write(`[workspace-api] rehydrate skipped: ${r.skipped}\n`);
   } catch (err) {
     process.stderr.write(`[workspace-api] rehydrate failed: ${err.message}\n`);
+  }
+  // Self-heal the Telegram allow-list from the team roster on every boot, so a
+  // member who is on the roster but never got propagated (link predates the
+  // sync path, or a prior sync's bot-restart failed) is always allowed. Runs
+  // before the server signals ready, so bot.sh reads the fixed integrations.env
+  // when it starts. No bot restart here — bot.sh boots fresh right after.
+  try {
+    const tg = reconcileTelegramAllowedIdsAtBoot();
+    if (tg.ok) process.stdout.write(`[workspace-api] reconciled Telegram allow-list from roster (${tg.count} linked ids)\n`);
+  } catch (err) {
+    process.stderr.write(`[workspace-api] telegram allow-list reconcile failed: ${err.message}\n`);
   }
 }
 
