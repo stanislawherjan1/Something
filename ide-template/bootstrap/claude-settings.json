@@ -5,6 +5,8 @@
   "_autoMemoryEnabled_comment": "WS2: disables CC's native auto-memory system. The workspace has its own memory model at ~/project/memory/ — letting CC's native auto-memory run alongside creates two competing systems and instruction-level confusion. Per R.2 research outcome.",
   "autoUpdates": false,
   "_autoUpdates_comment": "2026-07-14: the CLI version is deliberately PINNED in the Dockerfile (channel-plugin kill regression in >=2.1.152 — see Dockerfile LAYER 2 comment). A live auto-update attempt was observed on a prod bot; had it succeeded it would have silently unpinned the fleet. Version bumps go through the Dockerfile + canary, never self-update.",
+  "model": "claude-sonnet-5",
+  "_model_comment": "2026-07-15: pin the bot model explicitly so a deploy is fully self-contained. Before this, model was left to the CLI default — fine while the CLI defaulted to Sonnet 5 (>=2.1.197), but once we pinned the CLI back to 2.1.150 (pre-Sonnet-5-default) a fresh container came up on an OLD model and needed a MANUAL post-deploy fix. merge_bot_settings does `existing * bootstrap` (bootstrap wins) and re-merges every 5min, so this is authoritative fleet-wide. A client that genuinely needs a different model gets a per-client override later; today the fleet is uniform on Sonnet 5.",
   "hooks": {
     "PreToolUse": [
       {
