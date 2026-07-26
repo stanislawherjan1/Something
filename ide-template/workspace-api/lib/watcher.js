@@ -53,6 +53,11 @@ const watcher = chokidar.watch(PROJECT_ABS, {
     // reload. Visibility in the file tree is gated separately in files.js —
     // watching doesn't expose content.
     if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json' || rel === '.tasks.json') return false;
+    // Mini apps in TEAM mode live under users/<slug>/.claude/miniapps — the
+    // '.claude' dot-dir would be ignored below, so chokidar never descends and
+    // a freshly built app only shows up after a page reload. Whitelist the
+    // personal .claude dir (to descend) + its miniapps subtree explicitly.
+    if (/^users\/[^/]+\/\.claude$/.test(rel) || /^users\/[^/]+\/\.claude\/miniapps(\/|$)/.test(rel)) return false;
     const base = p.split(sep).pop();
     return base ? !isVisibleEntry(base) : false;
   },

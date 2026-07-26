@@ -11,7 +11,33 @@
  */
 
 import { useEffect, useState } from 'react';
-import { LayoutGrid, Pencil, Trash2 } from 'lucide-react';
+import {
+  LayoutGrid, Pencil, Trash2,
+  ShoppingCart, TrendingUp, Calendar, CheckSquare, Mail, Users, Package,
+  DollarSign, CloudSun, Globe, Zap, Heart, Star, ListTodo, BarChart3, Clock,
+} from 'lucide-react';
+
+// Curated icon set the AI picks from (save_as_tab `icon` arg). Names are
+// kebab-case lucide ids; anything unknown falls back to LayoutGrid.
+const ICONS = {
+  'layout-grid': LayoutGrid,
+  'shopping-cart': ShoppingCart,
+  'trending-up': TrendingUp,
+  'bar-chart': BarChart3,
+  'calendar': Calendar,
+  'check-square': CheckSquare,
+  'list-todo': ListTodo,
+  'mail': Mail,
+  'users': Users,
+  'package': Package,
+  'dollar-sign': DollarSign,
+  'cloud-sun': CloudSun,
+  'globe': Globe,
+  'zap': Zap,
+  'heart': Heart,
+  'star': Star,
+  'clock': Clock,
+};
 import { cn } from '@/lib/utils';
 import { useApi } from '@/lib/useApi';
 import {
@@ -84,6 +110,7 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
       {apps.map((app) => {
         const active = selected?.type === 'miniapp' && selected?.path === app.id;
         const isRenaming = renaming?.id === app.id;
+        const Icon = ICONS[app.icon] || LayoutGrid;
         return (
           <div
             key={app.id}
@@ -98,7 +125,7 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
             {active && (
               <span className="pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
             )}
-            <LayoutGrid
+            <Icon
               className={cn(
                 'size-[14px] shrink-0 transition-colors',
                 active ? 'text-[--color-ring]' : 'text-foreground/50 group-hover:text-foreground/70',

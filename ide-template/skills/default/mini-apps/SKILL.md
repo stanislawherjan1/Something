@@ -73,3 +73,6 @@ used for other recurring rituals.
   ("Nothing to ship 🎉" style, matching the workspace language).
 - **Stable ids** — kebab-case, semantic (`orders-today`, `kpi-week`), so
   refresh reminders and updates target the right tab.
+- **Distinct icons** — always pass `icon` matching the topic (weather →
+  `cloud-sun`, orders → `shopping-cart`, KPI → `trending-up`, tasks →
+  `check-square`); never leave two tabs with the same default icon.

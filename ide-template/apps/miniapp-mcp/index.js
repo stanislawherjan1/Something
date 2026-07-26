@@ -30,6 +30,9 @@ const COMPONENTS = ['App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'Dat
 // OpenUI Lang builtin helper functions (lang-core BUILTINS + Each) — legal in
 // specs but not UI components.
 const BUILTINS = ['Count', 'First', 'Last', 'Sum', 'Avg', 'Min', 'Max', 'Abs', 'Ceil', 'Floor', 'Round', 'Sort', 'Filter', 'Each'];
+// Sidebar icon choices — kebab-case lucide ids the UI knows how to render.
+// Must stay in sync with ICONS in frontend MiniAppsList.jsx.
+const ICONS = ['layout-grid', 'shopping-cart', 'trending-up', 'bar-chart', 'calendar', 'check-square', 'list-todo', 'mail', 'users', 'package', 'dollar-sign', 'cloud-sun', 'globe', 'zap', 'heart', 'star', 'clock'];
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SLUG_RE = /^[a-z0-9-]+$/;
@@ -126,6 +129,11 @@ const TOOLS = [
       properties: {
         id: { type: 'string', description: 'Stable slug, lowercase [a-z0-9-], e.g. "orders-today". Reuse to update.' },
         name: { type: 'string', description: 'Tab label shown in the sidebar, e.g. "Orders"' },
+        icon: {
+          type: 'string',
+          enum: ['layout-grid', 'shopping-cart', 'trending-up', 'bar-chart', 'calendar', 'check-square', 'list-todo', 'mail', 'users', 'package', 'dollar-sign', 'cloud-sun', 'globe', 'zap', 'heart', 'star', 'clock'],
+          description: 'Sidebar icon — pick the one matching the app\'s topic so tabs are visually distinct (weather → cloud-sun, orders → shopping-cart, KPI → trending-up, tasks → check-square…)',
+        },
         spec: { type: 'string', description: 'OpenUI Lang component tree using ONLY the allowed tags' },
         data: {
           type: 'object',
@@ -201,9 +209,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         order = prev.order ?? 0;
       } catch { /* new app */ }
 
+      const icon = ICONS.includes(args.icon) ? args.icon : 'layout-grid';
       await writeJsonAtomic(file, {
         id,
         name: label,
+        icon,
         spec,
         dataSources: sources,
         data: (args.data && typeof args.data === 'object') ? args.data : {},

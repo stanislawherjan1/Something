@@ -158,6 +158,26 @@ export default function Sidebar({
         </div>
       )}
       <div className="scrollbar-hidden flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
+        {/* AI-built mini apps — first section, above all file groups. Always
+            mounted (the list drives miniAppCount, so a freshly built first
+            app can reveal the section live), but header/body only show once
+            at least one app exists. */}
+        <div className={cn(miniAppCount === 0 && 'hidden')}>
+          <FilesSectionHeader
+            label="Mini Apps"
+            expanded={expandedSections.miniapps}
+            onToggle={() => toggleSection('miniapps')}
+          />
+        </div>
+        <div className={cn((miniAppCount === 0 || !expandedSections.miniapps) && 'hidden')}>
+          <MiniAppsList
+            selected={selected}
+            onSelect={onSelect}
+            fileEventNonce={fileEventNonce}
+            onCountChange={setMiniAppCount}
+          />
+        </div>
+
         {/* Team mode: shared "Workspace" files (the project root) and, when the
             user is identified, their private "Personal" files (users/<slug>/).
             The system-files toggle is admin-only — backend forces it off for
@@ -192,25 +212,6 @@ export default function Sidebar({
             />
           </div>
         )}
-
-        {/* AI-built mini apps — always mounted (the list drives miniAppCount,
-            so a freshly built first app can reveal the section), but the
-            header/body only show once at least one app exists. */}
-        <div className={cn(miniAppCount === 0 && 'hidden')}>
-          <FilesSectionHeader
-            label="Your Mini Apps"
-            expanded={expandedSections.miniapps}
-            onToggle={() => toggleSection('miniapps')}
-          />
-        </div>
-        <div className={cn((miniAppCount === 0 || !expandedSections.miniapps) && 'hidden')}>
-          <MiniAppsList
-            selected={selected}
-            onSelect={onSelect}
-            fileEventNonce={fileEventNonce}
-            onCountChange={setMiniAppCount}
-          />
-        </div>
 
         {me?.personalRoot && (
           <>

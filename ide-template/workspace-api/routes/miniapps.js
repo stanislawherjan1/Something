@@ -55,7 +55,7 @@ export default function miniappsRouter() {
         .filter(f => f.endsWith('.json'))
         .map(f => readApp(dir, f.slice(0, -5)))
         .filter(Boolean)
-        .map(a => ({ id: a.id, name: a.name || a.id, order: a.order ?? 0, created: a.created || null }))
+        .map(a => ({ id: a.id, name: a.name || a.id, icon: a.icon || null, order: a.order ?? 0, created: a.created || null }))
         .sort((x, y) => (x.order - y.order) || String(x.created).localeCompare(String(y.created)));
       res.json({ apps });
     } catch (err) {
