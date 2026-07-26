@@ -115,20 +115,23 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
           <div
             key={app.id}
             className={cn(
-              'group relative flex items-center gap-2 rounded-md pl-2.5 pr-1.5 transition-colors duration-150',
-              'h-9 md:h-7 text-[14px] md:text-[13px]',
+              // Mirror the Shortcuts rows (Team/Tasks) exactly — same height,
+              // type scale, icon size and active-bar metrics, so Mini Apps
+              // reads as one system with the rest of the sidebar.
+              'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-1.5 transition-colors duration-150',
+              'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
               active
                 ? 'bg-sidebar-accent font-medium text-foreground'
                 : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
             )}
           >
             {active && (
-              <span className="pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
+              <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
             )}
             <Icon
               className={cn(
-                'size-[14px] shrink-0 transition-colors',
-                active ? 'text-[--color-ring]' : 'text-foreground/50 group-hover:text-foreground/70',
+                'size-[15px] shrink-0 transition-colors',
+                active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
               )}
               strokeWidth={1.75}
             />
