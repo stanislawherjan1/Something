@@ -68,6 +68,19 @@ async function api(path, params = {}) {
 
 // ─── Shape helpers ─────────────────────────────────────────────────────────
 
+// twitterapi.io is inconsistent about where a list lives in its envelope:
+// sometimes the array is top-level (`data.tweets`), sometimes nested under a
+// `data` object (`data.data.tweets`, as /user/last_tweets and /user/mentions
+// return), and `data.data` itself is sometimes the array and sometimes an
+// object like `{ tweets: [...] }`. Assuming one shape is what blew up with
+// `(data.tweets || data.data || []).map is not a function` when the endpoint
+// returned `{ data: { tweets: [...] } }`. Pick the first value that is actually
+// an array from the likely paths, so a shape change degrades to [] not a throw.
+function firstArray(...cands) {
+  for (const c of cands) if (Array.isArray(c)) return c;
+  return [];
+}
+
 // Trim a tweet down to the fields the bot actually uses. Full responses can
 // be 3-4 KB each — multiplied by 20 tweets per page that fills a context
 // window with noise. We expose link, author handle, counts, lang, snippet.
@@ -112,8 +125,10 @@ function compactUser(u) {
 function pageOf(items, raw) {
   return {
     items,
-    has_next:  !!raw.has_next_page,
-    cursor:    raw.next_cursor || null,
+    // Same envelope inconsistency as firstArray: the pagination fields are
+    // usually top-level but can ride inside `data` — accept either.
+    has_next:  !!(raw.has_next_page ?? raw.data?.has_next_page),
+    cursor:    raw.next_cursor || raw.data?.next_cursor || null,
   };
 }
 
@@ -252,7 +267,7 @@ const TOOLS = [
 
 async function handleSearchTweets({ query, queryType = 'Latest', cursor }) {
   const data = await api('/twitter/tweet/advanced_search', { query, queryType, cursor });
-  const items = (data.tweets || []).map(compactTweet);
+  const items = firstArray(data.tweets, data.data?.tweets, data.data).map(compactTweet).filter(Boolean);
   return pageOf(items, data);
 }
 
@@ -263,43 +278,43 @@ async function handleGetUser({ username }) {
 
 async function handleUserLastTweets({ username, cursor }) {
   const data = await api('/twitter/user/last_tweets', { userName: username, cursor });
-  const items = (data.tweets || data.data || []).map(compactTweet);
+  const items = firstArray(data.tweets, data.data?.tweets, data.data).map(compactTweet).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleUserFollowers({ username, cursor }) {
   const data = await api('/twitter/user/followers', { userName: username, cursor });
-  const items = (data.followers || data.users || data.data || []).map(compactUser);
+  const items = firstArray(data.followers, data.users, data.data?.followers, data.data?.users, data.data).map(compactUser).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleUserFollowing({ username, cursor }) {
   const data = await api('/twitter/user/followings', { userName: username, cursor });
-  const items = (data.followings || data.users || data.data || []).map(compactUser);
+  const items = firstArray(data.followings, data.users, data.data?.followings, data.data?.users, data.data).map(compactUser).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleUserMentions({ username, cursor }) {
   const data = await api('/twitter/user/mentions', { userName: username, cursor });
-  const items = (data.tweets || data.data || []).map(compactTweet);
+  const items = firstArray(data.tweets, data.data?.tweets, data.data).map(compactTweet).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleTweetReplies({ tweet_id, cursor }) {
   const data = await api('/twitter/tweet/replies', { tweetId: tweet_id, cursor });
-  const items = (data.tweets || data.replies || data.data || []).map(compactTweet);
+  const items = firstArray(data.tweets, data.replies, data.data?.tweets, data.data?.replies, data.data).map(compactTweet).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleTweetQuotations({ tweet_id, cursor }) {
   const data = await api('/twitter/tweet/quotations', { tweetId: tweet_id, cursor });
-  const items = (data.tweets || data.quotations || data.data || []).map(compactTweet);
+  const items = firstArray(data.tweets, data.quotations, data.data?.tweets, data.data?.quotations, data.data).map(compactTweet).filter(Boolean);
   return pageOf(items, data);
 }
 
 async function handleTweetsByIds({ ids }) {
   const data = await api('/twitter/tweets', { tweetIds: ids.join(',') });
-  return (data.tweets || data.data || []).map(compactTweet);
+  return firstArray(data.tweets, data.data?.tweets, data.data).map(compactTweet).filter(Boolean);
 }
 
 // ─── MCP server ─────────────────────────────────────────────────────────────
