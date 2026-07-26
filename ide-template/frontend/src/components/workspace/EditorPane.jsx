@@ -27,6 +27,8 @@ const MarkdownEditor = lazy(() => import('./MarkdownEditor.jsx'));
 const CSVEditor      = lazy(() => import('./CSVEditor.jsx'));
 // pdfjs-dist + react-pdf — ~300 KB, lazy so non-PDF sessions don't pay.
 const PdfViewer      = lazy(() => import('./PdfViewer.jsx'));
+// recharts + OpenUI renderer — lazy so sessions without mini apps pay nothing.
+const MiniAppView    = lazy(() => import('./views/MiniAppView.jsx'));
 
 const IMAGE_EXT    = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 const MARKDOWN_EXT = /\.(md|mdx|markdown)$/i;
@@ -106,6 +108,11 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'memory')                                 return <MemoryDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'telegram')                               return <TelegramDashboard sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'notifications')                          return <NotificationsView sidebarOpen={sidebarOpen} />;
+  if (type === 'miniapp')                                return (
+    <Suspense fallback={<LoadingState />}>
+      <MiniAppView id={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />
+    </Suspense>
+  );
   if (path === 'Tasks.md')                               return <KanbanView     path={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'dir' && basename(path) === 'generated')  return <GalleryView    path={path} fileEventNonce={fileEventNonce} onSelect={onSelect} sidebarOpen={sidebarOpen} />;
   if (type === 'file' && IMAGE_EXT.test(path))           return <ImageViewer    path={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;

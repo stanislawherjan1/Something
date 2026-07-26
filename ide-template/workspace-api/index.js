@@ -40,6 +40,7 @@ import internalRouter      from './routes/internal.js';
 import notificationsRouter from './routes/notifications.js';
 import meRouter            from './routes/me.js';
 import remindersRouter     from './routes/reminders.js';
+import miniappsRouter      from './routes/miniapps.js';
 import tasksRouter         from './routes/tasks.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
@@ -96,6 +97,7 @@ app.use('/api', internalRouter());
 app.use('/api', notificationsRouter());
 app.use('/api', meRouter());
 app.use('/api', remindersRouter());
+app.use('/api', miniappsRouter());
 app.use('/api', tasksRouter());
 app.use('/api/integrations/docs-comments', docsCommentsLoginRouter());
 

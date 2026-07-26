@@ -264,6 +264,10 @@ RUN cd /opt/ide/apps/reminder-mcp && npm install --production
 COPY apps/pdf-mcp /opt/ide/apps/pdf-mcp
 RUN cd /opt/ide/apps/pdf-mcp && npm install --production
 
+# miniapp-mcp: save_as_tab — AI-built mini apps as workspace sidebar tabs.
+COPY apps/miniapp-mcp /opt/ide/apps/miniapp-mcp
+RUN cd /opt/ide/apps/miniapp-mcp && npm install --production
+
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
 RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
 

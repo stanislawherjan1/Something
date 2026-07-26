@@ -305,9 +305,20 @@ d['mcpServers']['workspace-api'] = {
         'WORKSPACE_API_URL': 'http://localhost:3001',
     },
 }
+# Mini-app MCP — save_as_tab/list_tabs/delete_tab: AI-built mini apps that
+# appear as sidebar tabs ("Your Mini Apps"). Same local, non-broker class —
+# without this block no brain can build tabs. Per-user scoping comes from
+# IDE_ACTOR_SLUG in the spawning brain's env, not from here.
+d['mcpServers']['miniapps'] = {
+    'command': 'node',
+    'args': ['/opt/ide/apps/miniapp-mcp/index.js'],
+    'env': {
+        'PROJECT_DIR': '/home/coder/project',
+    },
+}
 with open(p, 'w') as f:
     json.dump(d, f, indent=2)
-print('[entrypoint] Forced playwright + web-channel + pdf + reminders + workspace-api mcpServers entries in /home/bot/.claude.json')
+print('[entrypoint] Forced playwright + web-channel + pdf + reminders + workspace-api + miniapps mcpServers entries in /home/bot/.claude.json')
 PY
         chown bot:botshare /home/bot/.claude.json 2>/dev/null || true
         chmod 0660         /home/bot/.claude.json 2>/dev/null || true

@@ -9,6 +9,7 @@ import WorkspaceHeader from './WorkspaceHeader.jsx';
 import FileTree from './FileTree.jsx';
 import UserMenu from './UserMenu.jsx';
 import DeleteConfirm from './dialogs/DeleteConfirm.jsx';
+import MiniAppsList from './MiniAppsList.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import useMe from './useMe.js';
@@ -48,9 +49,13 @@ export default function Sidebar({
     // Persist expanded/collapsed state in localStorage
     try {
       const saved = localStorage.getItem('sidebar-sections');
-      return saved ? JSON.parse(saved) : { shared: true, personal: true };
-    } catch { return { shared: true, personal: true }; }
+      const parsed = saved ? JSON.parse(saved) : null;
+      return { shared: true, personal: true, miniapps: true, ...(parsed || {}) };
+    } catch { return { shared: true, personal: true, miniapps: true }; }
   });
+  // How many AI-built mini apps exist — 0 hides the whole section (header
+  // included) so users without apps never see an empty group.
+  const [miniAppCount, setMiniAppCount] = useState(0);
   const { me } = useMe();   // { email, slug, role, displayName, isAdmin, personalRoot }
 
   // Once a Files section has been expanded, keep its FileTree MOUNTED (just
@@ -187,6 +192,25 @@ export default function Sidebar({
             />
           </div>
         )}
+
+        {/* AI-built mini apps — always mounted (the list drives miniAppCount,
+            so a freshly built first app can reveal the section), but the
+            header/body only show once at least one app exists. */}
+        <div className={cn(miniAppCount === 0 && 'hidden')}>
+          <FilesSectionHeader
+            label="Your Mini Apps"
+            expanded={expandedSections.miniapps}
+            onToggle={() => toggleSection('miniapps')}
+          />
+        </div>
+        <div className={cn((miniAppCount === 0 || !expandedSections.miniapps) && 'hidden')}>
+          <MiniAppsList
+            selected={selected}
+            onSelect={onSelect}
+            fileEventNonce={fileEventNonce}
+            onCountChange={setMiniAppCount}
+          />
+        </div>
 
         {me?.personalRoot && (
           <>

@@ -45,6 +45,8 @@ function pathnameToSelected(pathname) {
   if (exact) return exact.selected;
   if (pathname.startsWith('/files/'))   return { path: decodeURIComponent(pathname.slice('/files/'.length)),   type: 'file' };
   if (pathname.startsWith('/folders/')) return { path: decodeURIComponent(pathname.slice('/folders/'.length)), type: 'dir' };
+  // Mini apps route by id, not by type — each tab is its own view.
+  if (pathname.startsWith('/apps/'))    return { path: decodeURIComponent(pathname.slice('/apps/'.length)),    type: 'miniapp' };
   return null;
 }
 
@@ -58,6 +60,7 @@ function selectedToPath(selected) {
   if (selected.path === 'Tasks.md' && selected.type === 'file') return '/tasks';
   if (selected.type === 'file') return `/files/${selected.path}`;
   if (selected.type === 'dir')  return `/folders/${selected.path}`;
+  if (selected.type === 'miniapp') return `/apps/${encodeURIComponent(selected.path)}`;
   const v = VIEW_ROUTES.find(r => r.selected.type === selected.type);
   if (v) return v.path;
   return '/';
