@@ -4,7 +4,10 @@ import { Renderer } from '@openuidev/react-lang';
 import { miniappLibrary, MiniAppDataContext } from '@/lib/miniapp/library.jsx';
 
 // OpenUI Lang: statements, positional args (Zod key order), refs + hoisting.
-const SPEC = `root = App([stats, shipping])
+const SPEC = `root = App([cities, stats, shipping])
+cities = Tabs(["Krakow", "Warsaw"], [kra, waw])
+kra = Text("Krakow forecast", false)
+waw = Text("Warsaw forecast", false)
 stats = Grid(2, [s1, s2])
 s1 = Stat("Orders today", "17", "+4")
 s2 = Stat("Revenue", "2 840", null, "vs 2 610 last week")
@@ -35,6 +38,9 @@ const checks = [
   ['Card title rendered', html.includes('To ship')],
   ['List row rendered', html.includes('Anna K.')],
   ['Badge value rendered', html.includes('paid')],
+  ['Tabs labels rendered', html.includes('Krakow') && html.includes('Warsaw')],
+  ['Active tab content rendered', html.includes('Krakow forecast')],
+  ['Inactive tab hidden', !html.includes('Warsaw forecast')],
 ];
 
 let failed = 0;

@@ -26,7 +26,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 const PROJECT_DIR = process.env.PROJECT_DIR || '/home/coder/project';
 
 // Must stay in sync with MINIAPP_COMPONENT_NAMES in the frontend library.
-const COMPONENTS = ['App', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart'];
+const COMPONENTS = ['App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart'];
 // OpenUI Lang builtin helper functions (lang-core BUILTINS + Each) — legal in
 // specs but not UI components.
 const BUILTINS = ['Count', 'First', 'Last', 'Sum', 'Avg', 'Min', 'Max', 'Abs', 'Ceil', 'Floor', 'Round', 'Sort', 'Filter', 'Each'];
@@ -79,6 +79,7 @@ const GRAMMAR = `The spec is an OpenUI Lang program (NOT JSX, NOT JSON):
 
 Component signatures (the ONLY allowed components — anything else is rejected):
   App(children: any[])                             app root, vertical stack
+  Tabs(labels: string[], children: any[])          segmented switcher; labels[i] shows children[i] (2-6 tabs)
   Card(title?: string|null, children?: any[])      titled section container
   Grid(columns?: 1-4, children?: any[])            responsive grid (stat rows)
   Text(content: string, muted?: boolean)           paragraph
@@ -103,7 +104,15 @@ Example spec:
   s1 = Stat("Orders today", "17", "+4")
   s2 = Stat("Revenue", "2 840", null, "vs 2 610 last week")
   shipping = Card("To ship", [orders])
-  orders = List("orders", "customer", "items", "status", "Nothing to ship")`;
+  orders = List("orders", "customer", "items", "status", "Nothing to ship")
+
+Tabs example (alternate views, e.g. two cities):
+  root = App([switcher])
+  switcher = Tabs(["Krakow", "Warsaw"], [kra, waw])
+  kra = Card(null, [kraChart])
+  kraChart = LineChart("krakow", "day", "tempMax", 200)
+  waw = Card(null, [wawChart])
+  wawChart = LineChart("warsaw", "day", "tempMax", 200)`;
 
 const TOOLS = [
   {

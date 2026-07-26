@@ -65,6 +65,8 @@ used for other recurring rituals.
 - **Top row = 2–4 Stats** with the numbers the user actually checks; details
   below in a List/DataTable; ONE chart only when a trend/comparison genuinely
   helps.
+- **Alternate views of the same thing** (two cities, week vs month, per-store)
+  → `Tabs`, not two stacked cards and not two separate mini apps.
 - **Keep it small** — a tab answers one question ("how are today's orders?"),
   not everything at once. Prefer two focused tabs over one kitchen sink.
 - **Empty states matter** — always set the `empty` arg to something human

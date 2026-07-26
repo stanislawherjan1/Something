@@ -18,7 +18,7 @@
  * the renderer independent of OpenUI's tool/Query runtime (slice 2).
  */
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { defineComponent, createLibrary } from '@openuidev/react-lang';
 import { z } from 'zod';
 import {
@@ -99,6 +99,47 @@ function renderGrid(columns, children) {
       columns === 3 && 'grid-cols-1 sm:grid-cols-3',
       columns === 4 && 'grid-cols-2 sm:grid-cols-4',
     )}>{children}</div>
+  );
+}
+
+const Tabs = defineComponent({
+  name: 'Tabs',
+  description: 'Segmented switcher: labels[i] toggles children[i]. For alternate views of the same thing (e.g. two cities, week/month).',
+  props: z.object({
+    labels: z.array(z.string()).min(2).max(6).describe('One label per tab'),
+    children: z.array(z.any()).describe('One child per label, same order'),
+  }),
+  // Plain local state — deliberately NOT OpenUI's $state runtime. The switch
+  // is view-only, so React state keeps the spec passive and the whitelist
+  // guarantee intact.
+  component: ({ props: p, renderNode }) => (
+    <TabsImpl labels={p.labels || []} items={p.children || []} renderNode={renderNode} />
+  ),
+});
+
+function TabsImpl({ labels, items, renderNode }) {
+  const [active, setActive] = useState(0);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex w-fit items-center gap-0.5 rounded-lg border border-border/55 bg-muted/30 p-0.5">
+        {labels.map((label, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setActive(i)}
+            className={cn(
+              'rounded-md px-3 py-1 text-[12.5px] font-medium transition-colors',
+              i === active
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground/70 hover:text-foreground/85',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div>{renderNode(items[active] ?? null)}</div>
+    </div>
   );
 }
 
@@ -333,11 +374,11 @@ function formatCell(v) {
 }
 
 export const miniappLibrary = createLibrary({
-  components: [App, Card, Grid, Text, Badge, Stat, DataTable, List, MiniLineChart, MiniBarChart],
+  components: [App, Tabs, Card, Grid, Text, Badge, Stat, DataTable, List, MiniLineChart, MiniBarChart],
   root: 'App',
 });
 
 /** Component whitelist — save_as_tab validation mirrors this list. */
 export const MINIAPP_COMPONENT_NAMES = [
-  'App', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart',
+  'App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart',
 ];
