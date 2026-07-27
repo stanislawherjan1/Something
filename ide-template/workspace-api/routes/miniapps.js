@@ -64,7 +64,10 @@ export default function miniappsRouter() {
       const apps = readdirSync(dir)
         .filter(f => f.endsWith('.json'))
         .map(f => readApp(dir, f.slice(0, -5)))
-        .filter(Boolean)
+        // A hand-written or partial spec file without a valid id would render
+        // an unmanageable row (and crashed the rename affordance once) — only
+        // list entries the API can actually address.
+        .filter(a => a && typeof a.id === 'string' && ID_RE.test(a.id))
         .map(a => ({ id: a.id, name: a.name || a.id, icon: a.icon || null, status: a.status || null, order: a.order ?? 0, created: a.created || null }))
         .sort((x, y) => (x.order - y.order) || String(x.created).localeCompare(String(y.created)));
       res.json({ apps });

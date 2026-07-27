@@ -126,26 +126,29 @@ export default function MiniAppView({ id, fileEventNonce, sidebarOpen }) {
     );
   }
 
+  // Refresh lives in the shared top bar (EditorHeader meta slot), right side —
+  // consistent with the rest of the workspace chrome, not floating in content.
+  const refreshAction = (
+    <button
+      type="button"
+      onClick={() => { reload(); fetchLive(); }}
+      disabled={live.fetching}
+      className={cn(
+        'flex items-center gap-1.5 rounded-md border border-border/55 bg-background px-2.5 py-1.5',
+        'text-[12px] font-medium text-muted-foreground/75 transition-colors',
+        'hover:bg-sidebar-accent/40 hover:text-foreground/85 disabled:opacity-50',
+      )}
+    >
+      <RefreshCw className={cn('size-3.5', live.fetching && 'animate-spin')} strokeWidth={1.75} />
+      Refresh
+    </button>
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <EditorHeader icon={LayoutGrid} title={app.name || app.id} sidebarOpen={sidebarOpen} />
+      <EditorHeader icon={LayoutGrid} title={app.name || app.id} sidebarOpen={sidebarOpen} meta={refreshAction} />
       <div className="flex-1 overflow-auto">
         <div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-8">
-          <div className="mb-4 flex items-center justify-end">
-            <button
-              type="button"
-              onClick={fetchLive}
-              disabled={live.fetching}
-              className={cn(
-                'flex items-center gap-1.5 rounded-md border border-border/55 bg-background px-2.5 py-1.5',
-                'text-[12px] font-medium text-muted-foreground/75 transition-colors',
-                'hover:bg-sidebar-accent/40 hover:text-foreground/85 disabled:opacity-50',
-              )}
-            >
-              <RefreshCw className={cn('size-3.5', live.fetching && 'animate-spin')} strokeWidth={1.75} />
-              Refresh
-            </button>
-          </div>
           <MiniAppDataContext.Provider value={ctx}>
             <RenderBoundary specKey={`${app.id}:${app.updated || ''}`}>
               <div className="flex flex-col gap-3">

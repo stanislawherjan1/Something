@@ -54,11 +54,35 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
   const [pendingDelete, setPendingDelete] = useState(null);   // app | null
   const [renaming, setRenaming] = useState(null);             // { id, value } | null
   const [error, setError] = useState(null);
+  // Ghost "Building app…" row — driven by ChatPanel the instant a
+  // start_tab/save_as_tab tool call begins, i.e. BEFORE any file exists for
+  // the watcher to see. Set of in-flight chip ids; non-empty → ghost shows.
+  const [buildingChips, setBuildingChips] = useState(() => new Set());
+
+  useEffect(() => {
+    const onBuilding = (e) => {
+      const { chipId, active } = e?.detail || {};
+      if (!chipId) return;
+      setBuildingChips((prev) => {
+        const next = new Set(prev);
+        if (active) next.add(chipId); else next.delete(chipId);
+        return next;
+      });
+    };
+    window.addEventListener('ide:miniapp-building', onBuilding);
+    return () => window.removeEventListener('ide:miniapp-building', onBuilding);
+  }, []);
+
+  // Ghost is redundant once a real placeholder row (status:building) exists.
+  const showGhost = buildingChips.size > 0 && !apps.some(a => a.status === 'building');
 
   // New/removed spec files land as chokidar events — refetch the list.
   useEffect(() => { if (fileEventNonce) reload(); }, [fileEventNonce, reload]);
   // Parent hides the whole section (header included) when there are no apps.
-  useEffect(() => { onCountChange?.(apps.length); }, [apps.length, onCountChange]);
+  // The ghost counts — the section must reveal itself for a first-ever build.
+  useEffect(() => {
+    onCountChange?.(apps.length + (showGhost ? 1 : 0));
+  }, [apps.length, showGhost, onCountChange]);
 
   const doDelete = async (app) => {
     setPendingDelete(null);
@@ -107,11 +131,23 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
           {error}
         </div>
       )}
+      {showGhost && (
+        <div className={cn(
+          'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-1.5',
+          'h-10 md:h-8 text-[14.5px] md:text-[13.5px] text-foreground/55',
+        )}>
+          <Loader2 className="size-[15px] shrink-0 animate-spin text-[--color-ring]" strokeWidth={1.75} />
+          <span className="min-w-0 flex-1 truncate italic">Building app…</span>
+        </div>
+      )}
       {apps.map((app) => {
         const active = selected?.type === 'miniapp' && selected?.path === app.id;
-        const isRenaming = renaming?.id === app.id;
         const building = app.status === 'building';
         const Icon = building ? Loader2 : (ICONS[app.icon] || LayoutGrid);
+        // Strict null check — `renaming?.id === app.id` would be TRUE for a
+        // row with an undefined id when renaming is null (undefined ===
+        // undefined), rendering the input with `renaming.value` → crash.
+        const isRenamingRow = renaming != null && renaming.id === app.id;
         return (
           <div
             key={app.id}
@@ -137,7 +173,7 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
               )}
               strokeWidth={1.75}
             />
-            {isRenaming ? (
+            {isRenamingRow ? (
               <input
                 autoFocus
                 value={renaming.value}
@@ -159,7 +195,7 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
                 {app.name}
               </button>
             )}
-            {!isRenaming && (
+            {!isRenamingRow && (
               <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                 <RowAction title="Rename" icon={Pencil} onClick={() => setRenaming({ id: app.id, value: app.name })} />
                 <RowAction title="Delete" icon={Trash2} danger onClick={() => setPendingDelete(app)} />

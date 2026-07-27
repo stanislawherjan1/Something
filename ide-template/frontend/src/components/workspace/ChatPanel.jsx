@@ -326,6 +326,12 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     // Fresh turn → drop any leftover chips from the previous one.
     chipFadeTimers.current.forEach(t => clearTimeout(t));
     chipFadeTimers.current.clear();
+    // A turn that died mid-build (abort/network) never sends tool_result —
+    // release any stuck sidebar building-ghosts before the new turn starts.
+    for (const chipId of miniappChipIds.current) {
+      window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId, active: false } }));
+    }
+    miniappChipIds.current.clear();
     setChips([]);
 
     setMessages(prev => [
@@ -477,13 +483,27 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     onInitialMessageConsumed?.();
   }, [initialMessage]);
 
+  // Mini-app build calls get an instant sidebar ghost row ("Building app…")
+  // the moment the tool STARTS — file-watcher events only fire once the spec
+  // file exists, which can be many seconds into a build. Tracked in a ref
+  // (not the chips state) so the dispatch stays out of state updaters.
+  const isMiniappBuildTool = (name) => /miniapps__(start_tab|save_as_tab)/.test(name || '');
+  const miniappChipIds = useRef(new Set());
+
   function addChip({ id, name }) {
+    if (isMiniappBuildTool(name) && !miniappChipIds.current.has(id)) {
+      miniappChipIds.current.add(id);
+      window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId: id, active: true } }));
+    }
     setChips(prev => prev.some(c => c.id === id)
       ? prev
       : [...prev, { id, name, status: 'running' }]);
   }
 
   function completeChip({ id, ok, error }) {
+    if (miniappChipIds.current.delete(id)) {
+      window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId: id, active: false } }));
+    }
     setChips(prev => prev.map(c => c.id === id
       ? { ...c, status: ok ? 'done' : 'error', error: error || null }
       : c));

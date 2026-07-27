@@ -24,10 +24,12 @@ Do NOT build one for a one-off question — answer normally.
 
 ## The flow
 
-1. **Call `start_tab` FIRST** (id + name + icon) the moment you commit to
-   building — the tab appears in the sidebar immediately with a building
-   spinner. Say one short line in chat ("Building *Orders* — a moment…"),
-   then work silently.
+1. **Call `start_tab` as your VERY FIRST tool call** (id + name + icon) — the
+   sidebar shows a building spinner the moment it runs, so any delay here is
+   dead air for the user. Do not run other tools, read files, or gather data
+   before it. Say one short line in chat ("Building *Orders* — a moment…") —
+   never narrate tool mechanics ("loading schemas", "calling save_as_tab") —
+   then work silently until it's ready.
 2. **Gather the data this turn** using your normal tools (Shopify MCP, email,
    Trello, Sheets, files…). Shape it into flat row arrays — e.g.
    `[{ customer, items, status }, ...]`.
