@@ -25,8 +25,16 @@ let flushTimer = null;
 function queueEvent(type, abs) {
   let path = relative(PROJECT_ABS, abs).replace(/\\/g, '/');
   const leaf = path.split('/').pop();
-  if (leaf && !isVisibleEntry(leaf)) return;
-  pending.push({ type, path });
+  // Personal mini-app files (users/<slug>/.claude/miniapps/*) pass even
+  // though their leaf may be dot-prefixed — they're the reason the users/
+  // corridor exists. Everything else keeps the visibility gate.
+  const miniapp = /^users\/[^/]+\/\.claude\/miniapps\//.test(path) || path.startsWith('.claude/miniapps/');
+  if (!miniapp && leaf && !isVisibleEntry(leaf)) return;
+  // Events under users/<slug>/ are PRIVATE: even filenames are metadata
+  // (which apps a teammate has). Tag with the owner slug; flush() delivers
+  // them only to that user's own SSE streams.
+  const owner = path.match(/^users\/([^/]+)\//)?.[1] || null;
+  pending.push({ type, path, owner });
   if (flushTimer) return;
   flushTimer = setTimeout(flush, 100);
 }
@@ -36,9 +44,15 @@ function flush() {
   if (pending.length === 0) return;
   const batch = pending;
   pending = [];
-  const payload = `data: ${JSON.stringify({ events: batch })}\n\n`;
   for (const sub of subscribers) {
-    try { sub.res.write(payload); } catch {}
+    // Owner-scoped delivery. Admins get no special pass — mirrors
+    // scope-rule: private trees are private from everyone via product
+    // surfaces, the raw DB stays the only escape hatch.
+    const events = batch
+      .filter(e => !e.owner || e.owner === sub.slug)
+      .map(({ owner, ...e }) => e);
+    if (events.length === 0) continue;
+    try { sub.res.write(`data: ${JSON.stringify({ events })}\n\n`); } catch {}
   }
 }
 
@@ -53,11 +67,19 @@ const watcher = chokidar.watch(PROJECT_ABS, {
     // reload. Visibility in the file tree is gated separately in files.js —
     // watching doesn't expose content.
     if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json' || rel === '.tasks.json') return false;
-    // Mini apps in TEAM mode live under users/<slug>/.claude/miniapps — the
-    // '.claude' dot-dir would be ignored below, so chokidar never descends and
-    // a freshly built app only shows up after a page reload. Whitelist the
-    // personal .claude dir (to descend) + its miniapps subtree explicitly.
-    if (/^users\/[^/]+\/\.claude$/.test(rel) || /^users\/[^/]+\/\.claude\/miniapps(\/|$)/.test(rel)) return false;
+    // Mini apps in TEAM mode live under users/<slug>/.claude/miniapps. The
+    // 'users' dir is SOFT_HIDDEN, so the default gate below would stop the
+    // traversal at users/ itself and no event would ever fire for a freshly
+    // built app (the "tab only appears after a reload" bug). Carve a NARROW
+    // corridor: descend users → <slug> → .claude → miniapps/** and keep
+    // every other personal path dark — nothing outside miniapps is watched,
+    // and queueEvent tags miniapp events with their owner so other users'
+    // SSE streams never see them.
+    if (rel === 'users'
+      || /^users\/[^/]+$/.test(rel)
+      || /^users\/[^/]+\/\.claude$/.test(rel)
+      || /^users\/[^/]+\/\.claude\/miniapps(\/|$)/.test(rel)) return false;
+    if (rel.startsWith('users/')) return true;   // rest of users/** stays dark
     const base = p.split(sep).pop();
     return base ? !isVisibleEntry(base) : false;
   },
@@ -71,9 +93,13 @@ watcher
   .on('unlinkDir', (p) => queueEvent('unlinkDir', p))
   .on('error',     (err) => process.stderr.write(`[watcher] ${err.message}\n`));
 
-/** Attach an SSE response stream to receive events. Returns a detacher. */
-export function subscribe(res) {
-  const sub = { res };
+/**
+ * Attach an SSE response stream to receive events. Returns a detacher.
+ * `scope.slug` (from actorScope) gates delivery of users/<slug>/ events —
+ * a subscriber only ever receives their own private-tree events.
+ */
+export function subscribe(res, scope = {}) {
+  const sub = { res, slug: scope.slug || null };
   subscribers.add(sub);
 
   // Greeting + heartbeats keep proxies happy and let the client distinguish

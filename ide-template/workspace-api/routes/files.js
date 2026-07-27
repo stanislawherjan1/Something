@@ -311,7 +311,7 @@ export default function filesRouter() {
     res.flushHeaders();
     res.socket?.setNoDelay?.(true);
 
-    const detach = subscribe(res);
+    const detach = subscribe(res, actorScope(req));
     req.on('close', detach);
   });
 

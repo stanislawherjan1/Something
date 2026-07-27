@@ -36,6 +36,9 @@ const ICONS = ['layout-grid', 'shopping-cart', 'trending-up', 'bar-chart', 'cale
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const SLUG_RE = /^[a-z0-9-]+$/;
+// Mirror the wsapi state-route caps (routes/miniapps.js) — same store.
+const MAX_STATE_ENTRIES = 500;
+const MAX_STATE_BYTES = 64 * 1024;
 
 function actorSlug() {
   const s = (process.env.IDE_ACTOR_SLUG || '').trim();
@@ -187,6 +190,37 @@ const TOOLS = [
     },
   },
   {
+    name: 'append_tab_state',
+    description:
+      'Append an entry to a mini app\'s state list — the SAME store the app\'s Form writes to, so the ' +
+      'widget updates live. Use when the user asks you (in chat) to add a record the app tracks: ' +
+      '"dodaj lead Acme 25k" → append_tab_state("leads", {key:"leads", entry:{...}}).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The app id' },
+        key: { type: 'string', description: 'State list name (the Form\'s stateKey / the "state" dataSource key)' },
+        entry: { type: 'object', description: 'The row to append — same shape the app\'s Form produces', additionalProperties: true },
+      },
+      required: ['id', 'key', 'entry'],
+    },
+  },
+  {
+    name: 'set_tab_state',
+    description:
+      'Overwrite one key in a mini app\'s state (e.g. replace a cleaned-up list, reset a counter). ' +
+      'Prefer append_tab_state for adding records.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The app id' },
+        key: { type: 'string', description: 'State key to set' },
+        value: { description: 'New value (array, object, string, number, null)' },
+      },
+      required: ['id', 'key'],
+    },
+  },
+  {
     name: 'get_tab_state',
     description:
       'Read a mini app\'s user-generated state: everything the user added through the app\'s Form ' +
@@ -288,6 +322,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         order: prev.order ?? 0,
       });
       return ok(`Placeholder up — "${label}" shows in the sidebar with a building spinner. Finish with save_as_tab("${id}", ...).`);
+    }
+
+    if (name === 'append_tab_state' || name === 'set_tab_state') {
+      const id = String(args.id || '').trim();
+      const key = String(args.key || '').trim();
+      if (!ID_RE.test(id)) return fail(`Bad id "${id}".`);
+      if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key)) return fail(`Bad state key "${key}".`);
+      const file = path.join(appsDir(), `${id}.state.json`);
+      let state = {};
+      try {
+        const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) state = parsed;
+      } catch { /* fresh state */ }
+      if (name === 'append_tab_state') {
+        if (!args.entry || typeof args.entry !== 'object' || Array.isArray(args.entry)) return fail('entry must be an object.');
+        const list = Array.isArray(state[key]) ? state[key] : [];
+        if (list.length >= MAX_STATE_ENTRIES) return fail(`State list "${key}" is full (${MAX_STATE_ENTRIES}).`);
+        list.push({ ...args.entry, _ts: new Date().toISOString() });
+        state[key] = list;
+      } else {
+        state[key] = args.value ?? null;
+      }
+      const serialized = JSON.stringify(state, null, 2);
+      if (serialized.length > MAX_STATE_BYTES) return fail('State too large (64KB cap).');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file + '.tmp', serialized);
+      await fs.rename(file + '.tmp', file);
+      return ok(`State updated — "${key}" in "${id}". The open widget refreshes live.`);
     }
 
     if (name === 'get_tab_state') {

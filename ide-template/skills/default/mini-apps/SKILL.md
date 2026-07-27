@@ -55,6 +55,10 @@ Do NOT build one for a one-off question — answer normally.
   app's computed parts (totals, charts) via `save_as_tab`, and alerts the
   user when a threshold is crossed. State survives your turns — it's the
   app's database.
+- **You can WRITE state too** — `append_tab_state` / `set_tab_state` hit the
+  same store the Form writes, and the open widget refreshes live. When the
+  user asks in chat ("dodaj lead Acme 25k"), append it yourself — never tell
+  them to go fill the form manually.
 
 Updating = call `save_as_tab` again with the **same id** (spec and/or fresh
 data). Renaming/deleting: the user can do it in the sidebar; you can
