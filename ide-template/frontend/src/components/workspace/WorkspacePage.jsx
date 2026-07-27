@@ -127,7 +127,9 @@ export default function WorkspacePage() {
     const onPrefill = (e) => {
       const text = String(e?.detail?.text || e?.detail || '').trim();
       if (!text) return;
-      setPendingMsg({ text, fill: true });
+      // detail.send === true → auto-send (mini-app Button actions: the click
+      // IS the user's intent, no composer review step). Default stays fill.
+      setPendingMsg(e?.detail?.send ? { text } : { text, fill: true });
       setChatOpen(true);
     };
     window.addEventListener('ide:chat-prefill', onPrefill);

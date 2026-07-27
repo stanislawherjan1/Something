@@ -5,7 +5,7 @@
  * save_as_tab writes an OpenUI Lang spec + data to
  *   <PROJECT_DIR>[/users/<slug>]/.claude/miniapps/<id>.json
  * and the workspace UI picks it up live (chokidar → SSE → sidebar refetch),
- * so the app appears under "Your Mini Apps" with no further step.
+ * so the app appears under "Mini Apps" with no further step.
  *
  * Scoping: IDE_ACTOR_SLUG (injected per turn by the spawner) → personal tree
  * in team mode; unset → shared root (solo/legacy). This mirrors the
@@ -26,7 +26,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 const PROJECT_DIR = process.env.PROJECT_DIR || '/home/coder/project';
 
 // Must stay in sync with MINIAPP_COMPONENT_NAMES in the frontend library.
-const COMPONENTS = ['App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart'];
+const COMPONENTS = ['App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart', 'Button', 'Form'];
 // OpenUI Lang builtin helper functions (lang-core BUILTINS + Each) — legal in
 // specs but not UI components.
 const BUILTINS = ['Count', 'First', 'Last', 'Sum', 'Avg', 'Min', 'Max', 'Abs', 'Ceil', 'Floor', 'Round', 'Sort', 'Filter', 'Each'];
@@ -84,6 +84,9 @@ Component signatures (the ONLY allowed components — anything else is rejected)
   App(children: any[])                             app root, vertical stack
   Tabs(labels: string[], children: any[])          segmented switcher; labels[i] shows children[i] (2-6 tabs)
   Card(title?: string|null, children?: any[])      titled section container
+  Button(label: string, say: string)               click sends "say" to you (the assistant) in chat — you are the backend; act on it and update the app
+  Form(stateKey: string, fields: {name,label,type?}[], submitLabel?: string, notify?: string)
+                                                   inputs the user fills; submit APPENDS the entry to app state under stateKey (instant, no LLM); if notify is set, that text is also sent to you in chat
   Grid(columns?: 1-4, children?: any[])            responsive grid (stat rows)
   Text(content: string, muted?: boolean)           paragraph
   Badge(label: string, tone?: "neutral"|"success"|"warning"|"danger")
@@ -99,7 +102,14 @@ from the app's data sources — never inline rows into the spec. Provide rows in
 "dataSources":
   { "key": "orders", "source": "embedded" }                  snapshot only
   { "key": "reminders", "source": "api:/api/reminders" }     re-fetched from the workspace API on open/refresh
+  { "key": "expenses", "source": "state" }                   app state: rows the USER adds via Form clicks; read it back with get_tab_state
 Only same-origin api:/api/... paths are allowed as live sources.
+
+Interactive pattern (user acts in the UI, you act on it):
+- Form appends entries to state instantly — the widget updates without you.
+- Read what the user clicked/typed with get_tab_state (on demand or from a
+  scheduled reminder), then act (compute, call tools) and update the app via
+  save_as_tab (same id) if its layout/data must change.
 
 Example spec:
   root = App([stats, shipping])
@@ -121,7 +131,7 @@ const TOOLS = [
   {
     name: 'save_as_tab',
     description:
-      'Save a mini app as a persistent sidebar tab ("Your Mini Apps"). The tab appears in the ' +
+      'Save a mini app as a persistent sidebar tab ("Mini Apps"). The tab appears in the ' +
       'workspace sidebar automatically — tell the user it is there, do not paste the spec in chat. ' +
       'Rebuild an existing app by saving with the same id.\n\n' + GRAMMAR,
     inputSchema: {
@@ -154,6 +164,38 @@ const TOOLS = [
         },
       },
       required: ['id', 'name', 'spec'],
+    },
+  },
+  {
+    name: 'start_tab',
+    description:
+      'Announce a mini app you are ABOUT to build: the tab appears in the sidebar immediately with a ' +
+      'building spinner. Call this FIRST (before gathering data), then finish with save_as_tab (same id), ' +
+      'which replaces the placeholder. Also briefly tell the user in chat that you are building the app.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Same stable slug you will pass to save_as_tab' },
+        name: { type: 'string', description: 'Tab label' },
+        icon: {
+          type: 'string',
+          enum: ['layout-grid', 'shopping-cart', 'trending-up', 'bar-chart', 'calendar', 'check-square', 'list-todo', 'mail', 'users', 'package', 'dollar-sign', 'cloud-sun', 'globe', 'zap', 'heart', 'star', 'clock'],
+          description: 'Sidebar icon (same choice you will use in save_as_tab)',
+        },
+      },
+      required: ['id', 'name'],
+    },
+  },
+  {
+    name: 'get_tab_state',
+    description:
+      'Read a mini app\'s user-generated state: everything the user added through the app\'s Form ' +
+      'components (and Button context). Use it to act on what the user clicked/typed — e.g. a reminder ' +
+      'that reads state, computes totals, and updates the app or alerts the user.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'The app id' } },
+      required: ['id'],
     },
   },
   {
@@ -195,8 +237,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const sources = Array.isArray(args.dataSources) ? args.dataSources : [];
       for (const s of sources) {
         const src = String(s?.source || '');
-        if (src !== 'embedded' && !(src.startsWith('api:/api/') && !src.includes('//'))) {
-          return fail(`Bad data source "${src}" for key "${s?.key}" — use "embedded" or "api:/api/...".`);
+        if (src !== 'embedded' && src !== 'state' && !(src.startsWith('api:/api/') && !src.includes('//'))) {
+          return fail(`Bad data source "${src}" for key "${s?.key}" — use "embedded", "state" or "api:/api/...".`);
         }
       }
 
@@ -210,6 +252,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       } catch { /* new app */ }
 
       const icon = ICONS.includes(args.icon) ? args.icon : 'layout-grid';
+      // NOTE: no `status` field — a full save always clears any 'building'
+      // placeholder start_tab left behind.
       await writeJsonAtomic(file, {
         id,
         name: label,
@@ -221,7 +265,40 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         updated: new Date().toISOString(),
         order,
       });
-      return ok(`Saved. "${label}" is now in the sidebar under Your Mini Apps${created ? ' (updated in place)' : ''}.`);
+      return ok(`Saved. "${label}" is now in the sidebar under Mini Apps${created ? ' (updated in place)' : ''}.`);
+    }
+
+    if (name === 'start_tab') {
+      const id = String(args.id || '').trim();
+      const label = String(args.name || '').trim();
+      if (!ID_RE.test(id)) return fail(`Bad id "${id}" — use lowercase letters, digits and dashes (max 64 chars).`);
+      if (!label || label.length > 80) return fail('Bad name — 1..80 characters.');
+      const icon = ICONS.includes(args.icon) ? args.icon : 'layout-grid';
+      const file = path.join(appsDir(), `${id}.json`);
+      let prev = {};
+      try { prev = JSON.parse(await fs.readFile(file, 'utf8')); } catch { /* new */ }
+      await writeJsonAtomic(file, {
+        ...prev,
+        id,
+        name: label,
+        icon: prev.icon || icon,
+        status: 'building',
+        created: prev.created || new Date().toISOString(),
+        updated: new Date().toISOString(),
+        order: prev.order ?? 0,
+      });
+      return ok(`Placeholder up — "${label}" shows in the sidebar with a building spinner. Finish with save_as_tab("${id}", ...).`);
+    }
+
+    if (name === 'get_tab_state') {
+      const id = String(args.id || '').trim();
+      if (!ID_RE.test(id)) return fail(`Bad id "${id}".`);
+      try {
+        const raw = await fs.readFile(path.join(appsDir(), `${id}.state.json`), 'utf8');
+        return ok(raw);
+      } catch {
+        return ok('{}');   // no user input yet — empty state, not an error
+      }
     }
 
     if (name === 'list_tabs') {
@@ -243,6 +320,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!ID_RE.test(id)) return fail(`Bad id "${id}".`);
       const file = path.join(appsDir(), `${id}.json`);
       try { await fs.unlink(file); } catch { return fail(`No mini app "${id}".`); }
+      try { await fs.unlink(path.join(appsDir(), `${id}.state.json`)); } catch { /* no state */ }
       return ok(`Deleted "${id}" — the tab is gone from the sidebar.`);
     }
 

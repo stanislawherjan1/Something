@@ -37,8 +37,31 @@ export default function MiniAppView({ id, fileEventNonce, sidebarOpen }) {
   useEffect(() => { if (fileEventNonce) reload(); }, [fileEventNonce, reload]);
 
   const [live, setLive] = useState({ data: {}, errors: {}, fetching: false });
+  // User-generated state (Form submits). Server copy arrives with the app;
+  // appendState mutates optimistically with the server's authoritative echo.
+  const [state, setState] = useState({});
+  useEffect(() => { setState(payload?.state || {}); }, [payload]);
 
   const sources = useMemo(() => (Array.isArray(app?.dataSources) ? app.dataSources : []), [app]);
+
+  // Button clicks ride the existing chat-prefill event with send:true — the
+  // click IS the user's message; the bot (with its full tool belt) is the
+  // app's backend.
+  const sendToBot = useCallback((text) => {
+    window.dispatchEvent(new CustomEvent('ide:chat-prefill', { detail: { text, send: true } }));
+  }, []);
+
+  const appendState = useCallback(async (key, entry) => {
+    const resp = await fetch(`/api/miniapps/${encodeURIComponent(id)}/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ op: 'append', key, entry }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    setState(data.state || {});
+  }, [id]);
 
   const fetchLive = useCallback(async () => {
     const targets = sources.map(s => ({ key: s?.key, path: livePath(s?.source) })).filter(t => t.key);
@@ -65,14 +88,36 @@ export default function MiniAppView({ id, fileEventNonce, sidebarOpen }) {
 
   useEffect(() => { fetchLive(); }, [fetchLive]);
 
-  // Live data wins over the embedded snapshot; snapshot fills the gaps.
-  const ctx = useMemo(() => ({
-    data: { ...(app?.data || {}), ...live.data },
-    loading: live.fetching,
-    errors: live.errors,
-  }), [app, live]);
+  // Resolution order per key: user state ('state' sources) → live api fetch →
+  // embedded snapshot. State also rides whole under data.state for ad-hoc use.
+  const ctx = useMemo(() => {
+    const data = { ...(app?.data || {}), ...live.data };
+    for (const s of sources) {
+      if (s?.source === 'state' && s?.key) data[s.key] = state[s.key] ?? [];
+    }
+    data.state = state;
+    return {
+      data,
+      loading: live.fetching,
+      errors: live.errors,
+      appName: app?.name || app?.id || '',
+      sendToBot,
+      appendState,
+    };
+  }, [app, live, sources, state, sendToBot, appendState]);
 
   if (loading && !app) return <MiniAppSkeleton sidebarOpen={sidebarOpen} />;
+  if (app?.status === 'building') {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <EditorHeader icon={LayoutGrid} title={app.name || app.id} sidebarOpen={sidebarOpen} />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground/70">
+          <RefreshCw className="size-6 animate-spin" strokeWidth={1.5} />
+          <div className="text-[13.5px]">Building this app… it will appear here in a moment.</div>
+        </div>
+      </div>
+    );
+  }
   if (loadError || !app) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground/70">

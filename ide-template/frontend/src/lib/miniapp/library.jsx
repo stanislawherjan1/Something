@@ -27,7 +27,13 @@ import {
 } from 'recharts';
 import { cn } from '@/lib/utils';
 
-export const MiniAppDataContext = createContext({ data: {}, loading: false, errors: {} });
+// Context also carries the app's identity and imperative actions wired by
+// MiniAppView: sendToBot(text) — auto-send a chat message (the bot is the
+// backend); appendState(key, entry) — instant write to the app's state store.
+export const MiniAppDataContext = createContext({
+  data: {}, loading: false, errors: {},
+  appName: '', sendToBot: null, appendState: null,
+});
 
 // Resolve a dataKey to rows. Accepts arrays directly, or common envelope
 // shapes ({ items: [...] }, { rows: [...] }, { data: [...] }).
@@ -140,6 +146,118 @@ function TabsImpl({ labels, items, renderNode }) {
       </div>
       <div>{renderNode(items[active] ?? null)}</div>
     </div>
+  );
+}
+
+/* ── Interactive ─────────────────────────────────────────────────────────── */
+
+const Button = defineComponent({
+  name: 'Button',
+  description: 'Action button: clicking sends the "say" text to the assistant in chat — the assistant acts on it (the bot is the backend).',
+  props: z.object({
+    label: z.string().describe('Button caption'),
+    say: z.string().describe('Message sent to the assistant on click, e.g. "Mark order #1042 as shipped"'),
+  }),
+  component: ({ props: p }) => <ButtonImpl label={p.label} say={p.say} />,
+});
+
+function ButtonImpl({ label, say }) {
+  const { appName, sendToBot } = useContext(MiniAppDataContext);
+  const [sent, setSent] = useState(false);
+  const onClick = () => {
+    if (!sendToBot || !say) return;
+    sendToBot(`[Mini app "${appName}"] ${say}`);
+    setSent(true);
+    setTimeout(() => setSent(false), 2000);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!sendToBot}
+      className={cn(
+        'w-fit rounded-md border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+        sent
+          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'border-border/60 bg-background text-foreground/85 hover:bg-sidebar-accent/40',
+        !sendToBot && 'cursor-not-allowed opacity-50',
+      )}
+    >
+      {sent ? 'Sent ✓' : label}
+    </button>
+  );
+}
+
+const formFieldSchema = z.object({
+  name: z.string().describe('Entry property this input fills'),
+  label: z.string().describe('Input label'),
+  type: z.enum(['text', 'number']).optional().describe('Input type; default text'),
+});
+
+const Form = defineComponent({
+  name: 'Form',
+  description: 'Small input form. Submit APPENDS the entry to the app\'s state under stateKey — instant, no assistant involved. Pair with a List/DataTable reading the same key via a "state" data source.',
+  props: z.object({
+    stateKey: z.string().describe('State list the entry is appended to (also usable as a dataKey)'),
+    fields: z.array(formFieldSchema).min(1).max(6).describe('Inputs, in order'),
+    submitLabel: z.string().optional().describe('Submit button caption; default "Add"'),
+    notify: z.string().optional().describe('If set, this text is also sent to the assistant after submit'),
+  }),
+  component: ({ props: p }) => (
+    <FormImpl stateKey={p.stateKey} fields={p.fields || []} submitLabel={p.submitLabel} notify={p.notify} />
+  ),
+});
+
+function FormImpl({ stateKey, fields, submitLabel, notify }) {
+  const { appName, appendState, sendToBot } = useContext(MiniAppDataContext);
+  const [values, setValues] = useState({});
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!appendState || busy) return;
+    const entry = {};
+    for (const f of fields) {
+      const raw = (values[f.name] ?? '').trim();
+      if (!raw) return;   // all fields required in v1 — keeps entries table-clean
+      entry[f.name] = f.type === 'number' ? Number(raw) : raw;
+    }
+    setBusy(true);
+    try {
+      await appendState(stateKey, entry);
+      setValues({});
+      if (notify && sendToBot) sendToBot(`[Mini app "${appName}"] ${notify}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
+      {fields.map((f) => (
+        <label key={f.name} className="flex min-w-0 flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground/70">{f.label}</span>
+          <input
+            type={f.type === 'number' ? 'number' : 'text'}
+            step={f.type === 'number' ? 'any' : undefined}
+            value={values[f.name] ?? ''}
+            onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
+            className={cn(
+              'h-8 w-36 rounded-md border border-border/60 bg-background px-2 text-[12.5px]',
+              'outline-none transition-colors focus:border-[--color-ring]',
+            )}
+          />
+        </label>
+      ))}
+      <button
+        type="submit"
+        disabled={!appendState || busy}
+        className={cn(
+          'h-8 rounded-md bg-[--color-ring] px-3 text-[12.5px] font-medium text-white transition-opacity',
+          (!appendState || busy) && 'opacity-50',
+        )}
+      >
+        {busy ? '…' : (submitLabel || 'Add')}
+      </button>
+    </form>
   );
 }
 
@@ -374,11 +492,11 @@ function formatCell(v) {
 }
 
 export const miniappLibrary = createLibrary({
-  components: [App, Tabs, Card, Grid, Text, Badge, Stat, DataTable, List, MiniLineChart, MiniBarChart],
+  components: [App, Tabs, Card, Grid, Text, Badge, Stat, DataTable, List, MiniLineChart, MiniBarChart, Button, Form],
   root: 'App',
 });
 
 /** Component whitelist — save_as_tab validation mirrors this list. */
 export const MINIAPP_COMPONENT_NAMES = [
-  'App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart',
+  'App', 'Tabs', 'Card', 'Grid', 'Text', 'Badge', 'Stat', 'DataTable', 'List', 'LineChart', 'BarChart', 'Button', 'Form',
 ];

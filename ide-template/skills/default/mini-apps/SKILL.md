@@ -1,13 +1,13 @@
 ---
 name: mini-apps
-description: Build persistent mini apps (dashboards, trackers, widgets) that live as tabs in the workspace sidebar under "Your Mini Apps". Use whenever the user asks for a dashboard, tracker, overview, widget, "app", or keeps asking for the same summary repeatedly — offer to turn it into a tab instead of another one-off chat answer. The dedicated tool is mcp__miniapps__save_as_tab; NEVER paste UI specs or component code into the chat.
+description: Build persistent mini apps (dashboards, trackers, widgets) that live as tabs in the workspace sidebar under "Mini Apps". Use whenever the user asks for a dashboard, tracker, overview, widget, "app", or keeps asking for the same summary repeatedly — offer to turn it into a tab instead of another one-off chat answer. The dedicated tool is mcp__miniapps__save_as_tab; NEVER paste UI specs or component code into the chat.
 allowed-tools: mcp__miniapps__save_as_tab, mcp__miniapps__list_tabs, mcp__miniapps__delete_tab, Read, Bash
 ---
 
 # Mini Apps — persistent sidebar tabs
 
 A mini app is a small interactive dashboard the user opens from the sidebar
-("Your Mini Apps"), built once in conversation and used daily. It renders
+("Mini Apps"), built once in conversation and used daily. It renders
 real widgets — KPI tiles, tables, lists, charts — from data you provide.
 This replaces the "AI writes a .md the user reads once" pattern with UI the
 user returns to.
@@ -24,17 +24,37 @@ Do NOT build one for a one-off question — answer normally.
 
 ## The flow
 
-1. **Gather the data this turn** using your normal tools (Shopify MCP, email,
+1. **Call `start_tab` FIRST** (id + name + icon) the moment you commit to
+   building — the tab appears in the sidebar immediately with a building
+   spinner. Say one short line in chat ("Building *Orders* — a moment…"),
+   then work silently.
+2. **Gather the data this turn** using your normal tools (Shopify MCP, email,
    Trello, Sheets, files…). Shape it into flat row arrays — e.g.
    `[{ customer, items, status }, ...]`.
-2. **Compose the spec** in OpenUI Lang. The full component grammar, argument
+3. **Compose the spec** in OpenUI Lang. The full component grammar, argument
    order, and a worked example are in the `save_as_tab` tool description —
    that is the source of truth. Essentials: one statement per line,
    `root = App([...])` first, POSITIONAL args, reference rows via dataKey.
-3. **Call `save_as_tab`** with `id`, `name`, `spec`, `data` (the snapshot you
-   gathered), and `dataSources`.
-4. **Tell the user where it is** — "it's in your sidebar under Your Mini Apps".
+4. **Call `save_as_tab`** (same id) with `spec`, `data` (the snapshot you
+   gathered), and `dataSources` — this replaces the building placeholder.
+5. **Tell the user it's ready** — "it's in your sidebar under Mini Apps".
    Never paste the spec into the chat; the confirmation is the deliverable.
+
+## Interactive apps (the user clicks, you are the backend)
+
+- **`Button(label, say)`** — a click sends `say` to you in chat, prefixed
+  `[Mini app "<name>"]`. Treat it as a user request: act with your tools,
+  then update the app (`save_as_tab`, same id) if its data changed.
+  Use for: "Mark as shipped", "Approve", "Refresh now", per-app commands.
+- **`Form(stateKey, fields, submitLabel?, notify?)`** — submits append
+  entries to the app's state INSTANTLY (no turn of yours involved). Pair it
+  with a List/DataTable whose data source is `{ "key": stateKey, "source":
+  "state" }` so new entries show up as the user types them.
+- **Read what the user did with `get_tab_state(id)`** — on demand ("ile
+  wydałem?") or from a scheduled reminder that aggregates state, updates the
+  app's computed parts (totals, charts) via `save_as_tab`, and alerts the
+  user when a threshold is crossed. State survives your turns — it's the
+  app's database.
 
 Updating = call `save_as_tab` again with the **same id** (spec and/or fresh
 data). Renaming/deleting: the user can do it in the sidebar; you can

@@ -11,7 +11,11 @@ waw = Text("Warsaw forecast", false)
 stats = Grid(2, [s1, s2])
 s1 = Stat("Orders today", "17", "+4")
 s2 = Stat("Revenue", "2 840", null, "vs 2 610 last week")
-shipping = Card("To ship", [orders, chart])
+shipping = Card("To ship", [orders, chart, actions, addForm])
+actions = Button("Mark all shipped", "Mark all pending orders as shipped")
+addForm = Form("expenses", [f1, f2], "Add expense")
+f1 = { name: "desc", label: "Description" }
+f2 = { name: "amount", label: "Amount", type: "number" }
 orders = List("orders", "customer", "items", "status", "Nothing to ship")
 chart = BarChart("revenue", "day", "total", 160)`;
 
@@ -41,6 +45,9 @@ const checks = [
   ['Tabs labels rendered', html.includes('Krakow') && html.includes('Warsaw')],
   ['Active tab content rendered', html.includes('Krakow forecast')],
   ['Inactive tab hidden', !html.includes('Warsaw forecast')],
+  ['Button rendered', html.includes('Mark all shipped')],
+  ['Form field rendered', html.includes('Description')],
+  ['Form submit rendered', html.includes('Add expense')],
 ];
 
 let failed = 0;

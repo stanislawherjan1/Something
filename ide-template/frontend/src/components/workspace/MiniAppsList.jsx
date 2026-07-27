@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  LayoutGrid, Pencil, Trash2,
+  LayoutGrid, Pencil, Trash2, Loader2,
   ShoppingCart, TrendingUp, Calendar, CheckSquare, Mail, Users, Package,
   DollarSign, CloudSun, Globe, Zap, Heart, Star, ListTodo, BarChart3, Clock,
 } from 'lucide-react';
@@ -110,7 +110,8 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
       {apps.map((app) => {
         const active = selected?.type === 'miniapp' && selected?.path === app.id;
         const isRenaming = renaming?.id === app.id;
-        const Icon = ICONS[app.icon] || LayoutGrid;
+        const building = app.status === 'building';
+        const Icon = building ? Loader2 : (ICONS[app.icon] || LayoutGrid);
         return (
           <div
             key={app.id}
@@ -131,7 +132,8 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
             <Icon
               className={cn(
                 'size-[15px] shrink-0 transition-colors',
-                active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+                building && 'animate-spin text-[--color-ring]',
+                !building && (active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75'),
               )}
               strokeWidth={1.75}
             />
@@ -151,8 +153,8 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
               <button
                 type="button"
                 onClick={() => onSelect({ path: app.id, type: 'miniapp' })}
-                className="min-w-0 flex-1 truncate text-left"
-                title={app.name}
+                className={cn('min-w-0 flex-1 truncate text-left', building && 'text-foreground/55 italic')}
+                title={building ? `${app.name} — building…` : app.name}
               >
                 {app.name}
               </button>

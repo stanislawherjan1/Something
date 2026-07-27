@@ -29,6 +29,16 @@ function appsDir(req) {
   return join(PROJECT_DIR, 'users', slug, '.claude', 'miniapps');
 }
 
+const MAX_STATE_ENTRIES = 500;
+const MAX_STATE_BYTES = 64 * 1024;
+
+function readState(dir, id) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, `${id}.state.json`), 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
 function readApp(dir, id) {
   try {
     const parsed = JSON.parse(readFileSync(join(dir, `${id}.json`), 'utf8'));
@@ -55,7 +65,7 @@ export default function miniappsRouter() {
         .filter(f => f.endsWith('.json'))
         .map(f => readApp(dir, f.slice(0, -5)))
         .filter(Boolean)
-        .map(a => ({ id: a.id, name: a.name || a.id, icon: a.icon || null, order: a.order ?? 0, created: a.created || null }))
+        .map(a => ({ id: a.id, name: a.name || a.id, icon: a.icon || null, status: a.status || null, order: a.order ?? 0, created: a.created || null }))
         .sort((x, y) => (x.order - y.order) || String(x.created).localeCompare(String(y.created)));
       res.json({ apps });
     } catch (err) {
@@ -63,14 +73,51 @@ export default function miniappsRouter() {
     }
   });
 
-  // GET /api/miniapps/:id — full spec for the renderer.
+  // GET /api/miniapps/:id — full spec + user state for the renderer.
   router.get('/miniapps/:id', (req, res) => {
     const { id } = req.params;
     if (!ID_RE.test(id)) return res.status(400).json({ error: 'bad id' });
     const dir = appsDir(req);
     const app = dir ? readApp(dir, id) : null;
     if (!app) return res.status(404).json({ error: 'not found' });
-    res.json({ app });
+    res.json({ app, state: readState(dir, id) });
+  });
+
+  // POST /api/miniapps/:id/state — user-generated app state (Form submits).
+  // Instant path: the widget writes here directly, no bot turn involved; the
+  // bot reads the same file via get_tab_state. Capped so a stuck client
+  // can't grow the file unboundedly.
+  router.post('/miniapps/:id/state', (req, res) => {
+    const { id } = req.params;
+    if (!ID_RE.test(id)) return res.status(400).json({ error: 'bad id' });
+    const dir = appsDir(req);
+    if (!dir || !readApp(dir, id)) return res.status(404).json({ error: 'not found' });
+    const { op, key, entry, value } = req.body || {};
+    if (typeof key !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key)) {
+      return res.status(400).json({ error: 'bad key' });
+    }
+    const state = readState(dir, id);
+    if (op === 'append') {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return res.status(400).json({ error: 'bad entry' });
+      const list = Array.isArray(state[key]) ? state[key] : [];
+      if (list.length >= MAX_STATE_ENTRIES) return res.status(413).json({ error: `state list "${key}" is full (${MAX_STATE_ENTRIES})` });
+      list.push({ ...entry, _ts: new Date().toISOString() });
+      state[key] = list;
+    } else if (op === 'set') {
+      state[key] = value ?? null;
+    } else {
+      return res.status(400).json({ error: 'op must be append|set' });
+    }
+    const serialized = JSON.stringify(state, null, 2);
+    if (serialized.length > MAX_STATE_BYTES) return res.status(413).json({ error: 'state too large' });
+    try {
+      const file = join(dir, `${id}.state.json`);
+      writeFileSync(file + '.tmp', serialized);
+      renameSync(file + '.tmp', file);
+      res.json({ ok: true, state });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // PATCH /api/miniapps/:id — rename / reorder.
@@ -109,6 +156,7 @@ export default function miniappsRouter() {
     if (!dir || !existsSync(join(dir, `${id}.json`))) return res.status(404).json({ error: 'not found' });
     try {
       unlinkSync(join(dir, `${id}.json`));
+      try { unlinkSync(join(dir, `${id}.state.json`)); } catch { /* no state */ }
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
