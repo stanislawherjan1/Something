@@ -889,18 +889,30 @@ const SEND_FILE_DM_RE = /`{0,3}\[\[\s*SEND_FILE_DM\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
 // full private scope and DMs them the result. ONE per turn; the sender is always
 // resolved from the target message's from_id — NEVER parsed from brain output
 // (same no-fan-out invariant as chatId).
-// The payload cap must be generous: a marker LONGER than the cap does not match
-// at all, so instead of being captured and stripped it is sent to the group as
-// plain text. That is not a cosmetic failure — a real 937-character delegation
-// (cap was 600) went out verbatim to a group, carrying internal file paths, and
-// the task itself never ran. Anything up to a Telegram message is allowed here;
-// oversize is handled below by refusing to send, never by silently passing text
-// through.
-const PRIVATE_TASK_MAX = 8000;
-const PRIVATE_TASK_RE = new RegExp('`{0,3}\\[\\[\\s*PRIVATE_TASK\\s+([\\s\\S]{1,' + PRIVATE_TASK_MAX + '}?)\\s*\\]\\]`{0,3}', 'i');
-// Unbounded, used only as the last-resort scrub before anything leaves for the
-// group — it must not be able to miss what the capture above matched.
+// NO length cap, deliberately. A marker is delimited: it runs from `[[NAME` to
+// the next `]]`, and how much prose the model puts between them is not a safety
+// property. A cap does not truncate an oversize marker — it makes the pattern
+// fail to match ENTIRELY, so the marker stops being a control instruction and
+// becomes ordinary text that gets posted. That is how a 937-character
+// delegation (against a 600 cap) went out verbatim to a group with internal
+// file paths in it, while the task it described never ran. Any number chosen
+// here would just relocate that failure to a longer payload.
+const PRIVATE_TASK_RE = /`{0,3}\[\[\s*PRIVATE_TASK\s+([\s\S]+?)\s*\]\]`{0,3}/i;
+// Every marker kind, likewise uncapped — the last-resort scrub must never be
+// able to miss something the capture above could match.
 const ANY_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b[\s\S]*?\]\]`{0,3}/gi;
+// An OPEN marker with no terminator yet. While one is pending, nothing after it
+// may be released: the stream may still be mid-marker, or the turn may have
+// been killed inside one. Either way the bytes after `[[NAME` are instruction,
+// not prose, and must never reach the group.
+const OPEN_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE_DM|SEND_FILE|SEND|SILENT)\b/i;
+
+// How much of `buf` is safe to emit: everything up to an unterminated marker.
+function emittablePrefixLength(buf) {
+  const m = OPEN_MARKER_RE.exec(buf);
+  if (!m) return buf.length;
+  return buf.indexOf(']]', m.index) === -1 ? m.index : buf.length;
+}
 
 // While the brain's first output streams, tell whether it's heading for a silent
 // verdict: a leading [[SILENT]] (or a still-streaming prefix of it) → stay invisible.
@@ -946,15 +958,20 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     // simply doesn't match yet and waits for the rest of the stream.
     const flushSends = () => {
       let m;
-      while (parts < MAX_PARTS && (m = text.match(SEND_RE))) {
+      // Only ever consider the part of the buffer that is not sitting behind an
+      // unterminated marker. This is the invariant that makes the class of leak
+      // impossible rather than unlikely: whatever the model emits, bytes after
+      // an unclosed `[[NAME` are never eligible to be sent.
+      while (parts < MAX_PARTS) {
+        const safeEnd = emittablePrefixLength(text);
+        m = text.slice(0, safeEnd).match(SEND_RE);
+        if (!m) break;
         let chunk = finalizeReply(stripScaffolding(text.slice(0, m.index), group.language));
         text = text.slice(m.index + m[0].length);
-        // Scrub markers HERE too. extractPrivateTask() runs before this on every
-        // streamed chunk, so a marker within the capture cap is already gone —
-        // but one ABOVE the cap does not match, stays in the buffer, and this
-        // path used to post it verbatim. stripScaffolding only removes planning
-        // lines; it has never touched markers. Raising the cap alone would leave
-        // exactly the same hole one order of magnitude further out.
+        // Belt and braces: a terminated marker inside the chunk is scrubbed, and
+        // if any marker syntax somehow survives, the chunk is dropped rather
+        // than posted. stripScaffolding removes planning lines only — it has
+        // never touched markers.
         chunk = chunk.replace(ANY_MARKER_RE, '').trim();
         if (/\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b/i.test(chunk)) {
           process.stderr.write('[group-watcher] dropping streamed chunk: unparsed marker survived scrubbing\n');

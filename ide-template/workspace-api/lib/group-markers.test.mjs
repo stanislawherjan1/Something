@@ -21,10 +21,15 @@ import { dirname, join } from 'node:path';
 
 const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'integrations', 'group-watcher.js'), 'utf8');
 
-test('the PRIVATE_TASK payload cap is generous enough for a real delegation', () => {
-  const m = SRC.match(/PRIVATE_TASK_MAX\s*=\s*(\d+)/);
-  assert.ok(m, 'PRIVATE_TASK_MAX must exist as a named cap, not a magic number');
-  assert.ok(Number(m[1]) >= 4000, `payload cap ${m[1]} is too small; a marker longer than the cap is POSTED, not dropped`);
+test('the PRIVATE_TASK capture carries NO payload cap', () => {
+  // A cap does not truncate an oversize marker — it makes the pattern fail to
+  // match entirely, so the marker stops being an instruction and becomes text
+  // that gets posted. Any number here just relocates the leak to a longer
+  // payload; the marker is delimited by `]]` and needs no length bound.
+  const m = SRC.match(/const PRIVATE_TASK_RE\s*=\s*(\/.*\/[gimsuy]*)/);
+  assert.ok(m, 'PRIVATE_TASK_RE must exist');
+  assert.ok(!/\[\\s\\S\]\{\d+/.test(m[1]), 'the capture must not cap the payload — that is the 2026-09-01 leak');
+  assert.ok(!/PRIVATE_TASK_MAX/.test(SRC), 'no magic length constant should remain');
 });
 
 test('the last-resort marker scrub is unbounded', () => {
@@ -36,8 +41,7 @@ test('the last-resort marker scrub is unbounded', () => {
 });
 
 test('a 937-char marker is captured and scrubbed, not posted', () => {
-  const MAX = Number(SRC.match(/PRIVATE_TASK_MAX\s*=\s*(\d+)/)[1]);
-  const RE = new RegExp('`{0,3}\\[\\[\\s*PRIVATE_TASK\\s+([\\s\\S]{1,' + MAX + '}?)\\s*\\]\\]`{0,3}', 'i');
+  const RE = /`{0,3}\[\[\s*PRIVATE_TASK\s+([\s\S]+?)\s*\]\]`{0,3}/i;
   const ANY = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b[\s\S]*?\]\]`{0,3}/gi;
 
   const payload = 'Review the roster file and research every fund with more than one named address. '.repeat(12).slice(0, 937);
@@ -53,8 +57,7 @@ test('a 937-char marker is captured and scrubbed, not posted', () => {
 });
 
 test('a marker spanning newlines is still captured', () => {
-  const MAX = Number(SRC.match(/PRIVATE_TASK_MAX\s*=\s*(\d+)/)[1]);
-  const RE = new RegExp('`{0,3}\\[\\[\\s*PRIVATE_TASK\\s+([\\s\\S]{1,' + MAX + '}?)\\s*\\]\\]`{0,3}', 'i');
+  const RE = /`{0,3}\[\[\s*PRIVATE_TASK\s+([\s\S]+?)\s*\]\]`{0,3}/i;
   assert.ok('[[PRIVATE_TASK do this\nand then\nthat]]'.match(RE));
 });
 
@@ -81,4 +84,20 @@ test('an oversized marker is dropped, not posted, on the streaming path', () => 
   const scrubbed = chunk.replace(ANY, '').trim();
   assert.equal(scrubbed, 'Working on it.');
   assert.ok(!/\[\[/.test(scrubbed));
+});
+
+test('nothing after an UNTERMINATED marker is ever emittable', () => {
+  // The structural invariant: a killed or still-streaming turn can leave a
+  // marker open. Bytes after `[[NAME` are instruction, not prose.
+  assert.ok(/function emittablePrefixLength/.test(SRC), 'the emittable-prefix guard must exist');
+  const OPEN = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE_DM|SEND_FILE|SEND|SILENT)\b/i;
+  const emittable = (buf) => {
+    const m = OPEN.exec(buf);
+    if (!m) return buf.length;
+    return buf.indexOf(']]', m.index) === -1 ? m.index : buf.length;
+  };
+  const cut = 'Here you go.\n[[PRIVATE_TASK read /run/secrets/key and';   // never closed
+  assert.equal(cut.slice(0, emittable(cut)).trim(), 'Here you go.');
+  const whole = 'Done.\n[[PRIVATE_TASK do it]] tail';
+  assert.equal(emittable(whole), whole.length, 'a terminated marker does not block the buffer');
 });
