@@ -101,3 +101,21 @@ test('nothing after an UNTERMINATED marker is ever emittable', () => {
   const whole = 'Done.\n[[PRIVATE_TASK do it]] tail';
   assert.equal(emittable(whole), whole.length, 'a terminated marker does not block the buffer');
 });
+
+test('the group turn deadline is idle-based, not wall-clock', () => {
+  // A fixed cap killed turns that were visibly working, which is what pushed
+  // long work into deferral routes that do not exist. Progress must reset it.
+  assert.ok(/const bumpIdle = \(\) =>/.test(SRC), 'an idle-reset helper must exist');
+  assert.ok(/GROUP_TURN_IDLE\b/.test(SRC) && /GROUP_TURN_MAX\b/.test(SRC),
+    'both an idle window and an absolute backstop must exist');
+  for (const cb of ['onText', 'onToolStart', 'onToolEnd']) {
+    const m = SRC.match(new RegExp(cb + ':\\s*\\([^)]*\\)\\s*=>\\s*\\{[^\\n]*'));
+    assert.ok(m && /bumpIdle\(\)/.test(m[0]), `${cb} must reset the idle deadline`);
+  }
+});
+
+test('the group prompt no longer defers long work elsewhere', () => {
+  assert.ok(!/deliver the result back to this group/.test(SRC), 'the impossible promise must stay gone');
+  assert.ok(/a request asked here is answered here/i.test(SRC), 'long work belongs in the group');
+  assert.ok(/NEVER defer it to a reminder/.test(SRC), 'reminders cannot deliver into a group');
+});
