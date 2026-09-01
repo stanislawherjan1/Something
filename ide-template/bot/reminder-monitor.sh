@@ -15,6 +15,36 @@ TMUX_SOCKET="$BOT_NAME"
 TMUX_SESSION="$BOT_NAME"
 CHAT_ID="${TELEGRAM_ADMIN_CHAT_ID:-}"
 NOTIFY_SCRIPT="$HOME/bot-notify.sh"
+
+# Resolve the operator chat id the same way bot-notify.sh does. The pm2 entry
+# for this process carries no env block, so on a client whose Telegram was
+# activated through the workspace UI (rather than the deploy .env) the variable
+# above is EMPTY — every frame then injects `chat_id=` and the brain has to
+# guess a destination from context, with group ids sitting in its prefix.
+# Re-resolved on each tick because UI activation can land after this process
+# started. Mirrors bot-notify.sh:11-33; keep the two ladders in step.
+resolve_chat_id() {
+    [ -n "$CHAT_ID" ] && return 0
+
+    # Fallback A — wsapi-managed integrations.env, source of truth after the UI
+    # activate flow (`export KEY=val`, mode 0660 group=botshare).
+    local integrations_env="${HOME}/.${BOT_NAME}/integrations.env"
+    if [ -f "$integrations_env" ]; then
+        CHAT_ID=$(grep -oE '^(export )?TELEGRAM_ADMIN_CHAT_ID=.*' "$integrations_env" 2>/dev/null \
+                  | sed -E 's/^(export )?[^=]+=//; s/^["'"'"']//; s/["'"'"']$//')
+    fi
+
+    # Fallback B — the telegram plugin's own access.json (allowFrom[0]), for
+    # pre-Phase-3 deployments that predate integrations.env.
+    local plugin_access="$HOME/.claude/channels/telegram/access.json"
+    if [ -z "$CHAT_ID" ] && [ -f "$plugin_access" ]; then
+        CHAT_ID=$(grep -oE '"allowFrom"[[:space:]]*:[[:space:]]*\[[[:space:]]*"[^"]+"' "$plugin_access" 2>/dev/null \
+                  | grep -oE '"[0-9]+"' | head -1 | tr -d '"')
+    fi
+
+    [ -n "$CHAT_ID" ] && log "Resolved operator chat id from fallback (env was empty)"
+    [ -n "$CHAT_ID" ]
+}
 WEB_NOTIFY_SCRIPT="/opt/ide/web-notify.sh"
 # Serialized, idle-gated tmux injector — the ONLY path that may type into the
 # bot's Claude session (prevents reminder/user-turn interleaving). Overridable
@@ -23,6 +53,37 @@ INJECT_SCRIPT="${INJECT_SCRIPT:-/opt/ide/tmux-inject.sh}"
 export INJECT_MAX_WAIT_S="${INJECT_MAX_WAIT_S:-25}"
 
 log() { echo "[reminder-monitor] $*"; }
+
+# Append-only record of every fire attempt and how it actually left the box.
+# A one-shot's record is DELETED from .reminders.json when it fires, so without
+# this there is no evidence anywhere that a reminder ever existed, ran, or
+# failed — which is why every delivery bug in this pipeline has been invisible.
+# `path` matters as much as `ok`: a reminder "delivered" as a raw fallback ping
+# or an in-memory web toast is one the user very likely never saw.
+FIRED_LOG="${FIRED_LOG:-/home/coder/project/.reminders-log.jsonl}"
+FIRE_PATH=""   # set by fire_operator: tmux | fallback-telegram | fallback-web | none
+
+log_fire() {
+    local ok="$1" path="$2" channel="$3" recipients="$4" urgency="$5" exec_flag="$6" title="$7"
+    OK="$ok" P="$path" CH="$channel" RCP="$recipients" URG="$urgency" EX="$exec_flag" TI="$title" \
+    FL="$FIRED_LOG" node - << 'NODE' 2>/dev/null || true
+const fs = require('fs');
+const line = JSON.stringify({
+    ts: new Date().toISOString(),
+    ok: process.env.OK === '0',
+    path: process.env.P || 'unknown',
+    channel: process.env.CH || '',
+    recipients: process.env.RCP || '',
+    urgency: process.env.URG || 'now',
+    exec: process.env.EX === '1',
+    title: (process.env.TI || '').slice(0, 200),
+}) + '\n';
+try {
+    fs.appendFileSync(process.env.FL, line);
+    try { fs.chmodSync(process.env.FL, 0o664); } catch {}
+} catch {}
+NODE
+}
 
 WSAPI_PORT="${WORKSPACE_API_PORT:-3001}"
 OP_SLUG=""   # operator slug (team mode); fetched lazily once wsapi is reachable
@@ -63,35 +124,67 @@ fire_operator() {
     # fall through to the same direct-API ladder used when the bot is offline, so
     # the ping is delivered without corrupting the conversation.
     local injected=1
-    if tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
+    # Never inject a Telegram-bound frame with an empty destination: the brain
+    # would pick one from context, and its prefix lists every registered group's
+    # chat id. Fall through to the direct ladder instead (bot-notify.sh resolves
+    # the id itself and fails loudly if it can't). channel=web needs no chat id.
+    if [ "$channel" != "web" ] && ! resolve_chat_id; then
+        log "No operator chat id (env, integrations.env and access.json all empty) — refusing to inject a frame with an empty destination; using direct fallback"
+    elif tmux -L "$TMUX_SOCKET" has-session -t "$TMUX_SESSION" 2>/dev/null; then
         log "Firing via tmux (channel=${channel} urgency=${urgency}): ${message}"
         "$INJECT_SCRIPT" "[${frame} channel=${channel} chat_id=${CHAT_ID} | ${message}]"
         injected=$?
         [ "$injected" = "3" ] && log "Session busy past ${INJECT_MAX_WAIT_S:-25}s — using direct fallback so the live turn isn't corrupted (channel=${channel})"
     fi
-    if [ "$injected" != "0" ]; then
-        [ "$injected" = "1" ] && log "Bot session offline (channel=${channel}) — using fallback"
-        case "$channel" in
-            web)
-                if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
-                    "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || log "Web fallback failed for: ${message}"
-                elif [ -x "$NOTIFY_SCRIPT" ]; then
-                    "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || log "Telegram fallback failed for: ${message}"
-                else
-                    log "Cannot deliver — no fallback available: ${message}"
-                fi
-                ;;
-            *)
-                if [ -x "$NOTIFY_SCRIPT" ]; then
-                    "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || log "Telegram fallback failed for: ${message}"
-                elif [ -x "$WEB_NOTIFY_SCRIPT" ]; then
-                    "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || log "Web fallback failed for: ${message}"
-                else
-                    log "Cannot deliver — no fallback available: ${message}"
-                fi
-                ;;
-        esac
+    FIRE_PATH="none"
+    local rc=0
+    if [ "$injected" = "0" ]; then
+        FIRE_PATH="tmux"
+        return 0
     fi
+
+    [ "$injected" = "1" ] && log "Bot session offline (channel=${channel}) — using fallback"
+
+    # An internal trigger frame ([PLAN_DAY_TRIGGER], [REPO_AUDIT], [BACKUP]…) is
+    # an instruction for the brain, not a message for a person. The raw ladder
+    # cannot run it — it only forwards text — so sending it would show the user
+    # the instruction verbatim ("⏰ Reminder: [PLAN_DAY_TRIGGER] Run the
+    # morning-planner skill…") while the work still never happened: noise AND a
+    # silent miss at once. Suppress it and record the miss instead; the fire log
+    # is now the place where a skipped ritual is visible.
+    case "$message" in
+        \[[A-Z_]*\]*)
+            log "Internal trigger frame could not be injected — NOT delivering it raw (it is an instruction, not a message): ${message%%]*}]"
+            FIRE_PATH="suppressed-trigger"
+            return 1
+            ;;
+    esac
+
+    case "$channel" in
+        web)
+            if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
+                FIRE_PATH="fallback-web"
+                "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || { log "Web fallback failed for: ${message}"; rc=1; }
+            elif [ -x "$NOTIFY_SCRIPT" ]; then
+                FIRE_PATH="fallback-telegram"
+                "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || { log "Telegram fallback failed for: ${message}"; rc=1; }
+            else
+                log "Cannot deliver — no fallback available: ${message}"; rc=1
+            fi
+            ;;
+        *)
+            if [ -x "$NOTIFY_SCRIPT" ]; then
+                FIRE_PATH="fallback-telegram"
+                "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || { log "Telegram fallback failed for: ${message}"; rc=1; }
+            elif [ -x "$WEB_NOTIFY_SCRIPT" ]; then
+                FIRE_PATH="fallback-web"
+                "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || { log "Web fallback failed for: ${message}"; rc=1; }
+            else
+                log "Cannot deliver — no fallback available: ${message}"; rc=1
+            fi
+            ;;
+    esac
+    return $rc
 }
 
 # Fan out the NON-operator recipients to wsapi (recipient-scoped web toast + their
@@ -111,8 +204,38 @@ const recips = rc === "*everyone*" ? ["*everyone*"] : rc.split(",").filter(Boole
 process.stdout.write(JSON.stringify({ recipients: recips, channel: process.env.CH, title: process.env.TI, body: process.env.DE }));
 NODE
 ) || return 1
-    curl -sS -m 6 -X POST "http://localhost:${WSAPI_PORT}/api/internal/reminder-deliver" \
-        -H 'Content-Type: application/json' -d "$json" >/dev/null 2>&1
+    # Check BOTH the HTTP status and the per-slug result. Without --fail curl
+    # exits 0 on a 500, and even a 200 can mean nothing was delivered: an
+    # unknown/departed slug is skipped silently, and a member whose Telegram
+    # isn't linked (or whose surface preference excludes it) comes back
+    # web:false,telegram:false. Either way the monitor used to treat it as
+    # delivered while the record had already been consumed.
+    local resp status payload
+    resp=$(curl -sS -m 6 -w '\n%{http_code}' -X POST \
+        "http://localhost:${WSAPI_PORT}/api/internal/reminder-deliver" \
+        -H 'Content-Type: application/json' -d "$json" 2>/dev/null) || {
+        log "reminder-deliver: POST failed (wsapi unreachable)"
+        return 1
+    }
+    status="${resp##*$'\n'}"
+    payload="${resp%$'\n'*}"
+    if [ "$status" -lt 200 ] 2>/dev/null || [ "$status" -ge 300 ] 2>/dev/null; then
+        log "reminder-deliver: HTTP ${status} — ${payload}"
+        return 1
+    fi
+    # Solo mode legitimately delivers nothing here; that is not a failure.
+    RESP="$payload" node - << 'NODE'
+let r = {};
+try { r = JSON.parse(process.env.RESP || '{}'); } catch { process.exit(2); }
+if (r.skipped) process.exit(0);
+const rows = Array.isArray(r.delivered) ? r.delivered : [];
+const dead = rows.filter(d => !d.web && !d.telegram).map(d => d.slug);
+if (!rows.length) { process.stderr.write('no recipient resolved'); process.exit(3); }
+if (dead.length)  { process.stderr.write('reached nobody: ' + dead.join(',')); process.exit(3); }
+NODE
+    local rc=$?
+    [ "$rc" = "0" ] || log "reminder-deliver: delivered to nobody (rc=${rc}) — ${payload}"
+    return $rc
 }
 
 # EXECUTION reminders (exec=1, e.g. the per-user morning-planner): run the wire
@@ -381,21 +504,28 @@ NODEEOF
         if [ -z "$recipients" ]; then
             # Solo / operator-only — byte-identical to before.
             fire_operator "$channel" "$wire" "$urgency"
+            log_fire "$?" "$FIRE_PATH" "$channel" "" "$urgency" "$exec" "$title"
         else
             # Team mode. Operator's own copy is brain-elaborated when targeted.
             if operator_in_set "$recipients"; then
                 fire_operator "$channel" "$wire" "$urgency"
+                log_fire "$?" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
             fi
             if [ "$exec" = "1" ]; then
                 # EXECUTION reminder (per-user planner): run the wire AS each
                 # teammate recipient in their own scope, not the operator brain.
                 invoke_turn_teammates "$recipients" "$wire"
+                log_fire "$?" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
             else
                 # Delivery reminder: notify teammates via wsapi; on failure,
                 # surface to the operator so a team reminder is never lost.
-                if ! deliver_to_teammates "$recipients" "$channel" "$title" "$desc"; then
-                    log "reminder-deliver POST failed (wsapi down?) — surfacing to operator"
+                if deliver_to_teammates "$recipients" "$channel" "$title" "$desc"; then
+                    log_fire 0 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
+                else
+                    log_fire 1 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
+                    log "reminder-deliver reached nobody — surfacing to operator"
                     fire_operator "$channel" "(team delivery failed) $wire"
+                    log_fire "$?" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "(escalated) $title"
                 fi
             fi
         fi

@@ -128,14 +128,32 @@ def is_duplicate_append(card_text: str, content: str) -> bool:
         return False
     for line in (card_text or "").splitlines():
         line = line.strip()
+        # A struck line is a RETIRED claim ("strike superseded claims, never
+        # delete"). Matching against it let a superseded fact block its own
+        # replacement forever — the page could never take the claim that
+        # replaced it.
+        if "~~" in line:
+            continue
         if not line.startswith(("-", "*", "|")) and not line[:2].isalpha():
             continue
         lw = _dup_words(line)
         if not lw:
             continue
-        # High overlap of the NEW content's significant words with an existing
-        # line = the same fact already recorded (in either phrasing).
-        if len(cw & lw) / len(cw) >= 0.7:
+        # Overlap must be high in BOTH directions to count as a duplicate. The
+        # one-directional test (new content only) dropped concise corrections:
+        # "X is not the flagship product" shares almost all of its few words
+        # with "X is the flagship product and serves as …" and was discarded,
+        # while a verbose correction survived — i.e. the more tightly a claim
+        # was written, the likelier it was destroyed, and these pages ask for
+        # exactly that ("one atomic, cited claim per line").
+        #
+        # This is a heuristic and it has a hard floor: word overlap cannot tell
+        # "X does Y" from "X no longer does Y", where the whole meaning turns on
+        # one short token. A correction that restates the old claim and negates
+        # it still reads as a duplicate here. That case is meant to be carried
+        # by an explicit `supersedes` on the proposal (see apply_proposal_dict),
+        # not by making this heuristic cleverer.
+        if len(cw & lw) / len(cw) >= 0.7 and len(cw & lw) / len(lw) >= 0.7:
             return True
     return False
 
@@ -186,9 +204,17 @@ def is_auto_applicable(p: dict) -> bool:
     if p.get("action", "append") != "append":
         return False           # only additive writes auto-apply
     kind = p.get("kind", "")
-    if kind == "lint":
-        return False           # advisory only — never mutate on a lint finding
     conf = float(p.get("confidence", 0))
+    if kind == "lint":
+        # A lint finding is advisory, and it can only ever land in memory/LINT.md
+        # — resolve_target hard-codes that path and ignores the card field, and
+        # the append-only check above still applies — so applying one cannot
+        # mutate a card. Refusing it outright is what made the detector useless:
+        # findings queued as pending proposals, LINT.md was never created, and
+        # nothing drains that queue since the review command was removed. The
+        # one component that looks for contradictions and stale claims produced
+        # output no human or agent has ever seen.
+        return conf >= AUTO_APPLY_CONF_CONCEPT
     if kind in ("concept", "page_seed", "page_edit"):
         return conf >= AUTO_APPLY_CONF_CONCEPT   # concept/topic pages — lower bar
     if str(p.get("card", "")) in AUTO_APPLY_CARD_DENY:
@@ -512,9 +538,25 @@ def resolve_target(proposal: dict) -> tuple[Path, str | None]:
             owner = proposal.get("owner", "")
             if not SLUG_RE.match(owner):
                 return MEMORY_DIR / "INVALID.md", f"private concept has invalid owner slug {owner!r}"
-            path = MEMORY_DIR / "users" / owner / "concepts" / f"{slug}.md"
+            base = MEMORY_DIR / "users" / owner
         else:
-            path = MEMORY_DIR / "concepts" / f"{slug}.md"
+            base = MEMORY_DIR
+        path = base / "concepts" / f"{slug}.md"
+        # A graduated entity lives at topics/<slug>.md — cmd_graduate MOVES the
+        # file and unlinks the source. Without this fallthrough the slug reads as
+        # having no page at all: new claims seed a FRESH concepts/<slug>.md
+        # beside the topic, both land in the INDEX under identical link text, and
+        # the graduated page becomes unreachable — it can no longer be appended
+        # to, and reflect-curate skips it for having an empty claim buffer, so
+        # nothing can ever supersede what it says. Observed live: an entity with
+        # a topic page frozen for ten days next to a concept page still taking
+        # every update. Append creates a missing section, so a topic page is a
+        # safe target. Only redirect when the concept page does NOT exist, so an
+        # already-split entity keeps writing where its claims already are.
+        if not path.exists():
+            graduated = base / "topics" / f"{slug}.md"
+            if graduated.exists():
+                path = graduated
         if not path.resolve().is_relative_to(MEMORY_DIR.resolve()):
             return MEMORY_DIR / "INVALID.md", f"resolved concept path escapes memory dir: {path}"
         return path, None
@@ -567,8 +609,15 @@ def apply_proposal_dict(p: dict, *, source: str, pid: str = "") -> dict:
     else:
         return {"ok": False, "error": f"target card {target.name} doesn't exist"}
 
-    # Drop a near-duplicate append before it piles onto the card/page.
-    if p.get("action", "append") == "append" and is_duplicate_append(before, p.get("content", "")):
+    # Drop a near-duplicate append before it piles onto the card/page — unless
+    # the proposal declares it SUPERSEDES an existing claim. A correction is
+    # lexically near-identical to the fact it corrects (the meaning can turn on
+    # one negating token), so the duplicate heuristic is exactly wrong for it.
+    # An explicit signal is the only reliable way to tell the two apart; the
+    # heuristic keeps handling the ordinary case where nothing is declared.
+    if (p.get("action", "append") == "append"
+            and not str(p.get("supersedes", "")).strip()
+            and is_duplicate_append(before, p.get("content", ""))):
         return {"ok": False, "duplicate": True, "error": "duplicate — fact already recorded"}
 
     after = apply_action(before, p)
@@ -754,6 +803,48 @@ def _clip_blurb(s: str) -> str:
     return s.strip().rstrip(".")[:110]
 
 
+def _clean_blurb_line(s: str) -> str:
+    """Strip markdown/citation furniture off one line so it reads as a blurb."""
+    s = s.strip()
+    s = re.sub(r"^[-*+]\s+", "", s)                                     # list marker
+    s = re.sub(r"\s*\[(?:Source|src)\s*:.*?\]\s*$", "", s, flags=re.I)  # citation tail
+    s = re.sub(r"~~(.+?)~~", r"\1", s)                                  # unstrike
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)                              # unbold
+    s = re.sub(r"\[\[([^\]]+)\]\]", r"\1", s)                           # unwrap wikilinks
+    return s.strip()
+
+
+def _claim_lines(body: str) -> list[str]:
+    """The `## Claims` bullets of a page, oldest first (append order). Split on
+    headings rather than regex-capturing the section — a non-greedy capture with
+    multiline `$` truncates at the first line end and reports only one claim."""
+    parts = re.split(r"\n##\s+", str(body))
+    sec = next((p for p in parts if re.match(r"^Claims\b", p.lstrip())), None)
+    if not sec:
+        return []
+    out = []
+    for line in sec.split("\n")[1:]:
+        s = line.strip()
+        if s.startswith("-") and "~~" not in s:   # a struck claim is retired — never the blurb
+            out.append(s)
+    return out
+
+
+def _page_date(abs_path: Path, body: str) -> str:
+    """Best available freshness stamp for an index entry: the latest date cited
+    by a claim, else the file's mtime. Concept pages carry only `created:` in
+    frontmatter and curate cannot add an `updated:` (the rewrite guard requires
+    byte-identical frontmatter), so without this nothing on ANY recall surface
+    tells the model how old a page's content is."""
+    dates = re.findall(r"\[(?:Source|src)\s*:[^\]]*?(\d{4}-\d{2}-\d{2})[^\]]*\]", body or "", re.I)
+    if dates:
+        return max(dates)
+    try:
+        return dt.datetime.fromtimestamp(abs_path.stat().st_mtime, dt.timezone.utc).strftime("%Y-%m-%d")
+    except OSError:
+        return ""
+
+
 def _describe(abs_path: Path, stem_up: str) -> str:
     """A one-line blurb for an index entry — every topic/concept gets one, even
     without a `purpose:` field. Order: canonical card → its fixed description; a
@@ -777,6 +868,7 @@ def _describe(abs_path: Path, stem_up: str) -> str:
     if purpose and not purpose.lower().startswith("accreting claims about"):
         return _clip_blurb(purpose)
     heading = ""
+    in_claims = False
     for line in body.splitlines():
         s = line.strip()
         if not s:
@@ -784,6 +876,14 @@ def _describe(abs_path: Path, stem_up: str) -> str:
         if s.startswith("#"):
             if not heading and s.startswith("# "):
                 heading = s[2:].strip()
+            # Skip the Claims buffer in this forward scan. Appends land at the
+            # END of that section, so taking its first line advertised every
+            # accreting page by its OLDEST claim. A curated page still gets its
+            # Summary (a better description than any single claim); a page whose
+            # only content IS claims falls through to the newest one below.
+            in_claims = bool(re.match(r"^##\s+Claims\b", s, re.I))
+            continue
+        if in_claims:
             continue
         if s.startswith("<!--") or s.lower().startswith("accreting claims about"):
             continue
@@ -793,6 +893,9 @@ def _describe(abs_path: Path, stem_up: str) -> str:
         s = re.sub(r"\[\[([^\]]+)\]\]", r"\1", s)                    # unwrap wikilinks (no stray edges)
         if len(s) >= 8:
             return _clip_blurb(s)
+    claims = _claim_lines(body)
+    if claims:
+        return _clip_blurb(_clean_blurb_line(claims[-1]))            # newest, not oldest
     return _clip_blurb(heading or _frontmatter_field(fm, "title") or "")
 
 
@@ -815,7 +918,16 @@ def rebuild_scope_index(scope_root: Path, index_path: Path, *, title: str, intro
 
         def entry(f: Path) -> str:
             blurb = _describe(f, f.stem.upper())
-            return f"- [[{f.stem}]]" + (f" — {blurb}" if blurb else "")
+            line = f"- [[{f.stem}]]" + (f" — {blurb}" if blurb else "")
+            # Carry the age on the line the model actually reads when deciding
+            # what to open. Without it two pages about the same entity — one
+            # current, one months stale — are indistinguishable at the moment of
+            # choosing, and the stale one wins as often as not.
+            try:
+                stamp = _page_date(f, f.read_text())
+            except OSError:
+                stamp = ""
+            return line + (f" · {stamp}" if stamp else "")
 
         for f in _md_files(scope_root):
             if f.name.lower() in ("index.md", "about.md"):

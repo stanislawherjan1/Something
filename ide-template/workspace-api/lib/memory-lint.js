@@ -189,7 +189,13 @@ function ingestProposals(proposals) {
     let out = '', done = false;
     const finish = (r) => { if (done) return; done = true; resolve(r); };
     let proc;
-    try { proc = spawn('python3', [REFLECT_APPLY, 'ingest', tmp], { env: { ...process.env, PROJECT_DIR: base }, stdio: ['ignore', 'pipe', 'pipe'] }); }
+    // --auto: findings land in memory/LINT.md instead of queueing as pending
+    // proposals. Without it every finding waited on a review command that no
+    // longer exists, so LINT.md was never written and this pass — the only one
+    // that looks for contradictions and stale claims — ran daily into a void.
+    // The write stays bounded to LINT.md (resolve_target hard-codes it) and
+    // stays append-only, so nothing here can rewrite a card.
+    try { proc = spawn('python3', [REFLECT_APPLY, 'ingest', '--auto', tmp], { env: { ...process.env, PROJECT_DIR: base }, stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (err) { return finish({ ok: false, error: `spawn python3: ${err.message}` }); }
     proc.stdout.on('data', (c) => { out += c.toString('utf8'); });
     proc.stderr.on('data', (c) => process.stderr.write(`[memory-lint/apply] ${c.toString('utf8')}`));

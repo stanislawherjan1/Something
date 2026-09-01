@@ -22,7 +22,7 @@ Rules:
   - Preserve owner/group/mode on an existing file (in-place write); on a brand
     new file, set bot:workspace 664 to match how the reminder-mcp owns it.
 """
-import json, os, re, sys, datetime
+import json, os, re, sys, time, datetime
 
 TEMPLATE = os.environ.get("REMINDERS_TEMPLATE", "/opt/ide/bootstrap/reminders.json")
 PROJECT = os.environ.get("PROJECT_DIR", "/home/coder/project")
@@ -180,9 +180,47 @@ if not (added or updated or removed):
     print("[reconcile-reminders] all system rituals present and current")
     sys.exit(0)
 
-with open(LIVE, "w") as f:        # in-place O_TRUNC preserves owner/group/mode when it existed
-    json.dump(live, f, indent=2)
-    f.write("\n")
+# Take the advisory lock the reminder MCP and the monitor share, so this — the
+# fourth writer of .reminders.json — cannot interleave with a fire/advance or an
+# add. Normally this runs from the entrypoint before pm2 starts the monitor, so
+# contention is unlikely; it costs nothing to be correct when it isn't, and an
+# interleaved write here would leave unparseable JSON, after which the monitor
+# exits zero on every tick forever and all scheduling stops silently.
+#
+# Fails OPEN like the other two holders (a crashed holder must never wedge boot),
+# and the write stays an in-place O_TRUNC so owner/group/mode survive — writing
+# through a temp file and renaming would hand the file to whoever runs this.
+_lock = LIVE + ".lock" if isinstance(LIVE, str) else str(LIVE) + ".lock"
+_held = False
+_deadline = time.time() + 4.0
+while True:
+    try:
+        os.close(os.open(_lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        _held = True
+        break
+    except FileExistsError:
+        try:
+            if time.time() - os.stat(_lock).st_mtime > 30:
+                os.unlink(_lock)
+                continue
+        except OSError:
+            continue
+        if time.time() >= _deadline:
+            break
+        time.sleep(0.04)
+    except OSError:
+        break
+
+try:
+    with open(LIVE, "w") as f:    # in-place O_TRUNC preserves owner/group/mode when it existed
+        json.dump(live, f, indent=2)
+        f.write("\n")
+finally:
+    if _held:
+        try:
+            os.unlink(_lock)
+        except OSError:
+            pass
 
 if not existed:
     # brand-new file: match how the reminder-mcp owns it (bot:workspace 664)
