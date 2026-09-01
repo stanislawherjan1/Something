@@ -867,14 +867,8 @@ def _describe(abs_path: Path, stem_up: str) -> str:
     purpose = _frontmatter_field(fm, "purpose") or _frontmatter_field(fm, "summary") or ""
     if purpose and not purpose.lower().startswith("accreting claims about"):
         return _clip_blurb(purpose)
-    # Prefer the NEWEST claim. Appends land at the END of the Claims section, so
-    # scanning forward for the first prose line advertised each accreting page by
-    # its OLDEST claim — the index, which is what the model reads when choosing
-    # where to look, described every entity by the most out-of-date thing on it.
-    claims = _claim_lines(body)
-    if claims:
-        return _clip_blurb(_clean_blurb_line(claims[-1]))
     heading = ""
+    in_claims = False
     for line in body.splitlines():
         s = line.strip()
         if not s:
@@ -882,6 +876,14 @@ def _describe(abs_path: Path, stem_up: str) -> str:
         if s.startswith("#"):
             if not heading and s.startswith("# "):
                 heading = s[2:].strip()
+            # Skip the Claims buffer in this forward scan. Appends land at the
+            # END of that section, so taking its first line advertised every
+            # accreting page by its OLDEST claim. A curated page still gets its
+            # Summary (a better description than any single claim); a page whose
+            # only content IS claims falls through to the newest one below.
+            in_claims = bool(re.match(r"^##\s+Claims\b", s, re.I))
+            continue
+        if in_claims:
             continue
         if s.startswith("<!--") or s.lower().startswith("accreting claims about"):
             continue
@@ -891,6 +893,9 @@ def _describe(abs_path: Path, stem_up: str) -> str:
         s = re.sub(r"\[\[([^\]]+)\]\]", r"\1", s)                    # unwrap wikilinks (no stray edges)
         if len(s) >= 8:
             return _clip_blurb(s)
+    claims = _claim_lines(body)
+    if claims:
+        return _clip_blurb(_clean_blurb_line(claims[-1]))            # newest, not oldest
     return _clip_blurb(heading or _frontmatter_field(fm, "title") or "")
 
 
