@@ -128,14 +128,32 @@ def is_duplicate_append(card_text: str, content: str) -> bool:
         return False
     for line in (card_text or "").splitlines():
         line = line.strip()
+        # A struck line is a RETIRED claim ("strike superseded claims, never
+        # delete"). Matching against it let a superseded fact block its own
+        # replacement forever — the page could never take the claim that
+        # replaced it.
+        if "~~" in line:
+            continue
         if not line.startswith(("-", "*", "|")) and not line[:2].isalpha():
             continue
         lw = _dup_words(line)
         if not lw:
             continue
-        # High overlap of the NEW content's significant words with an existing
-        # line = the same fact already recorded (in either phrasing).
-        if len(cw & lw) / len(cw) >= 0.7:
+        # Overlap must be high in BOTH directions to count as a duplicate. The
+        # one-directional test (new content only) dropped concise corrections:
+        # "X is not the flagship product" shares almost all of its few words
+        # with "X is the flagship product and serves as …" and was discarded,
+        # while a verbose correction survived — i.e. the more tightly a claim
+        # was written, the likelier it was destroyed, and these pages ask for
+        # exactly that ("one atomic, cited claim per line").
+        #
+        # This is a heuristic and it has a hard floor: word overlap cannot tell
+        # "X does Y" from "X no longer does Y", where the whole meaning turns on
+        # one short token. A correction that restates the old claim and negates
+        # it still reads as a duplicate here. That case is meant to be carried
+        # by an explicit `supersedes` on the proposal (see apply_proposal_dict),
+        # not by making this heuristic cleverer.
+        if len(cw & lw) / len(cw) >= 0.7 and len(cw & lw) / len(lw) >= 0.7:
             return True
     return False
 
@@ -512,9 +530,25 @@ def resolve_target(proposal: dict) -> tuple[Path, str | None]:
             owner = proposal.get("owner", "")
             if not SLUG_RE.match(owner):
                 return MEMORY_DIR / "INVALID.md", f"private concept has invalid owner slug {owner!r}"
-            path = MEMORY_DIR / "users" / owner / "concepts" / f"{slug}.md"
+            base = MEMORY_DIR / "users" / owner
         else:
-            path = MEMORY_DIR / "concepts" / f"{slug}.md"
+            base = MEMORY_DIR
+        path = base / "concepts" / f"{slug}.md"
+        # A graduated entity lives at topics/<slug>.md — cmd_graduate MOVES the
+        # file and unlinks the source. Without this fallthrough the slug reads as
+        # having no page at all: new claims seed a FRESH concepts/<slug>.md
+        # beside the topic, both land in the INDEX under identical link text, and
+        # the graduated page becomes unreachable — it can no longer be appended
+        # to, and reflect-curate skips it for having an empty claim buffer, so
+        # nothing can ever supersede what it says. Observed live: an entity with
+        # a topic page frozen for ten days next to a concept page still taking
+        # every update. Append creates a missing section, so a topic page is a
+        # safe target. Only redirect when the concept page does NOT exist, so an
+        # already-split entity keeps writing where its claims already are.
+        if not path.exists():
+            graduated = base / "topics" / f"{slug}.md"
+            if graduated.exists():
+                path = graduated
         if not path.resolve().is_relative_to(MEMORY_DIR.resolve()):
             return MEMORY_DIR / "INVALID.md", f"resolved concept path escapes memory dir: {path}"
         return path, None
@@ -567,8 +601,15 @@ def apply_proposal_dict(p: dict, *, source: str, pid: str = "") -> dict:
     else:
         return {"ok": False, "error": f"target card {target.name} doesn't exist"}
 
-    # Drop a near-duplicate append before it piles onto the card/page.
-    if p.get("action", "append") == "append" and is_duplicate_append(before, p.get("content", "")):
+    # Drop a near-duplicate append before it piles onto the card/page — unless
+    # the proposal declares it SUPERSEDES an existing claim. A correction is
+    # lexically near-identical to the fact it corrects (the meaning can turn on
+    # one negating token), so the duplicate heuristic is exactly wrong for it.
+    # An explicit signal is the only reliable way to tell the two apart; the
+    # heuristic keeps handling the ordinary case where nothing is declared.
+    if (p.get("action", "append") == "append"
+            and not str(p.get("supersedes", "")).strip()
+            and is_duplicate_append(before, p.get("content", ""))):
         return {"ok": False, "duplicate": True, "error": "duplicate — fact already recorded"}
 
     after = apply_action(before, p)
