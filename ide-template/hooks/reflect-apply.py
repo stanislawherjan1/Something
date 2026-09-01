@@ -204,9 +204,17 @@ def is_auto_applicable(p: dict) -> bool:
     if p.get("action", "append") != "append":
         return False           # only additive writes auto-apply
     kind = p.get("kind", "")
-    if kind == "lint":
-        return False           # advisory only — never mutate on a lint finding
     conf = float(p.get("confidence", 0))
+    if kind == "lint":
+        # A lint finding is advisory, and it can only ever land in memory/LINT.md
+        # — resolve_target hard-codes that path and ignores the card field, and
+        # the append-only check above still applies — so applying one cannot
+        # mutate a card. Refusing it outright is what made the detector useless:
+        # findings queued as pending proposals, LINT.md was never created, and
+        # nothing drains that queue since the review command was removed. The
+        # one component that looks for contradictions and stale claims produced
+        # output no human or agent has ever seen.
+        return conf >= AUTO_APPLY_CONF_CONCEPT
     if kind in ("concept", "page_seed", "page_edit"):
         return conf >= AUTO_APPLY_CONF_CONCEPT   # concept/topic pages — lower bar
     if str(p.get("card", "")) in AUTO_APPLY_CARD_DENY:
