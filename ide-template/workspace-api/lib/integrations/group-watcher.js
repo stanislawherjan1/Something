@@ -947,8 +947,19 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     const flushSends = () => {
       let m;
       while (parts < MAX_PARTS && (m = text.match(SEND_RE))) {
-        const chunk = finalizeReply(stripScaffolding(text.slice(0, m.index), group.language));
+        let chunk = finalizeReply(stripScaffolding(text.slice(0, m.index), group.language));
         text = text.slice(m.index + m[0].length);
+        // Scrub markers HERE too. extractPrivateTask() runs before this on every
+        // streamed chunk, so a marker within the capture cap is already gone —
+        // but one ABOVE the cap does not match, stays in the buffer, and this
+        // path used to post it verbatim. stripScaffolding only removes planning
+        // lines; it has never touched markers. Raising the cap alone would leave
+        // exactly the same hole one order of magnitude further out.
+        chunk = chunk.replace(ANY_MARKER_RE, '').trim();
+        if (/\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b/i.test(chunk)) {
+          process.stderr.write('[group-watcher] dropping streamed chunk: unparsed marker survived scrubbing\n');
+          continue;
+        }
         if (chunk) { parts += 1; startTyping(); sendTelegramMessage(group.chatId, chunk, { logKind: 'group' }).catch(() => {}); }
       }
     };

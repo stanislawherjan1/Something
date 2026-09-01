@@ -62,3 +62,23 @@ test('an unparsed marker must block the send', () => {
   assert.ok(/refusing to post: unparsed marker survived/.test(SRC),
     'group compose must refuse to post text that still contains marker syntax');
 });
+
+test('the streamed [[SEND]] flush path also scrubs markers', () => {
+  // The 2026-09-01 leak reached the group through this path: a marker too long
+  // to capture stayed in the buffer, and the chunk before the next [[SEND]] was
+  // posted verbatim. Raising the capture cap alone leaves the same hole further
+  // out, so the flush must scrub and refuse independently.
+  const flush = SRC.match(/const flushSends = \(\) => \{[\s\S]*?\n    \};/);
+  assert.ok(flush, 'flushSends must exist');
+  assert.ok(/ANY_MARKER_RE/.test(flush[0]), 'flushSends must scrub markers before sending');
+  assert.ok(/dropping streamed chunk/.test(flush[0]), 'flushSends must refuse a chunk with a surviving marker');
+});
+
+test('an oversized marker is dropped, not posted, on the streaming path', () => {
+  const ANY = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b[\s\S]*?\]\]`{0,3}/gi;
+  const huge = 'x '.repeat(6000);                       // far beyond any capture cap
+  const chunk = `Working on it.\n[[PRIVATE_TASK ${huge}]]`;
+  const scrubbed = chunk.replace(ANY, '').trim();
+  assert.equal(scrubbed, 'Working on it.');
+  assert.ok(!/\[\[/.test(scrubbed));
+});
