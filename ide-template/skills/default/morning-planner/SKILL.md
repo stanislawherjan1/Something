@@ -169,6 +169,15 @@ them. Don't think by making tool calls.
 - **`ambient`** — soft / general-interest: weather, the day's overview, a gentle nudge. NOT
   blurted as a standalone topic — woven into conversation at a natural opening. Most
   morning-brief items are `ambient`.
+- **NEVER `ambient` for a duty that has to RUN.** "Check the inbox and flag anything that
+  needs attention", "check the price and report", "review the open PRs" — these are work,
+  not conversation material. An `ambient` item is only surfaced if a conversation happens
+  to occur, and its record is consumed the moment it fires either way, so marking work
+  `ambient` means the work quietly never happens on a quiet day. Wanting the check to be
+  silent-unless-notable is a legitimate and common need, but `urgency` is the wrong lever
+  for it: say the bar inside the reminder text ("stay silent unless something genuinely
+  needs attention") and leave urgency as `now`, so the duty actually executes and only its
+  outcome decides whether you hear about it.
 
 ## Proactive follow-ups — catch what quietly stalled
 
@@ -222,7 +231,10 @@ For each thing that should happen at a time today, `set_reminder`:
   the user approves ("Suggest: send the weekly report — want me to draft it?").
 - `urgency`: `now` (fires immediately, standalone) or `ambient` (soft — held and woven in
   at the next natural opening, never blurted). Classify per Step 2. Default to `ambient` for
-  gentle items; reserve `now` for the genuinely time-critical.
+  gentle items; use `now` for the genuinely time-critical AND for every duty that has to
+  run (a check, a scan, a review) — an `ambient` duty is silently dropped on a day with no
+  conversation. Put "silent unless something needs attention" in the reminder text, not in
+  the urgency field.
 - `channel`: the person's preferred channel, read from THEIR `USER_PREFERENCES` (not the
   operator's), but only a channel they can actually receive on. A teammate who prefers
   Telegram yet is not linked to it (the roster shows no Telegram for them) is unreachable

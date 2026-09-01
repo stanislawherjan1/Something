@@ -144,6 +144,22 @@ fire_operator() {
     fi
 
     [ "$injected" = "1" ] && log "Bot session offline (channel=${channel}) — using fallback"
+
+    # An internal trigger frame ([PLAN_DAY_TRIGGER], [REPO_AUDIT], [BACKUP]…) is
+    # an instruction for the brain, not a message for a person. The raw ladder
+    # cannot run it — it only forwards text — so sending it would show the user
+    # the instruction verbatim ("⏰ Reminder: [PLAN_DAY_TRIGGER] Run the
+    # morning-planner skill…") while the work still never happened: noise AND a
+    # silent miss at once. Suppress it and record the miss instead; the fire log
+    # is now the place where a skipped ritual is visible.
+    case "$message" in
+        \[[A-Z_]*\]*)
+            log "Internal trigger frame could not be injected — NOT delivering it raw (it is an instruction, not a message): ${message%%]*}]"
+            FIRE_PATH="suppressed-trigger"
+            return 1
+            ;;
+    esac
+
     case "$channel" in
         web)
             if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
