@@ -803,6 +803,48 @@ def _clip_blurb(s: str) -> str:
     return s.strip().rstrip(".")[:110]
 
 
+def _clean_blurb_line(s: str) -> str:
+    """Strip markdown/citation furniture off one line so it reads as a blurb."""
+    s = s.strip()
+    s = re.sub(r"^[-*+]\s+", "", s)                                     # list marker
+    s = re.sub(r"\s*\[(?:Source|src)\s*:.*?\]\s*$", "", s, flags=re.I)  # citation tail
+    s = re.sub(r"~~(.+?)~~", r"\1", s)                                  # unstrike
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)                              # unbold
+    s = re.sub(r"\[\[([^\]]+)\]\]", r"\1", s)                           # unwrap wikilinks
+    return s.strip()
+
+
+def _claim_lines(body: str) -> list[str]:
+    """The `## Claims` bullets of a page, oldest first (append order). Split on
+    headings rather than regex-capturing the section — a non-greedy capture with
+    multiline `$` truncates at the first line end and reports only one claim."""
+    parts = re.split(r"\n##\s+", str(body))
+    sec = next((p for p in parts if re.match(r"^Claims\b", p.lstrip())), None)
+    if not sec:
+        return []
+    out = []
+    for line in sec.split("\n")[1:]:
+        s = line.strip()
+        if s.startswith("-") and "~~" not in s:   # a struck claim is retired — never the blurb
+            out.append(s)
+    return out
+
+
+def _page_date(abs_path: Path, body: str) -> str:
+    """Best available freshness stamp for an index entry: the latest date cited
+    by a claim, else the file's mtime. Concept pages carry only `created:` in
+    frontmatter and curate cannot add an `updated:` (the rewrite guard requires
+    byte-identical frontmatter), so without this nothing on ANY recall surface
+    tells the model how old a page's content is."""
+    dates = re.findall(r"\[(?:Source|src)\s*:[^\]]*?(\d{4}-\d{2}-\d{2})[^\]]*\]", body or "", re.I)
+    if dates:
+        return max(dates)
+    try:
+        return dt.datetime.fromtimestamp(abs_path.stat().st_mtime, dt.timezone.utc).strftime("%Y-%m-%d")
+    except OSError:
+        return ""
+
+
 def _describe(abs_path: Path, stem_up: str) -> str:
     """A one-line blurb for an index entry — every topic/concept gets one, even
     without a `purpose:` field. Order: canonical card → its fixed description; a
@@ -825,6 +867,13 @@ def _describe(abs_path: Path, stem_up: str) -> str:
     purpose = _frontmatter_field(fm, "purpose") or _frontmatter_field(fm, "summary") or ""
     if purpose and not purpose.lower().startswith("accreting claims about"):
         return _clip_blurb(purpose)
+    # Prefer the NEWEST claim. Appends land at the END of the Claims section, so
+    # scanning forward for the first prose line advertised each accreting page by
+    # its OLDEST claim — the index, which is what the model reads when choosing
+    # where to look, described every entity by the most out-of-date thing on it.
+    claims = _claim_lines(body)
+    if claims:
+        return _clip_blurb(_clean_blurb_line(claims[-1]))
     heading = ""
     for line in body.splitlines():
         s = line.strip()
@@ -864,7 +913,16 @@ def rebuild_scope_index(scope_root: Path, index_path: Path, *, title: str, intro
 
         def entry(f: Path) -> str:
             blurb = _describe(f, f.stem.upper())
-            return f"- [[{f.stem}]]" + (f" — {blurb}" if blurb else "")
+            line = f"- [[{f.stem}]]" + (f" — {blurb}" if blurb else "")
+            # Carry the age on the line the model actually reads when deciding
+            # what to open. Without it two pages about the same entity — one
+            # current, one months stale — are indistinguishable at the moment of
+            # choosing, and the stale one wins as often as not.
+            try:
+                stamp = _page_date(f, f.read_text())
+            except OSError:
+                stamp = ""
+            return line + (f" · {stamp}" if stamp else "")
 
         for f in _md_files(scope_root):
             if f.name.lower() in ("index.md", "about.md"):
