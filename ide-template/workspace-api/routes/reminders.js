@@ -17,7 +17,8 @@
  */
 
 import express, { Router } from 'express';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, openSync, closeSync, statSync, unlinkSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { getTeamMode, getUser, list as teamList } from '../lib/team.js';
 import { avatarUrl } from '../lib/user-avatars.js';
@@ -32,10 +33,52 @@ function readReminders() {
   } catch { return []; }
 }
 
+// Advisory lock + unique tmp, mirroring apps/reminder-mcp/index.js and the node
+// block in bot/reminder-monitor.sh — SAME lock path, so the three writers
+// actually exclude each other. This route was the one that didn't: it took no
+// lock and wrote through a FIXED `.tmp`, which is exactly what the monitor's
+// own comment warns against ("a fixed `.tmp` lets the MCP and this monitor
+// interleave into the same scratch file and corrupt the rename"). A cancel
+// landing inside the 60s tick could clobber a fire/advance — re-firing a
+// reminder that was already delivered — or be silently undone itself; an
+// interleaved rename could leave unparseable JSON, after which the monitor
+// exits zero on every tick forever and ALL scheduling stops without a word.
+//
+// Fails OPEN, like the other two: a crashed holder must never wedge the
+// pipeline. Worst case we degrade to today's last-writer-wins, never worse.
+const LOCK_FILE     = REMINDERS_FILE + '.lock';
+const LOCK_WAIT_MS  = 4000;
+const LOCK_STALE_MS = 30_000;
+
+function acquireLock() {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try { closeSync(openSync(LOCK_FILE, 'wx')); return true; }   // O_CREAT|O_EXCL
+    catch (err) {
+      if (err.code !== 'EEXIST') return false;                    // unexpected FS error → proceed unlocked
+      try {
+        if (Date.now() - statSync(LOCK_FILE).mtimeMs > LOCK_STALE_MS) { unlinkSync(LOCK_FILE); continue; }
+      } catch { continue; }                                       // vanished between open and stat → retry
+      if (Date.now() >= deadline) return false;                   // give up waiting → fail open
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);  // 40ms sleep, sync context
+    }
+  }
+}
+
 function writeReminders(reminders) {
-  const tmp = REMINDERS_FILE + '.tmp';
-  writeFileSync(tmp, JSON.stringify(reminders, null, 2));
-  renameSync(tmp, REMINDERS_FILE);   // atomic swap (mirrors reminder-mcp)
+  const held = acquireLock();
+  try {
+    const tmp = `${REMINDERS_FILE}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+    try {
+      writeFileSync(tmp, JSON.stringify(reminders, null, 2));
+      renameSync(tmp, REMINDERS_FILE);   // atomic swap (mirrors reminder-mcp)
+    } catch (err) {
+      try { unlinkSync(tmp); } catch { /* nothing to clean */ }
+      throw err;
+    }
+  } finally {
+    if (held) { try { unlinkSync(LOCK_FILE); } catch { /* already gone */ } }
+  }
 }
 
 export default function remindersRouter() {
