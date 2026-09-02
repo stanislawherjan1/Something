@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback, lazy, Suspense } from 'react';
-import { Brain, Search, Eye, Link as LinkIcon, FileText, ShieldAlert, Hash, AlertCircle, X, Loader2, Lock, AlertTriangle } from 'lucide-react';
+import { Brain, Search, Eye, Link as LinkIcon, FileText, ShieldAlert, Hash, AlertCircle, X, Loader2, Lock, AlertTriangle, History } from 'lucide-react';
+import MemoryChanges from './MemoryChanges';
 import { forceSimulation, forceManyBody, forceLink, forceX, forceY, forceCollide } from 'd3-force-3d';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -126,6 +127,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
+  const [showChanges, setShowChanges] = useState(false);
   const [showBare, setShowBare] = useState(true);
   const [scopeFilter, setScopeFilter] = useState('all');   // 'all' | 'shared' | 'yours' (team mode)
   const [hover, setHover] = useState(null);
@@ -719,6 +721,15 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
         {hover && (
           <HoverPreview node={hover} />
         )}
+
+        {showChanges && (
+          <MemoryChanges
+            onClose={() => setShowChanges(false)}
+            // An undo changes the tree, so the graph behind the drawer has to
+            // catch up — same event the rest of the view already listens for.
+            onReverted={() => window.dispatchEvent(new CustomEvent('memory-graph-refresh'))}
+          />
+        )}
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/45 bg-background/60 px-5 py-2.5">
@@ -736,6 +747,20 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
           >
             <Eye className="size-3" strokeWidth={1.75} />
             {showBare ? 'All edges' : 'Wiki only'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowChanges(v => !v)}
+            title="What the bot has written to memory lately, with one-tap undo"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors',
+              showChanges
+                ? 'border-border/55 bg-foreground/8 text-foreground hover:bg-foreground/12'
+                : 'border-border/55 bg-card/70 text-foreground/85 hover:bg-card',
+            )}
+          >
+            <History className="size-3" strokeWidth={1.75} />
+            What I saved
           </button>
           {ready && (
             <span className="text-[11px] text-muted-foreground/65">
