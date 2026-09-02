@@ -34,6 +34,7 @@ import { isAllowedGroup, getGroup, userByChatId, recordGroupMember, addGroup, to
 import { activeIds } from './store.js';
 import { sendTelegramMessage, sendGroupDocument, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
+import { isUsageLimit, parseResetAt, resetDelayMs } from '../usage-limit.js';
 import { injectBotFrame } from '../bot-inject.js';
 
 // ─── Tunables (all env-overridable; defaults are the Phase-1 starting point) ──
@@ -321,45 +322,63 @@ function releaseSlot() {
 // with users left guessing. Short, rate-limited (1 per NOTICE_MIN_INTERVAL_MS per
 // group), written in the group's pinned language when we know it.
 const lastNoticeAt = new Map();   // `${chatId}:${kind}` → ts of last notice of THAT kind
+// The plan's usage limit is ACCOUNT-wide, not per-group, and it lasts hours. On
+// the ordinary notice interval a five-hour window put ~20 identical "I'm out of
+// capacity" messages into the chat. Announce it once, then hold until the reset
+// the CLI told us about (or a conservative fallback), and clear the hold as soon
+// as a turn succeeds again.
+let limitedUntil = 0;
+const LIMIT_QUIET_FALLBACK_MS = num('GROUP_LIMIT_QUIET_MS', 60 * 60_000);
+/** A turn completed, so whatever limit we were holding for is over. */
+function clearUsageLimitHold() { limitedUntil = 0; }
 const gateFailures = new Map();   // chatId → recent failure timestamps (10-min window)
 
-function failureNoticeText(group, kind) {
+function failureNoticeText(group, kind, detail = '') {
   const lang = String((group && group.language) || '').toLowerCase();
   const pl = lang.startsWith('pl') || lang.startsWith('pol');
+  // The reset time is quoted EXACTLY as the CLI printed it (with its own zone),
+  // because the only thing this sentence is worth is being right about the hour.
+  const at = parseResetAt(detail);
   const texts = {
-    'turn-timeout':  pl ? '⚠️ Nie zdążyłem dokończyć w limicie czasu. Spróbuj rozbić zadanie na mniejsze kroki albo zleć mi je w DM.'
-                        : '⚠️ I ran out of time before finishing. Try splitting the task into smaller steps, or ask me in a DM.',
-    'limit':         pl ? '⚠️ Wygląda na wyczerpany limit Claude — chwilowo nie mogę odpowiadać. Wrócę, gdy się odnowi.'
-                        : '⚠️ Looks like the Claude usage limit is exhausted — I can\'t reply right now. I\'ll be back when it renews.',
-    'gate-down':     pl ? '⚠️ Mam chwilowy problem techniczny i mogę przegapiać wiadomości. Oznacz mnie (@), żebym na pewno zobaczył.'
-                        : '⚠️ I\'m having a temporary technical problem and may miss some messages. Mention me (@) to make sure I see you.',
-    'compose-error': pl ? '⚠️ Coś mi się wysypało przy odpowiadaniu — spróbuj ponownie za chwilę.'
-                        : '⚠️ Something failed while I was composing a reply — please try again in a moment.',
+    'turn-timeout':  pl ? 'Nie zdążyłem tego dokończyć. Rozbijmy to na mniejsze kawałki albo napisz do mnie na priv.'
+                        : "I didn't get this finished in time. Let's split it into smaller pieces, or message me directly.",
+    'limit':         pl ? (at ? `Skończył mi się limit na teraz — wracam o ${at}.`
+                              : 'Skończył mi się limit na teraz. Odezwę się, jak tylko wróci.')
+                        : (at ? `I'm out of capacity for now — back at ${at}.`
+                              : "I'm out of capacity for now. I'll pick this up as soon as it's back."),
+    'gate-down':     pl ? 'Mam chwilowy problem i mogę przegapić wiadomość. Oznacz mnie, jeśli coś ode mnie potrzebujesz.'
+                        : "I'm having a hiccup and might miss a message. Tag me if you need me.",
+    'compose-error': pl ? 'Coś mi się posypało przy tej odpowiedzi. Spróbuj jeszcze raz za chwilę.'
+                        : 'Something broke while I was answering. Try again in a moment.',
   };
   return texts[kind] || texts['compose-error'];
 }
 
-function notifyFailure(chatId, group, kind) {
+function notifyFailure(chatId, group, kind, detail = '') {
   if (!sendingEnabled()) return;
   const now = Date.now();
+  if (kind === 'limit') {
+    if (now < limitedUntil) return;                       // already said so; the limit is still on
+    limitedUntil = now + (resetDelayMs(detail) || LIMIT_QUIET_FALLBACK_MS);
+  }
   // Keyed per kind: a gate-down notice must not silence the timeout notice a
   // user is owed for the request they just made (the two shared one timestamp).
   const key = `${chatId}:${kind}`;
   if (now - (lastNoticeAt.get(key) || 0) < noticeIntervalFor(kind)) return;
   lastNoticeAt.set(key, now);
-  sendTelegramMessage(chatId, failureNoticeText(group, kind), { logKind: 'group' }).catch(() => {});
+  sendTelegramMessage(chatId, failureNoticeText(group, kind, detail), { logKind: 'group' }).catch(() => {});
 }
 
 // A single gate failure stays silent; ≥3 within 10 minutes = the gate is DOWN
 // (not a hiccup) → one rate-limited notice so the group knows to @-mention.
-function noteGateFailure(chatId, group, kind) {
+function noteGateFailure(chatId, group, kind, detail = '') {
   const now = Date.now();
   const arr = (gateFailures.get(chatId) || []).filter(t => now - t < 600_000);
   arr.push(now);
   gateFailures.set(chatId, arr);
   if (arr.length >= 3) {
     gateFailures.set(chatId, []);
-    notifyFailure(chatId, group, kind);
+    notifyFailure(chatId, group, kind, detail);
   }
 }
 
@@ -1062,6 +1081,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
             process.stderr.write('[group-watcher] refusing to post: unparsed marker survived scrubbing\n');
             return finish({ ok: false, error: 'unparsed-marker' });
           }
+          clearUsageLimitHold();   // a turn completed → whatever limit we were holding for is over
           finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, sessionId: capturedSessionId });
         },
       }, { resumed: !!(session && session.sessionId) }));
@@ -1251,10 +1271,12 @@ async function flush(chatId) {
       // Gate failed twice → it's DOWN for this message, not a hiccup. A direct
       // mention never lands here (deterministic bypass above), so we stay silent
       // for THIS message but count toward the gate-down breaker, which tells the
-      // group to @-mention. `exit 1` from the CLI is the subscription-limit
-      // signature → the notice names the likely cause.
-      const kind = /exit 1/.test(String(res.error || '')) ? 'limit' : 'gate-down';
-      noteGateFailure(chatId, group, kind);
+      // group to @-mention. The failure text says WHICH it is: a bare non-zero
+      // exit used to be assumed to be the usage limit, so a plain crash was
+      // announced to the chat as "out of capacity" — a confident lie about
+      // something the reader might act on (wait, instead of report it).
+      const kind = isUsageLimit(res.error) ? 'limit' : 'gate-down';
+      noteGateFailure(chatId, group, kind, String(res.error || ''));
       return audit({ chat_id: chatId, msg_id: lastTargetable.message_id, decision: 'ignore', reason_enum: res.reason_enum, error: res.error, retried: !!res.retried });
     }
     const d = res.decision;
@@ -1369,9 +1391,9 @@ async function flush(chatId) {
     // group saw "typing…", then nothing. Tell the group, rate-limited. The audit
     // line keeps the full target preview so the dead request can be re-driven.
     const kind = reply.error === 'group-turn-timeout' ? 'turn-timeout'
-               : /exited with code 1|exit 1/.test(String(reply.error || '')) ? 'limit'
+               : isUsageLimit(reply.error) ? 'limit'
                : 'compose-error';
-    notifyFailure(chatId, group, kind);
+    notifyFailure(chatId, group, kind, String(reply.error || ''));
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'compose-failed', beat, confidence, reason_enum: 'compose-error', error: reply.error, preview: clip(target.text, 120) });
   }
   // Phase 1: a delegated private task fires regardless of which exit path the

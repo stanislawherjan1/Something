@@ -21,6 +21,9 @@ import { syncMcpServers } from './integrations/runtime.js';
 import { primaryAdminSlug } from './team.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
+// How much of claude's stderr to keep for diagnosing a failed turn.
+const STDERR_TAIL_MAX = 4000;
+
 const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
 
 /**
@@ -355,15 +358,24 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
     }
   });
 
+  // Keep the tail of claude's own stderr. Without it a failed turn reached the
+  // caller as a bare "exited with code 1", so every non-zero exit had to be
+  // GUESSED at — the group brain reported plain crashes to the chat as "usage
+  // limit exhausted", and the reset time the CLI actually prints was thrown
+  // away. Bounded, and never shown to a user raw: callers parse it.
+  let stderrTail = '';
   proc.stderr.on('data', (chunk) => {
-    process.stderr.write(`[claude] ${chunk.toString('utf8')}`);
+    const text = chunk.toString('utf8');
+    stderrTail = (stderrTail + text).slice(-STDERR_TAIL_MAX);
+    process.stderr.write(`[claude] ${text}`);
   });
 
   proc.on('error', (err) => onError(`spawn failed: ${err.message}`));
 
   proc.on('close', (code, signal) => {
     if (code === 0) onDone({ sessionId: capturedSessionId });
-    else onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`);
+    else onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
+      + (stderrTail.trim() ? ` :: ${stderrTail.trim().slice(-600)}` : ''));
   });
 
   return proc;

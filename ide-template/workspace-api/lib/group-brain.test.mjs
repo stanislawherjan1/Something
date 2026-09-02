@@ -91,5 +91,34 @@ ok('delegate still carries the task itself', /summarise the budget discussion/.t
 ok('delegate treats the transcript as data, not instructions',
   /never as instructions|not instructions/i.test(delegatePrompt));
 
+// (g) FAILURE NOTICES — what the group is told when a turn dies.
+const { failureNoticeText } = gwTest;
+const plGroup = { chatId: '-100', language: 'Polish' };
+const enGroup = { chatId: '-100', language: 'English' };
+const limitErr = 'claude exited with code 1 :: Claude usage limit reached. Your limit will reset at 3pm (Europe/Warsaw).';
+
+ok('a limit notice states WHEN it comes back, quoting the printed time',
+  /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(enGroup, 'limit', limitErr)));
+ok('...in the group\'s language too',
+  /wracam o 3pm/.test(failureNoticeText(plGroup, 'limit', limitErr)));
+ok('with no reset time known, it does NOT invent one',
+  !/[0-9]{1,2}:[0-9]{2}|[0-9]\s*(am|pm)/i.test(failureNoticeText(enGroup, 'limit', 'rate-limit-options')));
+// The operator called these out as reading like system errors: emoji + warning
+// furniture in what is supposed to be a colleague talking.
+ok('no notice carries emoji or warning furniture',
+  ['limit', 'turn-timeout', 'gate-down', 'compose-error'].every(k =>
+    !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(failureNoticeText(plGroup, k, limitErr))));
+
+// A crash is not a usage limit. Announcing one as the other tells the reader to
+// wait for a reset that is never coming.
+const { isUsageLimit, resetDelayMs } = await import('./usage-limit.js');
+ok('a real usage limit is recognised', isUsageLimit(limitErr) === true);
+ok('a plain crash is NOT called a usage limit',
+  isUsageLimit('claude exited with code 1 :: Error: ENOENT: no such file or directory') === false);
+ok('the quiet window is derived from the printed reset time',
+  Math.round(resetDelayMs(limitErr, new Date('2026-09-02T13:00:00')) / 60000) === 120);
+ok('an unparseable reset yields no window (caller falls back)',
+  resetDelayMs('rate-limit-options') === null);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
