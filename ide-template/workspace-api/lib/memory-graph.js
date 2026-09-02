@@ -32,6 +32,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { USERS_DIR } from './scope-rule.js';
+import { CANONICAL_CARD_IDS } from './memory-registry.js';
 
 // Resolved lazily so env-var overrides + hermetic tests work without
 // re-importing the module. Production picks up PROJECT_DIR once at boot
@@ -57,12 +58,10 @@ const CONCEPT_HEAT = (() => {
   return Number.isFinite(v) && v >= 1 ? v : 2;
 })();
 
-const CANONICAL_CARDS = new Set([
-  'RULES',
-  'USER_PROFILE', 'USER_PREFERENCES', 'USER_RELATIONSHIPS', 'USER_REFLECTIONS',
-  'AGENT_IDENTITY', 'AGENT_TOOLS',
-  'TEAM',   // shared team-directory card (team mode)
-]);
+// Card ids come from the registry (lib/memory-registry.js) — the same list the
+// prefix loader, the group fence and INDEX generation use. Hand-maintained here
+// it silently drifted: RESPONSIBILITIES and CHANNELS rendered as `topic` nodes.
+const CANONICAL_CARDS = CANONICAL_CARD_IDS;
 
 const MAX_FILE_BYTES = 1 * 1024 * 1024;  // 1 MB per file when scanning
 const MIN_BARE_NAME_LEN = 4;             // skip 'cv', 'q3', 'me' — too noisy

@@ -781,6 +781,7 @@ CARD_DESCRIPTIONS = {
     "AGENT_IDENTITY": "the agent's name, voice, mood, defaults",
     "AGENT_TOOLS": "per-tool gotchas + activation notes for active integrations",
     "CHANNELS": "the Telegram groups the bot is in + who's in them",
+    "RESPONSIBILITIES": "the bot's standing duties toward this person",
     "TEAM": "the team roster + each member's role",
     "USER_PROFILE": "stable facts about the user (role, location, languages, focus)",
     "USER_PREFERENCES": "soft preferences (tone, formatting, working style)",
