@@ -206,17 +206,22 @@ scp ../scripts/egress-proxy.js "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
 # Pin the marketplace commit so identical builds produce identical
 # images; bump manually when you want to refresh the telegram plugin.
 echo -e "${CYAN}  Cloning plugin marketplace into build context...${NC}"
-# Retried: this is a network fetch over the egress proxy on the very first step
-# of a ~15-minute deploy, and a truncated response ("expected flush after ref
-# listing", which git then reports as a credential prompt on a PUBLIC repo) once
-# killed an otherwise good run. GIT_TERMINAL_PROMPT=0 makes it fail fast instead
-# of blocking forever on a username prompt that no one can answer over ssh.
+# Pinned to HTTP/1.1 and retried. git 2.43 (via libcurl) intermittently fails
+# its HTTP/2 negotiation with github.com and receives a truncated ref listing;
+# it surfaces that as "expected flush after ref listing" preceded by a request
+# for credentials on a PUBLIC repo, which reads like an auth problem and is not
+# one. Diagnosed by elimination on the box: curl fetched the very same
+# info/refs endpoint over HTTP/2 with a 200 and a valid listing, protocol.version=1
+# made no difference, and `-c http.version=HTTP/1.1` cloned reliably.
+# GIT_TERMINAL_PROMPT=0 keeps a genuine auth failure fast instead of blocking on
+# a username prompt nobody can answer over ssh. This is step one of a
+# ~15-minute deploy, so a blip here must not cost the whole run.
 ssh "$HETZNER_HOST" "
     set -e
     cd '$REMOTE_PATH'
     for attempt in 1 2 3; do
         rm -rf plugins-src
-        if GIT_TERMINAL_PROMPT=0 git clone --depth 1 -q \
+        if GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 clone --depth 1 -q \
               https://github.com/anthropics/claude-plugins-official.git plugins-src; then
             rm -rf plugins-src/.git
             exit 0
