@@ -168,6 +168,18 @@ REMOTE_FORWARD
 fi
 
 # ─── Step 1: Upload files ────────────────────────────────────────────────────
+# Capture the source revision HERE, before the first scp — this is the code that
+# actually gets uploaded. The manifest used to read HEAD at the END instead, and
+# a build takes ~15 minutes, so any commit made while the deploy ran was stamped
+# into the manifest without its code ever having been sent. That is worse than a
+# cosmetic slip: verify-drift.sh compares exactly this field, so the tool meant
+# to detect drift would report a torn deploy as being in sync. Observed live on
+# 2026-09-01 — the manifest claimed a commit four ahead of what shipped.
+UPLOAD_COMMIT="$(git -C "$THIS_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
+UPLOAD_REF="$(git -C "$THIS_DIR/.." rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+UPLOAD_DIRTY=false
+git -C "$THIS_DIR/.." diff --quiet HEAD 2>/dev/null || UPLOAD_DIRTY=true
+
 echo -e "${GREEN}[1/5] Uploading files...${NC}"
 
 scp Dockerfile               "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
@@ -689,10 +701,20 @@ if [ "$HEALTHY" = true ]; then
     # Stamped ONLY on a fully verified deploy (health + bot stability).
     # scripts/verify-drift.sh reads this from every client to answer "which
     # client runs which commit" without SSH-archaeology.
-    GIT_COMMIT="$(git -C "$THIS_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
-    GIT_REF="$(git -C "$THIS_DIR/.." rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-    GIT_DIRTY=false
-    git -C "$THIS_DIR/.." diff --quiet HEAD 2>/dev/null || GIT_DIRTY=true
+    # Stamp what was UPLOADED (captured before step 1), never the current HEAD.
+    GIT_COMMIT="$UPLOAD_COMMIT"
+    GIT_REF="$UPLOAD_REF"
+    GIT_DIRTY=$UPLOAD_DIRTY
+    # If the working tree moved while the build ran, the image is a snapshot of
+    # whatever the scp loop happened to read — possibly a mix. Say so loudly:
+    # a silent mismatch here is how a torn build passes for a good one.
+    NOW_COMMIT="$(git -C "$THIS_DIR/.." rev-parse HEAD 2>/dev/null || echo unknown)"
+    if [ "$NOW_COMMIT" != "$UPLOAD_COMMIT" ]; then
+        echo -e "${RED}  WARNING: the working tree moved during this deploy (${UPLOAD_COMMIT:0:7} → ${NOW_COMMIT:0:7}).${NC}"
+        echo -e "${RED}  The image may contain a MIX of both. Manifest records what upload started from;${NC}"
+        echo -e "${RED}  re-deploy from a quiet tree before trusting it.${NC}"
+        DEPLOY_ERRORS+=("working tree changed mid-deploy (${UPLOAD_COMMIT:0:7} → ${NOW_COMMIT:0:7}) — image may be torn")
+    fi
     if ssh "$HETZNER_HOST" "cat > '$REMOTE_PATH/.deploy-manifest.json'" <<MANIFEST
 {
   "ide_name": "$IDE_NAME",

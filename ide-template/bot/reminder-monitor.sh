@@ -107,6 +107,19 @@ operator_in_set() {
     return 1
 }
 
+# The recipients MINUS the operator. /internal/reminder-deliver deliberately
+# excludes the operator (they are served by fire_operator's brain frame), so
+# handing it an operator-only set makes it return delivered:[] — correct, but
+# indistinguishable from a real failure now that delivery is actually verified.
+# That turned a harmless no-op into a spurious "(team delivery failed)" ping to
+# the operator. '*everyone*' is passed through untouched: the endpoint expands
+# the roster and drops the operator itself.
+recipients_without_operator() {
+    [ "$1" = "*everyone*" ] && { printf '%s' "$1"; return 0; }
+    [ -z "$OP_SLUG" ] && { printf '%s' "$1"; return 0; }
+    printf '%s' "$1" | tr ',' '\n' | grep -vxF "$OP_SLUG" | paste -sd, -
+}
+
 # Fire a reminder to the OPERATOR — TODAY's exact behaviour, extracted verbatim
 # so the solo / operator path stays byte-identical. tmux alive → brain frame;
 # else the channel-matched fallback ladder.
@@ -519,7 +532,10 @@ NODEEOF
             else
                 # Delivery reminder: notify teammates via wsapi; on failure,
                 # surface to the operator so a team reminder is never lost.
-                if deliver_to_teammates "$recipients" "$channel" "$title" "$desc"; then
+                others=$(recipients_without_operator "$recipients")
+                if [ -z "$others" ]; then
+                    : # operator-only reminder — already delivered by fire_operator above
+                elif deliver_to_teammates "$others" "$channel" "$title" "$desc"; then
                     log_fire 0 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
                 else
                     log_fire 1 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
