@@ -74,7 +74,7 @@ log() { echo "[reminder-monitor] $*"; }
 # `path` matters as much as `ok`: a reminder "delivered" as a raw fallback ping
 # or an in-memory web toast is one the user very likely never saw.
 FIRED_LOG="${FIRED_LOG:-/home/coder/project/.reminders-log.jsonl}"
-FIRE_PATH=""   # set by fire_operator: tmux | fallback-telegram | fallback-web | none
+FIRE_PATH=""   # set by fire_operator: tmux | invoke-turn | suppressed-trigger | undelivered-no-brain
 
 log_fire() {
     local ok="$1" path="$2" channel="$3" recipients="$4" urgency="$5" exec_flag="$6" title="$7"
