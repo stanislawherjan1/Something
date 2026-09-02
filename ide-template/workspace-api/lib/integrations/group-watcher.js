@@ -334,22 +334,20 @@ function clearUsageLimitHold() { limitedUntil = 0; }
 const gateFailures = new Map();   // chatId → recent failure timestamps (10-min window)
 
 function failureNoticeText(group, kind, detail = '') {
-  const lang = String((group && group.language) || '').toLowerCase();
-  const pl = lang.startsWith('pl') || lang.startsWith('pol');
-  // The reset time is quoted EXACTLY as the CLI printed it (with its own zone),
+  // English, always. These are the four sentences the bot says when it CANNOT
+  // think — the model is what speaks the group's language, and it is exactly
+  // what is unavailable here. A translation table would be four more strings to
+  // keep true in a path nobody exercises until something is already broken.
+  //
+  // The reset time is quoted EXACTLY as the CLI printed it, with its own zone,
   // because the only thing this sentence is worth is being right about the hour.
   const at = parseResetAt(detail);
   const texts = {
-    'turn-timeout':  pl ? 'Nie zdążyłem tego dokończyć. Rozbijmy to na mniejsze kawałki albo napisz do mnie na priv.'
-                        : "I didn't get this finished in time. Let's split it into smaller pieces, or message me directly.",
-    'limit':         pl ? (at ? `Skończył mi się limit na teraz — wracam o ${at}.`
-                              : 'Skończył mi się limit na teraz. Odezwę się, jak tylko wróci.')
-                        : (at ? `I'm out of capacity for now — back at ${at}.`
-                              : "I'm out of capacity for now. I'll pick this up as soon as it's back."),
-    'gate-down':     pl ? 'Mam chwilowy problem i mogę przegapić wiadomość. Oznacz mnie, jeśli coś ode mnie potrzebujesz.'
-                        : "I'm having a hiccup and might miss a message. Tag me if you need me.",
-    'compose-error': pl ? 'Coś mi się posypało przy tej odpowiedzi. Spróbuj jeszcze raz za chwilę.'
-                        : 'Something broke while I was answering. Try again in a moment.',
+    'turn-timeout':  "I didn't finish that in time. Try smaller pieces, or message me directly.",
+    'limit':         at ? `I'm out of capacity for now. Back at ${at}.`
+                        : "I'm out of capacity for now. I'll pick this up when it's back.",
+    'gate-down':     "I'm having a hiccup and might miss a message. Tag me if you need me.",
+    'compose-error': 'Something broke while I was answering. Try again in a moment.',
   };
   return texts[kind] || texts['compose-error'];
 }

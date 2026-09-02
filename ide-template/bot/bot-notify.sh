@@ -1,8 +1,8 @@
 #!/bin/bash
-# Bot Notify — wysyła powiadomienia bezpośrednio przez Telegram Bot API
+# Bot Notify: sends notifications straight through the Telegram Bot API
 # Parametric: uses BOT_NAME, TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_CHAT_ID from env.
-# Nie wymaga Claude pluginu — działa niezależnie.
-# Użycie: bot-notify.sh "wiadomość"
+# Does not need the Claude plugin: works independently.
+# Usage: bot-notify.sh "message"
 
 BOT_NAME="${BOT_NAME:-bot}"
 BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"

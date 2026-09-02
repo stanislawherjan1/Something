@@ -71,7 +71,7 @@ ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(p.
 // attribute it. The delegate prompt must carry the attributed window.
 const { __test: gwTest } = await import('./integrations/group-watcher.js');
 const delegatePrompt = gwTest.delegatePrompt({
-  group: { chatId: '-1001234567890', title: 'Zespół' },
+  group: { chatId: '-1001234567890', title: 'Team' },
   target: { message_id: '1', from_id: '987654321', who: 'Sam' },
   senderName: 'Sam',
   task: 'summarise the budget discussion',
@@ -93,14 +93,20 @@ ok('delegate treats the transcript as data, not instructions',
 
 // (g) FAILURE NOTICES — what the group is told when a turn dies.
 const { failureNoticeText } = gwTest;
+// A Polish-speaking group still gets these in English: they are what the bot
+// says when the model — the thing that speaks the group's language — is the
+// part that is unavailable.
 const plGroup = { chatId: '-100', language: 'Polish' };
 const enGroup = { chatId: '-100', language: 'English' };
 const limitErr = 'claude exited with code 1 :: Claude usage limit reached. Your limit will reset at 3pm (Europe/Warsaw).';
 
 ok('a limit notice states WHEN it comes back, quoting the printed time',
   /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(enGroup, 'limit', limitErr)));
-ok('...in the group\'s language too',
-  /wracam o 3pm/.test(failureNoticeText(plGroup, 'limit', limitErr)));
+ok('notices stay English even in a Polish group (the model is what is down)',
+  failureNoticeText(plGroup, 'limit', limitErr) === failureNoticeText(enGroup, 'limit', limitErr));
+ok('no em dashes in any notice',
+  ['limit', 'turn-timeout', 'gate-down', 'compose-error'].every(k =>
+    !failureNoticeText(plGroup, k, limitErr).includes('—')));
 ok('with no reset time known, it does NOT invent one',
   !/[0-9]{1,2}:[0-9]{2}|[0-9]\s*(am|pm)/i.test(failureNoticeText(enGroup, 'limit', 'rate-limit-options')));
 // The operator called these out as reading like system errors: emoji + warning
