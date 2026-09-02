@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { computeConceptHeat } from './memory-graph.js';
+import { CARDS } from './memory-registry.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 const MODEL        = process.env.REFLECT_LINT_MODEL || 'claude-haiku-4-5';
@@ -71,13 +72,15 @@ function listMd(subdir) {
   } catch { return []; }
 }
 
-// Root-level GENUINELY-SHARED cards worth linting. Deliberately EXCLUDES the
-// USER_* cards: in team mode those are per-user PRIVATE (memory/users/<slug>/),
-// and the flat memory/USER_*.md can still hold the operator's / a legacy install's
-// private profile — reading them here could echo a private detail into a SHARED
-// lint finding. Lint never reads any per-user tree. Also skips the auto-maintained
-// rolling tails (RECENT_*) + the lint log itself.
-const ROOT_CARDS = ['RULES', 'AGENT_IDENTITY', 'AGENT_TOOLS', 'TEAM', 'INDEX'];
+// Root-level GENUINELY-SHARED cards worth linting — DERIVED from the card
+// registry (tier === 'shared'), so the privacy rule is structural rather than a
+// hand-list that has to be remembered. It excludes every USER_* card by
+// construction: in team mode those are per-user PRIVATE (memory/users/<slug>/),
+// and the flat memory/USER_*.md can still hold a legacy install's private
+// profile — reading them here could echo a private detail into a SHARED lint
+// finding. Lint never reads any per-user tree. The hand-list this replaces had
+// also gone stale: it missed CHANNELS and MISSION.
+const ROOT_CARDS = CARDS.filter(c => c.tier === 'shared').map(c => c.id);
 
 function buildDigest() {
   const sections = [];

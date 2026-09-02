@@ -739,6 +739,10 @@ fi
 # edited a card before we got around to seeding it, or this is a
 # redeploy and we're keeping their edits.
 #
+# KEEP IN SYNC with workspace-api/lib/memory-registry.js (`seed: true` cards) —
+# bash cannot import the registry, so this array is the one derived copy that is
+# maintained by hand. lib/memory-registry.test.mjs pins the expected contents.
+#
 # Why an explicit allowlist (CARDS=...) instead of `for tpl in templates/*`:
 # the templates dir can accumulate stragglers across image versions.
 # Iterating the directory glob would silently seed those into

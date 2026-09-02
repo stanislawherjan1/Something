@@ -26,7 +26,7 @@
  *                writes memory/RECENT_TELEGRAM.md
  */
 
-import { existsSync, readFileSync, statSync, readdirSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, readdirSync, mkdirSync, unlinkSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
@@ -220,6 +220,58 @@ function renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt
   return { content: head + body + '\n', charCount: body.length };
 }
 
+// The `*Last updated: <iso>*` stamp is the only part of a snapshot that changes
+// on every render. Blanking it lets us compare two renders by CONTENT.
+const VOLATILE_STAMP = /^\*Last updated:.*$/m;
+function bodyOf(text) { return String(text || '').replace(VOLATILE_STAMP, ''); }
+
+/**
+ * Write a snapshot only when its CONTENT actually changed; otherwise just touch
+ * the mtime so the staleness check settles.
+ *
+ * Why this exists: every render carried a fresh timestamp, so an unchanged tail
+ * still rewrote the file with different bytes. RECENT_TELEGRAM sits in the
+ * operator's cached prefix, so the prompt cache was invalidated once a minute
+ * for the whole idle window — the workspace paid full input tokens on turns that
+ * should have been cache reads. Touching instead of rewriting keeps the prefix
+ * byte-identical while still marking the snapshot as current.
+ */
+function writeSnapshotIfChanged(path, content) {
+  try {
+    if (existsSync(path) && bodyOf(readFileSync(path, 'utf8')) === bodyOf(content)) {
+      const now = new Date();
+      try { utimesSync(path, now, now); } catch { /* best-effort */ }
+      return false;
+    }
+  } catch { /* fall through to a normal write */ }
+  atomicWrite(path, content);
+  return true;
+}
+
+/**
+ * The snapshot files writeRecentSnapshot() would actually write for a channel.
+ * In team mode these are per-user paths and the flat file is REMOVED — so the
+ * staleness check must look here, not at cfg.snapshotPath. It did look at the
+ * flat path, which team mode deletes, so `!existsSync` made every tick report
+ * "stale" and rewrite every user's snapshot once a minute, forever.
+ */
+function snapshotTargets(channel) {
+  const cfg = CHANNELS[channel];
+  if (!cfg) return [];
+  if (channel === 'web' && getTeamMode()) {
+    return [...listWebSessionsByUser().keys()]
+      .filter(slug => /^[a-z0-9-]+$/.test(slug))
+      .map(slug => join(MEMORY_DIR, USERS_DIR, slug, 'RECENT_WEB.md'));
+  }
+  if (channel === 'telegram' && getTeamMode()) {
+    const adminSlug = primaryAdminSlug();
+    if (adminSlug && /^[a-z0-9-]+$/.test(adminSlug)) {
+      return [join(MEMORY_DIR, USERS_DIR, adminSlug, 'RECENT_TELEGRAM.md')];
+    }
+  }
+  return [cfg.snapshotPath];
+}
+
 /**
  * Read the source JSONL tail and write the snapshot card for one channel.
  * Idempotent — safe to call repeatedly. Returns a small summary object
@@ -255,8 +307,7 @@ export function writeRecentSnapshot({
       const { content } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
       const dir = join(MEMORY_DIR, USERS_DIR, slug);
       try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
-      atomicWrite(join(dir, 'RECENT_WEB.md'), content);
-      wrote++;
+      if (writeSnapshotIfChanged(join(dir, 'RECENT_WEB.md'), content)) wrote++;
     }
     // The shared memory/RECENT_WEB.md duplicated the admin's private web tail in
     // a teammate-readable file — the same leak we closed for RECENT_TELEGRAM.
@@ -284,16 +335,17 @@ export function writeRecentSnapshot({
     const dir = join(MEMORY_DIR, USERS_DIR, adminSlug);
     try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
     const perUserPath = join(dir, 'RECENT_TELEGRAM.md');
-    atomicWrite(perUserPath, content);
+    const changed = writeSnapshotIfChanged(perUserPath, content);
     try { if (existsSync(cfg.snapshotPath)) unlinkSync(cfg.snapshotPath); } catch { /* best-effort */ }
-    return { channel, path: perUserPath, total: messages.length, written_at: updatedAt, char_count: charCount };
+    return { channel, path: perUserPath, total: messages.length, written_at: updatedAt, char_count: charCount, changed };
   }
 
   // Solo web, or telegram in solo: one shared file (legacy behaviour).
   const messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
   const { content, charCount } = renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt);
-  atomicWrite(cfg.snapshotPath, content);
+  const changed = writeSnapshotIfChanged(cfg.snapshotPath, content);
   return {
+    changed,
     channel,
     path: cfg.snapshotPath,
     total: messages.length,
@@ -321,12 +373,17 @@ export function isSnapshotStale({ channel = 'web', idleSeconds = 600 } = {}) {
   if (!srcMtimeMs) return false; // no source activity at all
   // If source is too new (within idleSeconds), we are mid-turn — skip.
   if (Date.now() - srcMtimeMs < idleSeconds * 1000) return false;
-  // If snapshot doesn't exist yet, definitely stale.
-  if (!existsSync(cfg.snapshotPath)) return true;
-  let snapStat;
-  try { snapStat = statSync(cfg.snapshotPath); } catch { return true; }
-  // Snapshot exists; stale only if source has newer changes than it.
-  return srcMtimeMs > snapStat.mtimeMs;
+  // Compare against the files this channel actually writes (per-user in team
+  // mode). A missing target is definitely stale; otherwise the OLDEST target
+  // decides, so one lagging user still triggers a refresh.
+  const targets = snapshotTargets(channel);
+  if (!targets.length) return true;
+  let oldest = Infinity;
+  for (const t of targets) {
+    if (!existsSync(t)) return true;
+    try { oldest = Math.min(oldest, statSync(t).mtimeMs); } catch { return true; }
+  }
+  return srcMtimeMs > oldest;
 }
 
 export const SUPPORTED_CHANNELS = Object.keys(CHANNELS);

@@ -1,12 +1,12 @@
 {
   "name": "workspace-api",
   "version": "0.1.0",
-  "description": "Workspace API — wraps claude -p with SSE streaming for the custom React workspace",
+  "description": "Workspace API \u2014 wraps claude -p with SSE streaming for the custom React workspace",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node lib/group-brain.test.mjs && node lib/memory-concept.test.mjs"
+    "test": "node lib/memory-registry.test.mjs && node lib/group-brain.test.mjs && node lib/memory-concept.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -18,7 +18,7 @@ import { join, dirname } from 'node:path';
 import { userInfo } from 'node:os';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
-import { buildCachedPrefix } from './memory-loader.js';
+import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
 import { syncMcpServers } from './integrations/runtime.js';
 import { primaryAdminSlug } from './team.js';
 
@@ -39,6 +39,42 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *   onError(message)            — spawn / non-zero exit
  *   onDone({sessionId})         — clean exit
  */
+/**
+ * Build this turn's cached memory prefix. Exported (and pure apart from disk
+ * reads) so the group-privacy guard test can exercise the SAME code the spawn
+ * path uses — the previous hand-written exclusion list drifted from the card
+ * registry and leaked a private RESPONSIBILITIES card into group prompts, and a
+ * test that rebuilt the list itself would have missed it.
+ *
+ *  - GROUP turn → buildTeamPrefix: no actor + the ENTIRE user tier excluded.
+ *    A group reply is public to the chat and the session is shared across turns
+ *    run as different senders, so nothing private may be preloaded — not even
+ *    the sender's own. This is the structural boundary; the scope-guard hook
+ *    closes the other door (private reads at tool time).
+ *  - 1:1 turn → buildCachedPrefix with the actor, so the USER-tier cards come
+ *    from memory/users/<slug>/.
+ *      · RECENT_WEB is always excluded: each web session resumes its own Claude
+ *        session, so a rolling tail of OTHER web conversations is same-surface
+ *        bleed with no upside.
+ *      · RECENT_TELEGRAM is the bot's ONE Telegram conversation = the OPERATOR's
+ *        DMs (single token, not per-user). Cross-surface awareness is a feature
+ *        for THAT person; loading it into another teammate's prefix would leak
+ *        the operator's private chats — so it is included only for the operator.
+ */
+export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExcludeIds, memoryDir } = {}) {
+  const caller = Array.isArray(callerExcludeIds) ? callerExcludeIds : [];
+  if (groupContext) {
+    // buildTeamPrefix adds every USER_TIER id itself, derived from the card
+    // registry — so a new private card is fenced out of groups the day it is
+    // added, without anyone remembering to update a list here.
+    return buildTeamPrefix({ memoryDir, excludeIds: caller });
+  }
+  const excludeIds = isTgOperator
+    ? ['RECENT_WEB', ...caller]
+    : ['RECENT_WEB', 'RECENT_TELEGRAM', ...caller];
+  return buildCachedPrefix({ memoryDir, excludeIds, actor });
+}
+
 export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
@@ -67,45 +103,12 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // turn pays full input tokens). Failures here are non-fatal: we log and
   // continue without the prefix, claude still works just without cache hit.
   try {
-    // Exclude RECENT_WEB on the web path. Each web session resumes its own
-    // Claude session (per-session --resume in routes/chat.js), so a rolling
-    // tail of OTHER web conversations is pure same-surface bleed with no
-    // upside — the model treats it as "your conversation memory" and pulls
-    // unrelated web threads into a fresh chat.
-    //
-    // RECENT_TELEGRAM is the bot's ONE Telegram conversation = the OPERATOR's
-    // (primary admin's) DMs — there's a single Telegram token, so it is NOT
-    // per-user like RECENT_WEB. Cross-surface awareness (web sees the Telegram
-    // tail) is a feature for THAT person, but loading the flat card into ANOTHER
-    // teammate's web prefix LEAKS the operator's private Telegram chats. So
-    // include it only for the Telegram operator (actor === primaryAdminSlug; in
-    // solo both are 'default'), and exclude it for every other teammate. The
-    // old "RECENT_TELEGRAM STAYS — one bot across surfaces" assumption holds for
-    // solo but breaks in team mode (one bot, many web users). The cross-surface
-    // bleed it can cause is still handled by the memory-loader guidance (treat
-    // it as a DIFFERENT conversation; ask when ambiguous).
-    const isTgOperator = actor === primaryAdminSlug();
-    let baseExclude = isTgOperator ? ['RECENT_WEB'] : ['RECENT_WEB', 'RECENT_TELEGRAM'];
-    // GROUP CONTEXT (group-mode v2, D2): the prefix must carry NOTHING private —
-    // the turn's session is shared across senders and its output is public to
-    // the group. Exclude the whole USER tier (the sender's private profile
-    // cards) and both RECENT_* surfaces, regardless of who is speaking. The
-    // scope-guard hook hard-blocks private READS at tool time; this closes the
-    // other door (private cards preloaded into the prompt).
-    if (groupContext) baseExclude = ['RECENT_WEB', 'RECENT_TELEGRAM', 'USER_INDEX', 'USER_PROFILE', 'USER_PREFERENCES', 'USER_RELATIONSHIPS', 'USER_REFLECTIONS'];
-    // Callers can force EXTRA exclusions: the group brain passes ['USER_INDEX'] so a
-    // PUBLIC group reply never advertises the sender's private pages (the group
-    // reply is visible to everyone; private depth stays available 1:1 / in a DM).
-    const excludeIds = Array.isArray(callerExcludeIds)
-      ? [...baseExclude, ...callerExcludeIds]
-      : baseExclude;
-    const prefix = buildCachedPrefix({
-      memoryDir: join(PROJECT_DIR, 'memory'),
-      excludeIds,
-      // Team mode: load THIS user's profile/preferences from their private
-      // memory (memory/users/<slug>/), not the shared flat card. Solo →
-      // actor is 'default', the loader ignores it and reads flat.
+    const prefix = buildTurnPrefix({
       actor,
+      groupContext,
+      isTgOperator: actor === primaryAdminSlug(),
+      callerExcludeIds,
+      memoryDir: join(PROJECT_DIR, 'memory'),
     });
     if (prefix && prefix.block) {
       args.push('--append-system-prompt', prefix.block);

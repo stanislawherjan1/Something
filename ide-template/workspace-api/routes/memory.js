@@ -267,14 +267,21 @@ export default function memoryRouter() {
       // read it — a non-operator asking for the Telegram tail gets nothing (don't
       // hand the operator's DMs to another teammate through this tool).
       let path;
+      const me = getTeamMode() ? (getUser(req.actor)?.slug || null) : null;
       if (channel === 'telegram' && getTeamMode()) {
         const adminSlug = primaryAdminSlug();
-        const me = getUser(req.actor)?.slug || null;
         if (!me || me !== adminSlug) {
           return res.json({ channel, exists: false, snapshot_age_seconds: null, content: '', bytes: 0,
             note: 'Telegram is the operator\'s channel; no Telegram tail for this user.' });
         }
         path = join(projectDir, 'memory', 'users', adminSlug, 'RECENT_TELEGRAM.md');
+      } else if (channel === 'web' && me && /^[a-z0-9-]+$/.test(me)) {
+        // Team mode writes each person's web tail to memory/users/<slug>/ and
+        // REMOVES the flat file — so reading the flat path here always returned
+        // "snapshot file not yet created", i.e. recent_messages({channel:"web"})
+        // was dead on every team workspace while the prefix told the model to
+        // rely on it. Resolve the caller's own tail; never another user's.
+        path = join(projectDir, 'memory', 'users', me, 'RECENT_WEB.md');
       } else {
         path = join(projectDir, 'memory', `RECENT_${channel.toUpperCase()}.md`);
       }
