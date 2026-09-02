@@ -120,13 +120,6 @@ operator_in_set() {
     return 1
 }
 
-# The recipients MINUS the operator. /internal/reminder-deliver deliberately
-# excludes the operator (they are served by fire_operator's brain frame), so
-# handing it an operator-only set makes it return delivered:[] — correct, but
-# indistinguishable from a real failure now that delivery is actually verified.
-# That turned a harmless no-op into a spurious "(team delivery failed)" ping to
-# the operator. '*everyone*' is passed through untouched: the endpoint expands
-# the roster and drops the operator itself.
 # Run a frame as a HEADLESS turn for the operator, via the same endpoint the
 # per-user planner already uses successfully. This is the right fallback when
 # tmux injection is abandoned: the pane being busy says nothing about whether
@@ -158,6 +151,13 @@ NODE
     case "$payload" in *'"started"'*) return 0 ;; *) return 1 ;; esac
 }
 
+# The recipients MINUS the operator. /internal/reminder-deliver deliberately
+# excludes the operator (they are served by fire_operator's brain frame), so
+# handing it an operator-only set makes it return delivered:[] — correct, but
+# indistinguishable from a real failure now that delivery is actually verified.
+# That turned a harmless no-op into a spurious "(team delivery failed)" ping to
+# the operator. '*everyone*' is passed through untouched: the endpoint expands
+# the roster and drops the operator itself.
 recipients_without_operator() {
     [ "$1" = "*everyone*" ] && { printf '%s' "$1"; return 0; }
     [ -z "$OP_SLUG" ] && { printf '%s' "$1"; return 0; }
@@ -242,42 +242,24 @@ fire_operator() {
         return 0
     fi
 
-    # Headless turn unavailable too (solo box, or wsapi down). Only now does the
-    # raw ladder come into play — and an ambient item must not go through it: it
-    # forwards text verbatim, which is the exact opposite of "do not interrupt",
-    # and it executes nothing, so the user would get the instruction while the
-    # duty still did not run.
-    if [ "$urgency" = "ambient" ]; then
-        log "Ambient item could not reach the brain by any route — NOT blurting it raw (ambient means do not interrupt): ${message:0:60}"
-        FIRE_PATH="suppressed-ambient"
-        return 1
-    fi
-
-    case "$channel" in
-        web)
-            if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
-                FIRE_PATH="fallback-web"
-                "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || { log "Web fallback failed for: ${message}"; rc=1; }
-            elif [ -x "$NOTIFY_SCRIPT" ]; then
-                FIRE_PATH="fallback-telegram"
-                "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || { log "Telegram fallback failed for: ${message}"; rc=1; }
-            else
-                log "Cannot deliver — no fallback available: ${message}"; rc=1
-            fi
-            ;;
-        *)
-            if [ -x "$NOTIFY_SCRIPT" ]; then
-                FIRE_PATH="fallback-telegram"
-                "$NOTIFY_SCRIPT" "⏰ Reminder: ${message}" || { log "Telegram fallback failed for: ${message}"; rc=1; }
-            elif [ -x "$WEB_NOTIFY_SCRIPT" ]; then
-                FIRE_PATH="fallback-web"
-                "$WEB_NOTIFY_SCRIPT" "Reminder" "${message}" reminder || { log "Web fallback failed for: ${message}"; rc=1; }
-            else
-                log "Cannot deliver — no fallback available: ${message}"; rc=1
-            fi
-            ;;
-    esac
-    return $rc
+    # Neither route to the brain worked (wsapi down on a solo box, say). There is
+    # deliberately NO text-forwarding fallback any more.
+    #
+    # Every message this bot sends to a person must be one it WROTE, in context.
+    # The old ladder could not do that by construction — it copied the reminder's
+    # stored text verbatim and wrapped it in fixed decoration, so what arrived was
+    # a machine artefact rather than anything a colleague would write, and for a
+    # "check X and report if it matters" duty it also showed the instruction while
+    # executing nothing. The normal path (brain composes, then speaks) has always
+    # worked; this ladder is what broke it whenever the pane happened to be busy.
+    #
+    # So the only two acceptable outcomes are: the brain handles it and writes
+    # something, or nothing is sent. Staying silent also keeps the failure honest
+    # — it lands in the fire log as undelivered instead of masquerading as a
+    # delivery, which is what makes retry-instead-of-consume the obvious next fix.
+    log "No route to the brain (tmux busy/offline and headless turn unavailable) — staying silent rather than sending machine text: ${message:0:60}"
+    FIRE_PATH="undelivered-no-brain"
+    return 1
 }
 
 # Fan out the NON-operator recipients to wsapi (recipient-scoped web toast + their

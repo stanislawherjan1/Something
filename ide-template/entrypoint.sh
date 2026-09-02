@@ -1233,7 +1233,7 @@ cleanup() {
 
     # 1. Send Telegram shutdown notification
     if [ -x /home/coder/bot-notify.sh ]; then
-        /home/coder/bot-notify.sh "Going offline for maintenance..." 2>/dev/null &
+        /home/coder/bot-notify.sh "Back in a few minutes — updating." 2>/dev/null &
         NOTIFY_PID=$!
     fi
 
@@ -1868,7 +1868,7 @@ else
     pm2 save 2>/dev/null || true
     # Alert via Telegram only if creds were ever expected (token configured but missing now)
     if [ -x /home/coder/bot-notify.sh ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-        /home/coder/bot-notify.sh "Claude credentials missing on ${IDE_NAME:-workspace} — bot deferred until token is supplied via wizard." 2>/dev/null &
+        /home/coder/bot-notify.sh "I can't start until my Anthropic login is set up — you can add it on the workspace settings page." 2>/dev/null &
     fi
     # Watch for the wizard to write a token, then start the bot. Closes the
     # bootstrapping gap: restartBot() only signals an ALREADY-running bot.sh, so

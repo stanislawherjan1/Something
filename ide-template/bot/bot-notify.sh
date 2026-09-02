@@ -40,14 +40,26 @@ fi
 MESSAGE="$1"
 [ -z "$MESSAGE" ] && { echo "[notify] Usage: bot-notify.sh \"message\""; exit 1; }
 
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC' -u 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
-# Capitalize first letter of BOT_NAME for display
-DISPLAY_NAME="$(echo "${BOT_NAME:0:1}" | tr '[:lower:]' '[:upper:]')${BOT_NAME:1}"
-
-FULL_MESSAGE="🤖 *${DISPLAY_NAME}* | $(hostname)
+# The message goes out as written — no machine header.
+#
+# It used to be prefixed with "🤖 *<Bot>* | <hostname>" and a UTC timestamp.
+# That is operator-debug framing: the container hostname means nothing to the
+# person reading it, the timestamp duplicates the one Telegram already shows,
+# and the asterisks are leftovers from a markdown mode removed in 2026-06. The
+# recipient is a person in a chat, not a log reader, and every message from this
+# bot should read like something a colleague wrote.
+#
+# Set BOT_NOTIFY_HEADER=1 to restore the prefix for operator diagnostics on a
+# box running several bots, where knowing which one spoke actually matters.
+FULL_MESSAGE="$MESSAGE"
+if [ "${BOT_NOTIFY_HEADER:-0}" = "1" ]; then
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S UTC' -u 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')
+    DISPLAY_NAME="$(echo "${BOT_NAME:0:1}" | tr '[:lower:]' '[:upper:]')${BOT_NAME:1}"
+    FULL_MESSAGE="${DISPLAY_NAME} | $(hostname)
 ${TIMESTAMP}
 
 ${MESSAGE}"
+fi
 
 ## NOTE: parse_mode="Markdown" was removed 2026-06-04 — bot-notify is also
 # used by post-write-memory.sh to forward 200-char previews of memory card
