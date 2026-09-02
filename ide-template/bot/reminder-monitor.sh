@@ -186,6 +186,26 @@ fire_operator() {
             ;;
     esac
 
+    # An AMBIENT item exists precisely to NOT interrupt: it is meant to be woven
+    # into conversation by the brain, or stay unsaid. The raw ladder cannot weave
+    # anything — it forwards text verbatim — so pushing an ambient item through
+    # it produces the exact opposite of what the urgency asked for. Worse, these
+    # are usually "check X and report only if it matters" duties, so the forward
+    # shows the user the INSTRUCTION while the check itself never runs: noise and
+    # a silent miss at once. Observed live 2026-09-02 01:01 UTC, and the pane is
+    # busy nearly every hour, so this is the normal path, not an edge case.
+    #
+    # Suppressing loses the occurrence — which is what already happened, just
+    # invisibly, while this degraded to an unwatched web toast. The real fix is
+    # to retry on the next tick instead of consuming the record, and to run these
+    # duties as headless turns rather than pane injections; both are tracked
+    # separately. Until then, silence is the behaviour ambient actually asked for.
+    if [ "$urgency" = "ambient" ]; then
+        log "Ambient item could not reach the brain — NOT blurting it raw (ambient means do not interrupt): ${message:0:60}"
+        FIRE_PATH="suppressed-ambient"
+        return 1
+    fi
+
     case "$channel" in
         web)
             if [ -x "$WEB_NOTIFY_SCRIPT" ]; then
