@@ -18,6 +18,9 @@ Rules:
     (`r_system_plan_day__<slug>`), each a discrete "plan <slug>" task, and retire
     the generic `r_system_plan_day`. Self-heals as members come and go. Solo keeps
     the generic trigger.
+  - RETIRE a kind:system reminder that the image no longer ships. A ritual
+    removed from the template used to keep firing on every existing client for
+    ever — the trigger frame kept arriving for a skill that had been deleted.
   - Never touch user reminders (only kind:system, matched by id).
   - Preserve owner/group/mode on an existing file (in-place write); on a brand
     new file, set bot:workspace 664 to match how the reminder-mcp owns it.
@@ -116,6 +119,7 @@ if existed:
 by_id = {r.get("id"): r for r in live if isinstance(r, dict)}
 now = datetime.datetime.now(datetime.timezone.utc)
 added, updated, removed = [], [], []
+desired = set()          # ids this reconcile GENERATES (per-user plan triggers)
 
 # Team mode: an explicit config flag, or more than one person on the roster.
 roster = read_json(ROSTER, [])
@@ -155,7 +159,6 @@ for t in rituals:
 # 2) Per-user plan-day triggers.
 base = next((t for t in rituals if t.get("id") == PLAN_BASE_ID), None)
 if team_mode and slugs and base:
-    desired = set()
     for slug in slugs:
         rid = f"{PLAN_BASE_ID}__{slug}"
         desired.add(rid)
@@ -175,6 +178,23 @@ else:
             live.remove(r)
             by_id.pop(rid, None)
             removed.append(rid)
+
+# Retire system rituals the image no longer ships. Without this a deleted
+# ritual keeps firing on every existing client: reconcile only ever ADDED and
+# re-synced by id, so nothing could ever take one away. `desired` holds the
+# per-user plan triggers, which are generated rather than templated.
+template_ids = {r.get("id") for r in rituals}
+for r in list(live):
+    if not isinstance(r, dict) or r.get("kind") != "system":
+        continue                      # user reminders are never touched
+    rid = r.get("id", "")
+    if rid in template_ids or rid in desired:
+        continue
+    if rid.startswith(PLAN_BASE_ID):
+        continue                      # owned by the plan-trigger logic above
+    live.remove(r)
+    by_id.pop(rid, None)
+    removed.append(rid)
 
 if not (added or updated or removed):
     print("[reconcile-reminders] all system rituals present and current")
