@@ -1052,7 +1052,15 @@ if [ -f /opt/ide/bootstrap/claude-settings.json ]; then
         # always get the latest template values), but custom operator
         # keys not in the template are preserved.
         TMP=$(mktemp)
-        if jq -s '.[0] * .[1]' "$DEST" /opt/ide/bootstrap/claude-settings.json > "$TMP" 2>&1; then
+        # `hooks` is taken WHOLESALE from the template, not merged: a shallow
+        # merge can add a hook but can never REMOVE one, so a hook deleted from
+        # the template kept firing on every existing client for ever (caught
+        # live — post-write-memory.sh was still registered after its script was
+        # deleted from the repo). Custom operator keys OUTSIDE `hooks` are still
+        # preserved by the merge.
+        if jq -s '.[0] as $live | .[1] as $tmpl | ($live * $tmpl)
+                  + (if $tmpl.hooks then {hooks: $tmpl.hooks} else {} end)' \
+              "$DEST" /opt/ide/bootstrap/claude-settings.json > "$TMP" 2>&1; then
             mv "$TMP" "$DEST"
             echo "[entrypoint] ~/.claude/settings.json merged with template (autoMemoryEnabled + hooks refreshed)."
         else

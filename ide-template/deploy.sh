@@ -190,11 +190,31 @@ scp global-claude.md         "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
 
 # Egress proxy — Node HTTP CONNECT proxy in its own container.
 # See ide-template/Dockerfile.egress-proxy + ide-template/scripts/...
+
+# ─── Mirrored trees ──────────────────────────────────────────────────────────
+# `scp -r` only ADDS. A file deleted from the source tree therefore lingers in
+# the remote build context for ever, and `COPY <dir>` bakes the stale copy into
+# the next image — so a deletion never actually reaches a deployed client. This
+# bit the skill tree once (a rename shipped BOTH folders) and was fixed there
+# only; the same hole was still open for hooks, scripts, bootstrap and the
+# workspace-api source, where it kept four retired modules and a retired hook
+# alive in the image after they were removed from the repo.
+#
+# Wipe-then-upload, so the remote context is a MIRROR of the source, not an
+# accumulation of every version ever deployed.
+mirror_dir() {
+    local local_dir="$1" remote_dir="$2"
+    ssh "$HETZNER_HOST" "rm -rf '$remote_dir' && mkdir -p '$remote_dir'" || exit 1
+    scp -r "$local_dir/." "$HETZNER_HOST:$remote_dir/" || exit 1
+}
+
 # Note: source lives in repo-root scripts/ alongside the host-side
 # install-egress.sh; the Dockerfile.egress-proxy copies it into the
 # image. We scp it to a path the Dockerfile build context will see
 # (REMOTE_PATH/scripts/).
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/scripts'"
+mirror_dir scripts "$REMOTE_PATH/scripts"
+# Dropped in AFTER the mirror: this one comes from the repo root, not from
+# ide-template/scripts, so mirroring would otherwise delete it.
 scp ../scripts/egress-proxy.js "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
 
 # ─── Plugin marketplace pre-clone (build-time embed) ─────────────────────────
@@ -250,24 +270,22 @@ scp setuid-wrappers/README.md        "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers
 # build context. Otherwise scp -r just additively overlays — the old
 # folder lingers, Docker COPY ships both into the image, and the bot
 # sees two duplicate skills at runtime.
-ssh "$HETZNER_HOST" "rm -rf '$REMOTE_PATH/skills/default' '$REMOTE_PATH/skills/optional' && mkdir -p '$REMOTE_PATH/skills/default' '$REMOTE_PATH/skills/optional'"
-scp -r skills/default/. "$HETZNER_HOST:$REMOTE_PATH/skills/default/" || exit 1
+mirror_dir skills/default "$REMOTE_PATH/skills/default"
 if [ -d skills/optional ]; then
-    scp -r skills/optional/. "$HETZNER_HOST:$REMOTE_PATH/skills/optional/" || exit 1
+    mirror_dir skills/optional "$REMOTE_PATH/skills/optional"
+else
+    ssh "$HETZNER_HOST" "rm -rf '$REMOTE_PATH/skills/optional' && mkdir -p '$REMOTE_PATH/skills/optional'" || exit 1
 fi
 
 # First-run bootstrap templates (folder structure + system reminders + Tasks/Pending)
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/bootstrap'"
-scp -r bootstrap/. "$HETZNER_HOST:$REMOTE_PATH/bootstrap/" || exit 1
+mirror_dir bootstrap "$REMOTE_PATH/bootstrap"
 
 # CC hooks (PostToolUse / Stop / etc — wired in via ~/.claude/settings.json,
 # template at bootstrap/claude-settings.json). Sources in ide-template/hooks/.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/hooks'"
-scp -r hooks/. "$HETZNER_HOST:$REMOTE_PATH/hooks/" || exit 1
+mirror_dir hooks "$REMOTE_PATH/hooks"
 
 # Helper scripts (Bundle 6: frontmatter stamping, etc).
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/scripts'"
-scp -r scripts/. "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
+
 scp Caddyfile              "$HETZNER_HOST:$REMOTE_PATH/" 2>/dev/null || true
 scp inject.js overrides.css mobile.js "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
 scp settings.json "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
@@ -414,7 +432,7 @@ scp apps/substack-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/substack-mcp
 # Must land before any MCP that imports from _shared so Docker's COPY for
 # those MCPs sees a complete _shared/ dir on the remote build context.
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/_shared'"
-scp -r apps/_shared/. "$HETZNER_HOST:$REMOTE_PATH/apps/_shared/" || exit 1
+mirror_dir apps/_shared "$REMOTE_PATH/apps/_shared"
 
 # Google Workspace bundle — six new MCPs (gdocs already deployed above)
 # spawned from a single integration record. Reuses gdocs OAuth env vars.
@@ -477,10 +495,10 @@ scp workspace-api/index.js                 "$HETZNER_HOST:$REMOTE_PATH/workspace
 scp workspace-api/package.json             "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 scp workspace-api/integrations.catalog.json "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 # scp -r on lib/. picks up the integrations/ subdir transitively.
-scp -r workspace-api/lib/.                 "$HETZNER_HOST:$REMOTE_PATH/workspace-api/lib/"    || exit 1
-scp -r workspace-api/routes/.              "$HETZNER_HOST:$REMOTE_PATH/workspace-api/routes/" || exit 1
+mirror_dir workspace-api/lib    "$REMOTE_PATH/workspace-api/lib"
+mirror_dir workspace-api/routes "$REMOTE_PATH/workspace-api/routes"
 # assets/ ships WORKSPACE.md (UI reference for Claude) + avatar presets.
-scp -r workspace-api/assets/.              "$HETZNER_HOST:$REMOTE_PATH/workspace-api/assets/" || exit 1
+mirror_dir workspace-api/assets "$REMOTE_PATH/workspace-api/assets"
 
 # Upload full frontend source (needed for Docker build on remote).
 # Wipe per-client image patterns from the remote public/ first — `scp -r`
@@ -497,7 +515,7 @@ scp frontend/package.json         "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit
 scp frontend/package-lock.json    "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
 scp frontend/index.html           "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
 scp frontend/vite.config.js       "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp -r frontend/src/.             "$HETZNER_HOST:$REMOTE_PATH/frontend/src/" || exit 1
+mirror_dir frontend/src "$REMOTE_PATH/frontend/src"
 scp -r frontend/public/.          "$HETZNER_HOST:$REMOTE_PATH/frontend/public/" || exit 1
 
 if [ "$DEPLOY_TARGET" = "all" ] || [ "$DEPLOY_TARGET" = "auth" ]; then
