@@ -37,9 +37,12 @@ export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) 
     if (!ownSlug) return false;                     // a private tree, but the actor has no slug
     return (isMemTree ? parts[2] : parts[1]) === ownSlug;   // only your OWN — admin or not
   }
-  // Not a private tree. Admins get everything else (system files, group-mode
-  // memory, the shared space). Members get the shared team space, but not the
-  // group brain's working set (memory/groups/<gid>/… — raw group transcripts).
+  // Not a private tree. Admins get everything else; members get the shared team
+  // space. memory/groups/ stays denied to non-admins as defence in depth: a
+  // per-group memory tree was designed and never built (nothing writes it, and
+  // a group's durable facts go to SHARED memory instead, where they are
+  // visible, searchable and correctable). The deny costs nothing and means a
+  // future writer cannot quietly expose raw group content to every member.
   if (isAdmin) return true;
   if (parts[0] === 'memory' && parts[1] === 'groups') return false;
   return true;

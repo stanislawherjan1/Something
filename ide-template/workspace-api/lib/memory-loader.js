@@ -37,8 +37,8 @@
  * cache once + read many times.
  */
 
-import { existsSync, readFileSync, statSync, mkdirSync, renameSync, unlinkSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, statSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { USERS_DIR } from './scope-rule.js';
 import { LOAD_ORDER, USER_TIER, ADOPT_CARDS } from './memory-registry.js';
@@ -480,55 +480,6 @@ export function approxTokens(s) {
 }
 
 /**
- * Test whether a file path (relative to PROJECT_DIR) is covered by any
- * pattern in `memoryPaths`. Defensive glob handling for the patterns
- * the workspace actually uses:
- *
- *   'memory/**'                   → matches any file under memory/
- *   'memory/INDEX.md'             → exact match
- *   'memory/topics/acme/**'     → matches files under that subtree
- *   'memory/topics/&#42;.md'           → matches direct .md children
- *
- * Returns true if no patterns supplied (no filtering requested) or if any
- * pattern matches. Pure + exported for testability.
- */
-export function pathMatchesMemoryPaths(filePath, memoryPaths) {
-  if (!Array.isArray(memoryPaths) || memoryPaths.length === 0) return true;
-  for (const pattern of memoryPaths) {
-    if (typeof pattern !== 'string' || pattern.length === 0) continue;
-    if (pattern === filePath) return true;
-    // 'memory/**' matches everything under 'memory/'. Same for any
-    // suffix-** glob — strip and prefix-match.
-    if (pattern.endsWith('/**')) {
-      const prefix = pattern.slice(0, -3);
-      if (filePath === prefix) return true;
-      if (filePath.startsWith(prefix + '/')) return true;
-      continue;
-    }
-    if (pattern.endsWith('/**/*')) {
-      const prefix = pattern.slice(0, -5);
-      if (filePath.startsWith(prefix + '/')) return true;
-      continue;
-    }
-    if (pattern === '**' || pattern === '**/*') return true;
-    // Fallback regex translation: ** → .*, * → [^/]+, ? → [^/]
-    // Anchors at both ends so the whole path must match.
-    if (/[*?]/.test(pattern)) {
-      const re = '^' + pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*/g, '')
-        .replace(/\*/g, '[^/]+')
-        .replace(/\?/g, '[^/]')
-        .replace(//g, '.*') + '$';
-      try {
-        if (new RegExp(re).test(filePath)) return true;
-      } catch { /* malformed pattern → never matches */ }
-    }
-  }
-  return false;
-}
-
-/**
  * Build the cached prefix block. Pure function — same inputs → same bytes,
  * which is the whole point: a stable, cacheable prefix.
  *
@@ -548,19 +499,9 @@ export function pathMatchesMemoryPaths(filePath, memoryPaths) {
  * Migration to direct SDK use can lift TTL to 1h without changing this
  * function's contract.
  *
- * P3.04 step 2 — opts.scope.memory_paths narrows which cards land in the
- * prefix. Default `['memory/**']` loads everything (today's behaviour);
- * a narrower setting (e.g. a per-project scope that wants only the index
- * + one topic subtree) silently drops cards outside the allowed set. The
- * sources array still reports every LOAD_ORDER entry with
- * `present: false, in_scope: false` so /api/memory/prefix surfaces what
- * got filtered.
  */
 export function buildCachedPrefix(opts = {}) {
   const memoryDir = opts.memoryDir || memoryDirFor(opts.projectId);
-  const memoryPaths = opts.scope && Array.isArray(opts.scope.memory_paths) && opts.scope.memory_paths.length > 0
-    ? opts.scope.memory_paths
-    : null; // null → no filtering, load everything
   // Cards to omit entirely. Used by the web chat to drop RECENT_WEB: that
   // card is a cross-conversation rolling tail, and once each web session
   // resumes its own Claude session (per-session --resume) it's both
@@ -586,8 +527,6 @@ export function buildCachedPrefix(opts = {}) {
   for (const { id, path } of LOAD_ORDER) {
     if (excludeIds && excludeIds.has(id)) continue;
     const personal = !!(userMemoryDir && USER_TIER.has(id));
-    const relPath = personal ? `memory/${USERS_DIR}/${actorSlug}/${path}` : `memory/${path}`;
-    const inScope = memoryPaths === null || pathMatchesMemoryPaths(relPath, memoryPaths);
     const abs = join(personal ? userMemoryDir : memoryDir, path);
     let bytes = 0;
     let present = false;
@@ -597,18 +536,17 @@ export function buildCachedPrefix(opts = {}) {
         present = true;
         const st = statSync(abs);
         bytes = st.size;
-        if (inScope) body = readCardBody(abs);
+        body = readCardBody(abs);
       }
     } catch { /* defensive: report as missing */ }
 
-    sources.push({ id, path, bytes, present, in_scope: inScope, tier: personal ? 'user' : 'shared' });
+    sources.push({ id, path, bytes, present, tier: personal ? 'user' : 'shared' });
 
     // USER_INDEX is a per-user convenience: include it ONLY in a real per-user
     // prefix (personal) AND only when the file exists — never a flat/solo
     // duplicate of the shared INDEX, never an empty placeholder.
     if (id === 'USER_INDEX' && (!personal || !present)) continue;
 
-    if (!inScope) continue; // narrowed projects: silently skip
     parts.push(`## ${id}\n\n${body || '(empty — card not yet populated)'}\n\n---\n\n`);
   }
 
@@ -649,42 +587,6 @@ export function buildTeamPrefix(opts = {}) {
     actor: undefined,
     excludeIds: [...USER_TIER, ...extra],
   });
-}
-
-/**
- * SHARED-ONLY group memory for the group brain — markdown under
- * memory/groups/<gid>/ for the group the watcher is answering in. Safety:
- *  - gid must match /^-?\d{4,20}$/ (a Telegram chat-id shape: no '/' or '.', so
- *    it can never traverse out of the groups dir);
- *  - the resolved dir must stay under memory/groups/ (defensive containment);
- *  - any file whose id is in USER_TIER is skipped, so a stray USER_PROFILE.md
- *    dropped under a group dir can never mount private content.
- * scope-rule.js denies non-admin web members this tree separately. Returns the
- * concatenated card text, or '' (empty / invalid gid / absent). Never throws.
- */
-export function loadGroupMemory(gid) {
-  try {
-    const id = String(gid == null ? '' : gid).trim();
-    if (!/^-?\d{4,20}$/.test(id)) return '';
-    const base = join(memoryDirFor(), 'groups');
-    const dir = join(base, id);
-    if (resolve(dir) !== join(resolve(base), id)) return '';   // containment (defensive; regex already blocks traversal)
-    if (!existsSync(dir)) return '';
-    const parts = [];
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith('.md')) continue;
-      const cardId = f.slice(0, -3);
-      if (USER_TIER.has(cardId)) continue;     // never mount a private-tier card from a group dir
-      const abs = join(dir, f);
-      try {
-        if (statSync(abs).isFile()) {
-          const body = readCardBody(abs);
-          if (body) parts.push(`## GROUP/${cardId}\n\n${body}`);
-        }
-      } catch { /* skip unreadable */ }
-    }
-    return parts.join('\n\n---\n\n');
-  } catch { return ''; }
 }
 
 /**
