@@ -122,6 +122,34 @@ fi
 IS_CHANNEL=0
 echo "$LAST_USER" | grep -qiE '<channel |source="?plugin:telegram' && IS_CHANNEL=1
 
+# What actually TRIGGERED the turn is not always the last user message with
+# text. The Skill tool injects the skill body as a user text message ("Base
+# directory for this skill: …"), and tool scaffolding can do the same, so on any
+# turn that loads a skill the trigger frame is no longer last and the whitelist
+# below misses it. That is not hypothetical: the hourly inbox check loads the
+# inbox-check skill, and this hook blocked it every single hour — telling a
+# correctly SILENT ambient duty that it owed the user a Telegram reply, which is
+# exactly the pressure that produced messages like "nothing important, so I'm
+# not notifying you". Scheduled duties that use a skill are the norm, so the
+# classification has to survive it.
+#
+# Scan backwards instead for the newest message that is either a real channel
+# inbound or a system frame, and let THAT decide. Anything injected in between
+# is scaffolding, not a trigger.
+TRIGGER_KIND=$(tail -400 "$TRANSCRIPT" 2>/dev/null | jq -rc '
+    select(.type == "user")
+    | (.message.content) as $c
+    | (if ($c | type) == "string" then $c
+       else ($c | map(select(.type == "text") | .text) | join(" ")) end)
+    | select(. != null and (gsub("\\s"; "") | length) > 0)
+' 2>/dev/null | grep -oiE '^\[(REMINDER|AMBIENT|REPO_AUDIT|MEMORY_INDEX|BACKUP|REFLECT_LEARNINGS|REFLECT_ORGANIZER|REFLECT_SUMMARY|SUGGESTIONS_CLEANUP|TMP_CLEANUP|CAPABILITY_TOUR|TASTE_RECALL|GROUP)|<channel |source="?plugin:telegram' | tail -1)
+
+case "$TRIGGER_KIND" in
+    '<channel '*|source=*) IS_CHANNEL=1 ;;
+    '')  ;;                                  # nothing recognisable — fall through
+    *)   log "system trigger (${TRIGGER_KIND}...), exit 0"; exit 0 ;;
+esac
+
 # System triggers (reminders, periodic self-audits) arrive as user messages but
 # are the bot's own internal scheduling — they don't need a Telegram reply.
 # Whitelist by the [PREFIX] convention. NOTE: this now matches only when the
