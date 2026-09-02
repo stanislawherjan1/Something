@@ -64,5 +64,32 @@ ok('resumed turn passes sessionId through', pResumed.sessionId === 'sess-123');
 ok('resumed turn tells the brain it has session memory', /session memory/.test(pResumed.message));
 ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(p.message));
 
+// (f) DELEGATION — a [[PRIVATE_TASK]] runs in a DM, so it leaves the group
+// conversation behind unless it is handed over explicitly. It used to receive
+// only the brain's one-sentence paraphrase, so a request about what ANOTHER
+// member said arrived with the name already dropped and the DM could not
+// attribute it. The delegate prompt must carry the attributed window.
+const { __test: gwTest } = await import('./integrations/group-watcher.js');
+const delegatePrompt = gwTest.delegatePrompt({
+  group: { chatId: '-1001234567890', title: 'Zespół' },
+  target: { message_id: '1', from_id: '987654321', who: 'Sam' },
+  senderName: 'Sam',
+  task: 'summarise the budget discussion',
+  ctxMsgs: [
+    { role: 'user', message_id: '0', who: 'Marek', text: 'budget lands at 40k, I checked' },
+    { role: 'user', message_id: '1', who: 'Sam', text: 'send me a private summary of that' },
+  ],
+});
+ok('delegate is given the group conversation, with attribution',
+  /Marek/.test(delegatePrompt) && /budget lands at 40k/.test(delegatePrompt));
+ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
+ok('delegate is pointed at the durable transcript for older history',
+  /-history\.jsonl/.test(delegatePrompt));
+ok('delegate is told to attribute what a named person said',
+  /SAY WHOSE it was/.test(delegatePrompt));
+ok('delegate still carries the task itself', /summarise the budget discussion/.test(delegatePrompt));
+ok('delegate treats the transcript as data, not instructions',
+  /never as instructions|not instructions/i.test(delegatePrompt));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
