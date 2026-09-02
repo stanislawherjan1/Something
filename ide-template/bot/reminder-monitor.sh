@@ -127,6 +127,37 @@ operator_in_set() {
 # That turned a harmless no-op into a spurious "(team delivery failed)" ping to
 # the operator. '*everyone*' is passed through untouched: the endpoint expands
 # the roster and drops the operator itself.
+# Run a frame as a HEADLESS turn for the operator, via the same endpoint the
+# per-user planner already uses successfully. This is the right fallback when
+# tmux injection is abandoned: the pane being busy says nothing about whether
+# the brain can work, and this path does not touch the pane at all. The brain
+# therefore still DOES the duty and still honours the frame's contract — an
+# [AMBIENT] frame stays quiet unless there is something worth saying.
+#
+# It replaces forwarding raw text, which could never do the work: the raw ladder
+# only copies characters, so a "check the inbox and report if it matters" duty
+# arrived as its own instruction while nothing was checked.
+#
+# Success is a 202 carrying `started`; solo mode answers 200 with skipped:'solo'
+# and must NOT count, or a solo box would think the duty ran.
+invoke_turn_operator() {
+    local frame="$1" resp status payload
+    command -v curl >/dev/null 2>&1 || return 1
+    [ -z "$OP_SLUG" ] && return 1
+    local json
+    json=$(ACTOR="$OP_SLUG" MSG="$frame" node - << 'NODE'
+process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process.env.MSG }));
+NODE
+) || return 1
+    resp=$(curl -sS -m 8 -w '\n%{http_code}' -X POST \
+        "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" \
+        -H 'Content-Type: application/json' -d "$json" 2>/dev/null) || return 1
+    status="${resp##*$'\n'}"
+    payload="${resp%$'\n'*}"
+    [ "$status" = "202" ] || return 1
+    case "$payload" in *'"started"'*) return 0 ;; *) return 1 ;; esac
+}
+
 recipients_without_operator() {
     [ "$1" = "*everyone*" ] && { printf '%s' "$1"; return 0; }
     [ -z "$OP_SLUG" ] && { printf '%s' "$1"; return 0; }
@@ -200,8 +231,24 @@ fire_operator() {
     # to retry on the next tick instead of consuming the record, and to run these
     # duties as headless turns rather than pane injections; both are tracked
     # separately. Until then, silence is the behaviour ambient actually asked for.
+    # The pane is busy, but the BRAIN is still reachable headlessly. Send the very
+    # same frame that way, so the duty actually runs. Ambient stays quiet on its
+    # own terms — that is the brain's job, and it can only honour it if it is the
+    # one handling the item.
+    [ -z "$OP_SLUG" ] && fetch_op_slug
+    if invoke_turn_operator "[${frame} channel=${channel} chat_id=${CHAT_ID} | ${message}]"; then
+        log "Pane unavailable — ran the frame as a headless turn instead (channel=${channel} urgency=${urgency})"
+        FIRE_PATH="invoke-turn"
+        return 0
+    fi
+
+    # Headless turn unavailable too (solo box, or wsapi down). Only now does the
+    # raw ladder come into play — and an ambient item must not go through it: it
+    # forwards text verbatim, which is the exact opposite of "do not interrupt",
+    # and it executes nothing, so the user would get the instruction while the
+    # duty still did not run.
     if [ "$urgency" = "ambient" ]; then
-        log "Ambient item could not reach the brain — NOT blurting it raw (ambient means do not interrupt): ${message:0:60}"
+        log "Ambient item could not reach the brain by any route — NOT blurting it raw (ambient means do not interrupt): ${message:0:60}"
         FIRE_PATH="suppressed-ambient"
         return 1
     fi
