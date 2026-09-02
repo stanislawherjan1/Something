@@ -132,7 +132,6 @@ Three recurring reminders run autonomously to keep the workspace healthy. They h
 |---|---|---|---|
 | Monday 09:00 weekly | `[REPO_AUDIT_TRIGGER]` | `repo-audit` | Reviews project structure, auto-cleans obvious things (empty folders, twin-folder casing, `.playwright-mcp` wipe), surfaces judgment calls |
 | Friday 14:00 weekly | `[BACKUP_TRIGGER]` | `project-backup` | Creates tar.gz of `~/project`, sends via Telegram |
-| Sunday 22:00 weekly | `[MEMORY_INDEX_TRIGGER]` | `memory-reindex` | Silent re-scan of new/modified files into memory MCP knowledge graph |
 
 Reminders fire via Telegram (`reminder-monitor.sh` PM2 process polls every 60 s). **Without an active Telegram integration there's no delivery channel** — the Reminders UI dims entries and shows a setup banner when this is the case.
 
@@ -151,7 +150,6 @@ These skills are baked into every container and available in every session out o
 | `skill-authoring` | "create a skill" | How to author a new project skill |
 | `file-placement` | "save this", "write down" (no path) | Decides WHERE a new file goes; reads CLAUDE.md "Where to Save", scans existing folders, asks one short question if ambiguous, writes + indexes in memory |
 | `repo-audit` | `[REPO_AUDIT_TRIGGER]`, "/audit" | Weekly structure review (above) |
-| `memory-reindex` | `[MEMORY_INDEX_TRIGGER]`, "/reindex" | Weekly silent memory graph rebuild |
 | `capability-tour` | "what can you do", post-activation | Lists active MCPs in human-readable form; diffs against CLAUDE.md `Context` section, offers to fill gaps |
 
 Project-level skills (`.claude/skills/<name>/SKILL.md`) live alongside default skills and override them when names collide. Use the AI Settings → Skills tab in the workspace UI to scaffold one.
@@ -185,4 +183,3 @@ The bot **never edits `CLAUDE.md` without per-edit approval**. Capability tour p
 | Team whitelist | `.allowed-emails.json` |
 | Chat history | `.chat/` |
 | File attachments | `.attachments/` |
-| Memory graph | `~/.claude/memory.jsonl` (outside project — survives container rebuild) |

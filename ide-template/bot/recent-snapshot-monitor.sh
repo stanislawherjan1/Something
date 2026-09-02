@@ -39,36 +39,4 @@ while true; do
         log "refresh: $response"
     fi
 
-    # Sweep idle threads → verdict cards (P4 Track B / reflect-summary). Same idle
-    # cadence; server-side single-flight + dedup + per-tick cap make calling it
-    # every tick safe. A sweep that summarises several threads spawns short
-    # claude -p runs, so allow a generous timeout. Log only when it wrote one.
-    sweep=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/reflect-sweep" 2>/dev/null) || true
-    if echo "$sweep" | grep -qE '"written":[1-9]'; then
-        log "reflect-sweep: $sweep"
-    fi
-
-    # Distil durable conclusions from recent verdicts → 7-card proposals
-    # (_drafts → /memory review). Self-rate-limited (~12h) + single-flight
-    # server-side, so calling every tick is a cheap no-op until it's due.
-    distill=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/reflect-distill" 2>/dev/null) || true
-    if echo "$distill" | grep -qE '"proposals":[1-9]'; then
-        log "reflect-distill: $distill"
-    fi
-
-    # Gardener (reflect v2): rewrite pages whose Claims buffer is full/stale so
-    # they stay tight instead of degrading into append-only logs. Self-rate-
-    # limited (~12h) + single-flight server-side. Log only when it tends a page.
-    curate=$(curl -sf --max-time 150 -X POST "http://localhost:3001/api/internal/reflect-curate" 2>/dev/null) || true
-    if echo "$curate" | grep -qE '"curated":[1-9]'; then
-        log "reflect-curate: $curate"
-    fi
-
-    # Health-check the shared memory wiki → advisory findings → _drafts
-    # (memory/LINT.md). Self-rate-limited (~24h) + single-flight server-side, so
-    # calling every tick is a cheap no-op until due. Log only when it flags one.
-    lint=$(curl -sf --max-time 120 -X POST "http://localhost:3001/api/internal/memory-lint" 2>/dev/null) || true
-    if echo "$lint" | grep -qE '"proposals":[1-9]'; then
-        log "memory-lint: $lint"
-    fi
 done

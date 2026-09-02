@@ -6,16 +6,13 @@
  *   - card    → one of the seven canonical cards (RULES, USER_*, AGENT_*)
  *   - index   → memory/INDEX.md (wiki root, slightly bigger)
  *   - topic   → memory/topics/<slug>.md
- *   - concept → memory/concepts/<slug>.md  (accreting entity/concept pages —
- *               the durable, citable surface a recurring `entities:` slug earns
- *               once it crosses the squeeze-point heat threshold). A concept
- *               node may be SYNTHETIC (`synthetic:true`): a slug whose DECAYED
- *               heat (computeConceptHeat over the _reflect verdict plumbing)
- *               crossed CONCEPT_HEAT but that has no page on disk yet — the
- *               "emerging" state the dashboard renders as a hollow node.
+ *   - concept → memory/concepts/<slug>.md  (accreting entity pages — the
+ *               durable, citable surface for a recurring entity)
  *
- * Reflect v2: verdict cards (memory/_reflect/) are pipeline plumbing and are
- * NEVER rendered as nodes — the graph shows knowledge, not process residue.
+ * The graph shows what EXISTS. It used to also render "emerging" placeholder
+ * nodes for slugs that were merely hot in the retired verdict pipeline; pages
+ * are now created deliberately, in the conversation that earns them, so a node
+ * always has a file behind it.
  *
  * Edges are computed by scanning each file's body for:
  *   - [[wiki-link]]  — produces a 'wiki' edge (strong stroke in the UI)
@@ -39,28 +36,8 @@ import { CANONICAL_CARD_IDS } from './memory-registry.js';
 // and the values stay constant; the function calls are negligible.
 function memoryDir()   { return join(process.env.PROJECT_DIR || PROJECT_DIR, 'memory'); }
 function topicsDir()   { return join(memoryDir(), 'topics'); }
-// Reflect v2: verdict cards live in _reflect/ and are PLUMBING — they feed the
-// heat signal below but are never rendered as graph nodes (the operator's
-// memory graph shows knowledge, not process residue).
-function reflectThreadsDir(owner) {
-  return owner
-    ? join(memoryDir(), USERS_DIR, owner, '_reflect', 'threads')
-    : join(memoryDir(), '_reflect', 'threads');
-}
 function conceptsDir() { return join(memoryDir(), 'concepts'); }
 
-// Squeeze-point threshold: a slug must recur across at least this many DISTINCT
-// verdict threads before it earns a concept page (and before a synthetic
-// placeholder node is rendered for it). Mirrors REFLECT_CONCEPT_HEAT in
-// lib/reflect-distill.js — keep the two in sync.
-const CONCEPT_HEAT = (() => {
-  const v = Number(process.env.REFLECT_CONCEPT_HEAT);
-  return Number.isFinite(v) && v >= 1 ? v : 2;
-})();
-
-// Card ids come from the registry (lib/memory-registry.js) — the same list the
-// prefix loader, the group fence and INDEX generation use. Hand-maintained here
-// it silently drifted: RESPONSIBILITIES and CHANNELS rendered as `topic` nodes.
 const CANONICAL_CARDS = CANONICAL_CARD_IDS;
 
 const MAX_FILE_BYTES = 1 * 1024 * 1024;  // 1 MB per file when scanning
@@ -186,100 +163,6 @@ function parsePurposeFromFrontmatter(body) {
   return '';
 }
 
-/**
- * Parse the `entities:` array out of a verdict-card frontmatter. Defensive
- * — accepts both flow style (`entities: [a, b, c]`) and block style
- * (`entities:\n  - a\n  - b`). Returns lowercased slugs only.
- *
- * Pure string parse; no YAML library needed for this single field. If we
- * grow to parsing more frontmatter shapes here, swap to a real parser.
- */
-function parseEntitiesFromFrontmatter(body) {
-  if (!body.startsWith('---')) return [];
-  const fmEnd = body.indexOf('\n---', 3);
-  if (fmEnd === -1) return [];
-  const fm = body.slice(3, fmEnd);
-
-  // Flow style: entities: [a, "b-c", d]
-  const flow = fm.match(/^entities:\s*\[(.*)\]\s*$/m);
-  if (flow) {
-    return flow[1]
-      .split(',')
-      .map(s => s.trim().replace(/^["']|["']$/g, '').toLowerCase())
-      .filter(Boolean);
-  }
-  // Block style: entities:\n  - a\n  - b
-  const block = fm.match(/^entities:\s*\n((?:\s+-\s+.*\n?)+)/m);
-  if (block) {
-    return block[1]
-      .split('\n')
-      .map(line => line.match(/^\s+-\s+["']?(.*?)["']?\s*$/))
-      .filter(Boolean)
-      .map(m => m[1].trim().toLowerCase())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-/**
- * Count how many DISTINCT verdict threads name each entity slug — the "heat"
- * (in-degree) signal that drives concept emergence. A slug that recurs across
- * ≥ CONCEPT_HEAT threads has crossed a computable squeeze-point and earns a
- * first-class concept page (proposed by reflect-distill, operator-approved).
- *
- * Pure read over the verdict-card trees. `owner` selects which tree:
- *   - owner = null (default)  → the SHARED threads (memory/threads/). This is the
- *     team-wide heat used by the v1 distiller, which only proposes SHARED concept
- *     pages (a shared verdict's entities are already team-visible — promoting one
- *     to a shared page leaks nothing new).
- *   - owner = '<slug>'        → that teammate's PRIVATE threads
- *     (memory/users/<slug>/threads/). For forward-compat (per-owner private
- *     concepts); not yet emitted by the distiller.
- *
- * Returns a plain object { <slug>: <distinct-thread-count> }. Counting is
- * distinct-per-thread (a slug named twice in one verdict counts once).
- */
-export function computeConceptHeat(owner = null) {
-  const counts = Object.create(null);
-  let dir;
-  if (owner === null) {
-    dir = reflectThreadsDir(null);
-  } else if (typeof owner === 'string' && /^[a-z0-9-]+$/.test(owner)) {
-    dir = reflectThreadsDir(owner);
-  } else {
-    return counts;   // malformed owner → empty, never a path escape
-  }
-  let files;
-  try { files = readdirSync(dir).filter(f => /\.md$/i.test(f)); } catch { return counts; }
-  const now = Date.now();
-  const DECAY_MS = 30 * 86400 * 1000;
-  for (const f of files) {
-    const abs = join(dir, f);
-    const body = readBody(abs);
-    if (!body) continue;
-    // Reflect v2: noise never heats an entity, and heat DECAYS with verdict age
-    // (half-life-ish exp(-age/30d)) so the graph reflects the RECENT knowledge
-    // structure — an entity must stay warm to stay eligible for emergence. The
-    // retention sweep deleting old verdicts bounds this sum by construction.
-    const head = body.slice(0, 600);
-    if (/^substance: noise$/m.test(head)) continue;
-    let weight = 1;
-    try { weight = Math.exp(-Math.max(0, now - statSync(abs).mtimeMs) / DECAY_MS); } catch { /* keep 1 */ }
-    for (const ent of new Set(parseEntitiesFromFrontmatter(body))) {
-      counts[ent] = (counts[ent] || 0) + weight;
-    }
-  }
-  return counts;
-}
-
-/**
- * Build the memory graph. Pure read; no writes. Returns:
- *   {
- *     nodes: [{ id, kind, name, relPath, preview, size? }],
- *     edges: [{ source, target, kind: 'wiki' | 'bare', weight }],
- *     generated_at: ISO,
- *   }
- */
 export function buildMemoryGraph(actorSlug = null) {
   const files = enumerateMemoryFiles(actorSlug);
   if (files.length === 0) {
@@ -303,44 +186,6 @@ export function buildMemoryGraph(actorSlug = null) {
   // Read all bodies once.
   const bodies = new Map(); // id → body
   for (const f of files) bodies.set(f.id, readBody(f.absPath));
-
-  // Emerging concepts (reflect v2): heat now comes from the _reflect verdict
-  // plumbing (decayed, noise excluded — see computeConceptHeat), NOT from thread
-  // nodes (those no longer exist in the graph). A slug that is hot enough but
-  // has no page yet renders as a synthetic "emerging" node — the visual signal
-  // that a page is about to be seeded. Cold or below-threshold slugs render
-  // nothing at all.
-  const synthHeat = new Map();   // candidate placeholder id → decayed heat
-  const heatSources = [[null, computeConceptHeat(null)]];
-  if (actorSlug && /^[a-z0-9-]+$/.test(actorSlug)) {
-    heatSources.push([actorSlug, computeConceptHeat(actorSlug)]);
-  }
-  for (const [ownerSlug, counts] of heatSources) {
-    for (const [ent, heat] of Object.entries(counts)) {
-      // Decayed heat: N fresh verdicts sum to slightly UNDER N (exp(-ε) < 1),
-      // so compare with a small tolerance or a same-day Nth mention misses the
-      // threshold it plainly crossed.
-      if (heat < CONCEPT_HEAT - 0.05) continue;
-      // Slug noise floor: ≥ 2 chars, kebab ASCII, not purely numeric.
-      if (!/^[a-z0-9][a-z0-9-]*$/.test(ent) || ent.length < 2 || /^\d+$/.test(ent)) continue;
-      if (resolveTarget(ownerSlug ? 'yours' : 'shared', ent)) continue;   // page already exists
-      const id = ownerSlug ? `yours:${ent}` : ent;
-      if (byId.has(id)) continue;
-      synthHeat.set(id, Math.round(heat * 10) / 10);
-    }
-  }
-  const synthNodes = [];
-  for (const [id, count] of synthHeat) {
-    const baseStem = id.replace(/^yours:/, '');
-    const node = {
-      id, baseStem, kind: 'concept',
-      scope: id.startsWith('yours:') ? 'yours' : 'shared',
-      name: `${baseStem}.md`, absPath: null, relPath: null,
-      synthetic: true, heat: count,
-    };
-    byId.set(id, node);
-    synthNodes.push(node);
-  }
 
   // For wiki-link matching: extract `[[target]]` payloads per source file.
   // For bare-name matching: scan the lower-cased body for each known file's
@@ -408,21 +253,6 @@ export function buildMemoryGraph(actorSlug = null) {
       purpose: parsePurposeFromFrontmatter(body),
     };
   });
-
-  // Synthetic placeholder concepts (heat ≥ CONCEPT_HEAT, no page yet).
-  for (const s of synthNodes) {
-    nodes.push({
-      id: s.id,
-      kind: 'concept',
-      scope: s.scope,
-      name: s.name,
-      relPath: null,
-      preview: `Emerging concept, warming up (recent-conversation heat ${s.heat}). A page gets seeded once it stays hot.`,
-      purpose: '',
-      synthetic: true,
-      heat: s.heat,
-    });
-  }
 
   return {
     nodes,

@@ -24,18 +24,6 @@
     "status": "pending"
   },
   {
-    "id": "r_system_reflect",
-    "kind": "system",
-    "title": "Evening reflection",
-    "description": "[REFLECT_LEARNINGS_TRIGGER] Silent memory upkeep. Consolidate the day's RECENT_WEB + RECENT_TELEGRAM tails via the reflect pipeline. High-confidence, additive facts auto-apply in the background; anything the model is unsure about is NOT written. Work SILENTLY: post NOTHING to Telegram — no tally, no draft count, no `/memory review` ping. Memory is background plumbing, never a notification; do not interrupt the user about it.",
-    "message": "[REFLECT_LEARNINGS_TRIGGER] Silent daily reflect. Consolidate RECENT_WEB + RECENT_TELEGRAM in the background: confident additive facts auto-apply on their own, uncertain ones are dropped (never saved). SILENT: post nothing to Telegram — no tally, no review ping. Memory upkeep never interrupts the user.",
-    "due": "BOOTSTRAP_NEXT_DAILY_22_UTC",
-    "repeat": "daily",
-    "channel": "telegram",
-    "created": "BOOTSTRAP_NOW",
-    "status": "pending"
-  },
-  {
     "id": "r_system_plan_day",
     "kind": "system",
     "title": "Morning planning",

@@ -2,11 +2,11 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "_comment": "Bot-side ~/.claude/settings.json template. Deployed by entrypoint.sh to /home/coder/.claude/settings.json (and possibly /home/bot/.claude/settings.json depending on the bot uid setup). Hooks registered here fire for every CC session in the workspace.",
   "autoMemoryEnabled": false,
-  "_autoMemoryEnabled_comment": "WS2: disables CC's native auto-memory system. The workspace has its own memory model at ~/project/memory/ — letting CC's native auto-memory run alongside creates two competing systems and instruction-level confusion. Per R.2 research outcome.",
+  "_autoMemoryEnabled_comment": "WS2: disables CC's native auto-memory system. The workspace has its own memory model at ~/project/memory/ \u2014 letting CC's native auto-memory run alongside creates two competing systems and instruction-level confusion. Per R.2 research outcome.",
   "autoUpdates": false,
-  "_autoUpdates_comment": "2026-07-14: the CLI version is deliberately PINNED in the Dockerfile (channel-plugin kill regression in >=2.1.152 — see Dockerfile LAYER 2 comment). A live auto-update attempt was observed on a prod bot; had it succeeded it would have silently unpinned the fleet. Version bumps go through the Dockerfile + canary, never self-update.",
+  "_autoUpdates_comment": "2026-07-14: the CLI version is deliberately PINNED in the Dockerfile (channel-plugin kill regression in >=2.1.152 \u2014 see Dockerfile LAYER 2 comment). A live auto-update attempt was observed on a prod bot; had it succeeded it would have silently unpinned the fleet. Version bumps go through the Dockerfile + canary, never self-update.",
   "model": "claude-sonnet-5",
-  "_model_comment": "2026-07-15: pin the bot model explicitly so a deploy is fully self-contained. Before this, model was left to the CLI default — fine while the CLI defaulted to Sonnet 5 (>=2.1.197), but once we pinned the CLI back to 2.1.150 (pre-Sonnet-5-default) a fresh container came up on an OLD model and needed a MANUAL post-deploy fix. merge_bot_settings does `existing * bootstrap` (bootstrap wins) and re-merges every 5min, so this is authoritative fleet-wide. A client that genuinely needs a different model gets a per-client override later; today the fleet is uniform on Sonnet 5.",
+  "_model_comment": "2026-07-15: pin the bot model explicitly so a deploy is fully self-contained. Before this, model was left to the CLI default \u2014 fine while the CLI defaulted to Sonnet 5 (>=2.1.197), but once we pinned the CLI back to 2.1.150 (pre-Sonnet-5-default) a fresh container came up on an OLD model and needed a MANUAL post-deploy fix. merge_bot_settings does `existing * bootstrap` (bootstrap wins) and re-merges every 5min, so this is authoritative fleet-wide. A client that genuinely needs a different model gets a per-client override later; today the fleet is uniform on Sonnet 5.",
   "hooks": {
     "PreToolUse": [
       {
@@ -15,17 +15,6 @@
           {
             "type": "command",
             "command": "node /opt/ide/hooks/scope-guard.mjs"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/ide/hooks/post-write-memory.sh"
           }
         ]
       }
@@ -45,5 +34,5 @@
       }
     ]
   },
-  "_hooks_comment": "WS6.5: PostToolUse hook on Write|Edit fires post-write-memory.sh — sends Telegram notification with what was written to memory/. Closes the write feedback loop. WS5 C (Bundle 8): Stop hook fires verify-denials.sh — blocks the response if the model claims absence (skill/file/tool doesn't exist) without first running a lookup tool. 2026-06-04: second Stop hook verify-telegram-reply.sh — blocks the Telegram silent-response failure mode (turn triggered from Telegram bot tmux session BUT model didn't call any mcp__plugin_telegram_telegram__* tool). All hooks are fire-and-forget-safe — never break the turn over their own bugs."
+  "_hooks_comment": "Memory writes go through the memory_write tool (workspace-api owns the one write path), so there is no post-write hook: the engine logs every write and the PreToolUse guard blocks raw file edits under memory/. Memory upkeep is silent by contract \u2014 no notification on any surface. WS5 C (Bundle 8): Stop hook fires verify-denials.sh \u2014 blocks the response if the model claims absence (skill/file/tool doesn't exist) without first running a lookup tool. 2026-06-04: second Stop hook verify-telegram-reply.sh \u2014 blocks the Telegram silent-response failure mode (turn triggered from Telegram bot tmux session BUT model didn't call any mcp__plugin_telegram_telegram__* tool). All hooks are fire-and-forget-safe \u2014 never break the turn over their own bugs."
 }

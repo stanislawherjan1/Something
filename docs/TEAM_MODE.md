@@ -132,7 +132,7 @@ promotes to a **private** topic page under `memory/users/<slug>/topics/`.
 `USER_RELATIONSHIPS` / `USER_REFLECTIONS` are stored private but recalled
 on demand, not in the prefix.
 
-**Deciding where a new fact goes** (the `memory-router` skill): ask **"would
+**Deciding where a new fact goes** (the `memory_write` tool's routing rules): ask **"would
 this be useful to a DIFFERENT teammate?"**
 
 - **Yes** → Shared (`memory/…`): company facts, project structure, shared

@@ -71,7 +71,6 @@ workspace-api/
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
-│   ├── verdict-card-{reader,writer}.js  # structured reminder / verdict card I/O
 │   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine
 └── routes/
     ├── health.js            # GET /api/health

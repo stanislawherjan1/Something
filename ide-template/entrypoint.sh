@@ -799,7 +799,7 @@ if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     # taste-recall — anti-pattern store. Same shape as topics/, but
     # only holds "the agent got X wrong; here's the rule that prevents
     # repeating it" cards. Empty dir + ABOUT.md is enough;
-    # reflect-learnings will populate it over time.
+    # populated over time as anti-patterns surface.
     if [ -d "$MEMORY_TEMPLATES_DIR/patterns" ] && [ ! -d "$MEMORY_DIR/patterns" ]; then
         mkdir -p "$MEMORY_DIR/patterns"
         if [ -f "$MEMORY_TEMPLATES_DIR/patterns/ABOUT.md" ]; then
@@ -853,12 +853,6 @@ for i, e in enumerate(emails):
         'addedAt': now,
         'addedBy': 'bootstrap',
     }
-    # Reflect v2: the primary admin owns the workspace, so pre-consent their
-    # own ORG-classified, non-sensitive DM facts to flow into shared team
-    # memory automatically (audit-logged) instead of rotting in a promotion
-    # queue nobody reviews. Sensitivity veto still keeps personal facts private.
-    if i == 0:
-        entry['autoPromote'] = True
     entries.append(entry)
 print(json.dumps(entries, indent=2))
 PYEOF
@@ -1429,12 +1423,11 @@ npm_bin = '/home/coder/.npm-global/bin'
 # (via "claude mcp add" during a chat session) is preserved under its own key.
 managed = {}
 
-# Memory — always on, persisted to claude-data volume so it survives container restarts
-managed['memory'] = {
-    'command': f'{npm_bin}/mcp-server-memory',
-    'args': [],
-    'env': {'MEMORY_FILE_PATH': '/home/coder/.claude/memory.jsonl'}
-}
+# NOTE: there is no `memory` MCP server any more. The knowledge-graph store
+# (memory.jsonl) was a second, invisible memory the model could write to — the
+# cached prefix already told it the store did not exist, because nothing ever
+# read it back. Durable memory is the markdown wiki under project/memory/,
+# written through the memory_write tool.
 
 # Playwright Browser — always on (headless Chromium).
 # Kept in this `managed` dict for backwards compatibility on the legacy

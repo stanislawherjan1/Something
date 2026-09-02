@@ -2,9 +2,9 @@
 card: USER_PROFILE
 purpose: Stable facts about the user — role, location, languages, biographical context
 write_when: User shares a fact about themselves that doesn't change weekly
-write_how: tighten — replace stale facts in place, don't accrete
+write_how: tighten — replace stale facts in place, don't accrete. Written through the memory_write tool
 do_not_write_here: preferences (USER_PREFERENCES), relationships (USER_RELATIONSHIPS), introspections (USER_REFLECTIONS), workflow rules (RULES)
-conflict: new fact replaces old; if non-trivial, leave a `[was: …, since YYYY-MM-DD]` trail
+conflict: a new fact REPLACES the old one — supersede it, never keep both. The previous version stays in the engine log, not on this card
 ---
 
 # USER_PROFILE

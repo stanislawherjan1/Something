@@ -1184,7 +1184,7 @@ else:
     print('[bot] /correct slash menu entry: already patched')
 
 # ── Patch 7: REMOVE the legacy /memory slash command ─────────────────
-# Memory is now fully background/autonomous: reflect-distill auto-applies
+# Memory is written in the conversation through the memory_write tool:
 # safe additive facts (concept pages ≥0.75, canonical cards ≥0.8) with an
 # undo snapshot + audit trail, and RULES/AGENT_IDENTITY land only on
 # cross-day recurrence — all with NO operator review. So the /memory

@@ -4,7 +4,7 @@ purpose: Introspections, observed patterns, recurring themes the user has noted 
 write_when: User reflects on their own behaviour, mood, energy, productivity, or notes a pattern they're seeing
 write_how: append (each entry dated). Rarely tighten — different observations are different data points
 do_not_write_here: preferences (USER_PREFERENCES — those are about engagement, not self-observation); rules (RULES)
-conflict: rare. If two reflections clearly contradict and the user has explicitly retired the older one, strike-through with date
+conflict: rare. If two reflections clearly contradict and the user has explicitly retired the older one, retire-through with date
 ---
 
 # USER_REFLECTIONS

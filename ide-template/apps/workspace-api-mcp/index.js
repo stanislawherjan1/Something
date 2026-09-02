@@ -37,6 +37,69 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
+      name: 'memory_write',
+      description:
+        'Write to the workspace memory wiki. This is the ONLY way to change memory — plain file writes into memory/ are blocked.\n\n' +
+        'CALL IT WITHOUT BEING ASKED whenever a turn produces something durable:\n' +
+        '- a stable fact about the person (role, location, languages, what they are working on)\n' +
+        '- a preference (tone, channel, format, working style)\n' +
+        '- a hard rule ("always…", "never…", "from now on…")\n' +
+        '- a standing duty you are put on the hook for ("every Friday…", "keep an eye on…")\n' +
+        '- a person, client, project or tool that will come up again\n' +
+        'Skip the ephemeral (today\'s weather, a one-off task). Do NOT announce the write; memory upkeep is background work, never a message.\n\n' +
+        'CORRECTIONS ARE THE OTHER HALF OF THE JOB. When someone corrects a fact — "actually…", "no, it is…", "that is wrong", ' +
+        '"we do not use X any more", "it changed", "nie, …", "już nie…", "to nieaktualne", "pomyliłeś się" — call this tool in the SAME turn:\n' +
+        '- op "supersede" when the fact CHANGED (moved city, switched tool, new role): the old claim is replaced everywhere it appears.\n' +
+        '- op "retire" when the fact was NEVER true (a wrong name, a misheard detail): the claim is deleted outright.\n' +
+        'Never write the correction as a new fact next to the old one, and never annotate the old one — the tool keeps the history, the page keeps only the truth. ' +
+        'A correction that lives only in the chat WILL come back as the same mistake.\n\n' +
+        'WHERE IT GOES (op "remember"): pass EITHER `card` or `page`.\n' +
+        '- card "RULES" (hard rules) | "AGENT_TOOLS" (tool gotchas) | "AGENT_IDENTITY" (your voice) — these are SHARED.\n' +
+        '- card "USER_PROFILE" | "USER_PREFERENCES" | "USER_RELATIONSHIPS" | "USER_REFLECTIONS" | "RESPONSIBILITIES" — these are PRIVATE: pass scope "private".\n' +
+        '- page "<slug>" for a recurring entity (a client, project, person) whose detail keeps growing — an accreting page of one atomic claim per line.\n' +
+        'SHARED vs PRIVATE, one test: "would this help a DIFFERENT teammate?" Yes → scope "shared". No — it is about this person, their taste, their contacts → scope "private". ' +
+        'Anything sensitive stays private. In a group conversation only shared memory can be written.\n\n' +
+        'The tool refuses, with a reason, when a credential is detected, when memory already states the same thing differently ' +
+        '(use supersede), or when a correction matches several different claims (re-run naming one of them). Read the reason and act on it.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          op: {
+            type: 'string',
+            enum: ['remember', 'supersede', 'retire', 'rename_entity', 'retire_page', 'revert'],
+            description:
+              'remember: record a new fact. supersede: replace a claim that changed (needs `match` + `text`). ' +
+              'retire: delete a claim that was never true (needs `match`). rename_entity: an entity page was created under the wrong name ' +
+              '(needs `from` + `to`; repoints links so the wrong name stops coming back). retire_page: delete a page that should not exist. ' +
+              'revert: undo one logged write (needs `event_id`).',
+          },
+          text: { type: 'string', description: 'The fact, as ONE atomic sentence. For supersede, the corrected version.' },
+          match: { type: 'string', description: 'supersede/retire: the existing claim to replace or delete — quote it as closely as you can.' },
+          card: { type: 'string', description: 'remember: the card name (see the routing rules above).' },
+          page: { type: 'string', description: 'remember/retire_page: a kebab-case entity slug, e.g. "acme" or "q3-launch".' },
+          section: { type: 'string', description: 'remember: the section heading on the card, e.g. "Identity", "Never", "Communication".' },
+          scope: { type: 'string', enum: ['shared', 'private'], description: 'Default "shared". Use "private" for anything about this one person.' },
+          from: { type: 'string', description: 'rename_entity: the current (wrong) slug.' },
+          to: { type: 'string', description: 'rename_entity: the correct slug.' },
+          reason: { type: 'string', description: 'retire/retire_page: why, in a few words. Kept in the log.' },
+          source: { type: 'string', description: 'Optional: where the fact came from, e.g. "conversation" or "correction".' },
+          event_id: { type: 'string', description: 'revert: the id from a previous write or from memory_log.' },
+        },
+        required: ['op'],
+      },
+    },
+    {
+      name: 'memory_log',
+      description:
+        'What memory writes actually happened recently, newest first — each with its target, what was added or removed, and an id you can pass to ' +
+        'memory_write { op: "revert" }. Memory writes are silent by design, so this is how you answer "what did you save?", "did you remember that?" ' +
+        'or "undo what you just wrote" truthfully instead of from recollection.',
+      inputSchema: {
+        type: 'object',
+        properties: { days: { type: 'integer', minimum: 1, maximum: 90, description: 'How far back to look. Default 7.' } },
+      },
+    },
+    {
       name: 'memory_grep',
       description:
         'Ripgrep-backed search over the workspace memory tree (memory/). ' +
@@ -107,6 +170,68 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+
+  if (name === 'memory_write') {
+    const payload = { ...args };
+    try {
+      const res = await fetch(`${API_BASE}/api/internal/memory-write`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // The turn's identity, set per-spawn by workspace-api/lib/claude.js.
+          'X-IDE-Actor': process.env.IDE_ACTOR_SLUG || '',
+          'X-IDE-Group': process.env.IDE_GROUP_CONTEXT === '1' ? '1' : '0',
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.ok) {
+        // Echo exactly what changed, so the model can verify its own write
+        // rather than assume it — and can undo it in the same turn if wrong.
+        const bits = [];
+        if (data.noop) bits.push('already recorded, nothing to do');
+        if (data.wrote) bits.push(`wrote to ${data.target}: ${data.wrote}`);
+        if (data.replaced) bits.push(`replaced in ${data.targets.join(', ')}:\n` + data.replaced.map(x => `  was: ${x.was}`).join('\n'));
+        if (data.removed) bits.push(`removed from ${[...new Set(data.removed.map(x => x.file))].join(', ')}:\n` + data.removed.map(x => `  ${x.was}`).join('\n'));
+        if (data.from && data.to) bits.push(`renamed ${data.from} → ${data.to}${data.relinked?.length ? `; relinked ${data.relinked.length} page(s)` : ''}`);
+        if (data.restored) bits.push(`reverted; ${data.restored.map(x => `${x.target} (replayed ${x.replayed} later change(s))`).join(', ')}`);
+        const id = data.event_id || data.event_group;
+        return { content: [{ type: 'text', text: `${bits.join('\n') || 'done'}${id ? `\n[event ${id}]` : ''}` }] };
+      }
+      // A refusal is INFORMATION, not a failure: it usually says the fact is
+      // already there in different words, i.e. this is a correction.
+      const hint = data?.needs_supersede
+        ? `\nMemory already says: "${data.existing}"\nRe-run with op:"supersede", match:"${data.existing}" and the corrected text.`
+        : data?.ambiguous
+          ? `\nMatching claims:\n${data.ambiguous.map(a => `  ${a.file}: ${a.text}`).join('\n')}`
+          : '';
+      return { content: [{ type: 'text', text: `${data?.error || `HTTP ${res.status}`}${hint}` }], isError: true };
+    } catch (err) {
+      return {
+        content: [{ type: 'text', text: `memory_write failed: ${err?.message || err}. The fact was NOT saved — say so rather than implying it was.` }],
+        isError: true,
+      };
+    }
+  }
+
+  if (name === 'memory_log') {
+    const days = Number.isInteger(args?.days) ? args.days : 7;
+    try {
+      const res = await fetch(`${API_BASE}/api/internal/memory-log?days=${days}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { content: [{ type: 'text', text: `memory_log HTTP ${res.status}` }], isError: true };
+      if (!data.events?.length) return { content: [{ type: 'text', text: `No memory writes in the last ${days} day(s).` }] };
+      const lines = data.events.map(e => {
+        const what = e.op === 'supersede' ? `replaced ${e.removed.length} claim(s)`
+          : e.op === 'retire' ? `removed ${e.removed.length} claim(s)`
+            : e.added.length ? e.added.join(' | ') : e.op;
+        return `${e.ts.slice(0, 16).replace('T', ' ')}  ${e.op.padEnd(10)} ${e.target}${e.section ? ` › ${e.section}` : ''}\n    ${what}${e.revertable ? `   [revert: ${e.id}]` : ''}`;
+      });
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `memory_log failed: ${err?.message || err}` }], isError: true };
+    }
+  }
 
   if (name === 'memory_grep') {
     const q = String(args?.query || '').trim();

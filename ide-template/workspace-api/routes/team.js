@@ -130,7 +130,7 @@ export default function teamRouter() {
   });
 
   router.patch('/team/:email', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
-    const { role, telegramChatId, preferredSurface, preferredLanguage, autoPromote } = req.body || {};
+    const { role, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
     try {
       let entry = null;
       if (role !== undefined) {
@@ -144,10 +144,7 @@ export default function teamRouter() {
       }
       // Reflect v2: pre-consent to auto-promote this person's org DM facts to
       // shared memory (typically the operator toggles it on themselves).
-      if (autoPromote !== undefined) {
-        entry = team.setAutoPromote(req.params.email, !!autoPromote, req.actor);
-      }
-      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, preferredSurface, preferredLanguage, or autoPromote).' });
+      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, preferredSurface, or preferredLanguage).' });
       res.json({ ok: true, entry });
     } catch (err) {
       res.status(400).json({ error: err.message });

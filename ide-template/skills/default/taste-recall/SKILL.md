@@ -19,7 +19,7 @@ Your job at session start:
 
 ## What to do when you spot a new pattern
 
-If during a session you notice yourself making a mistake you've made before — or the user explicitly rejects an output for a reason that doesn't fit an existing pattern — propose a new pattern card via the `reflect-learnings` chain on close. (Reflect-learnings will surface the proposal for the user to accept or skip.) In team mode a personal-taste pattern is the current user's own → it belongs in their private `memory/users/<slug>/patterns/`, not the shared root; only a genuinely team-wide anti-pattern goes to shared `memory/patterns/`.
+If during a session you notice yourself making a mistake you've made before — or the user explicitly rejects an output for a reason that doesn't fit an existing pattern — write a new pattern card with `memory_write` (page = the pattern slug) the moment you notice it. In team mode a personal-taste pattern is the current user's own → it belongs in their private `memory/users/<slug>/patterns/`, not the shared root; only a genuinely team-wide anti-pattern goes to shared `memory/patterns/`.
 
 **Don't auto-write to `memory/patterns/`** during a session. Patterns are Tier-3 (review only) by default — they're rules that shape future work, so they deserve the user's eye before landing.
 

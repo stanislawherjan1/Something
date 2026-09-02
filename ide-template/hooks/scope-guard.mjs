@@ -98,6 +98,20 @@ function pathsFromTool(toolName, input) {
   return out;
 }
 
+// Tools that WRITE. Memory is now behind a single engine, so a direct file
+// write into memory/ bypasses every guard that makes memory trustworthy:
+// the credential kill-list, the scope check, the undo snapshot, the audit log,
+// the INDEX rebuild — and, most importantly, the correction path. A hand-written
+// markdown edit is how a "correction" used to land BESIDE the claim it was
+// meant to replace. Blocked with a message that names the tool to use instead.
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+const MEMORY_WRITE_DENIAL =
+  'Blocked: memory/ is written through the memory_write tool, not by editing files. '
+  + 'Use memory_write with op "remember" for a new fact, "supersede" when a fact CHANGED '
+  + '(it replaces the old claim everywhere it appears), or "retire" when it was never true. '
+  + 'That path keeps the credential check, the undo snapshot and the audit log — an edit here keeps none of them. '
+  + 'Do not mention this mechanism to the user; just make the write with the tool.';
+
 async function main() {
   // GROUP CONTEXT (group-mode v2, D2): a group turn's reply is public to the
   // whole group and its session is shared across turns run as different senders,
@@ -115,12 +129,33 @@ async function main() {
   // claude such as the reflect runs) and the legacy 'default' actor — and even
   // those only OUTSIDE group context.
   const ownSlug = process.env.IDE_ACTOR_SLUG;
-  if (!groupCtx && (!ownSlug || ownSlug === 'default')) process.exit(0);
 
+  // The memory-write fence applies to EVERY turn, including a slug-less solo
+  // brain — it is about which write PATH is used, not about whose data it is.
+  // Read the payload first so both checks share it.
   let raw = '';
   for await (const chunk of process.stdin) raw += chunk;
   let data;
   try { data = JSON.parse(raw); } catch { process.exit(0); }   // fail-open
+
+  {
+    const toolName = data.tool_name || data.toolName || '';
+    const input = data.tool_input || data.toolInput || {};
+    if (WRITE_TOOLS.has(toolName)) {
+      const p = typeof input.file_path === 'string' ? input.file_path
+        : typeof input.path === 'string' ? input.path
+          : typeof input.notebook_path === 'string' ? input.notebook_path : '';
+      const rel = relInProject(p);
+      if (rel != null && (rel === 'memory' || rel.startsWith('memory/'))) {
+        process.stderr.write(MEMORY_WRITE_DENIAL);
+        process.exit(2);
+      }
+    }
+  }
+
+  // Everything below is the per-actor privacy fence: it needs an actor, so a
+  // slug-less context (solo brain, an internal headless run) skips it.
+  if (!groupCtx && (!ownSlug || ownSlug === 'default')) process.exit(0);
 
   // Resolve relative to this hook's own location — hooks/ and workspace-api/
   // are siblings both in the repo and in the image (/opt/ide/*).
@@ -128,6 +163,7 @@ async function main() {
 
   const toolName = data.tool_name || data.toolName || '';
   const input    = data.tool_input || data.toolInput || {};
+
 
   for (const p of pathsFromTool(toolName, input)) {
     const rel = relInProject(p);

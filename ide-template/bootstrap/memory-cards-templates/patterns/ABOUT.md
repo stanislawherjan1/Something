@@ -16,7 +16,7 @@ Most patterns are **personal taste** (one person's "warmer, less corporate Polis
 
 - **Shared `memory/patterns/`** holds only genuinely **team-wide** anti-patterns (a shared tooling/process failure everyone should avoid).
 - **Private `memory/users/<slug>/patterns/`** holds one person's taste/rejection patterns. `taste-recall` loads the current user's private patterns + the shared ones, never another teammate's.
-- Apply the **"would this help a DIFFERENT teammate?"** test (same as `memory-router`) when deciding where a new pattern lands. Solo workspace → only `memory/patterns/`.
+- Apply the **"would this help a DIFFERENT teammate?"** test when deciding where a new pattern lands. Solo workspace → only `memory/patterns/`.
 
 ## Why this exists
 

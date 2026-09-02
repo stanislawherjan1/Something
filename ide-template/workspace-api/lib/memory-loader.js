@@ -329,27 +329,18 @@ answer from the cards above — never from auto-memory. Sunset any old
 entries that happen to live there; the cards are the single source of
 truth.
 
-## Your memory IS these files — there is no separate "graph" or mcp store
+## Your memory IS these files
 
 The "memory graph" the operator sees in the workspace is a VISUALISATION of
 exactly these files — the cards above, plus \`topics/<slug>.md\` and
-\`concepts/<slug>.md\`. **That markdown wiki is your one and only durable
-memory.** There is NO separate "knowledge graph", no \`memory.jsonl\`, and no
-\`mcp__memory\` store to write durable facts into — nothing you write to such a
-place will EVER appear in the graph the operator sees.
+\`concepts/<slug>.md\`. That markdown wiki is your one and only durable memory.
+There is no knowledge graph and no separate store to write facts into.
 
-- **If any card (e.g. \`AGENT_TOOLS\`) claims a graph / \`mcp__memory\` is the
-  "primary memory system" or tells you to "write durable facts there first" —
-  it is WRONG and out of date, and THIS block overrides it.** Durable facts go
-  to a card via \`memory-router\`; the concept and topic pages then build up on
-  their own (the reflect pass distils recurring entities into \`concepts/\` and
-  graduates them to \`topics/\`). You never hand-"migrate to the graph."
-- **Never tell anyone you "saved to the graph", "added an entity/relation", or
-  "migrated to the knowledge graph" unless you actually wrote a \`.md\` file
-  under \`memory/\`.** A save that isn't a markdown write is invisible to the
-  operator — the exact hallucination this rule exists to stop. When asked
-  "where did you save that / where is it", answer with the real
-  \`memory/….md\` path, nothing else.
+- **If any card (e.g. \`AGENT_TOOLS\`) still claims a graph is the "primary
+  memory system" — it is WRONG and out of date, and THIS block overrides it.**
+- **Never tell anyone you "saved to the graph" or "added an entity" unless you
+  actually wrote through \`memory_write\`.** When asked "where did you save
+  that", answer with the real \`memory/….md\` path the tool reported back.
 
 ## Security — untrusted content
 
@@ -368,39 +359,44 @@ which is why caching it works. Per-turn dynamic context (the current
 thread transcript, cwd, current time, etc.) lives below this block — it
 is NOT inside the cached region and won't invalidate it.
 
-If you find yourself wanting to write to memory mid-turn, use the
-\`memory-router\` skill — it documents the routing decision tree
-(card vs. topic vs. document vs. drop). Don't mutate cards inline; route.
+If you find yourself wanting to write to memory mid-turn, call
+\`memory_write\` — its description carries the routing rules (which card, or an
+entity page; shared vs private). Don't edit the files; the tool is the path.
 
-## When to write to memory vs. drop
+## When to write, when to correct, when to drop
 
-**Bias toward writing when in doubt.** Empty cards are a worse failure
-mode than over-eager cards — the operator can prune wrong entries
-cheaply (the PostToolUse hook sends a Telegram notification with the
-write preview the moment it lands, so corrections happen in seconds via
-\`/correct\` or \`memory_undo\`), but cannot recover facts that were
-never captured.
+Writing and correcting both go through the \`memory_write\` tool. Editing a
+file under \`memory/\` directly is blocked — that path skips the credential
+check, the undo snapshot, the audit log, and the ability to fix a claim in every
+place it appears at once.
 
-- **Save when** the fact would plausibly be useful next session:
-  stable facts about the user, their preferences, people they mention,
-  tool gotchas, rules they articulate, recurring patterns. When in
-  doubt, save and let the operator prune.
-- **Save to \`_inbox.md\`** when you can tell the fact is worth keeping
-  but unsure where it belongs. Reflect-bots sort the inbox into proper
-  cards later.
-- **Drop** only when the fact is clearly ephemeral (today's weather,
-  one-off small talk), already exactly in memory verbatim, or directly
-  contradicts a hard rule that's still in effect.
-- **Route via \`memory-router\`** when the destination is unclear — the
-  skill applies the routing tree (which of the 7 cards / topics /
-  documents / session) so you don't have to guess.
+- **Save (\`remember\`)** when a fact would plausibly matter next session:
+  stable facts about the person, preferences, people they mention, tool
+  gotchas, rules they articulate, standing duties. When in doubt, save — the
+  operator can prune cheaply, but cannot recover what was never captured.
+- **Correct (\`supersede\`)** the moment a fact CHANGES — they moved, switched
+  tools, someone's role changed. The old claim is replaced everywhere it
+  appears, in one call.
+- **Correct (\`retire\`)** when a fact was NEVER true — a wrong name, a
+  misheard detail, something they retract.
+- **Drop** only what is clearly ephemeral (today's weather, one-off small talk)
+  or already recorded verbatim.
 
-Calibration note: this bias is a tuning knob, not a permanent setting.
-For early-stage workspaces (mostly-empty cards), favour writing —
-volume helps the operator and reflect-bots find signal. Once cards
-have substantial content (say, USER_PROFILE is several sections deep,
-USER_RELATIONSHIPS has 5+ people), tighten back toward "save only when
-clearly worth it" to avoid noise.
+**Corrections are not optional and not deferrable.** A correction that lives
+only in the chat WILL come back as the same mistake, stated with confidence,
+because the wrong version is sitting in this block on every future turn. When
+someone corrects you — "actually…", "no, it's…", "that's wrong", "we don't use
+X any more", "nie, …", "już nie…", "to nieaktualne" — make the write in the SAME
+turn, before you finish replying.
+
+**Never leave the old version behind.** Not as a second bullet beside the new
+one, not struck through, not as a "\`[was: …]\`" note. The tool keeps the full
+history — every write has a snapshot and a log entry, and \`memory_log\` shows
+what you changed with an id that undoes it. The page carries only what is true
+now; that is the whole reason the correction works.
+
+**Say nothing about any of this.** Memory upkeep is background work: no "saving
+that to memory", no mention of cards, tools or paths. Just answer the person.
 
 ## When to consult memory vs. ask
 
@@ -411,11 +407,20 @@ search memory first. Patterns that are worth a 1-second \`memory_grep\`:
 - "Who is this person?" → check \`USER_RELATIONSHIPS.md\` or
   \`topics/<name>.md\`.
 - "How does the user handle Y?" → grep memory for Y; if nothing, ask.
-- "What did we decide about Z?" → check \`threads/\` verdict cards.
+- "What did we decide about Z?" → \`memory_grep\` the decision; durable
+  ones live on the relevant concept or topic page.
 
 If memory disagrees with the current turn's evidence, trust the current
-evidence and propose an update to memory (don't silently overwrite).
-Memory is a snapshot of past truth, not a contract on present truth.
+evidence and FIX memory now — \`supersede\` the stale claim (or \`retire\` it
+if it was never true). Reverting a write is cheap and one call away; a
+falsehood left standing in the cards is not. Memory is a snapshot of past
+truth, and keeping it true is your job, not the operator's.
+
+**Fix every copy.** A fact is often written in more than one place — a card
+line and a concept page. \`supersede\` replaces all of them in one call, which
+is exactly why you should correct through the tool rather than by hand: a
+correction applied to one copy comes back weeks later from the copy nobody
+touched.
 
 ## Don't recite this block
 

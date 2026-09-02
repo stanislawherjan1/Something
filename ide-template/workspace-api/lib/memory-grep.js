@@ -52,6 +52,8 @@ function memoryRoot() {
  * @param {boolean} [opts.ignoreCase=true]    — case-insensitive matching
  * @param {number}  [opts.totalLimit=80]      — cap the response list size
  * @param {number}  [opts.timeoutMs=3000]     — rg wall-clock cap
+ * @param {string}  [opts.actor]              — slug whose OWN private tree is
+ *        searched too. Another teammate's tree is never searched, whoever asks.
  *
  * Throws on invalid query. Returns [] when memory/ is missing.
  */
@@ -72,95 +74,23 @@ export async function grepMemory(query, opts = {}) {
   const totalLimit  = Number(opts.totalLimit ?? 80);
   const timeoutMs   = Number(opts.timeoutMs ?? 3000);
 
+  const actor = typeof opts.actor === 'string' && /^[a-z0-9-]+$/.test(opts.actor) && opts.actor !== 'default'
+    ? opts.actor
+    : null;
+
   try {
-    const results = await runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, timeoutMs });
+    const results = await runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, timeoutMs, actor });
     return results.slice(0, totalLimit);
   } catch (err) {
     // rg missing or transient failure → fall back to pure-Node line scan.
     // The fallback is slower + less correct but keeps the tool functional
     // in dev environments without rg installed.
     process.stderr.write(`[memory-grep] rg unavailable (${err.message}); using JS fallback\n`);
-    return jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit });
+    return jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit, actor });
   }
 }
 
-// ─── Smart grep — semantic query expansion (reflect v2, cognee-inspired) ──────
-// Literal grep misses "pricing decision" when the memory says "cennik" or "what
-// we agreed on rates". Rather than a vector DB (a whole service + embeddings key
-// on a 4GB VPS), one cheap Haiku call expands the query into a rg alternation of
-// synonyms, PL/EN translations, and inflections — closing most of the semantic
-// gap with zero new infrastructure. Only fires when the literal search is thin.
-const SMART_MIN_HITS = 2;      // literal hits at/below this → try expansion
-const SMART_MAX_TERMS = 12;
-
-async function expandQuery(query) {
-  const { CLAUDE_BIN } = await import('./config.js');
-  const { hasClaudeToken, readClaudeToken } = await import('./setup.js');
-  const { tmpdir } = await import('node:os');
-  const model = process.env.MEMORY_GREP_EXPAND_MODEL || 'claude-haiku-4-5';
-  const system = 'You expand a memory-search query into search terms. Output ONLY a JSON array of 3-12 short strings: synonyms, the Polish AND English forms, common inflections/root words, and closely related terms for the query. Terms are matched case-insensitively as substrings, so prefer roots ("cen" catches cena/cennik/ceny). No sentences, no explanations. Example: for "pricing decision" → ["pricing","price","cennik","cena","cen","rate","stawka","koszt","agreed on rates"].';
-  return await new Promise((resolve) => {
-    let proc;
-    try {
-      const env = { ...process.env };
-      if (!env.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
-        try { env.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); } catch { /* fall through */ }
-      }
-      proc = spawn(CLAUDE_BIN, ['-p', '--dangerously-skip-permissions', '--strict-mcp-config',
-        '--no-session-persistence', '--model', model, '--append-system-prompt', system, '--output-format', 'text'],
-        { stdio: ['pipe', 'pipe', 'pipe'], env, cwd: tmpdir() });
-    } catch { return resolve([]); }
-    let out = '', done = false;
-    const finish = (v) => { if (done) return; done = true; clearTimeout(t); try { proc.kill('SIGKILL'); } catch { /* gone */ } resolve(v); };
-    const t = setTimeout(() => finish([]), Number(process.env.MEMORY_GREP_EXPAND_TIMEOUT_MS) || 8000);
-    proc.stdin.write(`Query: ${query}\nOutput the JSON array of search terms now.`); proc.stdin.end();
-    proc.stdout.on('data', (c) => { out += c.toString('utf8'); });
-    proc.on('error', () => finish([]));
-    proc.on('close', () => {
-      const m = out.match(/\[[\s\S]*\]/);
-      if (!m) return finish([]);
-      try {
-        const arr = JSON.parse(m[0]);
-        finish(Array.isArray(arr) ? arr.filter(s => typeof s === 'string' && s.trim()).map(s => s.trim()).slice(0, SMART_MAX_TERMS) : []);
-      } catch { finish([]); }
-    });
-  });
-}
-
-/**
- * Semantic-ish memory search: literal grep first; if it's thin, expand the query
- * (Haiku) into related terms and regex-grep their alternation, then merge. Falls
- * back to plain literal results if expansion is unavailable/empty. Returns the
- * same `[{file,line,snippet}]` shape plus, when expansion ran, `_expandedWith`.
- */
-export async function grepMemorySmart(query, opts = {}) {
-  const literal = await grepMemory(query, opts);
-  if (literal.length > SMART_MIN_HITS || process.env.MEMORY_GREP_EXPAND === '0') return literal;
-
-  const terms = await expandQuery(query);
-  const extra = [...new Set(terms.map(t => t.toLowerCase()))]
-    .filter(t => t && t.toLowerCase() !== query.toLowerCase());
-  if (!extra.length) return literal;
-
-  // Build a safe alternation: escape each term, join with |, case-insensitive.
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = extra.map(esc).join('|');
-  let expanded = [];
-  try {
-    expanded = await grepMemory(pattern, { ...opts, regex: true });
-  } catch { expanded = []; }
-
-  const seen = new Set(literal.map(r => `${r.file}:${r.line}`));
-  const merged = [...literal];
-  for (const r of expanded) {
-    const k = `${r.file}:${r.line}`;
-    if (!seen.has(k)) { seen.add(k); merged.push(r); }
-  }
-  merged._expandedWith = extra;
-  return merged;
-}
-
-function runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, timeoutMs }) {
+function runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, timeoutMs, actor }) {
   return new Promise((resolve, reject) => {
     const args = [
       '--json',
@@ -170,15 +100,19 @@ function runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, tim
       '--with-filename',
       '--line-number',
       '--type', 'md',
-      // Team mode: never grep INTO a user's private memory (memory/users/<slug>/).
-      // memory_grep is an MCP tool — it bypasses the file-path scope-guard hook —
-      // so a member (or the dashboard search) must not be able to surface another
-      // teammate's private cards. Shared memory only; a user's own private memory
-      // is in their cached prefix + reachable via Read.
+      // Never grep into ANOTHER person's private memory: memory_grep is an MCP
+      // tool, so it bypasses the file-path scope-guard hook.
       '--glob', '!users/**',
-      // Reflect v2: verdict plumbing is not agent-facing memory.
-      '--glob', '!_reflect/**',
+      // The engine's log + undo snapshots are the audit trail, not memory the
+      // agent reads back: a retired claim lives on there by design, and grepping
+      // it would resurrect exactly the wording a correction removed.
+      '--glob', '!_engine/**',
     ];
+    // ...but DO search the caller's OWN private tree. Their concept/topic pages
+    // are never in the cached prefix, so with the blanket exclusion their own
+    // private depth was write-only: they could store it and never find it again.
+    // A later glob wins in ripgrep, so this re-includes just this one subtree.
+    if (actor) args.push('--glob', `users/${actor}/**`);
     if (!regex) args.push('--fixed-strings');
     if (ignoreCase) args.push('--ignore-case');
     args.push('--', query, root);
@@ -238,7 +172,7 @@ function runRipgrep({ query, root, maxCount, maxFilesize, ignoreCase, regex, tim
  * trees the workspace deals with (≤ ~30 files) and the small handful of dev
  * environments without ripgrep installed.
  */
-function jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit }) {
+function jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit, actor }) {
   const out = [];
   let matcher;
   try {
@@ -253,11 +187,14 @@ function jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit }
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
       if (out.length >= totalLimit) return;
-      // Skip per-user private memory (parity with the rg --glob '!users/**'
-      // exclusion above) — never surface another teammate's private cards.
-      if (e.isDirectory() && dir === root && e.name === 'users') continue;
-      // Parity with rg '!_reflect/**' — verdict plumbing never surfaces in grep.
-      if (e.isDirectory() && e.name === '_reflect') continue;
+      // Parity with the rg globs above: skip everyone else's private tree, keep
+      // the caller's own, and never surface the engine's audit trail.
+      if (e.isDirectory() && dir === root && e.name === 'users') {
+        if (!actor) continue;
+        walkUsers(join(dir, e.name));
+        continue;
+      }
+      if (e.isDirectory() && (e.name === '_engine' || e.name === '_reflect')) continue;
       const abs = join(dir, e.name);
       if (e.isDirectory()) { walk(abs); continue; }
       if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
@@ -289,6 +226,15 @@ function jsGrepFallback({ query, root, maxCount, ignoreCase, regex, totalLimit }
       }
     }
   }
+  // Only the actor's own subtree under users/.
+  function walkUsers(usersDir) {
+    let entries;
+    try { entries = readdirSync(usersDir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.isDirectory() && e.name === actor) walk(join(usersDir, e.name));
+    }
+  }
+
   walk(root);
   return out;
 }

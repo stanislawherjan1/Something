@@ -87,14 +87,9 @@ ide-template/skills/
 │   ├── file-placement/             ← where-to-save decision tree
 │   ├── legacy-drive-sync/          ← only when LEGACY_DRIVE_SYNC=true (rclone reliability)
 │   ├── memory-cards/               ← 7-card memory model (read at session start)
-│   ├── memory-reindex/             ← weekly knowledge graph refresh
-│   ├── memory-router/              ← routes a fact to the right card on write
 │   ├── non-technical-comms/        ← business-language framing for non-technical users
 │   ├── playwright-protocol/        ← safe browser automation
 │   ├── project-backup/             ← tar.gz + Telegram delivery
-│   ├── reflect-learnings/          ← proposes memory updates (queued in _drafts/ for /memory approve)
-│   ├── reflect-organizer/          ← documents/ tidying proposals
-│   ├── reflect-summary/            ← thread title + summary generation
 │   ├── reminders/                  ← set_reminder MCP + [REMINDER] trigger handling
 │   ├── repo-audit/                 ← weekly structure review
 │   ├── security/                   ← untrusted-content discipline (5 rules)
@@ -118,7 +113,7 @@ ide-template/skills/
 
 **INDEX.md autogen at boot.** Entrypoint walks both skill trees, parses each `SKILL.md` frontmatter, and writes a one-line-per-skill `~/project/.claude/skills/INDEX.md`. The model uses `cat INDEX.md | grep -i <keyword>` to verify skill existence before claiming absence (per the **Before claiming absence** rule in global-claude.md). Eliminates "I don't have a skill for X" hallucinations.
 
-**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `memory-router/references/routing-rules.md`, `reflect-learnings/references/{rules, proposal-examples}`, `capability-tour/references/{mcp-defaults, gap-handling}`. The remaining 7 default split candidates (repo-audit, memory-reindex, task-management, security, reminders, file-placement, project-backup) are queued for Phase 2.
+**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`. The remaining default split candidates (repo-audit, task-management, security, reminders, file-placement, project-backup) are queued for Phase 2.
 
 **`allowed-tools` field is mandatory** for new skills — declares the minimum tool scope. Pure-reference skills get `Read`. Memory skills get `Read, Edit, Write`. Integration skills get tight MCP wildcards (`mcp__shopify__*`). Defaults to full access if omitted — only do that for orchestration skills that genuinely need everything.
 

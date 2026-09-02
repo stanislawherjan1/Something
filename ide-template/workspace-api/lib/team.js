@@ -187,7 +187,6 @@ export function list() {
     // from THIS person's private DMs auto-promote to shared team memory (with an
     // audit trail) instead of prompting them for consent each time. A one-time
     // pre-consent; the operator typically sets it on themselves.
-    autoPromote:      e.autoPromote === true,
   })).filter(e => isValidEmail(e.email));
   return withProfiles(valid);   // fills slug/displayName if absent (deterministic)
 }
@@ -507,28 +506,7 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
   return getUser(e);
 }
 
-/**
- * Set the reflect v2 autoPromote pre-consent flag for one member. When true,
- * org-classified non-sensitive facts from that person's private DMs promote to
- * shared team memory automatically (audit-logged) rather than pinging them.
- * Typically the operator sets it on themselves.
- */
-export function setAutoPromote(email, value, actor) {
-  const e = normalize(email);
-  const entries = readRaw();
-  const idx = entries.findIndex(x => normalize(x.email) === e);
-  if (idx === -1) throw new Error(`${e} is not on the team.`);
-  entries[idx] = { ...entries[idx], autoPromote: !!value };
-  writeRaw(entries);
-  appendAudit('auto_promote', e, { actor: normalize(actor) || null, value: !!value });
-  return getUser(e);
-}
 
-/** Slugs of members who have opted into autoPromote. Used by reflect-distill's
- *  promotion scout to decide auto-apply vs a queued consent candidate. */
-export function autoPromoteOwners() {
-  return list().filter(m => m.autoPromote && m.slug).map(m => m.slug);
-}
 
 /**
  * The Telegram chat ids allowed to DM the bot, derived from the team store —

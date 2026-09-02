@@ -25,4 +25,4 @@ When you promote a card section into a topic page, leave a pointer in the card:
 - Recurring themes: pricing, churn
 ```
 
-The pointer line is what reflect-learnings + the agent's session-start load expect to see.
+The pointer line is what the agent's session-start load expects to see.

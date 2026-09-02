@@ -17,7 +17,7 @@ USE when the user wants to:
 DO NOT USE when:
 - User wants to INVOKE an existing skill → just invoke it directly
 - User asks where to save a non-skill file → use `file-placement` skill
-- User wants to save a fact/preference → use `memory-router` skill
+- User wants to save a fact/preference → use the `memory_write` tool
 - User wants to write a markdown document → not a skill, save under `documents/`
 
 ## Mode: reference vs runnable

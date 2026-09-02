@@ -50,7 +50,7 @@ THEY own (their inbox, their boards), and write their brief. No slug / solo → 
    The goal is the CURRENT state of each thing that matters, not a skim of subject lines.
 3. **Reconcile + REFRESH MEMORY (the core job).** Wherever a live source shows an update on
    something memory tracks — a status change, a decision, a new durable fact, a resolved
-   item — UPDATE the memory card now (follow `memory-router`: the right `concepts/` or topic
+   item — UPDATE the memory card now with `memory_write` (the right `concepts/` or topic
    card, or the person's card). *Example: a source shows something you'd tracked as "pending" is
    now done → edit that item's card from "pending" to "done, <date>".* This closes the loop
    source→memory so the next plan starts from reality. Capture DURABLE facts only — a real

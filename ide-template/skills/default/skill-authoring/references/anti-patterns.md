@@ -24,8 +24,7 @@ Describes implementation, not user value. Users don't say *"implement the entity
 
 ### Missing negative triggers (when overlap exists)
 If two skills could plausibly handle the same request, each must say "do NOT use for X, use Y". Example overlap pairs in this workspace:
-- `memory-router` ↔ `memory-cards` ↔ `file-placement`
-- `reflect-learnings` ↔ `reflect-organizer` ↔ `reflect-summary`
+- `memory-cards` ↔ `file-placement`
 - `task-management` ↔ `reminders`
 
 Without negative triggers, the model may load the wrong skill (or both) and the routing degrades.

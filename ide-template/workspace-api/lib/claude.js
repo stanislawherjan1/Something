@@ -13,9 +13,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { userInfo } from 'node:os';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
@@ -194,44 +192,6 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // nonces per call, broker tracks them server-side.
   try { syncMcpServers(); }
   catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
-
-  // Per-user knowledge graph (team mode). The mcp__memory server otherwise reads
-  // ONE shared memory.jsonl for the whole team — so a member's bot could pull
-  // another teammate's entities via mcp__memory__search_nodes (the KG bypasses the
-  // file-path scope-guard hook). Give each MEMBER a private KG by cloning the
-  // just-synced /home/bot/.claude.json with the memory server's MEMORY_FILE_PATH
-  // pointed at their own (scope-guarded) memory/users/<slug>/kg.jsonl. Admin +
-  // Telegram + solo keep the shared store (it's the operator's accumulated KG —
-  // no migration). The clone carries broker nonces, so it's written 0600 in
-  // wsapi's own home (claude runs as wsapi and reads it). Per-actor file → no
-  // cross-actor race; falls back to the shared config (logged) on any error.
-  // Group-context turns SKIP the per-user KG clone: pointing the memory MCP at
-  // the sender's private kg.jsonl would feed their private entities into a
-  // shared, publicly-replying context (the KG bypasses the path scope-guard).
-  // They use the shared workspace KG instead — the same store the operator's
-  // group turns always used.
-  if (!groupContext && actor && actor !== 'default' && !actorIsAdmin && /^[a-z0-9-]+$/.test(actor)) {
-    try {
-      const cfg = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'));
-      const mem = cfg.mcpServers && cfg.mcpServers.memory;
-      if (mem && mem.env) {
-        const kgDir = join(PROJECT_DIR, 'memory', 'users', actor);
-        mkdirSync(kgDir, { recursive: true });
-        mem.env.MEMORY_FILE_PATH = join(kgDir, 'kg.jsonl');
-        // userInfo().homedir reads the PASSWD home (/home/wsapi, mode 700) —
-        // independent of the process HOME env (pm2 may set it anywhere), and a
-        // private dir so the clone (which carries broker nonces) can't be
-        // pre-placed/symlinked by another uid the way a /tmp path could. claude
-        // runs as wsapi and reads it.
-        const perUserCfg = join(userInfo().homedir, `.kg-mcp-${actor}.json`);
-        writeFileSync(perUserCfg, JSON.stringify(cfg), { mode: 0o600 });
-        const mci = args.indexOf('--mcp-config');
-        if (mci !== -1) args[mci + 1] = perUserCfg;
-      }
-    } catch (err) {
-      process.stderr.write(`[claude/per-user-kg] ${err.message} — falling back to shared KG\n`);
-    }
-  }
 
   // Inject the stored OAuth token if it exists and isn't already in env.
   // This covers the self-service wizard path: token saved via /api/setup/token,

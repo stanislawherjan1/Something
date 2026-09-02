@@ -330,11 +330,9 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
     const colour = NODE_COLOURS[node.kind] || NODE_COLOURS.topic;
     let radius = NODE_RADIUS[node.kind] || 5;
     // A concept grows with its link degree (capped) — a ripe, heavily-referenced
-    // entity reads as a hub. A synthetic concept (heat ≥ threshold but no page on
-    // disk yet) is sized by its heat instead, and rendered hollow/dashed below.
+    // entity reads as a hub.
     if (node.kind === 'concept') {
-      const deg = node.synthetic ? (node.heat || 0) : (degreeMap.get(node.id) || 0);
-      radius = Math.min(11, 6 + deg * 0.7);
+      radius = Math.min(11, 6 + (degreeMap.get(node.id) || 0) * 0.7);
     }
     const isMatch = matchSet.size > 0 && matchSet.has(node.id);
     const dimmed = matchSet.size > 0 && !isMatch;
@@ -361,19 +359,14 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
       ctx.globalAlpha = 1;
     }
 
-    const isSynthetic = isConcept && node.synthetic;
     tracePath(radius);
     ctx.fillStyle = dimmed ? '#94a3b8' : colour.fill;
-    // A page-less (synthetic) concept renders hollow — it's a slug that's hot
-    // enough to promote but has no page yet.
-    ctx.globalAlpha = dimmed ? 0.4 : (isSynthetic ? 0.18 : 1);
+    ctx.globalAlpha = dimmed ? 0.4 : 1;
     ctx.fill();
     ctx.lineWidth = 1.25 / globalScale;
-    if (isSynthetic) ctx.setLineDash([3 / globalScale, 2 / globalScale]);
     ctx.strokeStyle = dimmed ? '#475569' : colour.stroke;
-    ctx.globalAlpha = dimmed ? 0.4 : (isSynthetic ? 0.85 : 1);
+    ctx.globalAlpha = dimmed ? 0.4 : 1;
     ctx.stroke();
-    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     // Clusters are framed by a single loop drawn behind them
@@ -877,10 +870,9 @@ function MemoryCardModal({ node, onClose }) {
   const [content, setContent] = useState('');
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState(null);
-  const [seeding, setSeeding] = useState(false);
-  // An emerging (synthetic) concept has no page on disk yet — reading it would
-  // 404. Reflect v2 renders an explainer instead: it's a normal, transient state.
-  const isEmerging = !!node.synthetic || !node.relPath;
+  // Every node now has a file behind it. A node without one is a stale graph
+  // payload (an open dashboard across a rebuild), so we say so rather than 404.
+  const isEmerging = !node.relPath;
 
   useEffect(() => {
     if (isEmerging) { setStatus('emerging'); return; }
@@ -907,14 +899,6 @@ function MemoryCardModal({ node, onClose }) {
     return () => { cancelled = true; };
   }, [node.relPath, isEmerging]);
 
-  const seedNow = async () => {
-    setSeeding(true);
-    try {
-      const r = await fetch(`/api/memory/seed?slug=${encodeURIComponent(node.baseStem || node.id.replace(/^yours:/, ''))}`, { method: 'POST' });
-      if (r.ok) { onClose(); window.dispatchEvent(new CustomEvent('memory-graph-refresh')); }
-      else setSeeding(false);
-    } catch { setSeeding(false); }
-  };
 
   // Esc to close + lock body scroll.
   useEffect(() => {
@@ -978,24 +962,11 @@ function MemoryCardModal({ node, onClose }) {
           )}
           {status === 'emerging' && (
             <div className="mx-auto min-h-full w-full max-w-2xl px-8 py-10">
-              <div className="rounded-lg border border-dashed border-amber-500/40 bg-amber-500/[0.05] px-6 py-6">
-                <div className="text-[14px] font-semibold text-foreground/90">Emerging concept: no page yet</div>
+              <div className="rounded-lg border border-dashed border-border/60 px-6 py-6">
+                <div className="text-[14px] font-semibold text-foreground/90">No page for this entry</div>
                 <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
-                  I keep hearing about <span className="font-medium text-foreground/85">{node.baseStem || node.name?.replace(/\.md$/, '')}</span>, it came up across{' '}
-                  <span className="font-medium text-foreground/85">{Math.round(node.heat || 0)}</span> recent conversation{Math.round(node.heat || 0) === 1 ? '' : 's'} but doesn't have its own page yet. Once it stays warm, the memory pass writes a full page automatically: no action needed.
+                  Nothing is stored under this name. Refresh the graph — it may have been renamed or removed since this view loaded.
                 </p>
-                <div className="mt-5 flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={seedNow}
-                    disabled={seeding}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {seeding ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" strokeWidth={2} />}
-                    {seeding ? 'Creating…' : 'Create its page now'}
-                  </button>
-                  <span className="text-[11.5px] text-muted-foreground/60">or leave it, it forms on its own</span>
-                </div>
               </div>
             </div>
           )}

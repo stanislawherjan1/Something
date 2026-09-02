@@ -47,6 +47,8 @@ import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
 import { migrateDefaultMemory } from './lib/memory-loader.js';
 import { writeRecentSnapshot } from './lib/recent-snapshot.js';
+import { reindexAll } from './lib/memory-engine.js';
+import { migrateToEngine } from './lib/memory-migrate.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -206,24 +208,25 @@ try {
   process.stderr.write(`[workspace-api] telegram snapshot relocation failed: ${err.message}\n`);
 }
 
-// Read-path backfill: every concept/topic page needs an INDEX signpost so the
-// bot can find it (pages live outside the cached prefix; memory_grep skips
-// users/**). New pages self-signpost via reflect-apply apply/graduate; this
-// one-shot `reindex` on boot covers pages that PREDATE the signpost mechanism —
-// i.e. the fleet-cascade backfill, automatic per client, no manual step. Runs as
-// THIS process (wsapi) — the same uid that writes reflect's pages, so index
-// ownership stays consistent (no chown). Detached + best-effort: idempotent, and
-// it must never block wsapi from becoming ready.
+// INDEX maps are machine-generated: rebuild them at boot so a tree that was
+// edited outside the engine (a hand edit, a restore, a fleet upgrade that
+// predates the engine) still has an accurate map. Cheap and idempotent —
+// nothing is written for a scope that has no pages.
 try {
-  const REFLECT_APPLY = process.env.REFLECT_APPLY_PY || '/opt/ide/hooks/reflect-apply.py';
-  if (existsSync(REFLECT_APPLY)) {
-    const child = spawn('python3', [REFLECT_APPLY, 'reindex'], { stdio: 'ignore', detached: true, env: process.env });
-    child.on('error', (e) => process.stderr.write(`[workspace-api] memory reindex spawn failed: ${e.message}\n`));
-    child.unref();
-    process.stdout.write('[workspace-api] memory INDEX reindex kicked off (read-path signpost backfill)\n');
-  }
+  const n = reindexAll();
+  if (n) process.stdout.write(`[workspace-api] memory INDEX rebuilt for ${n} scope(s)\n`);
 } catch (err) {
   process.stderr.write(`[workspace-api] memory reindex failed: ${err.message}\n`);
+}
+
+// One-shot migration off the retired reflect pipeline: archive its files out of
+// the project tree and clean the old "leave a trace of the error" furniture off
+// the cards. Idempotent; a no-op once done.
+try {
+  const r = migrateToEngine();
+  if (r && r.migrated) process.stdout.write(`[workspace-api] memory v3 migration: ${r.summary}\n`);
+} catch (err) {
+  process.stderr.write(`[workspace-api] memory migration failed: ${err.message}\n`);
 }
 
 // Seed the egress allowlist file on every boot — covers the cold-start

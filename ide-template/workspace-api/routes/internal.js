@@ -19,11 +19,8 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId } from '../lib/team.js';
 import { sendTelegramMessage, routeTelegramInbound } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage } from '../lib/integrations/group-watcher.js';
+import * as memoryEngine from '../lib/memory-engine.js';
 import { runClaudeTurn } from '../lib/claude.js';
-import { summarizeThread, sweepIdleThreads } from '../lib/reflect-summary.js';
-import { distillVerdicts } from '../lib/reflect-distill.js';
-import { curatePages } from '../lib/reflect-curate.js';
-import { lintMemory } from '../lib/memory-lint.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
 
@@ -528,75 +525,91 @@ export default function internalRouter() {
     } catch (err) { process.stderr.write(`[internal] group-joined failed: ${err.message}\n`); }
   });
 
-  // Reflect-summary (P4 Track B): summarise a FINISHED thread → verdict card
-  // (memory/threads/<id>.md, surfaced as a thread node + cross-thread `entities:`
-  // edges in the memory graph). The idle trigger posts here on session close;
-  // also the manual entry point for testing. Awaits the LLM (Haiku, a few s) so
-  // the caller gets the result. loopback only.
-  router.post('/internal/reflect-summary', loopbackOnly, async (req, res) => {
+  // The reflect pipeline that used to live here — reflect-summary, reflect-sweep,
+  // reflect-distill, reflect-curate, memory-lint — is gone. It wrote memory in the
+  // background from verdict cards, could only ever APPEND, and fed queues nobody
+  // drained. Memory is now written in the conversation that produced the fact,
+  // through the engine below.
+
+  // ─── Memory engine — the ONE write path ────────────────────────────────────
+  // The `memory_write` MCP tool posts here; wsapi is the single process that
+  // touches memory/, which keeps one uid on the tree (no coder-vs-wsapi
+  // permission trap) and one place where the guards live.
+  //
+  // IDENTITY: the MCP forwards the turn's IDE_ACTOR_SLUG / IDE_GROUP_CONTEXT as
+  // headers. Trusting a header is only safe because this route is loopback-only
+  // and those env vars are set per-spawn by lib/claude.js — the same trust
+  // boundary the scope-guard hook already runs on. A browser reaches wsapi
+  // through the separate nginx container, so its peer is never loopback.
+  router.post('/internal/memory-write', loopbackOnly, async (req, res) => {
+    const body = req.body || {};
+    const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+    const actorRaw = hdr('x-ide-actor') || body.actor || '';
+    const actor = /^[a-z0-9-]+$/.test(actorRaw) ? actorRaw : null;
+    const inGroup = hdr('x-ide-group') === '1';
+
+    // A group turn's reply is public and its session is shared across senders,
+    // so a group write may only ever touch SHARED memory. Private work is
+    // delegated to a DM turn ([[PRIVATE_TASK]]), which runs with its own actor.
+    if (inGroup && (body.scope === 'private' || body.owner)) {
+      return res.status(403).json({ ok: false, error: 'this is a group conversation — only shared memory can be written here' });
+    }
+    const scope = inGroup ? 'shared' : (body.scope === 'private' ? 'private' : 'shared');
+    // A private write defaults to the ACTOR's own tree; the engine refuses any
+    // other owner anyway (same rule that guards reads).
+    const owner = scope === 'private' ? (body.owner || actor) : undefined;
+
     try {
-      const { threadId, transcript, scope, owner } = req.body || {};
-      const r = await summarizeThread({ threadId, transcript, forceScope: scope || null, forceOwner: owner || null });
-      return res.status(r.ok ? 200 : 422).json(r);
+      const common = { actor, scope, owner };
+      let out;
+      switch (String(body.op || '')) {
+        case 'remember':
+          out = memoryEngine.remember({ ...common, card: body.card, page: body.page, section: body.section, text: body.text, source: body.source });
+          break;
+        case 'supersede':
+          out = memoryEngine.supersede({ actor, match: body.match, text: body.text, source: body.source });
+          break;
+        case 'retire':
+          out = memoryEngine.retire({ actor, match: body.match, reason: body.reason });
+          break;
+        case 'retire_page':
+          out = memoryEngine.retirePage({ ...common, page: body.page, reason: body.reason });
+          break;
+        case 'rename_entity':
+          out = memoryEngine.renameEntity({ ...common, from: body.from, to: body.to });
+          break;
+        case 'revert':
+          out = memoryEngine.revert({ actor, eventId: body.event_id });
+          break;
+        default:
+          return res.status(400).json({ ok: false, error: `unknown op ${JSON.stringify(body.op)}` });
+      }
+      return res.status(out.ok ? 200 : 422).json(out);
     } catch (err) {
-      process.stderr.write(`[internal] reflect-summary failed: ${err.message}\n`);
+      process.stderr.write(`[internal] memory-write failed: ${err.stack || err}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
 
-  // Reflect-sweep: find idle threads (web sessions + the Telegram burst that just
-  // went quiet) and summarise any lacking an up-to-date verdict card. The
-  // recent-snapshot monitor calls this every tick; server-side single-flight +
-  // dedup + a per-tick cap make frequent calls safe. loopback only.
-  router.post('/internal/reflect-sweep', loopbackOnly, async (req, res) => {
+  // What the engine wrote lately. Memory writes are SILENT by contract — no
+  // push on any surface — so this is how "what did you save?" is answered, and
+  // what the dashboard's memory feed reads.
+  router.get('/internal/memory-log', loopbackOnly, (req, res) => {
     try {
-      const r = await sweepIdleThreads(req.body || {});
-      return res.json(r);
+      const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
+      const since = Date.now() - days * 86400 * 1000;
+      const events = memoryEngine.readLog({ limit: 200, since })
+        .filter(e => e.op !== 'relink')
+        .map(e => ({
+          id: e.id, ts: e.ts, op: e.op, target: e.target, section: e.section,
+          scope: e.scope, owner: e.owner, source: e.source,
+          added: (e.added || []).map(a => a.line), removed: e.removed || [],
+          revertable: !!e.undo,
+        }))
+        .reverse();
+      return res.json({ count: events.length, days, events });
     } catch (err) {
-      process.stderr.write(`[internal] reflect-sweep failed: ${err.message}\n`);
-      return res.status(500).json({ ok: false, error: err.message });
-    }
-  });
-
-  // Reflect-distill: read recent thread verdicts → propose DURABLE 7-card updates
-  // (via reflect-apply.py → _drafts → /memory review). Self-rate-limited (~12h) +
-  // single-flight; the monitor calls it every tick (cheap no-op until due). Pass
-  // {"force":true} to bypass the rate-limit (manual/testing). loopback only.
-  router.post('/internal/reflect-distill', loopbackOnly, async (req, res) => {
-    try {
-      const r = await distillVerdicts(req.body || {});
-      return res.json(r);
-    } catch (err) {
-      process.stderr.write(`[internal] reflect-distill failed: ${err.message}\n`);
-      return res.status(500).json({ ok: false, error: err.message });
-    }
-  });
-
-  // Reflect-curate (reflect v2): rewrite pages whose Claims buffer is full/stale
-  // so they stay tight instead of degrading into append-only logs. Self-rate-
-  // limited (~12h) + single-flight; the monitor calls it every tick (cheap no-op
-  // until due). Pass {"force":true} to bypass the rate-limit. loopback only.
-  router.post('/internal/reflect-curate', loopbackOnly, async (req, res) => {
-    try {
-      const r = await curatePages(req.body || {});
-      return res.json(r);
-    } catch (err) {
-      process.stderr.write(`[internal] reflect-curate failed: ${err.message}\n`);
-      return res.status(500).json({ ok: false, error: err.message });
-    }
-  });
-
-  // Memory-lint: health-check the shared wiki → advisory findings → _drafts
-  // (via reflect-apply.py → /memory review). Self-rate-limited (~24h, heaviest
-  // reflect call) + single-flight; the monitor calls it every tick (cheap no-op
-  // until due). Pass {"force":true} to bypass the rate-limit. loopback only.
-  router.post('/internal/memory-lint', loopbackOnly, async (req, res) => {
-    try {
-      const r = await lintMemory(req.body || {});
-      return res.json(r);
-    } catch (err) {
-      process.stderr.write(`[internal] memory-lint failed: ${err.message}\n`);
-      return res.status(500).json({ ok: false, error: err.message });
+      return res.status(500).json({ error: err.message });
     }
   });
 

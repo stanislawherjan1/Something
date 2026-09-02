@@ -202,7 +202,7 @@ function clearSession(chatId) {
 
 // Reflect v2: the in-memory ring above is lost on restart, so a group
 // conversation left NO durable trace and never fed the memory pipeline. Mirror
-// each turn to a per-group JSONL that reflect-summary's group sweep reads. The
+// each turn to a per-group JSONL the brain can read back for older history. The
 // audit sink (<gid>.jsonl) records the bot's DECISIONS; this records the
 // CONVERSATION. Group content is team-visible by contract → summarised as SHARED.
 const GROUP_TRANSCRIPT_MAX_LINES = num('GROUP_TRANSCRIPT_MAX_LINES', 2000);
