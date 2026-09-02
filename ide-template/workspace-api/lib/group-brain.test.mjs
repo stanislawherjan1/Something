@@ -126,5 +126,23 @@ ok('the quiet window is derived from the printed reset time',
 ok('an unparseable reset yields no window (caller falls back)',
   resetDelayMs('rate-limit-options') === null);
 
+// (h) OUTBOUND — group mode was purely reactive: a turn could only begin from
+// an inbound message, so "I'll come back to you with the result" was
+// unimplementable and a reminder could not target a group at all.
+const gw = await import('./integrations/group-watcher.js');
+ok('the group has an outbound entry point', typeof gw.sayInGroup === 'function');
+const badChat = await gw.sayInGroup({ chatId: 'not-a-chat', text: 'hi' });
+ok('a malformed chat id is refused', badChat.ok === false && /invalid chat id/.test(badChat.error), badChat);
+const unregistered = await gw.sayInGroup({ chatId: '-9999999999', text: 'hi' });
+ok('speaking into an UNREGISTERED group is refused — the registry authorises, not the caller',
+  unregistered.ok === false && /not a registered group/.test(unregistered.error), unregistered);
+
+// (i) SELF-REPAIR — the bot could not clean up its own bad message.
+const tg = await import('./integrations/telegram-sync.js');
+ok('the bot can edit its own message', typeof tg.editTelegramMessage === 'function');
+ok('the bot can delete its own message', typeof tg.deleteTelegramMessage === 'function');
+ok('repair validates the chat id', (await tg.deleteTelegramMessage('nope', '12')).error === 'invalid chat id');
+ok('repair validates the message id', (await tg.editTelegramMessage('-1001234567890', 'nope', 'x')).error === 'invalid message id');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

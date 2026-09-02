@@ -168,6 +168,52 @@ export async function getChatAdministrators(chatId) {
  * the cross-surface relay to ping a teammate where they prefer to be reached.
  * Returns { ok, messageId } or { ok:false, error }. Never throws.
  */
+/**
+ * Edit or delete a message the bot itself sent.
+ *
+ * Until this existed the bot could not clean up after itself: a reply that went
+ * out with an internal marker in it, or a wrong send, stayed in the chat until a
+ * human removed it — there was no tool for it and, in groups, the bot did not
+ * even know the id of its own post. Telegram allows this only on the bot's OWN
+ * messages, and delete only within 48 hours, so both failures are reported
+ * plainly rather than swallowed.
+ */
+async function telegramApi(method, payload) {
+  if (!telegramActive()) return { ok: false, error: 'telegram not active' };
+  let token = null;
+  try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
+  if (!token) return { ok: false, error: 'no bot token' };
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || json.ok === false) return { ok: false, error: json.description || `telegram ${resp.status}` };
+    return { ok: true, result: json.result };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+const validChat = (id) => /^-?\d{4,20}$/.test(String(id == null ? '' : id).trim());
+const validMsg  = (id) => /^\d{1,20}$/.test(String(id == null ? '' : id).trim());
+
+export async function editTelegramMessage(chatId, messageId, text) {
+  if (!validChat(chatId)) return { ok: false, error: 'invalid chat id' };
+  if (!validMsg(messageId)) return { ok: false, error: 'invalid message id' };
+  const body = String(text == null ? '' : text).trim();
+  if (!body) return { ok: false, error: 'empty text' };
+  return telegramApi('editMessageText', { chat_id: String(chatId).trim(), message_id: Number(messageId), text: body });
+}
+
+export async function deleteTelegramMessage(chatId, messageId) {
+  if (!validChat(chatId)) return { ok: false, error: 'invalid chat id' };
+  if (!validMsg(messageId)) return { ok: false, error: 'invalid message id' };
+  return telegramApi('deleteMessage', { chat_id: String(chatId).trim(), message_id: Number(messageId) });
+}
+
 export async function sendTelegramMessage(chatId, text, { logKind } = {}) {
   if (!telegramActive()) return { ok: false, error: 'telegram not active' };
   const id = String(chatId == null ? '' : chatId).trim();

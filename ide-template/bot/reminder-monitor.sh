@@ -531,7 +531,7 @@ reminders = reminders.map(r => {
     // 7th column `exec`: '1' marks an EXECUTION reminder (run the wire AS each
     // teammate recipient via /internal/invoke-turn), vs '' = a delivery reminder
     // (notify the recipient). Only reconcile-set per-user planner triggers set it.
-    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}`);
+    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}\x1f${flat(r.chat || '')}`);
     changed = true;
 
     // CLAIM it — do NOT advance or delete yet. The record used to be consumed
@@ -602,11 +602,25 @@ NODEEOF
         [ -z "$line" ] && continue
         # Split on \x1f (unit separator) — non-whitespace, so empty fields (e.g.
         # an absent recipients column = solo) are preserved.
-        IFS=$'\x1f' read -r rid channel recipients wire title desc urgency exec <<< "$line"
+        IFS=$'\x1f' read -r rid channel recipients wire title desc urgency exec gchat <<< "$line"
         [ -z "$channel" ] && channel="all"
         delivered=1
 
-        if [ -z "$recipients" ]; then
+        if [ -n "$gchat" ]; then
+            # Targeted at a GROUP. The brain composes it in the chat (and may
+            # decide there is nothing worth saying); the group registry, not
+            # this id, is what authorises the send.
+            if curl -sf --max-time 300 -X POST "http://localhost:${WSAPI_PORT}/api/internal/group-say" \
+                 -H 'Content-Type: application/json' \
+                 -d "$(MSG="$wire" CHAT="$gchat" node -e 'process.stdout.write(JSON.stringify({chat_id:process.env.CHAT,text:process.env.MSG}))')" \
+                 >/dev/null 2>&1; then
+                delivered=0
+                log_fire 0 "group-say" "$channel" "$gchat" "$urgency" "$exec" "$title"
+            else
+                log_fire 1 "group-say" "$channel" "$gchat" "$urgency" "$exec" "$title"
+                log "group-say failed for ${gchat}"
+            fi
+        elif [ -z "$recipients" ]; then
             # Solo / operator-only — byte-identical to before.
             fire_operator "$channel" "$wire" "$urgency"
             delivered=$?

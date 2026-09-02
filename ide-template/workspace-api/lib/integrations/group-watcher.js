@@ -823,6 +823,54 @@ function stripScaffolding(s, groupLang) {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Say something in a group on the bot's own initiative — the outbound entry
+ * point group mode never had.
+ *
+ * Everything here used to be reactive: a group turn could only start from an
+ * inbound message, so the bot could not come back with a result later. "I'll
+ * get back to you on this" was literally unimplementable, and a reminder could
+ * not target a group at all.
+ *
+ * The frame goes through the BRAIN (groupCompose), not out as raw text: the
+ * reminder ladder taught that forwarding stored text verbatim produces a
+ * machine artefact, and for a "check X and report if it matters" duty it shows
+ * the instruction while executing nothing. The brain may also decide the answer
+ * is nothing — `[[SILENT]]` is respected here exactly as it is for an inbound
+ * message, so a scheduled check that finds nothing stays quiet.
+ */
+export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
+  const gid = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(gid)) return { ok: false, error: 'invalid chat id' };
+  const group = getGroup(gid);
+  if (!group) return { ok: false, error: 'not a registered group' };
+  if (!sendingEnabled()) return { ok: false, error: 'sending disabled' };
+  if (!(await acquireSlot())) return { ok: false, error: 'no slot' };
+  try {
+    const hist = history.get(gid) || [];
+    const target = {
+      message_id: `sys-${Date.now()}`,
+      from_id: null,
+      who: 'the schedule',
+      text: `[${frame}] ${String(text || '').slice(0, 2000)}`,
+    };
+    const session = loadSession(gid);
+    const ctx = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
+    const reply = await groupCompose(group, ctx, target, session);
+    if (!reply || !reply.ok) return { ok: false, error: (reply && reply.error) || 'compose failed' };
+    const body = String(reply.text || '').trim();
+    if (!body || /^\[\[\s*silent\s*\]\]$/i.test(body)) {
+      return { ok: true, silent: true };   // nothing worth saying — a valid outcome
+    }
+    const sent = await sendTelegramMessage(gid, body, { logKind: 'group' });
+    if (!sent.ok) return { ok: false, error: sent.error };
+    pushHistory(gid, { role: 'assistant', message_id: sent.messageId ?? target.message_id, text: body });
+    return { ok: true, messageId: sent.messageId };
+  } finally {
+    releaseSlot();
+  }
+}
+
 // Build the runClaudeTurn params for a group turn (exported for the guard test).
 // opts.resumed — a persistent session is live: the context window below carries
 // only the messages SINCE the last turn; everything earlier is session memory.
@@ -1459,7 +1507,11 @@ async function flush(chatId) {
   if (sent.ok) {
     // Remember the bot's OWN reply so the NEXT message is judged in context (a
     // follow-up to what it just said is recognised as addressed to it).
-    pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: reply.text });
+    // The REAL id of the message just posted — not a synthetic one derived from
+    // the message being answered. Without it the bot could not point at its own
+    // post afterwards, which is why a reply that went out wrong (a leaked
+    // marker, a mistake) could only be cleaned up by a human.
+    pushHistory(chatId, { role: 'assistant', message_id: sent.messageId ?? `bot-${target.message_id}`, text: reply.text });
     // Engaged-dialogue window: this person's follow-ups now skip the gate.
     lastDialogue.set(chatId, { fromId: String(target.from_id), ts: Date.now() });
     // Cross-surface awareness: inject what just happened in the group — INCLUDING

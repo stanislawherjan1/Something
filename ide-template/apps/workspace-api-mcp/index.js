@@ -100,6 +100,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'fix_sent_message',
+      description:
+        'Edit or delete a Telegram message YOU already sent — the only way to clean up after yourself. ' +
+        'Use it the moment you notice a message of yours went out wrong: an internal marker that leaked into the text, ' +
+        'a wrong recipient, a claim you have just been corrected on, a duplicate. Deleting a bad message is almost always ' +
+        'better than sending another one explaining it.\n\n' +
+        'You need the chat id and the message id of YOUR post. In a group, recent_messages and the group transcript carry ' +
+        'the ids of your own replies. Telegram only allows this on your own messages, and only lets you DELETE within 48 hours; ' +
+        'if it refuses, say so plainly instead of pretending the message is gone.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          op: { type: 'string', enum: ['edit', 'delete'], description: 'edit: replace the text. delete: remove the message entirely.' },
+          chat_id: { type: 'string', description: 'The chat the message is in (negative for a group).' },
+          message_id: { type: 'string', description: "The id of YOUR message, as Telegram assigned it." },
+          text: { type: 'string', description: 'edit only: the corrected text, in full.' },
+        },
+        required: ['op', 'chat_id', 'message_id'],
+      },
+    },
+    {
       name: 'memory_grep',
       description:
         'Ripgrep-backed search over the workspace memory tree (memory/). ' +
@@ -170,6 +191,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+
+  if (name === 'fix_sent_message') {
+    try {
+      const res = await fetch(`${API_BASE}/api/internal/telegram-repair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: args?.op, chat_id: args?.chat_id, message_id: args?.message_id, text: args?.text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok) {
+        return { content: [{ type: 'text', text: args.op === 'delete' ? 'Deleted.' : 'Edited.' }] };
+      }
+      return {
+        content: [{ type: 'text', text: `Could not ${args?.op} that message: ${data?.error || `HTTP ${res.status}`}. The message is still as it was — say so rather than implying otherwise.` }],
+        isError: true,
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `fix_sent_message failed: ${err?.message || err}` }], isError: true };
+    }
+  }
 
   if (name === 'memory_write') {
     const payload = { ...args };

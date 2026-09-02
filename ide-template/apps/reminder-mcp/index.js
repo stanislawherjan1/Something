@@ -275,6 +275,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               count: { type: 'integer', description: 'optional bound: stop after N total fires' },
             },
           },
+          chat: {
+            type: 'string',
+            description:
+              'Deliver this reminder into a Telegram GROUP instead of to a person. Pass the group\'s chat id ' +
+              '(negative number) from the CHANNELS card. Use it when the reminder is for the whole group ' +
+              '("remind us in the team chat on Friday") or when you promised the group you would come back with ' +
+              'a result. The bot composes the message in the group when it fires, and may stay silent if there ' +
+              'turns out to be nothing worth saying. Leave it out for anything addressed to a person.',
+          },
           channel: {
             type: 'string',
             enum: ['telegram', 'web', 'all'],
@@ -460,6 +469,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // env var (set by bot.sh based on the inbound prompt channel), then 'all'
       // as the safe both-ways fallback. reminder-monitor.sh reads this field
       // when it fires.
+      // A group target rides alongside channel/recipient; the monitor routes on
+      // it, and the group registry is what actually authorises the chat at fire
+      // time (an id here is a request, not a permission).
+      ...(typeof args.chat === 'string' && /^-?\d{4,20}$/.test(args.chat.trim()) ? { chat: args.chat.trim() } : {}),
       channel: (typeof args.channel === 'string' && ['telegram', 'web', 'all'].includes(args.channel))
         ? args.channel
         : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
