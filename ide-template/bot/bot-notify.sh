@@ -57,11 +57,29 @@ ${MESSAGE}"
 # error was being swallowed (>/dev/null 2>&1), and operators silently
 # missed every memory-write notification whose body had special chars.
 # Plain text is robust against any character soup.
-curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+# The exit status of this script is now meaningful, and it did not used to be.
+# It previously ended on `[ $EXIT_CODE -ne 0 ] && echo ...`, whose own status
+# becomes the script's: when curl SUCCEEDED the test was false, the && list
+# returned 1, and the script reported failure — exactly inverted. Every caller
+# that trusted it was misled in both directions; it stayed hidden only because
+# callers redirected the result away, until reminder-monitor started checking.
+#
+# The HTTP status is checked too, not just curl's transport result: `curl -s`
+# without --fail exits 0 on 401 (bad token) or 400 (bad chat id), so transport
+# success was being read as delivery.
+HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
     -d chat_id="$CHAT_ID" \
     -d text="$FULL_MESSAGE" \
-    -d disable_notification=false \
-    > /dev/null 2>&1
+    -d disable_notification=false 2>/dev/null)
+CURL_RC=$?
 
-EXIT_CODE=$?
-[ $EXIT_CODE -ne 0 ] && echo "[notify] Failed to send Telegram notification (curl exit: $EXIT_CODE)"
+if [ "$CURL_RC" -ne 0 ]; then
+    echo "[notify] Failed to reach Telegram (curl exit: $CURL_RC)"
+    exit 1
+fi
+case "$HTTP_CODE" in
+    2*) exit 0 ;;
+    *)  echo "[notify] Telegram API rejected the message (HTTP $HTTP_CODE)"
+        exit 1 ;;
+esac
