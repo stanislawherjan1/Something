@@ -206,12 +206,26 @@ scp ../scripts/egress-proxy.js "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
 # Pin the marketplace commit so identical builds produce identical
 # images; bump manually when you want to refresh the telegram plugin.
 echo -e "${CYAN}  Cloning plugin marketplace into build context...${NC}"
+# Retried: this is a network fetch over the egress proxy on the very first step
+# of a ~15-minute deploy, and a truncated response ("expected flush after ref
+# listing", which git then reports as a credential prompt on a PUBLIC repo) once
+# killed an otherwise good run. GIT_TERMINAL_PROMPT=0 makes it fail fast instead
+# of blocking forever on a username prompt that no one can answer over ssh.
 ssh "$HETZNER_HOST" "
     set -e
     cd '$REMOTE_PATH'
-    rm -rf plugins-src
-    git clone --depth 1 https://github.com/anthropics/claude-plugins-official.git plugins-src
-    rm -rf plugins-src/.git
+    for attempt in 1 2 3; do
+        rm -rf plugins-src
+        if GIT_TERMINAL_PROMPT=0 git clone --depth 1 -q \
+              https://github.com/anthropics/claude-plugins-official.git plugins-src; then
+            rm -rf plugins-src/.git
+            exit 0
+        fi
+        echo \"  plugin marketplace clone failed (attempt \$attempt/3) — retrying\" >&2
+        sleep \$((attempt * 3))
+    done
+    echo '  plugin marketplace clone failed after 3 attempts' >&2
+    exit 1
 " || exit 1
 
 # Setuid wrappers (Phase-2/3 broker + uid isolation) — Dockerfile compiles
