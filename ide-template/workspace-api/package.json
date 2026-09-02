@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node lib/memory-registry.test.mjs && node lib/group-brain.test.mjs && node lib/memory-concept.test.mjs"
+    "test": "node lib/memory-registry.test.mjs && node lib/group-brain.test.mjs && node lib/group-markers.test.mjs && node lib/memory-concept.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
