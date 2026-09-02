@@ -14,7 +14,20 @@ BOT_NAME="${BOT_NAME:-bot}"
 TMUX_SOCKET="$BOT_NAME"
 TMUX_SESSION="$BOT_NAME"
 CHAT_ID="${TELEGRAM_ADMIN_CHAT_ID:-}"
-NOTIFY_SCRIPT="$HOME/bot-notify.sh"
+# Point at the image's canonical copy, exactly like WEB_NOTIFY_SCRIPT below.
+# This used to be "$HOME/bot-notify.sh", which no longer resolves: the uid split
+# moved this monitor to uid `bot` (monitor-runner sets HOME=/home/bot) while
+# entrypoint.sh still installs the script into /home/coder. The path therefore
+# pointed at a file that is never created, so `[ -x ]` failed every time and
+# EVERY Telegram fallback silently degraded to a web toast — an in-memory ring
+# buffer nobody is watching. That is the last-resort delivery path for a
+# reminder whose injection was abandoned because the pane was busy, so the
+# reminder simply vanished. The web fallback worked only because it already
+# referenced /opt/ide directly. $HOME is kept as a secondary for older images.
+# Running as uid bot with HOME=/home/bot is what bot-notify.sh expects: it reads
+# the token from $HOME/.$BOT_NAME/integrations.env.
+NOTIFY_SCRIPT="/opt/ide/bot-notify.sh"
+[ -x "$NOTIFY_SCRIPT" ] || NOTIFY_SCRIPT="$HOME/bot-notify.sh"
 
 # Resolve the operator chat id the same way bot-notify.sh does. The pm2 entry
 # for this process carries no env block, so on a client whose Telegram was
