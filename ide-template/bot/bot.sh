@@ -104,7 +104,7 @@ fi
 
 if [ ! -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
     log "ERROR: $CLAUDE_CONFIG_DIR/.credentials.json missing. workspace-api should have hydrated it from the encrypted store. Check setup wizard."
-    notify "Cannot start — Claude credentials missing."
+    notify "I can't start until my Anthropic login is set up — you can add it on the workspace settings page."
     exit 1
 fi
 
@@ -1475,7 +1475,6 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
         if echo "$PANE" | grep -q "Listening for channel messages" \
            || { [ -n "$PLUGIN_PID" ] && kill -0 "$PLUGIN_PID" 2>/dev/null; }; then
             log "Telegram plugin is up (pid=${PLUGIN_PID:-pane-banner})."
-            notify "Bot is online and listening."
             READY=1
             break
         fi
@@ -1498,7 +1497,7 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
 
         if echo "$PANE" | grep -qiE "not logged in|expired|sign in"; then
             log "ERROR: login required"
-            notify "Cannot start — sign-in required."
+            notify "I need you to sign in again before I can start — the workspace settings page has the button."
             exit 1
         fi
     done
@@ -1564,7 +1563,6 @@ if [ -n "$CHANNELS_ARG" ]; then
             log "plugin-watchdog: Telegram plugin not alive (strike ${dead}/2)"
             if [ "$dead" -ge 2 ]; then
                 log "plugin-watchdog: Telegram channel is DOWN — restarting session to reconnect the plugin."
-                notify "Telegram channel dropped — auto-restarting to reconnect." 2>/dev/null || true
                 tmux -L "$SESSION" kill-session -t "$SESSION" 2>/dev/null || true
                 exit 0
             fi
