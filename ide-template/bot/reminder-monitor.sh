@@ -68,9 +68,12 @@ export INJECT_MAX_WAIT_S="${INJECT_MAX_WAIT_S:-25}"
 log() { echo "[reminder-monitor] $*"; }
 
 # Append-only record of every fire attempt and how it actually left the box.
-# A one-shot's record is DELETED from .reminders.json when it fires, so without
-# this there is no evidence anywhere that a reminder ever existed, ran, or
-# failed — which is why every delivery bug in this pipeline has been invisible.
+# Complements the record itself, which now SURVIVES its firing: a due reminder
+# is CLAIMED (status 'firing'), delivered, and only then settled — advanced,
+# tombstoned, retried with a backoff, or parked as 'dead' after
+# REMINDER_MAX_ATTEMPTS. Before that, the record was consumed in the same pass
+# that found it due, so a minute when neither route to the brain was up simply
+# ate the occurrence.
 # `path` matters as much as `ok`: a reminder "delivered" as a raw fallback ping
 # or an in-memory web toast is one the user very likely never saw.
 FIRED_LOG="${FIRED_LOG:-/home/coder/project/.reminders-log.jsonl}"
@@ -484,9 +487,17 @@ catch { releaseLock(); process.exit(0); }
 
 let changed = false;
 const toSend = [];
+// A claimed record whose delivery never settled — the monitor or wsapi died
+// mid-attempt — is reclaimed after this long rather than stranded for ever.
+const STUCK_MS = Number(process.env.REMINDER_STUCK_MS) || 5 * 60_000;
 
 reminders = reminders.map(r => {
-    if (r.status !== 'pending') return r;
+    // 'firing' means a delivery was CLAIMED but never confirmed. Retry it once
+    // it has been stuck long enough; otherwise leave it to the attempt in
+    // flight.
+    const stuck = r.status === 'firing'
+        && (now - (Date.parse(r.lastAttemptAt || '') || 0)) > STUCK_MS;
+    if (r.status !== 'pending' && !stuck) return r;
 
     const due = new Date(r.due).getTime();
     if (due > now) return r;
@@ -520,24 +531,39 @@ reminders = reminders.map(r => {
     // 7th column `exec`: '1' marks an EXECUTION reminder (run the wire AS each
     // teammate recipient via /internal/invoke-turn), vs '' = a delivery reminder
     // (notify the recipient). Only reconcile-set per-user planner triggers set it.
-    toSend.push(`${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}`);
+    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}`);
     changed = true;
 
-    // Advance to the next occurrence — interval / weekly / monthly, honoring
-    // until/count bounds. Returns null for a one-shot or an exhausted bounded
-    // repeat → mark 'sent' (filtered out below). advanceReminder loops past a
-    // long downtime gap internally so the user gets one ping, not N. All math
-    // is in the RECUR-SHARED block above (shared with the set_reminder MCP).
+    // CLAIM it — do NOT advance or delete yet. The record used to be consumed
+    // here, before anything had tried to deliver it: if both routes to the
+    // brain were down the occurrence was simply gone, with nothing left to
+    // retry from. Advancing a repeat and retiring a one-shot happen in the
+    // settle pass, once delivery is CONFIRMED.
+    //
+    // The next occurrence is computed HERE and stashed, because settle runs in
+    // its own node process where the recurrence engine is not in scope —
+    // inlining a second copy of it is exactly how the two drifted apart before.
+    // null means one-shot (or an exhausted bounded repeat) → tombstone on
+    // success. All math is in the RECUR-SHARED block above.
     const adv = advanceReminder(r, now);
-    if (!adv) {
-        return { ...r, status: 'sent' };
-    }
-    process.stderr.write(`[reminder-monitor] Repeating ${r.id} → next: ${adv.due}\n`);
-    return { ...r, due: adv.due, recur: adv.recur };
+    return {
+        ...r,
+        status: 'firing',
+        attempts: (Number(r.attempts) || 0) + 1,
+        lastAttemptAt: new Date(now).toISOString(),
+        pendingNext: adv ? { due: adv.due, recur: adv.recur } : null,
+    };
 });
 
 if (changed) {
-    reminders = reminders.filter(r => r.status !== 'sent');
+    // Tombstones stay for a while: "did that reminder actually fire?" used to be
+    // unanswerable because a one-shot vanished from the file the moment it was
+    // claimed. Pruned after RETAIN_DAYS so the file cannot grow without bound.
+    const RETAIN_MS = (Number(process.env.REMINDER_RETAIN_DAYS) || 30) * 86400_000;
+    reminders = reminders.filter(r => !(
+        (r.status === 'sent' || r.status === 'dead')
+        && (now - (Date.parse(r.settledAt || r.lastAttemptAt || '') || 0)) > RETAIN_MS
+    ));
     // Unique tmp per writer — a fixed `.tmp` lets the MCP and this monitor
     // interleave into the same scratch file and corrupt the rename.
     const tmp = `${file}.${process.pid}.${Math.random().toString(16).slice(2, 10)}.tmp`;
@@ -569,28 +595,35 @@ NODEEOF
     # SECURITY: -l (literal, inside fire_operator) keeps reminder-body
     # metacharacters inert.
     [ -z "$OP_SLUG" ] && fetch_op_slug
+    # Delivery outcomes, settled against the file AFTER the loop. A reminder is
+    # only consumed once something confirmed it left the box.
+    OK_IDS=""; FAIL_IDS=""
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         # Split on \x1f (unit separator) — non-whitespace, so empty fields (e.g.
         # an absent recipients column = solo) are preserved.
-        IFS=$'\x1f' read -r channel recipients wire title desc urgency exec <<< "$line"
+        IFS=$'\x1f' read -r rid channel recipients wire title desc urgency exec <<< "$line"
         [ -z "$channel" ] && channel="all"
+        delivered=1
 
         if [ -z "$recipients" ]; then
             # Solo / operator-only — byte-identical to before.
             fire_operator "$channel" "$wire" "$urgency"
-            log_fire "$?" "$FIRE_PATH" "$channel" "" "$urgency" "$exec" "$title"
+            delivered=$?
+            log_fire "$delivered" "$FIRE_PATH" "$channel" "" "$urgency" "$exec" "$title"
         else
             # Team mode. Operator's own copy is brain-elaborated when targeted.
             if operator_in_set "$recipients"; then
                 fire_operator "$channel" "$wire" "$urgency"
-                log_fire "$?" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
+                delivered=$?
+                log_fire "$delivered" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
             fi
             if [ "$exec" = "1" ]; then
                 # EXECUTION reminder (per-user planner): run the wire AS each
                 # teammate recipient in their own scope, not the operator brain.
                 invoke_turn_teammates "$recipients" "$wire"
-                log_fire "$?" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
+                delivered=$?
+                log_fire "$delivered" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
             else
                 # Delivery reminder: notify teammates via wsapi; on failure,
                 # surface to the operator so a team reminder is never lost.
@@ -598,8 +631,10 @@ NODEEOF
                 if [ -z "$others" ]; then
                     : # operator-only reminder — already delivered by fire_operator above
                 elif deliver_to_teammates "$others" "$channel" "$title" "$desc"; then
+                    delivered=0
                     log_fire 0 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
                 else
+                    delivered=1
                     log_fire 1 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
                     log "reminder-deliver reached nobody — surfacing to operator"
                     fire_operator "$channel" "(team delivery failed) $wire"
@@ -607,7 +642,63 @@ NODEEOF
                 fi
             fi
         fi
+        if [ "$delivered" = "0" ]; then OK_IDS="$OK_IDS$rid
+"; else FAIL_IDS="$FAIL_IDS$rid
+"; fi
         sleep 3  # small gap between multiple reminders
     done <<< "$MESSAGES"
+
+    # ── Settle ────────────────────────────────────────────────────────────────
+    # Only now is a claimed reminder consumed: a repeat advances, a one-shot
+    # becomes a dated tombstone. A failed delivery goes back to pending with a
+    # backoff, and after REMINDER_MAX_ATTEMPTS it is parked as 'dead' and
+    # surfaced once — instead of vanishing on the first bad minute.
+    if [ -n "$OK_IDS$FAIL_IDS" ]; then
+        DEAD=$(OK_IDS="$OK_IDS" FAIL_IDS="$FAIL_IDS" node - "$REMINDERS_FILE" << 'SETTLEEOF'
+const fs = require('fs');
+const [,, file] = process.argv;
+const now = Date.now();
+const ok   = new Set((process.env.OK_IDS   || '').split('\n').filter(Boolean));
+const fail = new Set((process.env.FAIL_IDS || '').split('\n').filter(Boolean));
+const MAX_ATTEMPTS = Number(process.env.REMINDER_MAX_ATTEMPTS) || 5;
+
+let reminders;
+try { reminders = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { process.exit(0); }
+
+const dead = [];
+reminders = reminders.map(r => {
+    if (r.status !== 'firing') return r;
+    const settledAt = new Date(now).toISOString();
+
+    if (ok.has(String(r.id))) {
+        const next = r.pendingNext;
+        delete r.pendingNext;
+        if (!next) return { ...r, status: 'sent', settledAt };
+        process.stderr.write(`[reminder-monitor] Repeating ${r.id} → next: ${next.due}\n`);
+        return { ...r, status: 'pending', due: next.due, recur: next.recur, settledAt, attempts: 0, pendingNext: undefined };
+    }
+    if (!fail.has(String(r.id))) return r;   // still in flight elsewhere
+
+    const attempts = Number(r.attempts) || 1;
+    if (attempts >= MAX_ATTEMPTS) {
+        dead.push(`${r.id}: ${(r.title || r.message || '').slice(0, 60)}`);
+        return { ...r, status: 'dead', settledAt };
+    }
+    // Exponential-ish backoff, capped: 1, 2, 4, 8 minutes.
+    const backoff = Math.min(8, 2 ** (attempts - 1)) * 60_000;
+    return { ...r, status: 'pending', due: new Date(now + backoff).toISOString(), pendingNext: undefined };
+});
+
+const tmp = `${file}.${process.pid}.${Math.random().toString(16).slice(2, 10)}.tmp`;
+try { fs.writeFileSync(tmp, JSON.stringify(reminders, null, 2)); fs.renameSync(tmp, file); }
+catch { try { fs.unlinkSync(tmp); } catch {} }
+process.stdout.write(dead.join('\n'));
+SETTLEEOF
+        )
+        if [ -n "$DEAD" ]; then
+            log "reminder undeliverable after retries: $DEAD"
+            fire_operator "telegram" "A reminder could not be delivered after several tries and has been parked: $DEAD" "now" || true
+        fi
+    fi
 
 done
