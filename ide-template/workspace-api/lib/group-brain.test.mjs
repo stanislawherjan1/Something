@@ -141,6 +141,13 @@ ok('speaking into an UNREGISTERED group is refused — the registry authorises, 
 // require is resolved lazily by incoming traffic, so after a restart every
 // group-targeted reminder refused with "sending disabled" until somebody
 // happened to write somewhere — a scheduled thing silently not happening.
+// The frame the caller wants said must be IN the rendered window: the brain is
+// told to answer "the message marked ← NEW", so a target that is not in the
+// window is not there at all — it stayed silent while delivery reported success.
+const outboundSrc = readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8')
+  .split('export async function sayInGroup')[1].slice(0, 4000);
+ok('the outbound frame is put into the context window', /\[\.\.\.base, \{ \.\.\.target/.test(outboundSrc));
+ok('...and survives the session-rotation retry', /\[\.\.\.hist, \{ \.\.\.target/.test(outboundSrc));
 ok('the outbound path does not gate on the inbound self-id',
   !/if \(!sendingEnabled\(\)\) return/.test(
     readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8')

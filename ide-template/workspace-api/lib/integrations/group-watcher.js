@@ -863,7 +863,16 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
       text: `[${frame}] ${String(text || '').slice(0, 2000)}`,
     };
     let session = loadSession(gid);
-    const ctx = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
+    // The synthetic frame must be IN the context window, not merely handed
+    // over as `target`. groupTurnParams renders the window from ctxMsgs and
+    // tells the brain to "reply to the message marked ← NEW" — a target that
+    // is not in the window simply is not there. So the brain saw an old
+    // conversation with nothing new in it and correctly said nothing, while
+    // delivery reported success and the reminder settled as 'sent'. A
+    // scheduled message that reports itself delivered and never reaches
+    // anyone is precisely the failure this path was built to end.
+    const base = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
+    const ctx = [...base, { ...target, ts: new Date().toISOString() }];
     let reply;
     try { reply = await groupCompose(group, ctx, target, session); }
     catch (err) { reply = { ok: false, error: err.message }; }
@@ -877,7 +886,7 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
       process.stderr.write(`[group-watcher] outbound resume failed for ${gid} (${reply.error}) — rotating session\n`);
       clearSession(gid);
       session = null;
-      try { reply = await groupCompose(group, hist, target, null); }
+      try { reply = await groupCompose(group, [...hist, { ...target, ts: new Date().toISOString() }], target, null); }
       catch (err) { reply = { ok: false, error: err.message }; }
     }
     if (!reply || !reply.ok) return { ok: false, error: (reply && reply.error) || 'compose failed' };
