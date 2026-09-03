@@ -686,14 +686,27 @@ if [ "$HEALTHY" = true ]; then
     # Watch pm2 <bot> restart_time for 60s. If it climbs by >2 in that window,
     # bot is crashlooping — fail the deploy loudly so the operator sees it.
     echo -e "${GREEN}[5b/5] Verifying bot pm2 process stability (60s)...${NC}"
-    PM2_CMD="export PM2_HOME=/home/coder/.pm2; pm2 jlist 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); p=next((x for x in d if x.get('name')=='${BOT_NAME}'), None); print(p['pm2_env']['restart_time'] if p else 'missing')\" 2>/dev/null"
+    # Restart count for the bot process, parsed LOCALLY. The previous version
+    # embedded `python3 -c "…"` inside `bash -c "…"` inside a double-quoted ssh
+    # argument; the inner quotes closed early, the command produced nothing, and
+    # every deploy reported "verifier glitched" — so the one check that would
+    # catch a crashlooping bot has never actually run. Only single quotes cross
+    # the wire now.
+    pm2_restarts() {
+        ssh "$HETZNER_HOST" "docker exec -u coder '$IDE_NAME' bash -c 'export PM2_HOME=/home/coder/.pm2; pm2 jlist 2>/dev/null'" 2>/dev/null \
+          | python3 -c "import sys,json
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(0)
+p = next((x for x in d if x.get('name') == '$BOT_NAME'), None)
+print(p['pm2_env']['restart_time'] if p else 'missing')" 2>/dev/null || true
+    }
     # `|| echo ""` so a transient ssh failure (broken ControlPath under post-deploy
     # load, e.g. heavy --no-cache build aftermath) doesn't trip `set -e` and kill
     # the whole script before we've decided whether the bot is healthy. We treat
     # an empty value as "verifier glitched" below, not as a bot failure.
-    RESTART_T0=$(ssh "$HETZNER_HOST" "docker exec -u coder '$IDE_NAME' bash -c \"$PM2_CMD\"" 2>/dev/null || echo "")
+    RESTART_T0=$(pm2_restarts)
     sleep 60
-    RESTART_T1=$(ssh "$HETZNER_HOST" "docker exec -u coder '$IDE_NAME' bash -c \"$PM2_CMD\"" 2>/dev/null || echo "")
+    RESTART_T1=$(pm2_restarts)
 
     BOT_STABLE=true
     if [ "$RESTART_T0" = "missing" ] || [ "$RESTART_T1" = "missing" ]; then

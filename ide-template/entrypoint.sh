@@ -762,6 +762,15 @@ fi
 MEMORY_DIR="$PROJECT_DIR/memory"
 MEMORY_TEMPLATES_DIR="/opt/ide/bootstrap/memory-cards-templates"
 CARDS=(RULES RESPONSIBILITIES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
+# In TEAM mode the per-user cards live under memory/users/<slug>/ and the flat
+# copies must not exist: the snapshot writer deletes memory/RECENT_WEB.md on
+# every refresh while this seed step recreated it on every boot, so the two
+# fought over the file for ever. Seeding them is only correct in solo mode.
+# Keep in sync with the `tier: 'user'` cards in workspace-api/lib/memory-registry.js.
+if [ -f "$PROJECT_DIR/.team-config.json" ] && grep -q '"teamMode"[[:space:]]*:[[:space:]]*true' "$PROJECT_DIR/.team-config.json" 2>/dev/null; then
+    CARDS=(RULES AGENT_IDENTITY AGENT_TOOLS)
+    echo "[entrypoint] Team mode: seeding shared cards only (per-user cards live under memory/users/)."
+fi
 if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     mkdir -p "$MEMORY_DIR"
     MEMORY_SEEDED=0
