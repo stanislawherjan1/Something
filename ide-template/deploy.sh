@@ -704,7 +704,16 @@ print(p['pm2_env']['restart_time'] if p else 'missing')" 2>/dev/null || true
     # load, e.g. heavy --no-cache build aftermath) doesn't trip `set -e` and kill
     # the whole script before we've decided whether the bot is healthy. We treat
     # an empty value as "verifier glitched" below, not as a bot failure.
-    RESTART_T0=$(pm2_restarts)
+    # T0 is sampled right after the container swap, when pm2 may not be up yet —
+    # that returned an empty baseline and the whole check degraded into a
+    # warning. Wait for the process to appear (bounded), THEN start the window;
+    # a bot that never appears is a real failure and falls through as 'missing'.
+    RESTART_T0=""
+    for _ in $(seq 1 12); do
+        RESTART_T0=$(pm2_restarts)
+        [[ "$RESTART_T0" =~ ^[0-9]+$ ]] && break
+        sleep 5
+    done
     sleep 60
     RESTART_T1=$(pm2_restarts)
 
