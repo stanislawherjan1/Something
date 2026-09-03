@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node lib/memory-engine.test.mjs && node lib/memory-sweep.test.mjs && node lib/memory-registry.test.mjs && node lib/group-brain.test.mjs && node lib/group-markers.test.mjs"
+    "test": "node lib/routes-wired.test.mjs && node lib/memory-engine.test.mjs && node lib/memory-sweep.test.mjs && node lib/memory-registry.test.mjs && node lib/group-brain.test.mjs && node lib/group-markers.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

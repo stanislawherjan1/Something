@@ -39,4 +39,13 @@ while true; do
         log "refresh: $response"
     fi
 
+    # Safety net: a conversation that went quiet may hold durable facts nobody
+    # wrote down — in a group the bot is silent by design, so nothing else can
+    # catch them. Server-side single-flight + a per-source stamp make calling
+    # this every tick a cheap no-op until something is actually idle.
+    sweep=$(curl -sf --max-time 180 -X POST "http://localhost:3001/api/internal/memory-sweep" 2>/dev/null) || true
+    if echo "$sweep" | grep -qE '"written":[1-9]'; then
+        log "memory-sweep: $sweep"
+    fi
+
 done

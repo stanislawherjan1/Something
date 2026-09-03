@@ -20,6 +20,7 @@ import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGro
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage, sayInGroup } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
+import { sweepIdle } from '../lib/memory-sweep.js';
 import { runClaudeTurn } from '../lib/claude.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
@@ -587,6 +588,52 @@ export default function internalRouter() {
       return res.status(out.ok ? 200 : 422).json(out);
     } catch (err) {
       process.stderr.write(`[internal] memory-write failed: ${err.stack || err}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // The safety net: sweep conversations that have gone quiet for durable facts
+  // nobody wrote down. In a group the bot is silent by design, so nothing else
+  // can catch them. Single-flight and stamped per source server-side, so the
+  // snapshot monitor can poke it every tick. loopback only.
+  router.post('/internal/memory-sweep', loopbackOnly, async (req, res) => {
+    try {
+      return res.json(await sweepIdle(req.body || {}));
+    } catch (err) {
+      process.stderr.write(`[internal] memory-sweep failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Speak into a group on the bot's own initiative — a reminder targeted at a
+  // group chat, or a long task coming back with its result. Group mode was
+  // purely reactive before this: a turn could only begin from an inbound
+  // message, so "I'll get back to you" could not be honoured. The group
+  // registry authorises the chat, not the caller. loopback only.
+  router.post('/internal/group-say', loopbackOnly, async (req, res) => {
+    const { chat_id: chatId, text, frame } = req.body || {};
+    try {
+      const out = await sayInGroup({ chatId, text, frame });
+      return res.status(out.ok ? 200 : 422).json(out);
+    } catch (err) {
+      process.stderr.write(`[internal] group-say failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Repair a message the bot itself sent — the only way it can clean up after
+  // itself. Telegram permits this on its OWN messages only, and delete only
+  // within 48h, so a refusal here is real information rather than a glitch.
+  // loopback only.
+  router.post('/internal/telegram-repair', loopbackOnly, async (req, res) => {
+    const { op, chat_id: chatId, message_id: messageId, text } = req.body || {};
+    try {
+      const out = op === 'delete' ? await deleteTelegramMessage(chatId, messageId)
+        : op === 'edit' ? await editTelegramMessage(chatId, messageId, text)
+          : { ok: false, error: `unknown op ${JSON.stringify(op)}` };
+      return res.status(out.ok ? 200 : 422).json(out);
+    } catch (err) {
+      process.stderr.write(`[internal] telegram-repair failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
