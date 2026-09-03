@@ -99,12 +99,22 @@ const { failureNoticeText } = gwTest;
 // part that is unavailable.
 const plGroup = { chatId: '-100', language: 'Polish' };
 const enGroup = { chatId: '-100', language: 'English' };
+const gwSrcNotice = readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8');
 const limitErr = 'claude exited with code 1 :: Claude usage limit reached. Your limit will reset at 3pm (Europe/Warsaw).';
 
 ok('a limit notice states WHEN it comes back, quoting the printed time',
   /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(enGroup, 'limit', limitErr)));
-ok('notices stay English even in a Polish group (the model is what is down)',
-  failureNoticeText(plGroup, 'limit', limitErr) === failureNoticeText(enGroup, 'limit', limitErr));
+// English is the DEFAULT, not an override of a KNOWN preference: an English
+// system line in a Polish conversation reads as something broken, which is what
+// a failure notice should least of all add to.
+ok('a group with no pinned language gets English', /out of capacity/.test(failureNoticeText({}, 'limit', limitErr)));
+ok('a group with a pinned language gets that language',
+  /Skończył mi się limit/.test(failureNoticeText(plGroup, 'limit', limitErr)));
+ok('the reset time survives translation', /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(plGroup, 'limit', limitErr)));
+ok('a re-ask is not answered with the same apology (one notice, then quiet)',
+  /15 \* 60_000/.test(gwSrcNotice));
+ok('a slow single tool call is not treated as a hang',
+  /GROUP_TURN_IDLE_MS', num\('GROUP_TURN_TIMEOUT_MS', 420000/.test(gwSrcNotice));
 ok('no em dashes in any notice',
   ['limit', 'turn-timeout', 'gate-down', 'compose-error'].every(k =>
     !failureNoticeText(plGroup, k, limitErr).includes('—')));

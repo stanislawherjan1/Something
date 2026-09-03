@@ -77,7 +77,10 @@ const NOTICE_MIN_INTERVAL_MS = num('GROUP_NOTICE_MIN_INTERVAL_MS', 15 * 60_000);
 // timeout got four minutes of "typing…" and then nothing at all — the failure
 // was bounded, but the experience read as being ignored. Long enough to absorb
 // a burst, far shorter than the turn cap, so every timeout gets its notice.
-const NOTICE_MIN_INTERVAL_TURN_TIMEOUT_MS = num('GROUP_NOTICE_MIN_INTERVAL_TURN_TIMEOUT_MS', 60_000);
+// Re-asking after a failure is the normal human response, and answering each
+// re-ask with the same apology reads as flailing. One notice, then quiet for a
+// while — the person already knows.
+const NOTICE_MIN_INTERVAL_TURN_TIMEOUT_MS = num('GROUP_NOTICE_MIN_INTERVAL_TURN_TIMEOUT_MS', 15 * 60_000);
 const noticeIntervalFor = kind =>
   kind === 'turn-timeout' ? NOTICE_MIN_INTERVAL_TURN_TIMEOUT_MS : NOTICE_MIN_INTERVAL_MS;
 const MIN_TEXT_LEN      = num('GROUP_MIN_TEXT_LEN', 2);   // minimal: language-agnostic, don't drop short CJK
@@ -352,15 +355,24 @@ function clearUsageLimitHold() { limitedUntil = 0; }
 const gateFailures = new Map();   // chatId → recent failure timestamps (10-min window)
 
 function failureNoticeText(group, kind, detail = '') {
-  // English, always. These are the four sentences the bot says when it CANNOT
-  // think — the model is what speaks the group's language, and it is exactly
-  // what is unavailable here. A translation table would be four more strings to
-  // keep true in a path nobody exercises until something is already broken.
-  //
+  // English is the DEFAULT — most workspaces are not Polish and these lines are
+  // what the bot says when the model, the thing that would otherwise speak the
+  // group's language, is the part that is unavailable. But a group with a PINNED
+  // language is a known preference, not an absence of one: an English system
+  // line dropped into a Polish conversation reads as something broken, which is
+  // exactly what a failure notice should not add to.
+  const lang = String((group && group.language) || '').trim().toLowerCase();
+  const pl = lang.startsWith('pl') || lang.startsWith('pol');
   // The reset time is quoted EXACTLY as the CLI printed it, with its own zone,
   // because the only thing this sentence is worth is being right about the hour.
   const at = parseResetAt(detail);
-  const texts = {
+  const texts = pl ? {
+    'turn-timeout':  'Nie zdążyłem tego dokończyć. Spróbujmy mniejszymi kawałkami albo napisz do mnie na priv.',
+    'limit':         at ? `Skończył mi się limit na teraz. Wracam o ${at}.`
+                        : 'Skończył mi się limit na teraz. Odezwę się, jak wróci.',
+    'gate-down':     'Mam chwilowy problem i mogę przegapić wiadomość. Oznacz mnie, jeśli czegoś potrzebujesz.',
+    'compose-error': 'Coś mi się posypało przy tej odpowiedzi. Spróbuj jeszcze raz za chwilę.',
+  } : {
     'turn-timeout':  "I didn't finish that in time. Try smaller pieces, or message me directly.",
     'limit':         at ? `I'm out of capacity for now. Back at ${at}.`
                         : "I'm out of capacity for now. I'll pick this up when it's back.",
@@ -784,7 +796,14 @@ function maybePinLanguage(chatId, code) {
 // it real room. Continuous typing keeps the group informed meanwhile.
 // Kept for compatibility: an existing GROUP_TURN_TIMEOUT_MS override now sets the
 // IDLE window rather than a wall-clock kill.
-const GROUP_TURN_IDLE = num('GROUP_TURN_IDLE_MS', num('GROUP_TURN_TIMEOUT_MS', 150000));
+// Silence between EVENTS (text, tool start, tool end). It bounds the "typing…"
+// wait, so it must outlast a slow single tool call — an IMAP search over a big
+// mailbox, a calendar round-trip while the box is busy — because a tool that is
+// genuinely running is not a hang. 150s killed working turns live (a calendar
+// question, while a Chromium login was eating the 4GB box) and the group got a
+// failure notice for work that was in progress. GROUP_TURN_MAX still bounds the
+// pathological case.
+const GROUP_TURN_IDLE = num('GROUP_TURN_IDLE_MS', num('GROUP_TURN_TIMEOUT_MS', 420000));
 // Absolute backstop so a pathological turn cannot hold its concurrency slot for
 // ever. Generous on purpose: reaching it means something is genuinely wrong, not
 // that the work was merely long.
