@@ -160,5 +160,13 @@ ok('the bot can delete its own message', typeof tg.deleteTelegramMessage === 'fu
 ok('repair validates the chat id', (await tg.deleteTelegramMessage('nope', '12')).error === 'invalid chat id');
 ok('repair validates the message id', (await tg.editTelegramMessage('-1001234567890', 'nope', 'x')).error === 'invalid message id');
 
+// The real message id must reach the DURABLE transcript, not just the in-RAM
+// ring: after a restart the bot's own posts were anonymous, so it could repair
+// a message it had just sent and nothing older — the case fix_sent_message
+// exists for.
+const gwSrc = readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8');
+const persist = gwSrc.split('function persistHistory')[1].slice(0, 1200);
+ok('the durable group transcript records the message id', /message_id: entry\.message_id/.test(persist));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

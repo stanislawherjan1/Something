@@ -165,5 +165,32 @@ ok('the retired wording survives ONLY in the log, never on a page',
   log.some(e => e.removed.some(t => /Viktor/.test(t)))
   && !/Viktor is the lead designer/.test(read('memory/concepts/viktor.md')));
 
+// ─── (k) the store stays bounded ────────────────────────────────────────────
+// Everything the audit found rotting had the same shape: it only ever grew.
+// The undo snapshots and the write log are the two things here that grow with
+// use, on boxes whose disk has already killed a deploy.
+import { utimesSync, readdirSync as rd } from 'node:fs';
+const undoDir = join(mem, '_engine', 'undo');
+const before = rd(undoDir).length;
+ok('writes leave undo snapshots to prune', before > 0);
+
+// Age half of them past the window.
+const aged = rd(undoDir).slice(0, Math.ceil(before / 2));
+const old0 = new Date(Date.now() - 120 * 86400 * 1000);
+for (const f of aged) utimesSync(join(undoDir, f), old0, old0);
+const pruned = engine.pruneEngineStore();
+ok(`old undo snapshots are dropped (${pruned.removed} of ${before})`, pruned.removed === aged.length, pruned);
+ok('recent ones are kept', rd(undoDir).length === before - aged.length);
+
+// The log rotates instead of growing without end, keeping one generation.
+const logFile = join(mem, '_engine', 'log.jsonl');
+const kept = readFileSync(logFile, 'utf8');
+writeFileSync(logFile, kept + 'x'.repeat(6 * 1024 * 1024));
+const r2 = engine.pruneEngineStore();
+ok('an oversized log is rotated', r2.rotated === true && existsSync(`${logFile}.1`), r2);
+ok('...and the previous generation survives the rotation',
+  readFileSync(`${logFile}.1`, 'utf8').includes(kept.slice(0, 80)));
+ok('...leaving the live log empty rather than deleted', existsSync(logFile));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -47,7 +47,7 @@ import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
 import { migrateDefaultMemory } from './lib/memory-loader.js';
 import { writeRecentSnapshot } from './lib/recent-snapshot.js';
-import { reindexAll } from './lib/memory-engine.js';
+import { reindexAll, pruneEngineStore } from './lib/memory-engine.js';
 import { migrateToEngine } from './lib/memory-migrate.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
@@ -217,6 +217,18 @@ try {
   if (n) process.stdout.write(`[workspace-api] memory INDEX rebuilt for ${n} scope(s)\n`);
 } catch (err) {
   process.stderr.write(`[workspace-api] memory reindex failed: ${err.message}\n`);
+}
+
+// Keep the engine's own store bounded. Undo snapshots and the write log are the
+// only things here that grow with use, and nothing pruned them — the same shape
+// the audit flagged in the machinery this replaced.
+try {
+  const r = pruneEngineStore();
+  if (r.removed || r.rotated) {
+    process.stdout.write(`[workspace-api] memory engine store pruned (${r.removed} undo snapshot(s)${r.rotated ? ', log rotated' : ''})\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] engine prune failed: ${err.message}\n`);
 }
 
 // One-shot migration off the retired reflect pipeline: archive its files out of

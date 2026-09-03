@@ -228,6 +228,12 @@ function persistHistory(chatId, entry) {
       ts: new Date().toISOString(),
       role: entry.role === 'assistant' ? 'assistant' : 'user',
       who: entry.who || '',
+      // The message id belongs in the DURABLE record, not only the in-RAM ring.
+      // Without it the bot could repair a message it had just sent and nothing
+      // older: after a restart its own posts became anonymous, so the leaked
+      // marker from an hour ago stayed out of reach of fix_sent_message — the
+      // exact case that tool exists for.
+      message_id: entry.message_id ?? null,
       text: String(entry.text || '').slice(0, 4000),
     }) + '\n', { mode: 0o660 });
     // Cheap bounded trim: when the file grows past the cap, keep the tail.

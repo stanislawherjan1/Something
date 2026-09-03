@@ -702,3 +702,41 @@ export function revert({ eventId, actor }) {
 
 /** Rebuild every INDEX map (boot + maintenance). */
 export function reindexAll() { return rebuildAllIndexes(); }
+
+// ─── Retention ───────────────────────────────────────────────────────────────
+// The audit's recurring finding was machinery that only ever grew: verdicts had
+// a TTL, but the undo snapshots and the activity log did not, so the one place
+// that recorded every write also grew for ever. This engine reproduced that
+// shape — a full page snapshot per write, an append-only log, and nothing
+// pruning either — on boxes whose disk has already killed a deploy once.
+//
+// Undo snapshots older than the window are dropped: past it, "undo this" is not
+// a thing anyone does, and the log still says what happened. The log itself is
+// rotated once, keeping one previous generation, so the history survives a
+// rotation without unbounded growth.
+const UNDO_RETAIN_DAYS = Number(process.env.MEMORY_UNDO_RETAIN_DAYS) || 90;
+const LOG_MAX_BYTES    = Number(process.env.MEMORY_LOG_MAX_BYTES) || 5 * 1024 * 1024;
+
+export function pruneEngineStore({ now = Date.now() } = {}) {
+  let removed = 0, rotated = false;
+  try {
+    const cutoff = now - UNDO_RETAIN_DAYS * 86400_000;
+    for (const f of readdirSync(undoDir())) {
+      const abs = join(undoDir(), f);
+      try {
+        if (statSync(abs).mtimeMs < cutoff) { unlinkSync(abs); removed++; }
+      } catch { /* raced with another prune */ }
+    }
+  } catch { /* no undo dir yet */ }
+  try {
+    const p = logPath();
+    if (statSync(p).size > LOG_MAX_BYTES) {
+      // One generation back, not a numbered chain: the log is an audit trail,
+      // not a metric — two files is enough to survive a rotation mid-question.
+      atomicWrite(`${p}.1`, readFileSync(p, 'utf8'));
+      atomicWrite(p, '');
+      rotated = true;
+    }
+  } catch { /* no log yet */ }
+  return { removed, rotated };
+}
