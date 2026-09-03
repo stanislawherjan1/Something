@@ -178,5 +178,12 @@ ok('the delegate is handed the full history, not the session window',
 ok('the delegate is told to READ the transcript rather than explain it cannot',
   /READ THAT FILE before replying/.test(gwSrc));
 
+// The delegate has the full toolset, so it CAN send Telegram messages itself —
+// and then its closing text is a report about that send, which the system
+// delivered as a second DM. Seen live: the answer, then a summary of the answer.
+const delSrc = gwSrc.split('async function runPrivateDelegate')[1].slice(0, 4000);
+ok('a self-sent delegate message suppresses the closing text', /selfSent/.test(delSrc) && /return finish\(''\)/.test(delSrc));
+ok('the delegate is told there is no send step', /THERE IS NO SEND STEP/.test(gwSrc));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

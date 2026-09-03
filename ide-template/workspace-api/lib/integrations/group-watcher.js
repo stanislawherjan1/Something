@@ -1233,7 +1233,8 @@ function delegatePrompt({ group, target, senderName, task, ctxMsgs = [], chatId 
     `THE TASK, as the group brain phrased it: ${clip(task, 600)}`,
     '',
     `WRITE THE DM: plain text in ${senderName}'s language, as if you were simply replying to them — no meta-commentary about this task or your tooling, your final output IS the message. Open with ONE short human line that anchors it ("about what you asked in <group>…" — in their words, not a machine preamble) so it does not land as a DM out of nowhere. When the answer is about something a specific person said in the group, SAY WHOSE it was.`,
-    'To attach a file, emit `[[SEND_FILE <absolute path under the project>]]` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker. NEVER read or use the Telegram bot token or call the Telegram API yourself — file delivery goes ONLY through the marker.',
+    `THERE IS NO SEND STEP. Whatever you write is delivered to ${senderName} verbatim, by the system, as the DM. Do NOT call any Telegram tool and do NOT use the bot token — not for the message, not for files. If you send it yourself and then write a summary of what you sent, that SUMMARY becomes the DM: the person gets your answer once from your tool call and once more as a report about it. Write the answer itself and stop.`,
+    'To attach a file, emit `[[SEND_FILE <absolute path under the project>]]` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker.',
   ].join('\n');
 }
 
@@ -1287,6 +1288,12 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
           out = out.slice(0, m.index) + out.slice(m.index + m[0].length);
         }
       };
+      // If the delegate delivers the answer ITSELF with a Telegram tool, its
+      // final text becomes a report about that send ("DM sent to X with …") and
+      // we would deliver the report as a second message. Seen live: the answer,
+      // then a summary of the answer. The prompt says not to send; this makes a
+      // slip harmless instead of visible.
+      let selfSent = false;
       const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
       const timer = setTimeout(() => finish(null), DELEGATE_TIMEOUT);
       try {
@@ -1297,10 +1304,20 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
           actorIsAdmin: member.role === 'admin',
           teammates: [],
           onText: (t) => { out += t; harvestFiles(); },
-          onToolStart: () => { if (out.trim()) lastSegment = out; out = ''; },
+          onToolStart: (t) => {
+            if (/telegram/i.test(String(t && t.name || '')) && /send|reply|message/i.test(String(t.name))) selfSent = true;
+            if (out.trim()) lastSegment = out; out = '';
+          },
           onToolEnd: () => {}, onImage: () => {},
           onError: () => finish(null),
-          onDone: () => { harvestFiles(); finish((out.trim() ? out : lastSegment).trim()); },
+          onDone: () => {
+            harvestFiles();
+            if (selfSent) {
+              process.stderr.write(`[group-watcher] delegate for ${member.slug} sent its own Telegram message — not delivering its closing text on top\n`);
+              return finish('');
+            }
+            finish((out.trim() ? out : lastSegment).trim());
+          },
         });
       } catch { finish(null); }
     });
