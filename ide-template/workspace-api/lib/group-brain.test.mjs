@@ -184,6 +184,15 @@ ok('the delegate is told to READ the transcript rather than explain it cannot',
 const delSrc = gwSrc.split('async function runPrivateDelegate')[1].slice(0, 4000);
 ok('a self-sent delegate message suppresses the closing text', /selfSent/.test(delSrc) && /return finish\(''\)/.test(delSrc));
 ok('the delegate is told there is no send step', /THERE IS NO SEND STEP/.test(gwSrc));
+// Structural, not just prompted: the turn cannot deliver, so the two paths
+// cannot both fire. The first attempt at this guessed the wrong tool — a
+// wsapi-spawned turn has no Telegram tool at all; the second delivery came from
+// web_send_message, which routes to the recipient's preferred surface.
+ok('the delegate turn is denied every delivery tool', /disallowedTools: DELIVERY_TOOLS/.test(delSrc));
+ok('...and the list covers web_send_message, not only Telegram',
+  /mcp__web_channel__web_send_message/.test(gwSrc));
+const claudeSrc = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
+ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', disallowedTools\.join/.test(claudeSrc));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

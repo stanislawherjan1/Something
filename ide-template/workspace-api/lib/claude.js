@@ -76,7 +76,7 @@ export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExclu
   return buildCachedPrefix({ memoryDir, excludeIds, actor });
 }
 
-export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -98,6 +98,15 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
     // 0660 group=botshare.
     '--mcp-config', BOT_CLAUDE_CONFIG,   // may be swapped for a per-user clone below
   ];
+
+  // A turn whose OUTPUT the system delivers must not also hold tools that can
+  // deliver. Otherwise both fire: the model sends the answer with a tool, its
+  // closing text becomes a report about that send, and the system delivers the
+  // report as a second message. Prompting against it is not enough — the model
+  // reads a narrow ban narrowly — so the tools are taken away instead.
+  if (Array.isArray(disallowedTools) && disallowedTools.length) {
+    args.push('--disallowedTools', disallowedTools.join(','));
+  }
 
   // Memory cached prefix — ≥4096 token block from project/memory/ so
   // Anthropic's prompt cache fires (otherwise nothing is cached and every

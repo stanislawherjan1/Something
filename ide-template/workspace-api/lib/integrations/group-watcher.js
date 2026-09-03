@@ -1208,6 +1208,14 @@ function groupCompose(group, ctxMsgs, target, session = null) {
 // structurally never from brain output. logKind:'group' on the DM send keeps a
 // MEMBER's private DM out of RECENT_TELEGRAM (that card is the operator's DM log).
 const DELEGATE_TIMEOUT = num('GROUP_DELEGATE_TIMEOUT_MS', 300000);
+
+// Tools that put a message in front of a person. Denied on any turn whose text
+// the system itself delivers, so there is exactly one delivery path.
+const DELIVERY_TOOLS = [
+  'mcp__web_channel__web_send_message',
+  'mcp__plugin_telegram_telegram__sendMessage',
+  'mcp__plugin_telegram_telegram__reply',
+];
 /**
  * The prompt a delegated private task runs on. Pure + exported for the guard
  * test: the failure it prevents (a DM that cannot say WHO said the thing it is
@@ -1299,13 +1307,21 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
       try {
         proc = runClaudeTurn({
           message: delegatePrompt({ group, target, senderName, task, ctxMsgs, chatId }),
+          // The delegate's output IS the DM — the system sends it. Leaving it a
+          // way to send as well produced two messages: the answer via the tool,
+          // then its own summary of that send delivered as the DM. Note the
+          // path: there is no Telegram tool in a wsapi-spawned turn at all
+          // (the channel plugin lives in the tmux bot), so the second delivery
+          // came from web_send_message, which routes to the recipient's
+          // preferred surface — their Telegram.
+          disallowedTools: DELIVERY_TOOLS,
           actor: member.slug,
           actorName: senderName,
           actorIsAdmin: member.role === 'admin',
           teammates: [],
           onText: (t) => { out += t; harvestFiles(); },
           onToolStart: (t) => {
-            if (/telegram/i.test(String(t && t.name || '')) && /send|reply|message/i.test(String(t.name))) selfSent = true;
+            if (DELIVERY_TOOLS.includes(String(t && t.name || ''))) selfSent = true;
             if (out.trim()) lastSegment = out; out = '';
           },
           onToolEnd: () => {}, onImage: () => {},
