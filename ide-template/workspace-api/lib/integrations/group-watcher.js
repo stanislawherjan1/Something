@@ -844,7 +844,15 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
   if (!/^-?\d{4,20}$/.test(gid)) return { ok: false, error: 'invalid chat id' };
   const group = getGroup(gid);
   if (!group) return { ok: false, error: 'not a registered group' };
-  if (!sendingEnabled()) return { ok: false, error: 'sending disabled' };
+  // NOT sendingEnabled(): that also requires selfBotUserId, which exists to
+  // recognise the bot's OWN messages on the way IN and is resolved lazily by
+  // inbound traffic. Gating an OUTBOUND send on it meant that after a restart,
+  // until somebody happened to write in some group, every group-targeted
+  // reminder refused with "sending disabled" — a scheduled thing silently not
+  // happening, which is the exact failure this path was built to end. Only the
+  // observe-only switch may stop us here.
+  if (OBSERVE_ONLY) return { ok: false, error: 'observe-only mode' };
+  ensureSelfId();   // kick the lazy resolve so INBOUND self-recognition catches up too
   if (!(await acquireSlot())) return { ok: false, error: 'no slot' };
   try {
     const hist = history.get(gid) || [];

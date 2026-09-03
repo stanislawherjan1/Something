@@ -12,6 +12,7 @@
  *
  * Run: node lib/group-brain.test.mjs   (wired into `npm test`)
  */
+import { readFileSync } from 'node:fs';
 import { groupTurnParams } from './integrations/group-watcher.js';
 
 let pass = 0, fail = 0;
@@ -136,6 +137,14 @@ ok('a malformed chat id is refused', badChat.ok === false && /invalid chat id/.t
 const unregistered = await gw.sayInGroup({ chatId: '-9999999999', text: 'hi' });
 ok('speaking into an UNREGISTERED group is refused — the registry authorises, not the caller',
   unregistered.ok === false && /not a registered group/.test(unregistered.error), unregistered);
+// Outbound must not depend on inbound having happened. The self-id it used to
+// require is resolved lazily by incoming traffic, so after a restart every
+// group-targeted reminder refused with "sending disabled" until somebody
+// happened to write somewhere — a scheduled thing silently not happening.
+ok('the outbound path does not gate on the inbound self-id',
+  !/if \(!sendingEnabled\(\)\) return/.test(
+    readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8')
+      .split('export async function sayInGroup')[1].slice(0, 900)));
 
 // (i) SELF-REPAIR — the bot could not clean up its own bad message.
 const tg = await import('./integrations/telegram-sync.js');
