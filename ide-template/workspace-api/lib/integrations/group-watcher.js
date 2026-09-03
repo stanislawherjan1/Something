@@ -862,9 +862,24 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
       who: 'the schedule',
       text: `[${frame}] ${String(text || '').slice(0, 2000)}`,
     };
-    const session = loadSession(gid);
+    let session = loadSession(gid);
     const ctx = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
-    const reply = await groupCompose(group, ctx, target, session);
+    let reply;
+    try { reply = await groupCompose(group, ctx, target, session); }
+    catch (err) { reply = { ok: false, error: err.message }; }
+
+    // Same session rotation the inbound path does: a stale or dropped session
+    // id makes --resume exit 1 ("No conversation found with session ID"), and
+    // without this a scheduled send would fail permanently on a session that
+    // has simply aged out — the resilience lived in the flush loop, not in the
+    // compose primitive both callers share.
+    if (!reply.ok && session && /exited with code 1|exit 1|no conversation|not found/i.test(String(reply.error || ''))) {
+      process.stderr.write(`[group-watcher] outbound resume failed for ${gid} (${reply.error}) — rotating session\n`);
+      clearSession(gid);
+      session = null;
+      try { reply = await groupCompose(group, hist, target, null); }
+      catch (err) { reply = { ok: false, error: err.message }; }
+    }
     if (!reply || !reply.ok) return { ok: false, error: (reply && reply.error) || 'compose failed' };
     const body = String(reply.text || '').trim();
     if (!body || /^\[\[\s*silent\s*\]\]$/i.test(body)) {
@@ -873,6 +888,15 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
     const sent = await sendTelegramMessage(gid, body, { logKind: 'group' });
     if (!sent.ok) return { ok: false, error: sent.error };
     pushHistory(gid, { role: 'assistant', message_id: sent.messageId ?? target.message_id, text: body });
+    if (reply.sessionId) {
+      saveSession(gid, {
+        sessionId: reply.sessionId,
+        startedAt: (session && session.startedAt) || new Date().toISOString(),
+        turns: ((session && session.turns) || 0) + 1,
+        lastTs: hist.length ? hist[hist.length - 1].ts : (session && session.lastTs) || null,
+        updatedAt: new Date().toISOString(),
+      });
+    }
     return { ok: true, messageId: sent.messageId };
   } finally {
     releaseSlot();
