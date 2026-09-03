@@ -168,5 +168,15 @@ const gwSrc = readFileSync(new URL('./integrations/group-watcher.js', import.met
 const persist = gwSrc.split('function persistHistory')[1].slice(0, 1200);
 ok('the durable group transcript records the message id', /message_id: entry\.message_id/.test(persist));
 
+// The delegate runs WITHOUT a session, so it must get the full ring — not the
+// window slimmed for a brain that remembers the rest. Observed live: the DM
+// arrived asking "what is this about?" and then invented an explanation for why
+// it could not look.
+const fireSrc = gwSrc.split('const fireDelegate')[1].slice(0, 900);
+ok('the delegate is handed the full history, not the session window',
+  /runPrivateDelegate\([^)]*, hist\)/.test(fireSrc), fireSrc.slice(0, 200));
+ok('the delegate is told to READ the transcript rather than explain it cannot',
+  /READ THAT FILE before replying/.test(gwSrc));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
