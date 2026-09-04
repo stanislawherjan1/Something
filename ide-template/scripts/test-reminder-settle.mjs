@@ -55,5 +55,22 @@ ok('...and is surfaced to the operator', /call the client/.test(r.dead), r.dead)
 // an unrelated in-flight claim is left alone
 r = run([{ id: 'e', status: 'firing', attempts: 1, due: '2026-01-01T00:00:00Z' }], ['other'], []);
 ok('a claim nobody settled stays claimed', r.file[0].status === 'firing');
+// ── the watermark on the CLAIM side ──────────────────────────────────────────
+// "Scan the inbox since the last check" had no state behind it: the phrase was
+// in the message and nothing ever supplied a boundary, so an hourly ritual
+// re-reported the same mail every hour. The monitor knows when the reminder last
+// settled, so it must hand the model a real timestamp.
+const claim = script.slice(script.indexOf('// Compose the wire-format message.'));
+ok('a repeat is told what it has already reported',
+  /Only report what is new since \$\{new Date\(lastRun\)\.toISOString\(\)\}/.test(claim));
+ok('the boundary is the last SETTLE, not the last attempt',
+  /Date\.parse\(r\.settledAt \|\| ''\)/.test(claim));
+ok('a one-shot gets no watermark (it has no previous run)',
+  /r\.recur \? Date\.parse/.test(claim));
+ok('a first run gets no watermark either (no settledAt yet)',
+  /Number\.isFinite\(lastRun\) && lastRun > 0 && lastRun < now/.test(claim));
+ok('nothing new means silence, not a repeat of the last report',
+  /If nothing is new, say nothing/.test(claim));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

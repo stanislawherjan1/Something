@@ -508,9 +508,21 @@ reminders = reminders.map(r => {
     // emerges as exactly one stdout line.
     const title = (typeof r.title === 'string' ? r.title : '').trim();
     const desc  = (typeof r.description === 'string' ? r.description : '').trim();
-    const wire  = title
+    let wire = title
         ? (desc ? `${title}: ${desc}` : title)
         : (typeof r.message === 'string' ? r.message : '');
+    // WATERMARK. A recurring reminder that says "since the last check" is asking
+    // the model to know something nothing ever told it: there was no state
+    // behind that phrase, so an hourly inbox ritual re-read the same window
+    // every hour and re-reported the same mail — a GitHub token expiring, a
+    // reply from days ago — as if it were new. The monitor is the one party that
+    // actually knows when this reminder last completed (settledAt, written by
+    // the settle pass), so it supplies the boundary instead of hoping the model
+    // infers it. Only for repeats: a one-shot has no previous run to speak of.
+    const lastRun = r.recur ? Date.parse(r.settledAt || '') : NaN;
+    if (Number.isFinite(lastRun) && lastRun > 0 && lastRun < now) {
+        wire += ` [Only report what is new since ${new Date(lastRun).toISOString()} — everything before that you have already reported, so do not repeat it. If nothing is new, say nothing.]`;
+    }
     // Channel hint travels with the wire message via a tab separator —
     // bash splits on it below. Default 'all' covers legacy reminders that
     // pre-date the field.
