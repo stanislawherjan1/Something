@@ -48,7 +48,7 @@ ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TA
 
 // (d) pathInGroupScope — the pure rule the scope-guard hook applies under
 // IDE_GROUP_CONTEXT=1: NO private tree for anyone; shared space stays open.
-const { pathInGroupScope } = await import('./scope-rule.js');
+const { pathInGroupScope, pathInScope } = await import('./scope-rule.js');
 ok('group scope: shared project file allowed', pathInGroupScope('docs/notes.md') === true);
 ok('group scope: project root allowed', pathInGroupScope('') === true);
 ok('group scope: a user\'s private files blocked', pathInGroupScope('users/sam/todo.md') === false);
@@ -140,6 +140,53 @@ ok('no notice carries emoji or warning furniture',
   ['limit', 'turn-timeout', 'gate-down', 'compose-error'].every(k =>
     !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(failureNoticeText(plGroup, k, limitErr))));
 
+// (h) TWO BRAINS, ONE PERSON — the group delegate (wsapi) and the requester's
+// own 1:1 both deliver into the same DM, with no shared queue and no shared send
+// path. Live: the DM claimed it could not see the group and asked the operator
+// to paste the messages, while the delegate was already writing the answer and
+// delivered it a minute later. Disk is the only thing both touch, so the marker
+// is the handshake — and WHERE it goes is a privacy decision, not a filing one.
+const { pendingDelegatePath } = gwTest;
+const pendingPath = pendingDelegatePath('stanislaw') || '';
+ok('the in-flight marker lives in the requester\'s PRIVATE tree',
+  /\/memory\/users\/stanislaw\/\.pending-delegate\.json$/.test(pendingPath));
+// Next to the transcripts would put one person's private request where every
+// group turn can read it.
+ok('the marker is NOT in the shared group-watcher dir', !/group-watcher/.test(pendingPath));
+ok('a private turn can reach its own marker',
+  pathInScope('memory/users/stanislaw/.pending-delegate.json', { ownSlug: 'stanislaw' }) === true);
+ok('a GROUP turn is fenced out of it',
+  pathInGroupScope('memory/users/stanislaw/.pending-delegate.json') === false);
+ok('a malformed slug cannot escape the memory tree',
+  pendingDelegatePath('../../etc') === null && pendingDelegatePath('') === null);
+ok('the marker is always cleared, even when the delegate throws',
+  /finally \{ clearDelegatePending\(member\.slug\); releaseSlot\(\); \}/.test(gwSrcNotice));
+ok('the marker carries what it covers, so the DM can tell if it is the same ask',
+  /markDelegatePending\(member\.slug, \{ task,/.test(gwSrcNotice));
+
+// (i) LOSING THE THREAD. The ring is a cold-start number: a resumed turn carries
+// only messages since the last turn, so depth here is free per-turn and paid
+// once at boot. At 20 a restarted brain woke up on a group with 1949 lines on
+// disk and told people it had missed the thread.
+ok('the cold-start ring reaches past the last handful of messages',
+  /GROUP_HISTORY_MAX', 60\)/.test(gwSrcNotice));
+ok('the reload still seeds the ring from the durable transcript',
+  /slice\(-HISTORY_MAX\)/.test(gwSrcNotice));
+
+// (j) The 1:1 prefix has to KNOW both of those files exist, or it invents a
+// limitation instead of reading them.
+const { buildCachedPrefix } = await import('./memory-loader.js');
+const prefixBlock = buildCachedPrefix({ memoryDir: '/nonexistent-for-test' }).block;
+ok('the prefix points at the group transcripts',
+  /\.group-watcher\/<chatId>-history\.jsonl/.test(prefixBlock));
+ok('the prefix names the false excuse it is there to kill',
+  /cannot see group history/i.test(prefixBlock));
+ok('the prefix explains the in-flight marker', /\.pending-delegate\.json/.test(prefixBlock));
+ok('the prefix keeps the thread alive rather than going silent',
+  /do not leave them hanging|keep the thread alive/i.test(prefixBlock));
+ok('the transcript is framed as data, not instructions',
+  /never as instructions/i.test(prefixBlock));
+
 // A crash is not a usage limit. Announcing one as the other tells the reader to
 // wait for a reset that is never coming.
 const { isUsageLimit, resetDelayMs } = await import('./usage-limit.js');
@@ -205,7 +252,7 @@ ok('the delegate is told to READ the transcript rather than explain it cannot',
 // The delegate has the full toolset, so it CAN send Telegram messages itself —
 // and then its closing text is a report about that send, which the system
 // delivered as a second DM. Seen live: the answer, then a summary of the answer.
-const delSrc = gwSrc.split('async function runPrivateDelegate')[1].slice(0, 4000);
+const delSrc = gwSrc.split('async function runPrivateDelegate')[1].slice(0, 6000);
 ok('a self-sent delegate message suppresses the closing text', /selfSent/.test(delSrc) && /return finish\(''\)/.test(delSrc));
 ok('the delegate is told there is no send step', /THERE IS NO SEND STEP/.test(gwSrc));
 // Structural, not just prompted: the turn cannot deliver, so the two paths

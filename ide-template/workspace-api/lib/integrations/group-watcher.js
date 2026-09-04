@@ -165,7 +165,16 @@ const history   = new Map();   // chat_id → [{ role:'user'|'assistant', messag
 // window so a finished dialogue doesn't keep spawning full turns on chatter.
 const ENGAGED_WINDOW_MS = num('GROUP_ENGAGED_WINDOW_MS', 180000);
 const lastDialogue = new Map();   // chat_id → { fromId, ts } — whom the bot last replied to
-const HISTORY_MAX = num('GROUP_HISTORY_MAX', 20);
+// How far back the ring reaches. This is almost entirely a COLD-START number:
+// once a group has a live session, a resumed turn carries only the messages
+// since the last turn (see opts.resumed) and everything earlier is session
+// memory — so a bigger ring costs nothing per turn. It is paid once, when the
+// process comes up with no session and the ring is seeded from the transcript.
+// 20 was far too shallow for that moment: a live group here had 1949 lines on
+// disk, so a restarted brain woke up seeing the last 20 and told people it had
+// missed the thread. Depth beyond this is still reachable — the transcript is
+// on disk and the prefix now points at it.
+const HISTORY_MAX = num('GROUP_HISTORY_MAX', 60);
 function pushHistory(chatId, entry) {
   if (!entry || !String(entry.text || '').trim()) return;
   let h = history.get(chatId);
@@ -1275,6 +1284,30 @@ function delegatePrompt({ group, target, senderName, task, ctxMsgs = [], chatId 
 }
 
 /**
+ * The in-flight marker the requester's own 1:1 brain reads (see the prefix
+ * preamble). Best-effort on both ends: a failed write only costs a duplicate
+ * answer, and a stale file left by a crash is ignored by the reader on age, so
+ * neither can wedge a turn.
+ */
+const PENDING_DELEGATE = '.pending-delegate.json';
+function pendingDelegatePath(slug) {
+  if (!/^[a-z0-9-]+$/.test(String(slug || ''))) return null;
+  return join(PROJECT_DIR, 'memory', 'users', slug, PENDING_DELEGATE);
+}
+function markDelegatePending(slug, info) {
+  const p = pendingDelegatePath(slug);
+  if (!p) return;
+  try {
+    writeFileSync(p, JSON.stringify({ started: new Date().toISOString(), ...info }, null, 2));
+  } catch { /* no private tree yet, or unwritable — worst case: two answers */ }
+}
+function clearDelegatePending(slug) {
+  const p = pendingDelegatePath(slug);
+  if (!p) return;
+  try { unlinkSync(p); } catch { /* already gone */ }
+}
+
+/**
  * Run a [[PRIVATE_TASK]] delegated out of a group turn, in the requester's own
  * private scope, and DM them the result.
  *
@@ -1305,6 +1338,19 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
   }
   try {
     const senderName = member.displayName || member.slug;
+    // Announce the in-flight delegate in the requester's OWN private tree, so
+    // their 1:1 brain can see that an answer to this exact question is already
+    // being written and hold the thread instead of answering it a second time.
+    // Two brains reply to the same person today — the group delegate (wsapi) and
+    // their DM (tmux) — with no shared queue and no shared send path, so disk is
+    // the only thing they both touch. Seen live: the DM said it could not see the
+    // group and asked the operator to paste it, while the delegate was already
+    // producing the answer and delivered it a minute later.
+    //
+    // It goes under memory/users/<slug>/ and NOT next to the transcripts on
+    // purpose: the task text is that person's private request, and only their
+    // own turns can read there (a group turn is fenced out of every private tree).
+    markDelegatePending(member.slug, { task, group: (group && group.title) || '' });
     const pendingFiles = [];   // [[SEND_FILE …]] paths harvested from the delegate's stream
     const result = await new Promise((resolve) => {
       // Only the text AFTER the last tool call becomes the DM. The model narrates
@@ -1383,7 +1429,7 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
       notifyFailure(chatId, group, 'compose-error');
       process.stderr.write(`[group-watcher] private delegate for ${member.slug} FAILED\n`);
     }
-  } finally { releaseSlot(); }
+  } finally { clearDelegatePending(member.slug); releaseSlot(); }
 }
 
 // ─── Flush one chat's burst ───────────────────────────────────────────────────
@@ -1767,4 +1813,4 @@ export function routeGroupMessage(payload = {}) {
 }
 
 // Pure helpers exposed for unit smoke tests (no side effects).
-export const __test = { isCandidate, deframe, compileBeat, parseDecision, stripScaffolding, failureNoticeText, delegatePrompt };
+export const __test = { isCandidate, deframe, compileBeat, parseDecision, stripScaffolding, failureNoticeText, delegatePrompt, pendingDelegatePath };
