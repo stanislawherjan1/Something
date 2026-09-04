@@ -164,6 +164,19 @@ ok('the marker is always cleared, even when the delegate throws',
 ok('the marker carries what it covers, so the DM can tell if it is the same ask',
   /markDelegatePending\(member\.slug, \{ task,/.test(gwSrcNotice));
 
+// The cross-surface awareness frame quotes the group message verbatim, so a
+// request in someone's own voice ("message me privately about X") landed in the
+// operator's own session as a direct ask and got done — 14s before the delegate
+// delivered the same thing. A record of finished work must read as one.
+ok('the awareness frame states that the work is already done',
+  /ALREADY HANDLED/.test(gwSrcNotice));
+ok('...and says the private half is in flight when one was delegated',
+  /reply\.privateTask\s*\n?\s*\? 'ALREADY HANDLED — and the private half is being written/.test(gwSrcNotice));
+ok('...and tells the operator brain not to send it a second time',
+  /they would get it twice/i.test(gwSrcNotice));
+ok('the quoted group message is labelled as someone else\'s words',
+  /they said: \$\{clip\(target\.text/.test(gwSrcNotice));
+
 // (i) LOSING THE THREAD. The ring is a cold-start number: a resumed turn carries
 // only messages since the last turn, so depth here is free per-turn and paid
 // once at boot. At 20 a restarted brain woke up on a group with 1949 lines on

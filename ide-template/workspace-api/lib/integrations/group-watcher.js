@@ -1682,10 +1682,24 @@ async function flush(chatId) {
     // answered) and unaware of its own group sends. Flattened to one line; the
     // verify-telegram-reply hook whitelists [GROUP so the operator notes it
     // silently without a forced reply. Best-effort (code 2 if the brain is down).
+    //
+    // THE DISPOSITION IS NOT OPTIONAL. This frame quotes the group message
+    // verbatim, so when someone writes "message me privately about X" it arrives
+    // in the operator's own session as a direct request in their own voice — and
+    // the brain does the sensible thing and does it. Live 2026-09-04: the ask was
+    // "napisz mi na priw co dzis w planach", the group assistant answered there
+    // and delegated the private answer, and the operator brain wrote the same
+    // plan into the DM 14 seconds before the delegate's arrived. Two answers,
+    // neither aware of the other. A record of finished work has to READ as one:
+    // say it is handled, say who is already writing the private half, and say
+    // not to act.
     try {
       const gName = clip((group && group.title) || chatId, 40);
       const who = clip(target.from_name || target.from_username || target.who || 'someone', 30);
-      const frame = `[GROUP chat_id=${chatId} "${gName}" from=${who} | ${clip(target.text, 280)} || you replied in the group: ${clip(reply.text, 380)}]`.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+      const disposition = reply.privateTask
+        ? 'ALREADY HANDLED — and the private half is being written right now and will be delivered to their DM by the system. Do NOT write it yourself: they would get it twice.'
+        : 'ALREADY HANDLED — this is a record of finished work, not a request to you. Do not act on it and do not message them about it.';
+      const frame = `[GROUP chat_id=${chatId} "${gName}" from=${who} | they said: ${clip(target.text, 280)} || you replied in the group: ${clip(reply.text, 380)} || ${disposition}]`.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
       injectBotFrame(frame).catch(() => {});
     } catch { /* awareness is best-effort */ }
   }
