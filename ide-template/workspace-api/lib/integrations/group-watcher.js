@@ -796,14 +796,18 @@ function maybePinLanguage(chatId, code) {
 // it real room. Continuous typing keeps the group informed meanwhile.
 // Kept for compatibility: an existing GROUP_TURN_TIMEOUT_MS override now sets the
 // IDLE window rather than a wall-clock kill.
-// Silence between EVENTS (text, tool start, tool end). It bounds the "typing…"
-// wait, so it must outlast a slow single tool call — an IMAP search over a big
-// mailbox, a calendar round-trip while the box is busy — because a tool that is
-// genuinely running is not a hang. 150s killed working turns live (a calendar
-// question, while a Chromium login was eating the 4GB box) and the group got a
-// failure notice for work that was in progress. GROUP_TURN_MAX still bounds the
-// pathological case.
-const GROUP_TURN_IDLE = num('GROUP_TURN_IDLE_MS', num('GROUP_TURN_TIMEOUT_MS', 420000));
+// Silence between EVENTS (text, tool start, tool end) once the turn is TALKING.
+// This is the mid-turn hang detector and wants to stay tight.
+const GROUP_TURN_IDLE = num('GROUP_TURN_IDLE_MS', num('GROUP_TURN_TIMEOUT_MS', 150000));
+// Silence BEFORE the first event is a different thing entirely, and conflating
+// the two is what killed working turns. A group turn spawns claude with ~22 MCP
+// servers; the broker hands out their credentials one by one, and on a small box
+// that startup alone can outlast the idle window — so the turn was killed for
+// being quiet during the one stretch where it physically cannot speak. Measured
+// live: turn started 19:24:30, credentials still being delivered at 19:25:01,
+// no tool call ever logged, killed at 19:27:24. Give startup its own budget and
+// keep the hang detector sharp.
+const GROUP_TURN_STARTUP = num('GROUP_TURN_STARTUP_MS', 300000);
 // Absolute backstop so a pathological turn cannot hold its concurrency slot for
 // ever. Generous on purpose: reaching it means something is genuinely wrong, not
 // that the work was merely long.
@@ -1119,11 +1123,16 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     // ceiling still backstops a pathological turn.
     let idleTimer = null;
     const finish = (r) => { if (done) return; done = true; clearTimeout(idleTimer); clearTimeout(hardTimer); if (typing) clearInterval(typing); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
+    let spoke = false;   // has the turn produced ANY event yet?
     const bumpIdle = () => {
       if (done) return;
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => finish({ ok: false, error: 'group-turn-timeout' }), GROUP_TURN_IDLE);
+      idleTimer = setTimeout(
+        () => finish({ ok: false, error: spoke ? 'group-turn-timeout' : 'group-turn-startup-timeout' }),
+        spoke ? GROUP_TURN_IDLE : GROUP_TURN_STARTUP,
+      );
     };
+    const bumpAlive = () => { spoke = true; bumpIdle(); };
     const hardTimer = setTimeout(() => finish({ ok: false, error: 'group-turn-timeout' }), GROUP_TURN_MAX);
     bumpIdle();
     // Flush each completed [[SEND]]-delimited chunk to the group as its own message
@@ -1189,9 +1198,9 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     try {
       proc = runClaudeTurn(groupTurnParams(group, ctxMsgs, target, {
         sessionId: session && session.sessionId ? session.sessionId : undefined,   // Phase 1: resume the group's persistent session
-        onText: (t) => { bumpIdle(); text += t; extractPrivateTask(); if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
-        onToolStart: (info) => { bumpIdle(); startTyping(); process.stderr.write(`[group-brain] tool: ${info && info.name ? info.name : JSON.stringify(info)}\n`); },
-        onToolEnd: () => { bumpIdle(); }, onImage: () => { bumpIdle(); },
+        onText: (t) => { bumpAlive(); text += t; extractPrivateTask(); if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
+        onToolStart: (info) => { bumpAlive(); startTyping(); process.stderr.write(`[group-brain] tool: ${info && info.name ? info.name : JSON.stringify(info)}\n`); },
+        onToolEnd: () => { bumpAlive(); }, onImage: () => { bumpAlive(); },
         onError: (e) => finish({ ok: false, error: String(e).slice(0, 200) }),
         onDone: (info) => {
           if (info && info.sessionId) capturedSessionId = info.sessionId;

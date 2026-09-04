@@ -113,8 +113,22 @@ ok('a group with a pinned language gets that language',
 ok('the reset time survives translation', /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(plGroup, 'limit', limitErr)));
 ok('a re-ask is not answered with the same apology (one notice, then quiet)',
   /15 \* 60_000/.test(gwSrcNotice));
-ok('a slow single tool call is not treated as a hang',
-  /GROUP_TURN_IDLE_MS', num\('GROUP_TURN_TIMEOUT_MS', 420000/.test(gwSrcNotice));
+// Startup and mid-turn silence are different failures and were conflated: a
+// group turn spawns claude with ~22 MCP servers, and on a small box the broker
+// is still handing out their credentials well past the idle window. Measured
+// live: turn started 19:24:30, credentials still landing at 19:25:01, not one
+// tool call ever logged, killed at 19:27:24 for "being quiet" during the one
+// stretch where it cannot speak. Startup gets its own budget; the hang detector
+// stays tight so a genuinely stuck turn is still caught fast.
+ok('startup silence is not the hang detector',
+  /GROUP_TURN_STARTUP_MS', 300000/.test(gwSrcNotice));
+ok('the hang detector stays tight once the turn is talking',
+  /GROUP_TURN_IDLE_MS', num\('GROUP_TURN_TIMEOUT_MS', 150000/.test(gwSrcNotice));
+ok('the timer only switches to the tight window after a real event',
+  /spoke \? GROUP_TURN_IDLE : GROUP_TURN_STARTUP/.test(gwSrcNotice)
+  && /const bumpAlive = \(\) => \{ spoke = true;/.test(gwSrcNotice));
+ok('every stream callback marks the turn alive (none left on the startup clock)',
+  !/onText: \(t\) => \{ bumpIdle\(\)|onToolStart: \(info\) => \{ bumpIdle\(\)|onToolEnd: \(\) => \{ bumpIdle\(\)/.test(gwSrcNotice));
 ok('no em dashes in any notice',
   ['limit', 'turn-timeout', 'gate-down', 'compose-error'].every(k =>
     !failureNoticeText(plGroup, k, limitErr).includes('—')));
