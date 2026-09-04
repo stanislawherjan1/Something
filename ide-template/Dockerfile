@@ -154,7 +154,7 @@ RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/
 # newest CLIs (agent teams, workflows, Opus 4.8) are safe again.
 RUN npm install -g @anthropic-ai/claude-code@2.1.150 && \
     mkdir -p /home/coder/.npm-global && \
-    npm install -g pm2 --prefix /home/coder/.npm-global --ignore-scripts
+    npm install -g pm2@7.0.4 --prefix /home/coder/.npm-global --ignore-scripts
 
 # === LAYER 2b: Bun runtime (for Telegram plugin) ===
 # Was: `curl -fsSL https://bun.sh/install | bash`. The bun.sh script

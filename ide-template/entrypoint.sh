@@ -1440,14 +1440,14 @@ npm_bin = '/home/coder/.npm-global/bin'
 # (via "claude mcp add" during a chat session) is preserved under its own key.
 managed = {}
 
-# NOTE: there is no `memory` MCP server any more. The knowledge-graph store
+# NOTE: there is no 'memory' MCP server any more. The knowledge-graph store
 # (memory.jsonl) was a second, invisible memory the model could write to — the
 # cached prefix already told it the store did not exist, because nothing ever
 # read it back. Durable memory is the markdown wiki under project/memory/,
 # written through the memory_write tool.
 
 # Playwright Browser — always on (headless Chromium).
-# Kept in this `managed` dict for backwards compatibility on the legacy
+# Kept in this 'managed' dict for backwards compatibility on the legacy
 # /home/coder/.claude.json path (some web-chat code-paths still read it).
 # The AUTHORITATIVE definition for the bot's claude (uid 1003,
 # HOME=/home/bot) lives in the root block above — search for "Force-write
@@ -1608,7 +1608,7 @@ managed['pdf'] = {
 }
 
 # Workspace-API MCP — thin wrapper exposing workspace-api HTTP routes as
-# MCP tools. Currently surfaces `memory_grep` (the tool the cached prefix
+# MCP tools. Currently surfaces 'memory_grep' (the tool the cached prefix
 # PREAMBLE instructs the model to use). Always on: no credentials required.
 # Talks to workspace-api on localhost — the URL must match WORKSPACE_API_PORT
 # (default 3001 per workspace-api/lib/config.js).
@@ -1711,8 +1711,15 @@ sleep 5
 # Logs directory — pm2 needs it to exist + writable before any app starts.
 mkdir -p "/home/coder/.${BOT_NAME:?BOT_NAME is not set}"
 
-# Clean slate: delete old processes to avoid duplicates
-pm2 delete all 2>/dev/null || true
+# Clean slate: delete old processes to avoid duplicates.
+#
+# `timeout` is load-bearing, not defensive dressing: this call wedged for 5+
+# minutes on a fresh container (pm2 7.0.4, empty process list), and because it
+# sits BEFORE the lines that start workspace-api and the bot, nothing ever
+# started. The container reported healthy the whole time (the frontend answers),
+# so the failure was invisible except as "the bot is silent". A cleanup step is
+# never worth hanging the boot over — if it cannot finish in 30s, boot anyway.
+timeout 30 pm2 delete all 2>/dev/null || true
 
 # Stage 1: workspace-api — always start, no auth deps. This is what serves
 # /api/setup/* (the wizard) and /api/branding to the frontend. Without it,
