@@ -126,7 +126,12 @@ ok('the hang detector stays tight once the turn is talking',
   /GROUP_TURN_IDLE_MS', num\('GROUP_TURN_TIMEOUT_MS', 150000/.test(gwSrcNotice));
 ok('the timer only switches to the tight window after a real event',
   /spoke \? GROUP_TURN_IDLE : GROUP_TURN_STARTUP/.test(gwSrcNotice)
-  && /const bumpAlive = \(\) => \{ spoke = true;/.test(gwSrcNotice));
+  && /const bumpAlive = \(\) => \{[\s\S]{0,220}?spoke = true;/.test(gwSrcNotice));
+// The startup cost is the number that decides whether the operator's DM can
+// move off tmux (tmux pays it once per session, a headless turn every time), so
+// it is measured, not estimated.
+ok('spawn-to-first-event is measured, not guessed',
+  /first-event after \$\{Date\.now\(\) - spawnedAt\}ms/.test(gwSrcNotice));
 ok('every stream callback marks the turn alive (none left on the startup clock)',
   !/onText: \(t\) => \{ bumpIdle\(\)|onToolStart: \(info\) => \{ bumpIdle\(\)|onToolEnd: \(\) => \{ bumpIdle\(\)/.test(gwSrcNotice));
 ok('no em dashes in any notice',

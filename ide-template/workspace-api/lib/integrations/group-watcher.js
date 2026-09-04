@@ -1133,6 +1133,14 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     let idleTimer = null;
     const finish = (r) => { if (done) return; done = true; clearTimeout(idleTimer); clearTimeout(hardTimer); if (typing) clearInterval(typing); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
     let spoke = false;   // has the turn produced ANY event yet?
+    // TIME TO FIRST EVENT — the cost of spawning claude and its ~22 MCP servers,
+    // separated from the model's own thinking time. tmux pays this once per
+    // session; a headless turn pays it every time, so it is the number that
+    // decides whether the operator's DM can move off tmux at all (see
+    // docs/future-plans/TMUX_RETIREMENT.md §4). Measure it rather than guess:
+    // end-to-end group latency is p50 28s / p90 70s over 546 real turns, but
+    // that mixes startup with thinking and the two have very different fixes.
+    const spawnedAt = Date.now();
     const bumpIdle = () => {
       if (done) return;
       clearTimeout(idleTimer);
@@ -1141,7 +1149,11 @@ function groupCompose(group, ctxMsgs, target, session = null) {
         spoke ? GROUP_TURN_IDLE : GROUP_TURN_STARTUP,
       );
     };
-    const bumpAlive = () => { spoke = true; bumpIdle(); };
+    const bumpAlive = () => {
+      if (!spoke) process.stderr.write(`[group-brain] first-event after ${Date.now() - spawnedAt}ms (spawn + MCP startup)\n`);
+      spoke = true;
+      bumpIdle();
+    };
     const hardTimer = setTimeout(() => finish({ ok: false, error: 'group-turn-timeout' }), GROUP_TURN_MAX);
     bumpIdle();
     // Flush each completed [[SEND]]-delimited chunk to the group as its own message
