@@ -54,7 +54,26 @@ export default function memoryRouter() {
     const regex = req.query.regex === '1' || req.query.regex === 'true';
     const max   = req.query.max != null ? Math.max(1, Math.min(50, Number(req.query.max) || 10)) : 10;
     try {
-      const actor = getTeamMode() ? (getUser(req.actor)?.slug || null) : null;
+      // A browser call carries a session cookie, so req.actor resolves and the
+      // grep is scoped to that person. An MCP call from inside the container
+      // carries neither cookie nor header-from-nginx — req.actor is null, and
+      // with a null actor grepMemory excludes users/** WHOLESALE. That is why
+      // the bot would answer "no routines are set up" while the panel showed
+      // one: RESPONSIBILITIES lives in memory/users/<slug>/ under team mode,
+      // and the bot's only search path could not see it. In solo mode the card
+      // sits at the memory root, which is why this used to work.
+      //
+      // Fall back to the turn's own slug, sent by workspace-api-mcp the same
+      // way memory_write already sends it — and ONLY from loopback, since
+      // /api/ is reachable through nginx and Caddy strips X-IDE-User but not
+      // this header. Without the loopback test any signed-in member could name
+      // someone else's slug and read their private memory.
+      const ip = req.socket?.remoteAddress || '';
+      const fromLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+      const hdrRaw = typeof req.headers['x-ide-actor'] === 'string' ? req.headers['x-ide-actor'] : '';
+      const hdrActor = fromLoopback && /^[a-z0-9-]+$/.test(hdrRaw) ? hdrRaw : null;
+
+      const actor = getTeamMode() ? (getUser(req.actor)?.slug || hdrActor || null) : null;
       const matches = await grepMemory(q, { maxCount: max, regex, actor });
       res.json({ query: q, regex, count: matches.length, matches });
     } catch (err) {

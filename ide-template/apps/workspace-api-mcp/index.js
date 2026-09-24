@@ -289,7 +289,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     const url = `${API_BASE}/api/memory/grep?${params.toString()}`;
     try {
-      const res = await fetch(url);
+      // Same identity header memory_write sends. Without it the server sees no
+      // actor and searches only the shared tree, so nothing under
+      // memory/users/<slug>/ — the turn's own RESPONSIBILITIES included — is
+      // ever found.
+      const res = await fetch(url, {
+        headers: { 'X-IDE-Actor': process.env.IDE_ACTOR_SLUG || '' },
+      });
       if (!res.ok) {
         const body = await res.text();
         return {
