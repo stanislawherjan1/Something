@@ -101,6 +101,24 @@ engine.remember({
   ok('a healthy card reports no change', engine.repairCardText(clean).moved === 0);
 }
 
+// repairCards over the real tree. The pure function was tested first and the
+// walker was not, so a double-joined path made the whole pass a silent no-op:
+// it reported "nothing to do" over cards that were visibly broken.
+{
+  writeFileSync(join(mem, 'users', 'stan', 'USER_PREFERENCES.md'),
+    '---\ncard: USER_PREFERENCES\n---\n\n# USER_PREFERENCES\n\n## Communication\n- terse\n\n## Communication\n- no preamble\n');
+  const dry = engine.repairCards({ actor: 'test', dryRun: true });
+  ok('the walk reaches a per-user card', dry.some(r => r.file.includes('users/stan/USER_PREFERENCES.md')), dry);
+  ok('a dry run writes nothing',
+    (read('memory/users/stan/USER_PREFERENCES.md').match(/^## Communication/gm) || []).length === 2);
+
+  engine.repairCards({ actor: 'test' });
+  const fixed = read('memory/users/stan/USER_PREFERENCES.md');
+  ok('applying the repair collapses the duplicate', (fixed.match(/^## Communication/gm) || []).length === 1, fixed);
+  ok('and keeps both preferences', /- terse/.test(fixed) && /- no preamble/.test(fixed), fixed);
+  ok('a second run is a no-op', engine.repairCards({ actor: 'test', dryRun: true }).every(r => !r.file.includes('USER_PREFERENCES')));
+}
+
 // Punctuation drift is the same heading: a card that sprouts `## Working-style`
 // beside `## Working style` splits what every reader treats as one place.
 engine.remember({ actor: 'stan', scope: 'shared', card: 'AGENT_TOOLS', section: 'trello', text: 'archive, never delete a list' });

@@ -700,9 +700,29 @@ export function repairCardText(text, { flatHeading = null } = {}) {
  * event path so each change gets an undo snapshot and a log line.
  */
 export function repairCards({ actor = 'system', dryRun = false } = {}) {
+  // Its own walk, not readableClaimFiles(): that one returns ABSOLUTE paths and
+  // is scoped to a single actor, so it skips every per-user card — which is
+  // where this damage lives. A repair is an operator-level pass over the whole
+  // tree, machine-written snapshots and engine internals excluded.
+  const SKIP_DIRS = new Set(['_engine', '_reflect', 'archive', 'undo']);
+  const SKIP_FILES = new Set(['about.md', 'index.md', 'recent_web.md', 'recent_telegram.md']);
+  const files = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) { if (!SKIP_DIRS.has(e.name)) walk(full); continue; }
+      if (!e.isFile() || !e.name.endsWith('.md')) continue;
+      if (SKIP_FILES.has(e.name.toLowerCase())) continue;
+      files.push(full);
+    }
+  };
+  walk(memoryDir());
+
   const report = [];
-  for (const rel of readableClaimFiles(null)) {
-    const abs = join(PROJECT_DIR, rel);
+  for (const abs of files) {
+    const rel = abs.startsWith(PROJECT_DIR) ? abs.slice(PROJECT_DIR.length).replace(/^[/\\]/, '') : abs;
     let before;
     try { before = readFileSync(abs, 'utf8'); } catch { continue; }
 
