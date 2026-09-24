@@ -101,6 +101,35 @@ engine.remember({
   ok('a healthy card reports no change', engine.repairCardText(clean).moved === 0);
 }
 
+// Frontmatter is a card's instructions, and `key: value` is exactly the shape
+// isClaimLine accepts — so `write_how: One responsibility per line …` matched as
+// a claim, and a supersede could have rewritten a card's own specification.
+{
+  writeFileSync(join(mem, 'users', 'stan', 'USER_REFLECTIONS.md'),
+    '---\ncard: USER_REFLECTIONS\nwrite_how: One reflection per line under the dated heading\n---\n\n# USER_REFLECTIONS\n\n## 2026-01-01\n- one reflection per line is easy to read\n');
+  const hits = engine.findClaims('One reflection per line', { actor: 'stan' });
+  ok('frontmatter is not searched for claims',
+    hits.every(h => h.line > 4), JSON.stringify(hits));
+  ok('but the real claim below it still matches', hits.length === 1, JSON.stringify(hits));
+}
+
+// An entry written without its list marker is invisible to findClaims, so the
+// engine can neither correct nor retire it — a duty sat on a live card, shown in
+// the panel, while every edit landed elsewhere. The repair gives the marker back.
+{
+  const unmarked = [
+    '---', 'card: RESPONSIBILITIES', '---', '', '# Responsibilities', '',
+    '## Responsibilities',
+    'mail **Hourly email watch** — every hour, check the inbox. #email',
+    '- {file} **Weekly recap** — each Friday. #team', '',
+  ].join('\n');
+  const healed = engine.repairCardText(unmarked, { flatHeading: 'Responsibilities' }).text;
+  ok('an unmarked entry gets its list marker back',
+    /^- mail \*\*Hourly email watch\*\*/m.test(healed), healed);
+  ok('an entry that already had one is untouched',
+    (healed.match(/^- \{file\} \*\*Weekly recap\*\*/gm) || []).length === 1, healed);
+}
+
 // repairCards over the real tree. The pure function was tested first and the
 // walker was not, so a double-joined path made the whole pass a silent no-op:
 // it reported "nothing to do" over cards that were visibly broken.

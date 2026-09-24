@@ -242,6 +242,20 @@ export function readableClaimFiles(actor) {
  * usually written in more than one place (a card bullet, a concept claim), and
  * fixing one copy while the others survive is how a corrected fact comes back.
  */
+/**
+ * Index of the first line AFTER the leading `---` frontmatter block, or 0.
+ * A card's frontmatter is its instructions, and `key: value` is exactly the
+ * shape isClaimLine accepts — so `write_how: One responsibility per line …`
+ * was matching as a claim. A supersede could have rewritten a card's own
+ * specification with a fact.
+ */
+function bodyStart(lines) {
+  if (lines[0] !== undefined && lines[0].trim() === '---') {
+    for (let i = 1; i < lines.length; i++) if (lines[i].trim() === '---') return i + 1;
+  }
+  return 0;
+}
+
 export function findClaims(match, { actor } = {}) {
   const needle = String(match || '').trim();
   if (!needle) return [];
@@ -250,7 +264,8 @@ export function findClaims(match, { actor } = {}) {
     let body;
     try { body = readFileSync(abs, 'utf8'); } catch { continue; }
     const lines = body.split('\n');
-    for (let i = 0; i < lines.length; i++) {
+    const from = bodyStart(lines);
+    for (let i = from; i < lines.length; i++) {
       if (!isClaimLine(lines[i])) continue;
       const line = lines[i];
       const exact = normalizeClaim(line) === normalizeClaim(needle);
@@ -688,6 +703,20 @@ export function repairCardText(text, { flatHeading = null } = {}) {
   for (const sec of order) {
     out.push(`## ${sec.title}`);
     let body = sec.body.slice();
+    // On a flat-list card, an entry written without its list marker is not a
+    // claim line — so findClaims skips it and the engine can neither correct
+    // nor retire it. That is how a duty stayed on the card, visible in the
+    // panel, while every edit landed somewhere else. Give it the marker back
+    // and it is editable again.
+    if (flatHeading) {
+      body = body.map((l) => {
+        const t = l.trim();
+        if (!t || t.startsWith('<!--') || t.startsWith('#')) return l;
+        if (/^[-*+]\s+\S/.test(t)) return l;
+        moved++;
+        return `- ${t}`;
+      });
+    }
     while (body.length && !body[body.length - 1].trim()) body.pop();
     out.push(...body, '');
   }
