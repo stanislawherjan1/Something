@@ -61,6 +61,46 @@ engine.remember({
     (card.match(/^## /gm) || []).length === 1, card);
 }
 
+// `## Never` is half of RULES. A live AGENT_TOOLS card grew one of its own,
+// holding a constraint no reader of the rules card ever saw. Refused, not
+// re-routed: only the caller knows whether the claim is a rule or a tool note.
+{
+  const r = engine.remember({ actor: 'stan', scope: 'shared', card: 'AGENT_TOOLS', section: 'Never', text: 'never send mail unattended' });
+  ok('a heading reserved for another card is refused', r.ok === false && /RULES/.test(r.error || ''), r);
+  ok('and nothing was written', !/^## Never/m.test(read('memory/AGENT_TOOLS.md')), read('memory/AGENT_TOOLS.md'));
+  const r2 = engine.remember({ actor: 'stan', scope: 'shared', card: 'RULES', section: 'Always', text: 'always show the draft first' });
+  ok('the same section on its own card is fine', r2.ok === true, r2);
+}
+
+// Repair: a card that grew a second heading of the same name, and a flat-list
+// card whose duties parked under headings of their own. Content MOVES; nothing
+// is dropped.
+{
+  const twice = [
+    '---', 'card: RULES', '---', '', '# RULES', '',
+    '## Never', '- alpha', '', '## Always', '- gamma', '',
+    '## Never', '- beta', '', '## Always', '- delta', '',
+  ].join('\n');
+  const fixed = engine.repairCardText(twice).text;
+  ok('duplicate headings collapse into the first', (fixed.match(/^## Never/gm) || []).length === 1, fixed);
+  ok('no rule is lost in the merge',
+    ['alpha', 'beta', 'gamma', 'delta'].every(x => fixed.includes(`- ${x}`)), fixed);
+
+  const scattered = [
+    '---', 'card: RESPONSIBILITIES', '---', '', '# Responsibilities', '',
+    '## Responsibilities', '- {mail} **A** — one. #x', '',
+    '## Hourly Email Watch', '- {mail} **B** — two. #y', '',
+    '## Standing Checks', '- C every evening', '',
+  ].join('\n');
+  const folded = engine.repairCardText(scattered, { flatHeading: 'Responsibilities' }).text;
+  ok('a flat-list card ends with exactly one heading', (folded.match(/^## /gm) || []).length === 1, folded);
+  ok('every stray duty is folded into the list',
+    /\*\*A\*\*/.test(folded) && /\*\*B\*\*/.test(folded) && /- C every evening/.test(folded), folded);
+
+  const clean = ['---', 'card: RULES', '---', '', '# RULES', '', '## Never', '- alpha', ''].join('\n');
+  ok('a healthy card reports no change', engine.repairCardText(clean).moved === 0);
+}
+
 // Punctuation drift is the same heading: a card that sprouts `## Working-style`
 // beside `## Working style` splits what every reader treats as one place.
 engine.remember({ actor: 'stan', scope: 'shared', card: 'AGENT_TOOLS', section: 'trello', text: 'archive, never delete a list' });

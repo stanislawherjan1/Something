@@ -300,6 +300,16 @@ function removeLines(text, targets) {
  */
 const FLAT_LIST_CARDS = { RESPONSIBILITIES: 'Responsibilities' };
 
+/**
+ * Headings that belong to ONE card. `## Never` and `## Always` are the two
+ * halves of RULES, and a rule filed anywhere else is a rule nothing enforces:
+ * a live AGENT_TOOLS card grew its own `## Never`, holding a constraint that
+ * every reader of the rules card never saw. Refused rather than re-routed —
+ * the caller picked the wrong card, and only the caller knows whether the
+ * claim is a rule or a tool note.
+ */
+const RESERVED_HEADINGS = { never: 'RULES', always: 'RULES' };
+
 /** `## Working style` and `## Working-Style` are the same heading. */
 function normalizeHeading(h) {
   return String(h || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -488,6 +498,16 @@ export function remember({ actor, scope = 'shared', owner, card, page, section, 
     };
   }
 
+  const reservedFor = section ? RESERVED_HEADINGS[normalizeHeading(section)] : null;
+  if (reservedFor && String(card || '').trim().toUpperCase() !== reservedFor) {
+    return {
+      ok: false,
+      error: `section "${section}" belongs to the ${reservedFor} card. `
+        + `If this is a rule, write it to card "${reservedFor}". If it is a note about a tool `
+        + `or a person, keep this card and name a section that describes the subject.`,
+    };
+  }
+
   // A flat-list card ignores the requested section entirely — see
   // FLAT_LIST_CARDS. Everything else keeps the caller's choice.
   const flatHeading = card ? FLAT_LIST_CARDS[String(card).trim().toUpperCase()] : null;
@@ -607,6 +627,102 @@ export function retire({ actor, match, reason }) {
  * one created under a wrong name). The file is deleted; its last content is kept
  * as the undo snapshot, so this is reversible.
  */
+/**
+ * Fold a card back into the shape it declares.
+ *
+ * Two things went wrong on live cards, both silently:
+ *   - the same heading twice (`## Never` … `## Never`), so a card carried two
+ *     sets of rules and whatever read "the Never section" saw one of them;
+ *   - on a flat-list card, duties parked under headings of their own, invisible
+ *     to the Routines panel and to the planner, which read the list only.
+ *
+ * This moves lines; it never drops them. Everything under a duplicate heading
+ * is appended to the first heading of that name, and on a flat-list card every
+ * entry ends up in the one list. A card that is already correct is left alone,
+ * and reports no change.
+ */
+export function repairCardText(text, { flatHeading = null } = {}) {
+  const lines = String(text || '').split('\n');
+
+  // Keep the preamble (frontmatter, title, intro) exactly as it is.
+  let firstHeading = lines.findIndex(l => /^##\s+/.test(l));
+  if (firstHeading === -1) return { text, moved: 0, dropped: [] };
+
+  const head = lines.slice(0, firstHeading);
+  const sections = [];
+  let cur = null;
+  for (let i = firstHeading; i < lines.length; i++) {
+    const m = lines[i].match(/^##\s+(.+?)\s*$/);
+    if (m) { cur = { title: m[1].trim(), body: [] }; sections.push(cur); }
+    else if (cur) cur.body.push(lines[i]);
+  }
+
+  const order = [];
+  const byKey = new Map();
+  let moved = 0;
+
+  for (const sec of sections) {
+    const key = flatHeading ? '\u0000flat' : normalizeHeading(sec.title);
+    if (!byKey.has(key)) {
+      const title = flatHeading || sec.title;
+      const kept = { title, body: sec.body.slice() };
+      byKey.set(key, kept);
+      order.push(kept);
+      if (flatHeading && normalizeHeading(sec.title) !== normalizeHeading(flatHeading)) moved++;
+      continue;
+    }
+    // A second heading of the same name, or any heading on a flat-list card:
+    // its content joins the one that is already there.
+    const target = byKey.get(key);
+    const content = sec.body.filter(l => l.trim());
+    if (content.length) {
+      while (target.body.length && !target.body[target.body.length - 1].trim()) target.body.pop();
+      target.body.push(...content);
+      moved += content.length;
+    } else {
+      moved++;   // an empty duplicate heading still goes
+    }
+  }
+
+  const out = [...head];
+  for (const sec of order) {
+    out.push(`## ${sec.title}`);
+    let body = sec.body.slice();
+    while (body.length && !body[body.length - 1].trim()) body.pop();
+    out.push(...body, '');
+  }
+  const repaired = out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
+  return { text: repaired, moved, dropped: [] };
+}
+
+/**
+ * Run repairCardText over every card under memory/, writing through the normal
+ * event path so each change gets an undo snapshot and a log line.
+ */
+export function repairCards({ actor = 'system', dryRun = false } = {}) {
+  const report = [];
+  for (const rel of readableClaimFiles(null)) {
+    const abs = join(PROJECT_DIR, rel);
+    let before;
+    try { before = readFileSync(abs, 'utf8'); } catch { continue; }
+
+    const cardName = (before.match(/^card:\s*(\S+)/m) || [])[1] || '';
+    const flatHeading = FLAT_LIST_CARDS[String(cardName).trim().toUpperCase()] || null;
+
+    const { text: after, moved } = repairCardText(before, { flatHeading });
+    if (!moved || after === before) continue;
+
+    report.push({ file: rel, card: cardName || null, moved });
+    if (dryRun) continue;
+    applyEvent({
+      abs, rel, before, after, op: 'repair', actor, scope: null, owner: null,
+      section: null, source: 'repairCards',
+      changes: { removed: [], added: [] },
+    });
+  }
+  return report;
+}
+
 export function retirePage({ actor, page, scope = 'shared', owner, reason }) {
   const target = resolveTarget({ page, scope, owner });
   if (target.error) return { ok: false, error: target.error };
