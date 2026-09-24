@@ -130,6 +130,29 @@ engine.remember({
     (healed.match(/^- \{file\} \*\*Weekly recap\*\*/gm) || []).length === 1, healed);
 }
 
+// The real template is a MULTI-LINE comment full of example entries. A first
+// version of the marker repair checked only whether a line STARTED with `<!--`,
+// so it gave list markers to the examples and to the closing `-->` — and did it
+// to two cards on a live client before anyone looked.
+{
+  const withTemplate = [
+    '---', 'card: RESPONSIBILITIES', '---', '', '# Responsibilities', '',
+    '## Responsibilities',
+    '<!-- Everything I am on the hook for. One per line as',
+    '     {icon} **Short title** — description #tags. Keep the title short;',
+    '     put the frequency into the description. e.g.:',
+    '- {mail} **Check email** — each morning. #email',
+    '-->',
+    'mail **Hourly email watch** — every hour, check the inbox. #email', '',
+  ].join('\n');
+  const out = engine.repairCardText(withTemplate, { flatHeading: 'Responsibilities' }).text;
+  ok('the comment block is left exactly as it was',
+    out.includes('     {icon} **Short title** — description #tags. Keep the title short;')
+    && /^-->$/m.test(out) && !/^- -->/m.test(out) && !/^- \s+\{icon\}/m.test(out), out);
+  ok('the real entry below it still gets its marker',
+    /^- mail \*\*Hourly email watch\*\*/m.test(out), out);
+}
+
 // repairCards over the real tree. The pure function was tested first and the
 // walker was not, so a double-joined path made the whole pass a silent no-op:
 // it reported "nothing to do" over cards that were visibly broken.

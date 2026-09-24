@@ -709,9 +709,20 @@ export function repairCardText(text, { flatHeading = null } = {}) {
     // panel, while every edit landed somewhere else. Give it the marker back
     // and it is editable again.
     if (flatHeading) {
+      // The card's own template is a MULTI-LINE HTML comment holding example
+      // entries. Testing only whether a line starts with `<!--` marked its
+      // first line and left the rest looking like content, so the examples —
+      // and the closing `-->` — got list markers of their own. Track the block.
+      let inComment = false;
       body = body.map((l) => {
         const t = l.trim();
-        if (!t || t.startsWith('<!--') || t.startsWith('#')) return l;
+        const opens = t.includes('<!--');
+        const closes = t.includes('-->');
+        const wasInComment = inComment;
+        if (opens && !closes) inComment = true;
+        else if (closes) inComment = false;
+        if (wasInComment || opens || closes) return l;
+        if (!t || t.startsWith('#')) return l;
         if (/^[-*+]\s+\S/.test(t)) return l;
         moved++;
         return `- ${t}`;
