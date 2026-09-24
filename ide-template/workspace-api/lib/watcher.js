@@ -29,11 +29,17 @@ function queueEvent(type, abs) {
   // though their leaf may be dot-prefixed — they're the reason the users/
   // corridor exists. Everything else keeps the visibility gate.
   const miniapp = /^users\/[^/]+\/\.claude\/miniapps\//.test(path) || path.startsWith('.claude/miniapps/');
-  if (!miniapp && leaf && !isVisibleEntry(leaf)) return;
+  // Cards live under a SOFT_HIDDEN root, so they are judged by their own name
+  // (RULES.md, RESPONSIBILITIES.md — all visible) rather than by the directory
+  // that hides them from the file tree.
+  const memoryCard = /^memory\/.+\.md$/.test(path);
+  if (!miniapp && !memoryCard && leaf && !isVisibleEntry(leaf)) return;
   // Events under users/<slug>/ are PRIVATE: even filenames are metadata
   // (which apps a teammate has). Tag with the owner slug; flush() delivers
   // them only to that user's own SSE streams.
-  const owner = path.match(/^users\/([^/]+)\//)?.[1] || null;
+  const owner = path.match(/^users\/([^/]+)\//)?.[1]
+    || path.match(/^memory\/users\/([^/]+)\//)?.[1]
+    || null;
   pending.push({ type, path, owner });
   if (flushTimer) return;
   flushTimer = setTimeout(flush, 100);
@@ -67,6 +73,21 @@ const watcher = chokidar.watch(PROJECT_ABS, {
     // reload. Visibility in the file tree is gated separately in files.js —
     // watching doesn't expose content.
     if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json' || rel === '.tasks.json') return false;
+    // The memory wiki. `memory` is SOFT_HIDDEN, so the visibility gate at the
+    // bottom of this function stopped chokidar from ever descending into it and
+    // NO memory write produced an event: the Routines panel subscribed to this
+    // stream, correctly, and nothing ever arrived — so a duty the bot had just
+    // recorded only appeared after a manual page reload. Same for the Memory
+    // dashboard. (Watching is not exposure; content is gated in files.js, and
+    // private trees are owner-tagged in queueEvent below.)
+    //
+    // Engine internals stay dark: every write drops an undo snapshot and a log
+    // line under memory/_engine, so watching those would fire an event for each
+    // write's own bookkeeping — a refresh per keystroke of housekeeping, and a
+    // loop the moment anything reacts to it by writing.
+    if (rel === 'memory' || rel.startsWith('memory/')) {
+      return /^memory\/_engine(\/|$)/.test(rel) || /^memory\/_reflect(\/|$)/.test(rel);
+    }
     // Mini apps in TEAM mode live under users/<slug>/.claude/miniapps. The
     // 'users' dir is SOFT_HIDDEN, so the default gate below would stop the
     // traversal at users/ itself and no event would ever fire for a freshly
