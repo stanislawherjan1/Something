@@ -78,16 +78,29 @@ function parseRole(md) {
     if (h) { cur = h[1].trim().toLowerCase(); sections[cur] = []; continue; }
     if (cur) sections[cur].push(line);
   }
-  const bullets = (name) => (sections[name] || [])
-    .map((l) => l.match(/^\s*[-*]\s+(.+?)\s*$/))
-    .filter(Boolean)
-    .map((m) => m[1].trim());
+  // A duty is normally `- {icon} **Title** — description #tags`. Accept it
+  // without the leading marker too: the card is written by the model, and a
+  // missing `-` used to make the entry vanish from this view with no trace,
+  // which reads as "the bot never saved it" and sends everyone hunting the
+  // wrong bug. A bold title is signal enough that the line is a duty.
+  const DUTY_LINE = /^\s*(?:[-*]\s+)?((?:\{[a-z0-9-]+\}|[a-z0-9-]+)?\s*\*\*.+)$/i;
+  const unparsed = [];
+  const bullets = (name) => (sections[name] || []).reduce((acc, l) => {
+    const line = l.trim();
+    if (!line) return acc;
+    const m = line.match(DUTY_LINE);
+    if (m) acc.push(m[1].trim());
+    else unparsed.push(line);
+    return acc;
+  }, []);
 
   const duties = (name) => bullets(name).map((raw) => {
     const retired = /^~~[\s\S]*~~$/.test(raw);
     let clean = raw.replace(/^~~|~~$/g, '').trim();
     let icon = null;
-    const im = clean.match(/^\{([a-z0-9-]+)\}\s*/i);
+    // `{mail} **…**` is the spec; `mail **…**` is what the model writes when it
+    // drops the braces. Both name the same icon.
+    const im = clean.match(/^\{([a-z0-9-]+)\}\s*/i) || clean.match(/^([a-z0-9-]+)\s+(?=\*\*)/i);
     if (im) { icon = im[1].toLowerCase(); clean = clean.slice(im[0].length); }
     const bold = clean.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
     const title = bold ? bold[1].trim() : clean;
@@ -101,14 +114,16 @@ function parseRole(md) {
   // two-section format (Recurring duties / Proactive watch) so existing cards
   // still render. ("Boundaries" is deliberately NOT read — it's a fixed policy
   // the bot keeps in the card; this UI only ever shows the responsibilities list.)
-  return {
-    duties: [
-      ...duties('responsibilities'),
-      ...duties('duties'),
-      ...duties('recurring duties'),
-      ...duties('proactive watch'),
-    ],
-  };
+  const all = [
+    ...duties('responsibilities'),
+    ...duties('duties'),
+    ...duties('recurring duties'),
+    ...duties('proactive watch'),
+  ];
+  // Anything in those sections this parser could not read. Returned rather than
+  // dropped: an empty list with lines sitting in the file is the failure mode
+  // that cost a user three rounds of "it's broken" / "no it isn't".
+  return { duties: all, unparsed };
 }
 
 // Section — matches the Reminders / Skills / Notifications vocabulary.
@@ -278,6 +293,25 @@ function RoleView({ fileEventNonce }) {
 
         {isInitialLoad && (
           <div className="flex flex-col gap-2"><SkeletonRow /><SkeletonRow /></div>
+        )}
+
+        {!isInitialLoad && role.unparsed?.length > 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-[13px] text-foreground/80">
+            <span className="font-medium">
+              {role.unparsed.length === 1
+                ? '1 entry is saved but not shown below'
+                : `${role.unparsed.length} entries are saved but not shown below`}
+            </span>{' '}
+            — the card holds {role.unparsed.length === 1 ? 'a line' : 'lines'} written in a
+            shape this view can't read. Nothing was lost; ask {botDisplayName} to rewrite{' '}
+            {role.unparsed.length === 1 ? 'it' : 'them'} as
+            {' '}<code className="rounded bg-muted/60 px-1 py-0.5 text-[12px]">- {'{icon}'} **Title** — description #tag</code>.
+            <ul className="mt-2 space-y-1 text-[12.5px] text-muted-foreground">
+              {role.unparsed.map((l, i) => (
+                <li key={i} className="truncate font-mono">{l}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {realError && (
