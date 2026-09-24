@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Hexagon, ChevronLeft, ChevronRight, Save, Check, Loader2,
+  Hexagon, Save, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
   Brain, Lock, Clock, Upload,
 } from 'lucide-react';
@@ -14,10 +14,14 @@ import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } f
 import { ActivateModal } from './IntegrationsDashboard.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+// 1..16 minus the ones withdrawn from the picker. The files stay in public/ —
+// a bot already wearing a withdrawn picture keeps it rather than 404ing.
+const WITHDRAWN_AVATARS = new Set(['6']);
+
 const PRESET_AVATARS = Array.from({ length: 16 }, (_, i) => ({
   id: String(i + 1),
   url: `${BASE}/avatars/${i + 1}.png`,
-}));
+})).filter((a) => !WITHDRAWN_AVATARS.has(a.id));
 
 const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
 const inputCls = cn(
@@ -378,6 +382,39 @@ async function apiWrite(url, opts = {}) {
   }
 }
 
+/* ─── Avatar tile ───────────────────────────────────────────────────────── */
+
+// One picture in the grid.
+//
+// The ring is `ring-ring`, not `ring-[--color-ring]`: the token lives in
+// `@theme inline`, so Tailwind v4 generates a `ring-ring` utility for it and
+// the v3 bracket shorthand resolves to nothing at all — which is why the first
+// version of this drew no outline whatever, rather than a faint one.
+//
+// Selection is carried by the ring plus the unselected tiles stepping back in
+// opacity. A border swap would shift the image a pixel on every click along a
+// row; dimming what isn't chosen makes the chosen one obvious without a heavy
+// outline fighting the pictures.
+function Tile({ src, selected, onClick, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={selected}
+      className={cn(
+        'relative aspect-square overflow-hidden rounded-lg transition-all duration-150',
+        selected
+          ? 'opacity-100 ring-2 ring-ring ring-offset-2 ring-offset-background'
+          : 'opacity-60 ring-1 ring-border/60 hover:opacity-100 hover:ring-foreground/25',
+      )}
+    >
+      <img src={src} alt="" className="size-full object-cover" />
+    </button>
+  );
+}
+
 /* ─── Bot modal ─────────────────────────────────────────────────────────── */
 
 function BotModal({ branding, onClose, canEdit = true }) {
@@ -400,16 +437,9 @@ function BotModal({ branding, onClose, canEdit = true }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
   const fileRef = useRef(null);
-  const total = PRESET_AVATARS.length;
 
   // Don't leak the preview's blob URL when the choice changes or the modal closes.
   useEffect(() => () => { if (pick?.kind === 'custom') URL.revokeObjectURL(pick.url); }, [pick]);
-
-  const stepPreset = (delta) => setPick((prev) => {
-    if (prev?.kind === 'custom') URL.revokeObjectURL(prev.url);
-    const from = prev?.kind === 'preset' ? prev.idx : (currentPresetIdx ?? 0);
-    return { kind: 'preset', idx: (from + delta + total) % total };
-  });
 
   // Mirrors the server's own checks (lib/branding.js saveAvatar): PNG or JPEG,
   // under 2 MiB. Checked here too so the user hears it before the upload.
@@ -430,10 +460,19 @@ function BotModal({ branding, onClose, canEdit = true }) {
     });
   };
 
-  // What the preview shows: this visit's choice, else whatever the bot wears now.
-  const previewUrl = pick?.kind === 'custom' ? pick.url
-    : pick?.kind === 'preset' ? PRESET_AVATARS[pick.idx].url
-      : branding?.botAvatarUrl || PRESET_AVATARS[currentPresetIdx ?? 0].url;
+  const pickedFile = pick?.kind === 'custom' ? pick.file : null;
+
+  // The bot's picture when it is NOT one of the presets — a freshly chosen file,
+  // or an upload it already wears. Gets its own tile so "what it looks like now"
+  // is never something the user has to infer.
+  const ownPictureUrl = pick?.kind === 'custom'
+    ? pick.url
+    : (currentPresetIdx === null ? branding?.botAvatarUrl || null : null);
+
+  // Which tile reads as chosen: this visit's pick, else what the bot wears.
+  const selected = pick?.kind === 'preset' ? pick.idx
+    : pick?.kind === 'custom' ? 'own'
+      : (currentPresetIdx ?? 'own');
 
   const nameChanged = botName.trim() !== (branding?.botName || branding?.botDisplayName || '').trim();
 
@@ -494,48 +533,6 @@ function BotModal({ branding, onClose, canEdit = true }) {
         </div>
 
         <div className="flex flex-col gap-6 px-5 py-6">
-          {/* Avatar — centred carousel */}
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex items-center gap-4">
-              <button type="button" onClick={() => stepPreset(-1)} aria-label="Previous picture"
-                className="flex size-8 items-center justify-center rounded-full border border-border/55 bg-background text-muted-foreground/70 hover:bg-muted/40 transition-colors">
-                <ChevronLeft className="size-4" strokeWidth={2} />
-              </button>
-              <div className="size-20 overflow-hidden rounded-2xl border border-border/50 shadow-sm">
-                <img src={previewUrl} alt="" className="size-full object-cover" />
-              </div>
-              <button type="button" onClick={() => stepPreset(1)} aria-label="Next picture"
-                className="flex size-8 items-center justify-center rounded-full border border-border/55 bg-background text-muted-foreground/70 hover:bg-muted/40 transition-colors">
-                <ChevronRight className="size-4" strokeWidth={2} />
-              </button>
-            </div>
-
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden"
-              onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ''; }} />
-
-            <div className="flex items-center gap-3 text-[11px]">
-              <button type="button" onClick={() => fileRef.current?.click()}
-                className="inline-flex items-center gap-1.5 text-muted-foreground/75 underline-offset-2 hover:text-foreground/85 hover:underline">
-                <Upload className="size-3" strokeWidth={2} />
-                Upload your own
-              </button>
-              {pick && (
-                <button type="button" onClick={() => setPick(null)}
-                  className="text-muted-foreground/60 underline-offset-2 hover:text-foreground/80 hover:underline">
-                  Keep the current one
-                </button>
-              )}
-            </div>
-
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/55">
-              {pick?.kind === 'custom'
-                ? 'Your picture'
-                : pick?.kind === 'preset'
-                  ? `${pick.idx + 1} / ${total}`
-                  : 'Current picture'}
-            </span>
-          </div>
-
           <label className="flex flex-col gap-1.5">
             <span className={labelCls}>Name</span>
             <input type="text" value={botName}
@@ -543,6 +540,61 @@ function BotModal({ branding, onClose, canEdit = true }) {
               placeholder="aria · max · luna" spellCheck={false} autoComplete="off"
               className={inputCls} />
           </label>
+
+          {/* Avatar — every option on screen at once, because a carousel hides
+              fifteen of sixteen choices behind arrows and gives no way to tell
+              whether the bot is even wearing a preset. */}
+          <div className="flex flex-col gap-2.5">
+            <span className={labelCls}>Picture</span>
+
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden"
+              onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+
+            <div className="grid grid-cols-6 gap-2">
+              {/* Your own picture comes first — the presets are the fallback,
+                  not the starting point. */}
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                title="Upload a picture"
+                aria-label="Upload a picture"
+                className={cn(
+                  'flex aspect-square items-center justify-center rounded-lg border border-dashed transition-all duration-150',
+                  'border-border text-muted-foreground/55 hover:border-foreground/30 hover:bg-muted/40 hover:text-foreground/70',
+                )}
+              >
+                <Upload className="size-3.5" strokeWidth={2} />
+              </button>
+
+              {/* The bot's own picture, when it isn't one of the presets: an
+                  upload, either already saved or chosen a moment ago. */}
+              {ownPictureUrl && (
+                <Tile
+                  src={ownPictureUrl}
+                  selected={selected === 'own'}
+                  onClick={() => setPick(pickedFile ? pick : null)}
+                  label="Your picture"
+                />
+              )}
+
+              {PRESET_AVATARS.map((a, i) => (
+                <Tile
+                  key={a.id}
+                  src={a.url}
+                  selected={selected === i}
+                  onClick={() => setPick({ kind: 'preset', idx: i })}
+                  label={`Picture ${i + 1}`}
+                />
+              ))}
+
+            </div>
+
+            <span className="text-[11px] text-muted-foreground/60">
+              {pickedFile
+                ? `${pickedFile.name} — saved when you press Save.`
+                : 'PNG or JPEG, up to 2 MiB.'}
+            </span>
+          </div>
 
           {error && <ErrorRow>{error}</ErrorRow>}
         </div>
