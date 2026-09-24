@@ -34,10 +34,43 @@ mkdirSync(join(mem, 'users', 'stan'), { recursive: true });
 mkdirSync(join(mem, 'concepts'), { recursive: true });
 writeFileSync(join(mem, 'RULES.md'), '---\ncard: RULES\n---\n\n# RULES\n\n## Never\n- send mail without approval\n');
 writeFileSync(join(mem, 'AGENT_TOOLS.md'), '---\ncard: AGENT_TOOLS\n---\n\n# AGENT_TOOLS\n\n## Trello\n- use the board id, not the name\n');
+writeFileSync(join(mem, 'users', 'stan', 'RESPONSIBILITIES.md'),
+  '---\ncard: RESPONSIBILITIES\n---\n\n# Responsibilities\n\n## Responsibilities\n- {mail} **Morning inbox pass** — each morning, flag what matters. #email\n');
 writeFileSync(join(mem, 'users', 'stan', 'USER_PROFILE.md'),
   '---\ncard: USER_PROFILE\n---\n\n# USER_PROFILE\n\n## Identity\n- Name: Viktor\n- Based in: Warsaw, Poland\n');
 
 // ─── (a) remember: routing, sections, page creation ──────────────────────────
+
+// RESPONSIBILITIES declares ONE FLAT LIST in its own frontmatter. A model
+// passing the duty's own title as `section` used to spawn a heading of its own,
+// so the duty lived twice — once in the list the Routines panel and the planner
+// read, once where only the engine looked. The later edit matched the invisible
+// copy and the user was told it was done. (Live, 2026-09-24.)
+engine.remember({
+  actor: 'stan', scope: 'private', owner: 'stan', card: 'RESPONSIBILITIES',
+  section: 'Hourly Email Watch',
+  text: '{mail} **Hourly email watch** — every hour, check the inbox. #email',
+});
+{
+  const card = read('memory/users/stan/RESPONSIBILITIES.md');
+  ok('a flat-list card ignores the requested section',
+    !/^## Hourly Email Watch/m.test(card), card);
+  ok('the duty lands in the one list the readers parse',
+    /## Responsibilities\n- \{mail\} \*\*Morning inbox pass\*\*[^\n]*\n- \{mail\} \*\*Hourly email watch\*\*/.test(card), card);
+  ok('the flat-list card grew no second heading',
+    (card.match(/^## /gm) || []).length === 1, card);
+}
+
+// Punctuation drift is the same heading: a card that sprouts `## Working-style`
+// beside `## Working style` splits what every reader treats as one place.
+engine.remember({ actor: 'stan', scope: 'shared', card: 'AGENT_TOOLS', section: 'trello', text: 'archive, never delete a list' });
+engine.remember({ actor: 'stan', scope: 'shared', card: 'AGENT_TOOLS', section: 'Trello!', text: 'card ids are opaque' });
+{
+  const card = read('memory/AGENT_TOOLS.md');
+  ok('a punctuation-drifted section reuses the existing heading',
+    (card.match(/^## Trello/gm) || []).length === 1, card);
+}
+
 let r = engine.remember({ actor: 'stan', scope: 'shared', card: 'RULES', section: 'Never', text: 'never deploy on Friday' });
 ok('remember writes into the named section', r.ok && /## Never\n- send mail without approval\n- never deploy on Friday/.test(read('memory/RULES.md')), r);
 

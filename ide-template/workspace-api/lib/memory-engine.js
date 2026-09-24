@@ -286,6 +286,26 @@ function removeLines(text, targets) {
 }
 
 /**
+ * Cards whose own frontmatter declares a SINGLE FLAT LIST: every duty is one
+ * line under one heading. A model naturally passes the entry's own title as
+ * `section` ("Hourly Email Watch"), and that used to spawn a heading of its
+ * own — so the duty lived twice: once in the list the Routines panel and the
+ * morning-planner read, once in a heading only the engine knew about. A later
+ * `supersede` matched the copy nobody could see, the user was told the edit
+ * was done, and the panel still showed the old text. Both were telling the
+ * truth. (2026-09-24, on a production client.)
+ *
+ * The card's shape is not the model's to choose, so it is not taken from the
+ * argument.
+ */
+const FLAT_LIST_CARDS = { RESPONSIBILITIES: 'Responsibilities' };
+
+/** `## Working style` and `## Working-Style` are the same heading. */
+function normalizeHeading(h) {
+  return String(h || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/**
  * Insert `line` at the end of `## section` (case-insensitively matched — a
  * case-drifted section name used to create a SECOND `## identity` heading), or
  * append a new section when it does not exist yet.
@@ -299,6 +319,17 @@ function addLine(text, section, line) {
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^##\s+(.+?)\s*$/);
     if (m && m[1].trim().toLowerCase() === wanted) { start = i; break; }
+  }
+  // Second pass, punctuation- and spacing-insensitive: a heading that differs
+  // only in a hyphen or a stray space is the same heading, and a card that
+  // sprouts `## Working-style` beside `## Working style` splits what every
+  // reader downstream treats as one place.
+  if (start === -1) {
+    const norm = normalizeHeading(section);
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^##\s+(.+?)\s*$/);
+      if (m && normalizeHeading(m[1]) === norm) { start = i; break; }
+    }
   }
   if (start === -1) return `${body}\n\n## ${section}\n${line}\n`;
   let end = lines.length;
@@ -457,7 +488,10 @@ export function remember({ actor, scope = 'shared', owner, card, page, section, 
     };
   }
 
-  const sec = section || (page ? 'Claims' : '');
+  // A flat-list card ignores the requested section entirely — see
+  // FLAT_LIST_CARDS. Everything else keeps the caller's choice.
+  const flatHeading = card ? FLAT_LIST_CARDS[String(card).trim().toUpperCase()] : null;
+  const sec = flatHeading || section || (page ? 'Claims' : '');
   const after = addLine(before, sec, line);
   const event = applyEvent({
     abs: target.abs, rel: target.rel, before, after,
