@@ -135,6 +135,19 @@ export function invalidate(url) {
 }
 
 /**
+ * Refetch a key now and push the result to every mounted hook.
+ *
+ * `invalidate` drops the cache and marks mounted hooks `loading` — which is
+ * right before a remount, but on its own leaves a mounted view spinning,
+ * because nothing re-runs the fetch while the URL is unchanged. This is for
+ * "the server told us this changed": fetch, cache, notify.
+ */
+export function refetch(url) {
+  if (!url) return Promise.resolve(null);
+  return doFetch(url, undefined).catch(() => null);
+}
+
+/**
  * Imperatively set the cached value (e.g. after an optimistic mutation).
  * All mounted `useApi(url)` hooks update synchronously.
  */

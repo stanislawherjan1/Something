@@ -38,6 +38,7 @@ import memoryRouter        from './routes/memory.js';
 import botRouter           from './routes/bot.js';
 import internalRouter      from './routes/internal.js';
 import notificationsRouter from './routes/notifications.js';
+import { publishState }    from './lib/watcher.js';
 import meRouter            from './routes/me.js';
 import remindersRouter     from './routes/reminders.js';
 import miniappsRouter      from './routes/miniapps.js';
@@ -84,6 +85,33 @@ app.use(helmet({
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieMiddleware);
 app.use(attachActor);
+
+// ─── Change notices for state the file watcher cannot see ───────────────────
+// Branding, the team roster and the integration store are not in the watched
+// tree: two are HARD_HIDDEN (roster, credentials) and one is encrypted. So a
+// change to any of them reached no client, and a view kept showing the old
+// value until someone pressed reload — including right after the bot said it
+// had changed it.
+//
+// One middleware rather than a call in each handler: a route added later is
+// covered without anyone remembering to wire it, and a handler that bails early
+// or throws never publishes, because this fires on the response, not the call.
+// Only successful, non-GET requests count.
+const STATE_KINDS = [
+  [/^\/(branding|setup\/(branding|logo|avatar))/, 'branding'],
+  [/^\/team/,                                      'team'],
+  [/^\/integrations/,                              'integrations'],
+];
+
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  res.on('finish', () => {
+    if (res.statusCode >= 400) return;
+    const hit = STATE_KINDS.find(([re]) => re.test(req.path));
+    if (hit) publishState(hit[1]);
+  });
+  next();
+});
 
 app.use('/api', healthRouter());
 app.use('/api', chatRouter());

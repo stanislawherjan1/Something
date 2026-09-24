@@ -119,6 +119,26 @@ watcher
  * `scope.slug` (from actorScope) gates delivery of users/<slug>/ events —
  * a subscriber only ever receives their own private-tree events.
  */
+/**
+ * Push a "something changed" notice that is not a file.
+ *
+ * Branding, the team roster and the integration store are not in the watched
+ * tree — two are HARD_HIDDEN because they hold the roster and credentials, and
+ * one is encrypted. Widening the watcher to them would hand the client exactly
+ * what the visibility rules exist to withhold.
+ *
+ * So the notice carries no payload: a kind, nothing else. The client maps the
+ * kind to the URLs it already reads and refetches them through the same gates
+ * it always went through. That is enough to stop a view disagreeing with what
+ * the bot just said it did, without putting anything sensitive on the wire.
+ */
+export function publishState(kind) {
+  if (!kind) return;
+  pending.push({ type: 'state', kind: String(kind), owner: null });
+  if (flushTimer) return;
+  flushTimer = setTimeout(flush, 100);
+}
+
 export function subscribe(res, scope = {}) {
   const sub = { res, slug: scope.slug || null };
   subscribers.add(sub);
