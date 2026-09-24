@@ -22,10 +22,15 @@ THEY own (their inbox, their boards), and write their brief. No slug / solo → 
    Meta/Google Ads, GitHub, …) — the CURRENT state of the world. **Authoritative.**
 2. **Curated memory** (`memory/concepts/` entity pages, `USER_PROFILE`, `RESPONSIBILITIES`,
    topic/brief cards) — durable, human-relevant truth.
-3. **Reflect summaries** (`_reflect/threads/*.md`) — a WEAK hint that a thread MIGHT have a
-   loose end. **Never ground truth.** Reflect is auto-generated from chats: it goes stale
-   the moment a real source moves, and it can misread a thread's name as a real entity. So
-   every reflect item is a LEAD to verify against (1) and (2) — never a fact to act on.
+3. **Recent conversation** (the `RECENT_WEB` / `RECENT_TELEGRAM` snapshots, and
+   `recent_messages` for anything older) — a WEAK hint that a thread MIGHT have a loose
+   end. **Never ground truth.** It is a rolling transcript: it goes stale the moment a real
+   source moves, and a thread's subject line is not an entity. So every item here is a LEAD
+   to verify against (1) and (2) — never a fact to act on.
+
+   (This used to point at `_reflect/threads/*.md`. Memory v3 archived that tree out of the
+   project and excluded it from `memory_grep` and the memory graph, so the instruction was
+   sending you to read a directory that is no longer there.)
 
 ## Steps
 

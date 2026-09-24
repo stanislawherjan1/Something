@@ -22,6 +22,12 @@ RUN npm run build
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Fail the BUILD on a bad config, not the client. A directive in the wrong
+# context (auth_request inside limit_except, 2026-09-24) is refused by nginx at
+# startup, so without this the first thing that notices is a crash-looping
+# container and a 502 on every request. The __PLACEHOLDER__ tokens the CMD
+# rewrites below don't affect parsing, so this runs clean on the raw file.
+RUN nginx -t
 EXPOSE 3000
 CMD sed -i "s|__SUPABASE_URL__|${VITE_SUPABASE_URL}|g" /etc/nginx/conf.d/default.conf && \
     sed -i "s|__SUPABASE_ANON_KEY__|${VITE_SUPABASE_ANON_KEY}|g" /etc/nginx/conf.d/default.conf && \

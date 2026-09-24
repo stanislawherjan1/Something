@@ -243,7 +243,16 @@ merge_bot_settings() {
     TMP=$(mktemp 2>/dev/null) || return 1
     local base="$BOT_HOME/.claude/settings.json"
     [ -f "$base" ] || base=/opt/ide/bootstrap/claude-settings.json
-    if jq -s '.[0] * .[1]' "$base" /opt/ide/bootstrap/claude-settings.json > "$TMP" 2>/dev/null; then
+    # `hooks` is taken WHOLESALE from the template, matching entrypoint.sh. A
+    # plain `*` deep-merge can ADD a hook but can never REMOVE one: a key the
+    # template no longer mentions has nothing to be overridden by, so it lives
+    # on forever. That is how every client in the fleet kept a PostToolUse hook
+    # pointing at post-write-memory.sh months after Memory v3 deleted the
+    # script — and because THIS merge re-runs every few minutes, a deploy would
+    # fix the file and the next cycle would put the dead hook straight back.
+    if jq -s '.[0] as $live | .[1] as $tmpl | ($live * $tmpl)
+              + (if $tmpl.hooks then {hooks: $tmpl.hooks} else {} end)' \
+          "$base" /opt/ide/bootstrap/claude-settings.json > "$TMP" 2>/dev/null; then
         mv "$TMP" "$BOT_HOME/.claude/settings.json"
         chmod 644 "$BOT_HOME/.claude/settings.json" 2>/dev/null
         log "Bot settings.json merged from bootstrap ($label) — $(wc -c < "$BOT_HOME/.claude/settings.json") bytes"

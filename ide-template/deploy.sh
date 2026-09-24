@@ -560,8 +560,16 @@ ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build --no-cache $BUILD
 # dangling layers on disk until the NEXT deploy — on a 38G VPS that's the
 # difference between a stable ~x% floor and creeping toward disk-full.
 # (Running containers/images in use are never pruned.)
+#
+# Images get a 24h reprieve, build cache does not. `docker system prune -f`
+# used to take the previous generation of images with it, seconds after the new
+# one was built — so when a deploy shipped a config that crash-looped the
+# frontend (2026-09-24), there was nothing to roll back TO and the only way out
+# was another full deploy while the client sat at 502. Keeping one generation
+# costs a few GB for a day; the build cache, which is what actually creeps
+# toward disk-full, is still pruned on sight.
 echo -e "${CYAN}  Pruning unused Docker layers to free disk space...${NC}"
-ssh "$HETZNER_HOST" "docker system prune -f" || true
+ssh "$HETZNER_HOST" "docker container prune -f; docker image prune -f --filter 'until=24h'; docker builder prune -f" || true
 echo -e "${GREEN}Images built${NC}"
 echo ""
 
