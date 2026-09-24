@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Hexagon, ChevronLeft, ChevronRight, Save, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Brain, Lock, Clock,
+  Brain, Lock, Clock, Upload,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -381,33 +381,101 @@ async function apiWrite(url, opts = {}) {
 /* ─── Bot modal ─────────────────────────────────────────────────────────── */
 
 function BotModal({ branding, onClose, canEdit = true }) {
-  const initialIdx = (() => {
-    const url = branding?.botAvatarUrl;
-    if (!url) return 0;
-    const m = url.match(/\/avatars\/(\d+)\.png/);
-    return m ? Number(m[1]) - 1 : 0;
+  // Which preset the bot is wearing right now, or null when it wears something
+  // else (an uploaded image, or the neutral fallback).
+  const currentPresetIdx = (() => {
+    const m = /\/avatars\/(\d+)\.png/.exec(branding?.botAvatarUrl || '');
+    return m ? Number(m[1]) - 1 : null;
   })();
-  const [botName, setBotName]     = useState(branding?.botName || branding?.botDisplayName || '');
-  const [avatarIdx, setAvatarIdx] = useState(initialIdx);
+
+  const [botName, setBotName] = useState(branding?.botName || branding?.botDisplayName || '');
+  // The picture chosen in THIS visit to the modal, or null for "leave it as it
+  // is". That distinction matters: the old version always wrote a preset on
+  // save, so renaming the bot silently replaced its picture with preset #1.
+  // Harmless while presets were the only option; destructive the moment an
+  // uploaded image can be the thing being overwritten.
+  //   { kind: 'preset', idx } | { kind: 'custom', file, url }
+  const [pick, setPick]   = useState(null);
   const [busy, setBusy]   = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  const fileRef = useRef(null);
   const total = PRESET_AVATARS.length;
 
+  // Don't leak the preview's blob URL when the choice changes or the modal closes.
+  useEffect(() => () => { if (pick?.kind === 'custom') URL.revokeObjectURL(pick.url); }, [pick]);
+
+  const stepPreset = (delta) => setPick((prev) => {
+    if (prev?.kind === 'custom') URL.revokeObjectURL(prev.url);
+    const from = prev?.kind === 'preset' ? prev.idx : (currentPresetIdx ?? 0);
+    return { kind: 'preset', idx: (from + delta + total) % total };
+  });
+
+  // Mirrors the server's own checks (lib/branding.js saveAvatar): PNG or JPEG,
+  // under 2 MiB. Checked here too so the user hears it before the upload.
+  const pickFile = (file) => {
+    if (!file) return;
+    if (!/^image\/(png|jpe?g)$/i.test(file.type)) {
+      setError('The picture must be a PNG or JPEG.');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setError('The picture must be under 2 MiB.');
+      return;
+    }
+    setError(null);
+    setPick((prev) => {
+      if (prev?.kind === 'custom') URL.revokeObjectURL(prev.url);
+      return { kind: 'custom', file, url: URL.createObjectURL(file) };
+    });
+  };
+
+  // What the preview shows: this visit's choice, else whatever the bot wears now.
+  const previewUrl = pick?.kind === 'custom' ? pick.url
+    : pick?.kind === 'preset' ? PRESET_AVATARS[pick.idx].url
+      : branding?.botAvatarUrl || PRESET_AVATARS[currentPresetIdx ?? 0].url;
+
+  const nameChanged = botName.trim() !== (branding?.botName || branding?.botDisplayName || '').trim();
+
+  // The name and the picture are two separate writes, so say which one failed
+  // rather than showing one error for both — and only write what the user
+  // actually touched.
   const save = async () => {
     setBusy(true); setError(null); setSaved(false);
-    const r1 = await apiWrite('/api/branding', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ botName: botName.trim() }),
-    });
-    if (!r1.ok) { setError(r1.error); setBusy(false); return; }
-    const r2 = await apiWrite('/api/setup/avatar/preset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset: PRESET_AVATARS[avatarIdx].id }),
-    });
-    if (!r2.ok) { setError(r2.error); setBusy(false); return; }
+
+    const writes = [];
+    if (nameChanged) {
+      writes.push(['name', () => apiWrite('/api/branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botName: botName.trim() }),
+      })]);
+    }
+    if (pick?.kind === 'preset') {
+      writes.push(['picture', () => apiWrite('/api/setup/avatar/preset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset: PRESET_AVATARS[pick.idx].id }),
+      })]);
+    } else if (pick?.kind === 'custom') {
+      writes.push(['picture', () => {
+        const fd = new FormData();
+        fd.append('avatar', pick.file);
+        // No Content-Type header — the browser has to set the multipart boundary.
+        return apiWrite('/api/branding/avatar', { method: 'POST', body: fd });
+      }]);
+    }
+
+    for (const [what, run] of writes) {
+      const r = await run();
+      if (!r.ok) {
+        setError(writes.length > 1 ? `Couldn't save the ${what}: ${r.error}` : r.error);
+        setBusy(false);
+        return;
+      }
+    }
+
+    await branding?.reload?.();
     setSaved(true); setBusy(false);
     setTimeout(() => { setSaved(false); onClose(); }, 1000);
   };
@@ -429,19 +497,43 @@ function BotModal({ branding, onClose, canEdit = true }) {
           {/* Avatar — centred carousel */}
           <div className="flex flex-col items-center gap-3">
             <div className="flex items-center gap-4">
-              <button type="button" onClick={() => setAvatarIdx((avatarIdx - 1 + total) % total)}
+              <button type="button" onClick={() => stepPreset(-1)} aria-label="Previous picture"
                 className="flex size-8 items-center justify-center rounded-full border border-border/55 bg-background text-muted-foreground/70 hover:bg-muted/40 transition-colors">
                 <ChevronLeft className="size-4" strokeWidth={2} />
               </button>
               <div className="size-20 overflow-hidden rounded-2xl border border-border/50 shadow-sm">
-                <img src={PRESET_AVATARS[avatarIdx].url} alt="" className="size-full object-cover" />
+                <img src={previewUrl} alt="" className="size-full object-cover" />
               </div>
-              <button type="button" onClick={() => setAvatarIdx((avatarIdx + 1) % total)}
+              <button type="button" onClick={() => stepPreset(1)} aria-label="Next picture"
                 className="flex size-8 items-center justify-center rounded-full border border-border/55 bg-background text-muted-foreground/70 hover:bg-muted/40 transition-colors">
                 <ChevronRight className="size-4" strokeWidth={2} />
               </button>
             </div>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/55">{avatarIdx + 1} / {total}</span>
+
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden"
+              onChange={(e) => { pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+
+            <div className="flex items-center gap-3 text-[11px]">
+              <button type="button" onClick={() => fileRef.current?.click()}
+                className="inline-flex items-center gap-1.5 text-muted-foreground/75 underline-offset-2 hover:text-foreground/85 hover:underline">
+                <Upload className="size-3" strokeWidth={2} />
+                Upload your own
+              </button>
+              {pick && (
+                <button type="button" onClick={() => setPick(null)}
+                  className="text-muted-foreground/60 underline-offset-2 hover:text-foreground/80 hover:underline">
+                  Keep the current one
+                </button>
+              )}
+            </div>
+
+            <span className="text-[11px] uppercase tracking-wider text-muted-foreground/55">
+              {pick?.kind === 'custom'
+                ? 'Your picture'
+                : pick?.kind === 'preset'
+                  ? `${pick.idx + 1} / ${total}`
+                  : 'Current picture'}
+            </span>
           </div>
 
           <label className="flex flex-col gap-1.5">
