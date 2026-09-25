@@ -143,7 +143,24 @@ function makeProvider(id, redirectUrl, flow) {
       };
     },
     state: () => flow.state,
-    clientInformation: () => readClients()[id],
+    // A cached registration is only usable if it was issued FOR THIS redirect.
+    // Two ways it drifts: the workspace moves to another domain, and a provider
+    // that ignores the requested redirect_uri and hands back one of its own —
+    // a live store had Mailchimp registered against
+    // `https://chatgpt.com/connector_platform_oauth_redirect`, which can only
+    // ever fail at the authorize step, with "invalid redirect" and no hint that
+    // the cause is a stale client_id. Returning undefined makes the SDK
+    // register again, which is cheap and idempotent.
+    clientInformation: () => {
+      const info = readClients()[id];
+      if (!info) return undefined;
+      const uris = Array.isArray(info.redirect_uris) ? info.redirect_uris : [];
+      if (uris.includes(redirectUrl)) return info;
+      process.stderr.write(
+        `[integrations] ${id}: cached client_id was registered for ${uris.join(', ') || '(none)'}, `
+        + `not ${redirectUrl} — re-registering\n`);
+      return undefined;
+    },
     saveClientInformation: (info) => {
       const all = readClients();
       all[id] = info;

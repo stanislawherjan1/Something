@@ -1434,7 +1434,7 @@
       "id": "canva",
       "label": "Canva",
       "logo": "/integrations/canva.svg",
-      "description": "Designs and brand assets via Canva's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Designs and brand assets via Canva's official hosted MCP server. NOT CONNECTABLE from a self-hosted workspace right now: Canva's authorize step accepts only an allow-listed set of redirect URLs (localhost and its partner apps) and refuses this workspace's own domain with \"Invalid redirect URI\", no matter what its dynamic client registration accepted a moment earlier. Verified 2026-09-25 against mcp.canva.com; every other hosted MCP in this catalogue accepts it.",
       "category": "content",
       "fields": [
         {
@@ -1451,7 +1451,8 @@
           "mcp.canva.com"
         ]
       },
-      "tagline": "Designs and brand assets"
+      "tagline": "Designs and brand assets",
+      "unavailable": "provider-restricted"
     },
     {
       "id": "amplitude",
