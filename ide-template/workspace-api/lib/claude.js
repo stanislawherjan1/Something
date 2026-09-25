@@ -246,9 +246,11 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
-  // One notice per turn: the CLI repeats the rejection for every attempt,
-  // and a reader needs the reset time once, not once a second.
-  let announcedLimit = false;
+  // `resetsAt` from the first rejection of this turn, or true when the CLI
+  // rejected without one. Read on close: a spent plan makes claude exit
+  // non-zero, and the generic "exited with code 1 :: <stderr>" is what a
+  // person was being shown instead of the reason.
+  let limitRejectedAt = null;
   // tool_use id → tool name, captured at content_block_start. Lets us skip
   // forwarding images from `Read` tool results: those are the user's own
   // pasted/attached image being read back, and echoing it into the assistant
@@ -330,13 +332,9 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
         // rejection means nothing will come back.
         if (evt.type === 'rate_limit_event') {
           const info = evt.rate_limit_info || {};
-          if (info.status === 'rejected' && !announcedLimit) {
-            announcedLimit = true;
-            let who = '';
-            try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
-            const notice = limitNotice(info.resetsAt, who);
-            process.stderr.write(`[claude/rate-limit] ${info.rateLimitType || 'limit'} rejected — ${notice}\n`);
-            try { onText(notice); } catch { /* the log still carries it */ }
+          if (info.status === 'rejected' && !limitRejectedAt) {
+            limitRejectedAt = info.resetsAt || true;
+            process.stderr.write(`[claude/rate-limit] ${info.rateLimitType || 'limit'} rejected, resets ${info.resetsAt || '?'}\n`);
           }
           continue;
         }
@@ -407,8 +405,24 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   proc.on('error', (err) => onError(`spawn failed: ${err.message}`));
 
   proc.on('close', (code, signal) => {
-    if (code === 0) onDone({ sessionId: capturedSessionId });
-    else onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
+    if (code === 0) return onDone({ sessionId: capturedSessionId });
+
+    // A spent plan is not a crash and must not read like one. The turn failed
+    // because there is no quota left, and the CLI told us so in a
+    // rate_limit_event along with when it returns — so that is the error, in
+    // place of "exited with code 1" plus a stderr dump. One message, and the
+    // one thing the reader wants to know.
+    //
+    // The wording keeps "usage limit reached" because group-watcher matches
+    // that phrase (usage-limit.js isUsageLimit) to announce once and then stay
+    // quiet rather than repeating every retry.
+    if (limitRejectedAt) {
+      let who = '';
+      try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
+      return onError(limitNotice(limitRejectedAt === true ? null : limitRejectedAt, who));
+    }
+
+    onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
       + (stderrTail.trim() ? ` :: ${stderrTail.trim().slice(-600)}` : ''));
   });
 

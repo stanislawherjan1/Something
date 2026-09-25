@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, Fragment } from 'react';
-import { ArrowUp, ArrowUpRight, AlertCircle, FileText, Folder, Globe, Loader2, Paperclip, RotateCcw, Square, WifiOff } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, AlertCircle, Clock, FileText, Folder, Globe, Loader2, Paperclip, RotateCcw, Square, WifiOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
@@ -1235,6 +1235,22 @@ function friendlyError({ errorKind, errorStatus, errorDetail }) {
       retryable: true,
     };
   }
+  // A spent plan is not a failure of this reply, and dressing it as one is
+  // actively misleading: "the reply was interrupted … try again" invites a retry
+  // that cannot succeed until the plan renews, and buries the only useful fact —
+  // when it does — inside a parenthesis. The backend sends the sentence whole
+  // (workspace-api/lib/usage-limit.js); it is the message, not a detail.
+  if (/usage limit reached/i.test(errorDetail || '')) {
+    const [, rest] = String(errorDetail).split(/usage limit reached\.?\s*/i);
+    return {
+      icon: Clock,
+      tone: 'waiting',
+      title: 'Claude usage limit reached',
+      body:  (rest || '').trim() || 'The plan is spent until it renews.',
+      retryable: false,
+    };
+  }
+
   if (errorKind === 'stream') {
     return {
       icon: AlertCircle,
@@ -1254,11 +1270,17 @@ function friendlyError({ errorKind, errorStatus, errorDetail }) {
 }
 
 function ErrorBubble({ message, onRetry }) {
-  const { icon: Icon, title, body, retryable } = friendlyError(message);
+  const { icon: Icon, title, body, retryable, tone } = friendlyError(message);
+  // 'waiting' is not a fault: nothing broke, the plan is simply spent. Red
+  // borders and a warning triangle would tell the reader to go fix something.
+  const waiting = tone === 'waiting';
   return (
-    <div className="rounded-lg border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5">
+    <div className={cn(
+      'rounded-lg border px-3.5 py-2.5',
+      waiting ? 'border-border/60 bg-muted/30' : 'border-destructive/25 bg-destructive/[0.04]',
+    )}>
       <div className="flex items-start gap-2.5">
-        <Icon className="mt-px size-3.5 shrink-0 text-destructive/85" strokeWidth={1.75} />
+        <Icon className={cn('mt-px size-3.5 shrink-0', waiting ? 'text-muted-foreground/70' : 'text-destructive/85')} strokeWidth={1.75} />
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium text-foreground/90">{title}</div>
           {body && <div className="mt-0.5 text-[12.5px] text-muted-foreground/85">{body}</div>}
