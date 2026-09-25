@@ -22,6 +22,17 @@
  *   add_slide            — batchUpdate { createSlide }
  *   delete_slide         — batchUpdate { deleteObject } on a slide objectId
  *   replace_text         — batchUpdate { replaceAllText } across whole deck
+ *   list_text_boxes      — every writable shape on a slide, with its text
+ *   set_text             — replace ONE shape's text (the empty-placeholder case)
+ *   insert_text          — insert at an index without clearing what's there
+ *   create_textbox       — a new box when the layout offers no placeholder
+ *
+ * The four above exist because the deck-building path was broken without them:
+ * a slide added from a layout arrives with EMPTY placeholders, and replaceAllText
+ * can only swap text that is already present. So a new deck could be created and
+ * structured and then never filled — which reads as "the Slides API can't insert
+ * text", and it can: batchUpdate.insertText writes into any shape, placeholder or
+ * not. It was this server that couldn't.
  * ─────────────────────────────────────────────
  */
 
@@ -213,9 +224,150 @@ const TOOLS = [
       },
     },
   },
-];
-
-// ─── Handlers ──────────────────────────────────────────────────────────────
+  {
+    name: 'list_text_boxes',
+    description:
+      'Every shape on a slide that can hold text, with its objectId, placeholder role and current text. ' +
+      'Call this BEFORE set_text: a slide built from a layout has empty placeholders whose ids are the ' +
+      'only way to address them, and an empty placeholder is invisible to replace_text. Omit slide_object_id for the whole deck.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id'],
+      properties: {
+        presentation_id:  { type: 'string' },
+        slide_object_id:  { type: 'string', description: 'Limit to one slide. Omit for all.' },
+      },
+    },
+  },
+  {
+    name: 'set_text',
+    description:
+      'Replace ALL text in one shape, addressed by objectId from list_text_boxes. Works on an empty ' +
+      'placeholder, which is what makes filling a freshly added slide possible. Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'object_id', 'text'],
+      properties: {
+        presentation_id: { type: 'string' },
+        object_id:       { type: 'string', description: 'From list_text_boxes.' },
+        text:            { type: 'string', description: 'Newlines start new paragraphs.' },
+      },
+    },
+  },
+  {
+    name: 'insert_text',
+    description:
+      'Insert text into a shape without clearing what is already there. Use set_text to replace, this to append ' +
+      'or splice. Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'object_id', 'text'],
+      properties: {
+        presentation_id: { type: 'string' },
+        object_id:       { type: 'string' },
+        text:            { type: 'string' },
+        insertion_index: { type: 'number', description: 'Character offset. Omit to append at the end.' },
+      },
+    },
+  },
+  {
+    name: 'create_textbox',
+    description:
+      'Add a new text box to a slide and put text in it — for a layout that offers no placeholder, or for ' +
+      'anything beyond title and body. Position and size are in points, from the top-left of the slide. ' +
+      'Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'slide_object_id', 'text'],
+      properties: {
+        presentation_id: { type: 'string' },
+        slide_object_id: { type: 'string' },
+        text:            { type: 'string' },
+        x:      { type: 'number', default: 50,  description: 'points from the left' },
+        y:      { type: 'number', default: 50,  description: 'points from the top' },
+        width:  { type: 'number', default: 620, description: 'points (a 16:9 slide is 720 wide)' },
+        height: { type: 'number', default: 120, description: 'points' },
+      },
+    },
+  },
+  {
+    name: 'style_text',
+    description:
+      'Colour, bold, italic, underline, size or font for a range of text in a shape. Omit start/end to style ' +
+      'the whole shape. Colour is a hex string like "#1A1A1A". Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'object_id'],
+      properties: {
+        presentation_id: { type: 'string' },
+        object_id:       { type: 'string', description: 'From list_text_boxes.' },
+        start:           { type: 'number', description: 'Character offset. Omit for the whole shape.' },
+        end:             { type: 'number' },
+        color:           { type: 'string', description: 'Text colour, e.g. "#1A1A1A".' },
+        font_size:       { type: 'number', description: 'Points.' },
+        font_family:     { type: 'string', description: 'e.g. "Inter", "Georgia".' },
+        bold:            { type: 'boolean' },
+        italic:          { type: 'boolean' },
+        underline:       { type: 'boolean' },
+        alignment:       { type: 'string', enum: ['START', 'CENTER', 'END', 'JUSTIFIED'] },
+      },
+    },
+  },
+  {
+    name: 'create_image',
+    description:
+      'Put an image on a slide from a public URL. Google fetches the URL itself, so it must be reachable ' +
+      'without auth and under 50MB. Position and size in points. Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'slide_object_id', 'image_url'],
+      properties: {
+        presentation_id: { type: 'string' },
+        slide_object_id: { type: 'string' },
+        image_url:       { type: 'string' },
+        x:      { type: 'number', default: 50 },
+        y:      { type: 'number', default: 50 },
+        width:  { type: 'number', default: 300 },
+        height: { type: 'number', default: 200 },
+      },
+    },
+  },
+  {
+    name: 'set_slide_background',
+    description: 'Solid background colour for one slide, as a hex string. Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'slide_object_id', 'color'],
+      properties: {
+        presentation_id: { type: 'string' },
+        slide_object_id: { type: 'string' },
+        color:           { type: 'string', description: 'e.g. "#FBFAF9".' },
+      },
+    },
+  },
+  {
+    name: 'batch_update',
+    description:
+      'Send raw Slides API requests. This is the whole API — tables, lines, grouping, z-order, bullets, ' +
+      'transforms, duplication, slide reordering, chart embeds — anything the wrapper tools above do not cover. ' +
+      'Each item is one Request object exactly as the REST reference defines it, e.g. ' +
+      '{"createTable":{"objectId":"t1","elementProperties":{"pageObjectId":"p1"},"rows":3,"columns":2}}. ' +
+      'Requests apply in order and the whole batch fails as one. Prefer a wrapper tool when one fits — it is ' +
+      'harder to get wrong. Requires write permission.',
+    inputSchema: {
+      type: 'object',
+      required: ['presentation_id', 'requests'],
+      properties: {
+        presentation_id: { type: 'string' },
+        requests: {
+          type: 'array',
+          description: 'Slides API Request objects, applied in order.',
+          items: { type: 'object' },
+        },
+      },
+    },
+  },
+];// ─── Handlers ──────────────────────────────────────────────────────────────
 
 async function handleListPresentations({ query, limit = 20 } = {}) {
   let q = `mimeType='${SLIDES_MIME}' and trashed=false`;
@@ -317,6 +469,184 @@ async function handleReplaceText({ presentation_id, find, replace, match_case = 
   };
 }
 
+// ─── Helpers for the editing tools ──────────────────────────────────────────
+
+/** Slides accepts PT directly in size/transform, so no EMU arithmetic here. */
+const pt = (n) => ({ magnitude: Number(n), unit: 'PT' });
+
+/** "#1A1A1A" → { red, green, blue } in 0..1, which is what the API wants. */
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) throw new Error(`colour must be a 6-digit hex like "#1A1A1A", got "${hex}"`);
+  const n = parseInt(m[1], 16);
+  return { red: ((n >> 16) & 255) / 255, green: ((n >> 8) & 255) / 255, blue: (n & 255) / 255 };
+}
+
+function newId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function elementProperties(pageObjectId, { x = 50, y = 50, width = 620, height = 120 }) {
+  return {
+    pageObjectId,
+    size: { width: pt(width), height: pt(height) },
+    transform: { scaleX: 1, scaleY: 1, translateX: Number(x), translateY: Number(y), unit: 'PT' },
+  };
+}
+
+const getDeck = (id) => api.get(`${SLIDES_BASE}/presentations/${encodeURIComponent(id)}`);
+
+/** Concatenated text of a shape, '' when the placeholder is still empty. */
+function textOf(shape) {
+  return (shape?.text?.textElements || []).map(e => e.textRun?.content || '').join('');
+}
+
+/** Every text-capable shape in the deck, with the slide it sits on. */
+function* eachShape(deck) {
+  for (const slide of deck.slides || []) {
+    for (const el of slide.pageElements || []) {
+      if (el.shape) yield { slideId: slide.objectId, el };
+    }
+  }
+}
+
+async function findShape(presentationId, objectId) {
+  const deck = await getDeck(presentationId);
+  for (const { slideId, el } of eachShape(deck)) {
+    if (el.objectId === objectId) return { slideId, el };
+  }
+  throw new Error(`no shape "${objectId}" in this presentation — call list_text_boxes for valid ids`);
+}
+
+// ─── Editing tools ──────────────────────────────────────────────────────────
+
+async function handleListTextBoxes({ presentation_id, slide_object_id }) {
+  const deck = await getDeck(presentation_id);
+  const out = [];
+  for (const { slideId, el } of eachShape(deck)) {
+    if (slide_object_id && slideId !== slide_object_id) continue;
+    const ph = el.shape.placeholder;
+    const text = textOf(el.shape);
+    out.push({
+      slide_object_id: slideId,
+      object_id:       el.objectId,
+      placeholder:     ph ? `${ph.type}${ph.index ? `#${ph.index}` : ''}` : null,
+      shape_type:      el.shape.shapeType || null,
+      text_length:     text.length,
+      text:            text.length > 300 ? `${text.slice(0, 300)}…` : text,
+    });
+  }
+  return { presentation_id, count: out.length, shapes: out };
+}
+
+async function handleSetText({ presentation_id, object_id, text }) {
+  requireWrite();
+  const { el } = await findShape(presentation_id, object_id);
+  const requests = [];
+  // deleteText on a shape with no text is an error, so only clear what exists.
+  if (textOf(el.shape).length > 0) {
+    requests.push({ deleteText: { objectId: object_id, textRange: { type: 'ALL' } } });
+  }
+  requests.push({ insertText: { objectId: object_id, text: String(text), insertionIndex: 0 } });
+  await batchUpdate(presentation_id, requests);
+  return { presentation_id, object_id, characters: String(text).length };
+}
+
+async function handleInsertText({ presentation_id, object_id, text, insertion_index }) {
+  requireWrite();
+  const req = { insertText: { objectId: object_id, text: String(text) } };
+  if (Number.isFinite(insertion_index)) req.insertText.insertionIndex = insertion_index;
+  await batchUpdate(presentation_id, [req]);
+  return { presentation_id, object_id, characters: String(text).length };
+}
+
+async function handleCreateTextbox({ presentation_id, slide_object_id, text, x, y, width, height }) {
+  requireWrite();
+  const objectId = newId('tb');
+  await batchUpdate(presentation_id, [
+    {
+      createShape: {
+        objectId,
+        shapeType: 'TEXT_BOX',
+        elementProperties: elementProperties(slide_object_id, { x, y, width, height }),
+      },
+    },
+    { insertText: { objectId, text: String(text), insertionIndex: 0 } },
+  ]);
+  return { presentation_id, slide_object_id, object_id: objectId };
+}
+
+async function handleStyleText(a) {
+  requireWrite();
+  const { presentation_id, object_id, start, end } = a;
+  const range = Number.isFinite(start) && Number.isFinite(end)
+    ? { type: 'FIXED_RANGE', startIndex: start, endIndex: end }
+    : { type: 'ALL' };
+
+  const style = {};
+  const fields = [];
+  if (a.color)       { style.foregroundColor = { opaqueColor: { rgbColor: hexToRgb(a.color) } }; fields.push('foregroundColor'); }
+  if (a.font_size)   { style.fontSize = pt(a.font_size);        fields.push('fontSize'); }
+  if (a.font_family) { style.fontFamily = String(a.font_family); fields.push('fontFamily'); }
+  if (a.bold      !== undefined) { style.bold = !!a.bold;           fields.push('bold'); }
+  if (a.italic    !== undefined) { style.italic = !!a.italic;       fields.push('italic'); }
+  if (a.underline !== undefined) { style.underline = !!a.underline; fields.push('underline'); }
+
+  const requests = [];
+  if (fields.length) {
+    requests.push({ updateTextStyle: { objectId: object_id, textRange: range, style, fields: fields.join(',') } });
+  }
+  if (a.alignment) {
+    requests.push({
+      updateParagraphStyle: {
+        objectId: object_id, textRange: range,
+        style: { alignment: a.alignment }, fields: 'alignment',
+      },
+    });
+  }
+  if (!requests.length) throw new Error('nothing to change — pass at least one of colour, size, font, bold, italic, underline, alignment');
+  await batchUpdate(presentation_id, requests);
+  return { presentation_id, object_id, applied: fields.concat(a.alignment ? ['alignment'] : []) };
+}
+
+async function handleCreateImage({ presentation_id, slide_object_id, image_url, x, y, width, height }) {
+  requireWrite();
+  const objectId = newId('img');
+  await batchUpdate(presentation_id, [
+    {
+      createImage: {
+        objectId,
+        url: String(image_url),
+        elementProperties: elementProperties(slide_object_id, { x, y, width: width ?? 300, height: height ?? 200 }),
+      },
+    },
+  ]);
+  return { presentation_id, slide_object_id, object_id: objectId };
+}
+
+async function handleSetSlideBackground({ presentation_id, slide_object_id, color }) {
+  requireWrite();
+  await batchUpdate(presentation_id, [
+    {
+      updatePageProperties: {
+        objectId: slide_object_id,
+        pageProperties: { pageBackgroundFill: { solidFill: { color: { rgbColor: hexToRgb(color) } } } },
+        fields: 'pageBackgroundFill.solidFill.color',
+      },
+    },
+  ]);
+  return { presentation_id, slide_object_id, color };
+}
+
+async function handleBatchUpdateRaw({ presentation_id, requests }) {
+  requireWrite();
+  if (!Array.isArray(requests) || requests.length === 0) {
+    throw new Error('requests must be a non-empty array of Slides API Request objects');
+  }
+  const data = await batchUpdate(presentation_id, requests);
+  return { presentation_id, applied: requests.length, replies: data.replies || [] };
+}
+
 // ─── MCP server ─────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -338,6 +668,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case 'add_slide':           result = await handleAddSlide(args);                break;
       case 'delete_slide':        result = await handleDeleteSlide(args);             break;
       case 'replace_text':        result = await handleReplaceText(args);             break;
+      case 'list_text_boxes':     result = await handleListTextBoxes(args);           break;
+      case 'set_text':            result = await handleSetText(args);                 break;
+      case 'insert_text':         result = await handleInsertText(args);              break;
+      case 'create_textbox':      result = await handleCreateTextbox(args);           break;
+      case 'style_text':          result = await handleStyleText(args);               break;
+      case 'create_image':        result = await handleCreateImage(args);             break;
+      case 'set_slide_background': result = await handleSetSlideBackground(args);     break;
+      case 'batch_update':        result = await handleBatchUpdateRaw(args);          break;
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
