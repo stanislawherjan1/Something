@@ -45,20 +45,43 @@ PLAN_BASE_ID = "r_system_plan_day"
 SYNC_FIELDS = ("title", "description", "message", "channel", "recipients", "exec")
 
 
+# The workspace's own timezone, so "06:00" in a ritual's schedule means six in
+# the MORNING for the people using it. It used to mean 06:00 UTC, which is
+# morning in western Europe and nowhere else: a client seven hours ahead of UTC had their
+# "morning planning" firing at 13:00, every day, and nothing said so. Unset
+# falls back to UTC, which is the old behaviour exactly.
+WORKSPACE_TZ = os.environ.get("IDE_TIMEZONE", "UTC").strip() or "UTC"
+
+
+def _zone(name):
+    if name.upper() == "UTC":
+        return datetime.timezone.utc
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo(name)
+    except Exception as err:                      # noqa: BLE001 — never fail a deploy over a tz name
+        print(f"[reconcile] unknown IDE_TIMEZONE {name!r} ({err}); using UTC", file=sys.stderr)
+        return datetime.timezone.utc
+
+
 def compute_due(placeholder, now):
-    m = re.match(r"BOOTSTRAP_NEXT_([A-Z]+)_(\d{1,2})_UTC", placeholder or "")
+    # _LOCAL is the workspace's timezone; _UTC is kept meaning UTC so anything
+    # that deliberately schedules in UTC keeps doing so.
+    m = re.match(r"BOOTSTRAP_NEXT_([A-Z]+)_(\d{1,2})_(UTC|LOCAL)", placeholder or "")
     if not m:
         return now + datetime.timedelta(days=1)
-    day, hh = m.group(1), int(m.group(2))
-    due = now.replace(hour=hh, minute=0, second=0, microsecond=0)
+    day, hh, basis = m.group(1), int(m.group(2)), m.group(3)
+    tz = _zone(WORKSPACE_TZ) if basis == "LOCAL" else datetime.timezone.utc
+    local_now = now.astimezone(tz)
+    due = local_now.replace(hour=hh, minute=0, second=0, microsecond=0)
     if day == "DAILY":
-        if due <= now:
+        if due <= local_now:
             due += datetime.timedelta(days=1)
-        return due
-    due += datetime.timedelta(days=(WD[day] - now.weekday()) % 7)
-    if due <= now:
+        return due.astimezone(datetime.timezone.utc)
+    due += datetime.timedelta(days=(WD[day] - local_now.weekday()) % 7)
+    if due <= local_now:
         due += datetime.timedelta(days=7)
-    return due
+    return due.astimezone(datetime.timezone.utc)
 
 
 def read_json(path, default):

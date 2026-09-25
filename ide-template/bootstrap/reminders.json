@@ -29,7 +29,7 @@
     "title": "Morning planning",
     "description": "[PLAN_DAY_TRIGGER] Run the morning-planner skill: re-read your RESPONSIBILITIES + calendar + tasks + open threads, then plan today into timed reminders (set_reminder) at sensible FUTURE times. Set each reminder's urgency (now vs ambient). Work SILENTLY: set the day's reminders, do NOT post a plan or summary. Suggestions only: never act outside the platform (no emails, no external API changes).",
     "message": "[PLAN_DAY_TRIGGER] Morning day-planning. Run the morning-planner skill: re-read RESPONSIBILITIES + calendar + tasks + open threads and plan today into timed reminders at sensible FUTURE times. Set each reminder's urgency (now vs ambient). SILENT: set reminders, post nothing. Suggestions only, nothing outside the platform.",
-    "due": "BOOTSTRAP_NEXT_DAILY_06_UTC",
+    "due": "BOOTSTRAP_NEXT_DAILY_06_LOCAL",
     "repeat": "daily",
     "channel": "web",
     "created": "BOOTSTRAP_NOW",

@@ -74,3 +74,42 @@ export function parseResetAt(text) {
   // A bare "0" or a stray number is not a time worth showing.
   return /[0-9]/.test(raw) && raw.length >= 1 && raw.length <= 40 ? raw : null;
 }
+
+/**
+ * Format the `resetsAt` the CLI now reports as a structured field (unix
+ * seconds) into the workspace's own clock.
+ *
+ * The regexes above read the CLI's PRINTED wording. It stopped printing the
+ * limit into the reply and started emitting a `rate_limit_event` instead, so
+ * they matched nothing and the turn ended silently — "it just stopped
+ * replying" — with the reset time sitting in an event the stream handler was
+ * dropping as an unknown type.
+ *
+ * Rendered in IDE_TIMEZONE so "back at 13:00" means 13:00 where the people
+ * reading it live, not in UTC.
+ */
+export function formatResetAt(resetsAtSeconds, tz = process.env.IDE_TIMEZONE || 'UTC') {
+  const secs = Number(resetsAtSeconds);
+  if (!Number.isFinite(secs) || secs <= 0) return null;
+  const when = new Date(secs * 1000);
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+    }).format(when);
+  } catch {
+    // An unknown zone must not cost us the whole notice — UTC still tells
+    // the reader more than silence does.
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
+    }).format(when) + ' UTC';
+  }
+}
+
+/** The sentence a person should see when the plan is spent. */
+export function limitNotice(resetsAtSeconds, botName) {
+  const who = (botName || '').trim() || 'The assistant';
+  const at = formatResetAt(resetsAtSeconds);
+  return at
+    ? `Claude usage limit reached. ${who} is back at ${at}.`
+    : `Claude usage limit reached. ${who} is back once the plan renews.`;
+}

@@ -19,6 +19,8 @@ import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
 import { syncMcpServers } from './integrations/runtime.js';
 import { primaryAdminSlug } from './team.js';
+import { limitNotice } from './usage-limit.js';
+import { resolve as resolveBranding } from './branding.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 // How much of claude's stderr to keep for diagnosing a failed turn.
@@ -244,6 +246,9 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
+  // One notice per turn: the CLI repeats the rejection for every attempt,
+  // and a reader needs the reset time once, not once a second.
+  let announcedLimit = false;
   // tool_use id → tool name, captured at content_block_start. Lets us skip
   // forwarding images from `Read` tool results: those are the user's own
   // pasted/attached image being read back, and echoing it into the assistant
@@ -313,6 +318,26 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
         // we know which tool needs to be added to the allow-list.
         if (evt.type === 'permission_request' || (evt.request_id && evt.tool_name)) {
           process.stderr.write(`[claude/permission-blocked] tool=${evt.tool_name || '?'} — add to settings.json permissions.allow if intended\n`);
+          continue;
+        }
+        // The plan is spent. The CLI reports this as a structured event and no
+        // longer prints it into the reply, so usage-limit.js's regexes — which
+        // read the output — stopped seeing it, the turn produced no text, and
+        // the bot simply went quiet. The reset time was in this event the whole
+        // time, being discarded one line below as an unknown type.
+        //
+        // `status` distinguishes a real rejection from a warning; only a
+        // rejection means nothing will come back.
+        if (evt.type === 'rate_limit_event') {
+          const info = evt.rate_limit_info || {};
+          if (info.status === 'rejected' && !announcedLimit) {
+            announcedLimit = true;
+            let who = '';
+            try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
+            const notice = limitNotice(info.resetsAt, who);
+            process.stderr.write(`[claude/rate-limit] ${info.rateLimitType || 'limit'} rejected — ${notice}\n`);
+            try { onText(notice); } catch { /* the log still carries it */ }
+          }
           continue;
         }
         if (!debugStream && evt.type && evt.type !== 'system' && evt.type !== 'assistant' && evt.type !== 'result') {
