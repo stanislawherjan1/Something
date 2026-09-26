@@ -16,7 +16,7 @@ import ChatPanel from './ChatPanel.jsx';
  */
 // extraFields / composerAccessory / onTurnDone pass straight through to ChatPanel
 // (used only by the browser-extension embed).
-export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onInitialMessageConsumed, className, extraFields, composerAccessory, onTurnDone, showThemeMenu }) {
+export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onInitialMessageConsumed, className, extraFields, composerAccessory, onTurnDone, showThemeMenu, freshAfterMs = 0 }) {
   const [activeSessionId, setActiveSessionId] = useState(null);
 
   // First mount: figure out which session to show. If the workspace has
@@ -35,7 +35,12 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
         // The backend orders sessions by pinned first, then lastMessageAt desc.
         // So the first non-archived entry IS the most recently touched one.
         const first = sessions.find(s => !s.archived) || sessions[0];
-        if (first) {
+        // freshAfterMs (browser-extension panel): after a long enough pause,
+        // open a new conversation instead of the last one. An empty last
+        // conversation is reused rather than stacking another empty one.
+        const stale = freshAfterMs > 0 && first && first.messageCount > 0
+          && Date.now() - Date.parse(first.lastMessageAt || 0) > freshAfterMs;
+        if (first && !stale) {
           setActiveSessionId(first.id);
           return;
         }
@@ -54,7 +59,7 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
       } catch { /* tolerate — UI falls back to the "Pick a chat" empty state */ }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [freshAfterMs]);
 
   // External callers (NotificationsView row clicks, NotificationToasts
   // click) dispatch `ide:chat-select-session` with { sessionId } in

@@ -25,6 +25,8 @@ import { PARENT_ORIGIN } from '@/lib/extensionEmbed';
 const AUTO_KEY = 'ext:autoScreens';
 const MARKER_RE = /\[\[\s*SCREENSHOT\s*\]\]/i;
 const MAX_AUTO_SHOTS = 2;
+// Opening the panel after a longer pause starts a new conversation.
+const FRESH_AFTER_MS = 4 * 60 * 60 * 1000;
 
 // Request/response over postMessage with a timeout, so a missing reply can
 // never hang a send.
@@ -197,6 +199,7 @@ export default function ExtensionChat() {
       <ChatPane
         className="h-full border-l-0"
         showThemeMenu
+        freshAfterMs={FRESH_AFTER_MS}
         extraFields={extraFields}
         composerAccessory={accessory}
         onTurnDone={onTurnDone}

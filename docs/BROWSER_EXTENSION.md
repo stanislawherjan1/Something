@@ -19,6 +19,9 @@ Status: developer build (load unpacked). Chrome 116+.
    next message), 📷 to attach a screenshot of it, and 👁 to let the assistant take one
    when it needs to (off by default).
 
+Opening the panel continues the last conversation; after a pause of more than 4 hours it
+starts a new one (an empty last conversation is reused rather than stacking another).
+
 To switch workspaces, right-click the toolbar icon → **Change workspace**. If the chat at
 an address does not load within 10 seconds (the workspace refuses to be framed, or runs a
 version without the extension view), the panel returns to the address step and says so.
