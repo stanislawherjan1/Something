@@ -19,6 +19,7 @@ import TeamDashboard      from './views/TeamDashboard.jsx';
 import MemoryDashboard    from './views/MemoryDashboard.jsx';
 import TelegramDashboard  from './views/TelegramDashboard.jsx';
 import NotificationsView  from './views/NotificationsView.jsx';
+import BrowserAgentView   from './views/BrowserAgentView.jsx';
 
 // BlockNote is heavy (~500 KB gzip) — lazy-load so the initial bundle stays
 // lean. Only paid when the user actually opens a markdown file.
@@ -102,6 +103,7 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'dashboard')                              return <ClaudeDashboard onSelect={onSelect} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'skills')                                 return <SkillsDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'integrations')                           return <IntegrationsDashboard sidebarOpen={sidebarOpen} />;
+  if (type === 'browser-agent')                          return <BrowserAgentView sidebarOpen={sidebarOpen} />;
   if (type === 'responsibilities')                       return <ResponsibilitiesDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'reminders')                              return <RemindersDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'team')                                   return <TeamDashboard sidebarOpen={sidebarOpen} />;

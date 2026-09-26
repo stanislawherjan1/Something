@@ -33,14 +33,20 @@ through its tools and API access (e.g. fill in the slide you are looking at).
 
 ## Install (developer build)
 
-1. `chrome://extensions` → turn on **Developer mode**.
-2. **Load unpacked** → the `chrome-extension/` folder of this repository.
-3. Pin the icon, click it, enter the workspace address.
+The workspace's **Browser agent** page (sidebar) shows how it works and offers the
+package: **Download** → unzip on the Desktop and keep the folder → `chrome://extensions` →
+Developer mode → **Load unpacked** → the folder → pin it, open it, enter the workspace
+address.
+
+The package is `ide-template/frontend/public/downloads/something-chrome-extension.zip`,
+built from `chrome-extension/` by `scripts/build-extension-zip.sh` — **re-run it after any
+change to the extension and commit the zip with it.**
 
 The extension id is pinned by the `key` in `manifest.json`
-(`dfmejngohcofdhddpgkpgaedmjghpdbh`) — the sign-in allow-list and the framing rule
-depend on it. Updates: pull the repo, press **Reload** on the extension. The chat itself
-updates with every workspace deploy; the extension is only a shell.
+(`dfmejngohcofdhddpgkpgaedmjghpdbh`) — the sign-in allow-list and the framing rule depend
+on it. Updates: install the new package over the old folder and press **Reload** on the
+extension. The chat itself updates with every workspace deploy; the extension is only a
+shell.
 
 ## How it fits together
 

@@ -40,7 +40,7 @@ reaches the repo.
 | `ide-template/entrypoint.sh`, `Dockerfile`, `docker-compose.yml`, `deploy.sh` | Container boot, image, stack, deploy |
 | `ide-template/setuid-wrappers/` | C runners that drop each process to its own uid |
 | `install.sh`, `bin/`, `scripts/` | Installer, server preflight/ensure, hardening, dev scripts, `check-docs-impact.sh` |
-| `chrome-extension/` | The side-panel browser extension (developer build, no build step) |
+| `chrome-extension/` | The side-panel browser extension (no build step; `scripts/build-extension-zip.sh` packages it into the frontend's `public/downloads/`) |
 | `clients/` | Per-client config — **local only**, never committed except `example-client/` |
 | `docs/` | Product + operator documentation (map below) |
 | `docs/future-plans/` | Designs not built yet — **gitignored**, local only |

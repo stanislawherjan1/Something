@@ -1,4 +1,4 @@
-import { Children, useState, useEffect, useCallback, useMemo } from 'react';
+import { Children, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Save, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
@@ -99,9 +99,15 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
   }, [searchParams, setSearchParams]);
 
   // Force-refresh when a file watcher event fires (skill added/removed
-  // outside the dashboard).
+  // outside the dashboard). Only on a NEW event: the nonce is already non-zero
+  // when the tab mounts, and treating that as an event dropped the cache on
+  // every visit — the list vanished into a skeleton each time the tab opened.
+  const seenNonce = useRef(fileEventNonce);
   useEffect(() => {
-    if (fileEventNonce) { invalidate('/api/skills'); reloadApi(); }
+    if (fileEventNonce === seenNonce.current) return;
+    seenNonce.current = fileEventNonce;
+    invalidate('/api/skills');
+    reloadApi();
   }, [fileEventNonce, reloadApi]);
 
   const reload = useCallback(() => {

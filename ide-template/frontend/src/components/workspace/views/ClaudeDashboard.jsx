@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Hexagon, Save, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Brain, Lock, Clock, Upload,
+  Brain, Lock, Clock, Upload, Wrench, Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -63,6 +63,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   // Telegram — connection state (from the integrations catalog) + group count.
   const tg = useApi('/api/team/telegram-groups');
   const integrations = useApi('/api/integrations');
+  const skills = useApi('/api/skills');
 
   // True only on first ever mount before the first fetch lands. Subsequent
   // tab switches reuse the cached state and skip the skeleton.
@@ -141,6 +142,30 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     activatedAt: null,
   };
 
+  // Skills and Integrations moved here from the sidebar.
+  const skillCount = skills.data?.skills?.length || 0;
+  const skillsTile = {
+    id: 'skills',
+    logo: <IconLogo icon={Wrench} />,
+    label: 'Skills',
+    description: skillCount ? `${skillCount} playbooks for recurring tasks` : 'Playbooks for recurring tasks.',
+    active: true,
+    alwaysOn: true,
+    credential: null,
+    activatedAt: null,
+  };
+  const activeIntegrations = (integrations.data?.integrations || []).filter(i => i.active).length;
+  const integrationsTile = {
+    id: 'integrations',
+    logo: <IconLogo icon={Plug} />,
+    label: 'Integrations',
+    description: activeIntegrations ? `${activeIntegrations} connected` : 'Connect the tools your assistant works with.',
+    active: true,
+    alwaysOn: true,
+    credential: null,
+    activatedAt: null,
+  };
+
   // Telegram channel — registered groups + (later) token & per-user links.
   const tgCount = tg.data?.groups?.length || 0;
   const tgIntegration = (integrations.data?.integrations || []).find(i => i.id === 'telegram') || null;
@@ -162,39 +187,47 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
       <EditorHeader icon={Hexagon} title="AI Settings" sidebarOpen={sidebarOpen} />
 
       <div className="flex-1 overflow-auto">
-        <div className="flex max-w-2xl flex-col gap-3 px-6 pb-12 pt-2">
+        {/* The cards keep their width (as in the old two-column layout); only
+            how many sit in a row changes with the space — four with the chat
+            collapsed, fewer as it narrows, one full-width column on a phone. */}
+        <div className="grid gap-3 px-6 pb-12 pt-2 [grid-template-columns:repeat(auto-fill,306px)] max-sm:grid-cols-1">
           {isInitialLoad ? (
             // First-ever mount, no cache yet — show skeletons rather than
             // a faked "Aria + stock avatar" placeholder.
             <>
-              <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                <SkeletonTile />
-                <SkeletonTile />
-              </div>
+              <SkeletonTile />
+              <SkeletonTile />
+              <SkeletonTile />
               <SkeletonTile />
             </>
           ) : (
             <>
-              <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />
-                <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />
-              </div>
-              <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                <SettingTile
-                  tile={memoryTile}
-                  onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}
-                  canEdit={isAdmin}
-                />
-                <SettingTile
-                  tile={remindersTile}
-                  onOpen={() => onSelect && onSelect({ path: '.claude/reminders', type: 'reminders' })}
-                  canEdit={isAdmin}
-                />
-              </div>
+              <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />
+              <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />
+              <SettingTile
+                tile={memoryTile}
+                onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}
+                canEdit={isAdmin}
+              />
+              <SettingTile
+                tile={remindersTile}
+                onOpen={() => onSelect && onSelect({ path: '.claude/reminders', type: 'reminders' })}
+                canEdit={isAdmin}
+              />
+              <SettingTile
+                tile={skillsTile}
+                onOpen={() => onSelect && onSelect({ path: '.claude/skills', type: 'skills' })}
+                canEdit={isAdmin}
+              />
+              <SettingTile
+                tile={integrationsTile}
+                onOpen={() => onSelect && onSelect({ path: '.claude/integrations', type: 'integrations' })}
+                canEdit={isAdmin}
+              />
               {/* Claude (API token) and Telegram expose credentials, so they're
-                  admin-only — members see just the three default-on tiles above. */}
+                  admin-only — members see just the default-on tiles above. */}
               {isAdmin && (
-                <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
+                <>
                   <SettingTile tile={claudeTile} onOpen={() => setOpen('claude')} canEdit={isAdmin} />
                   <SettingTile
                     tile={telegramTile}
@@ -203,7 +236,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
                       : setOpen('telegram-setup')}
                     canEdit={isAdmin}
                   />
-                </div>
+                </>
               )}
             </>
           )}

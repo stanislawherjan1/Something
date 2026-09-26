@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
-  Wrench, Plug, Repeat, UsersRound, Inbox, Search,
+  AppWindow, Repeat, UsersRound, Inbox, Search,
   FilePlus, FolderPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -290,51 +290,30 @@ export default function Sidebar({
           />
           <span>Routines</span>
         </button>
+        {/* Skills and Integrations live in AI Settings now. */}
         <button
           type="button"
-          onClick={() => onSelect({ path: '.claude/skills', type: 'skills' })}
+          onClick={() => onSelect({ path: '.claude/browser-agent', type: 'browser-agent' })}
           className={cn(
             'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
             'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'skills'
+            selected?.type === 'browser-agent'
               ? 'bg-sidebar-accent font-medium text-foreground'
               : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
           )}
         >
-          {selected?.type === 'skills' && (
+          {selected?.type === 'browser-agent' && (
             <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
           )}
-          <Wrench
+          <AppWindow
             className={cn(
               'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'skills' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+              selected?.type === 'browser-agent' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
             )}
             strokeWidth={1.75}
           />
-          <span>Skills</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelect({ path: '.claude/integrations', type: 'integrations' })}
-          className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
-            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'integrations'
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
-          )}
-        >
-          {selected?.type === 'integrations' && (
-            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
-          )}
-          <Plug
-            className={cn(
-              'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'integrations' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
-            )}
-            strokeWidth={1.75}
-          />
-          <span>Integrations</span>
+          <span>Browser agent</span>
+          <span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
         </button>
       </div>
       <div className="p-2">
