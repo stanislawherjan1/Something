@@ -29,7 +29,7 @@ it works. `open` = no auth at all (keyless hosted server, instant-activate).
 | **Atlassian** | Jira and Confluence | OAuth |
 | **Cal.com** | Bookings and availability | OAuth |
 | **Calendly** | Scheduling and invitees | OAuth |
-| **Canva** | Designs and brand assets | OAuth |
+| **Canva** | Designs and brand assets | OAuth — **not connectable from a self-hosted domain** (see [below](#remote-mcp-one-click-oauth)) |
 | **Cloudflare** | Workers, KV, R2, DNS | OAuth |
 | **Crypto.com** | Crypto prices and charts | open |
 | **Firecrawl** | Scrape, crawl, and search the web | OAuth |
@@ -169,7 +169,23 @@ differ and still works, because broker fetches use the open listener).
   non-2xx.
 - A `registration_endpoint` existing in discovery **≠ open DCR**. Verify each
   provider by POSTing a registration against the *production* redirect URI before
-  shipping it — some gate DCR to whitelisted partners and will 4xx.
+  shipping it — some gate DCR to whitelisted partners and will 4xx. Of the
+  hosted MCPs in the catalog, 15 accept a self-hosted redirect end to end; Miro
+  and Cal.com refuse the registration itself.
+- A successful registration **≠ a usable redirect** either. **Canva** issues a
+  client_id bound to this workspace's callback, then its `/authorize` rejects
+  that same URL with `Invalid redirect URI` — it only accepts an allow-list
+  (localhost and its partner apps), which DCR cannot reach. The catalog entry
+  carries `"unavailable": "provider-restricted"` and says so in its
+  description. The two routes forward are Canva's Connect API with a redirect
+  registered in your own Canva developer app (a bring-your-own-credentials
+  integration, like Shopify/Meta) or Canva allow-listing the domain.
+- A cached DCR registration is reused **only if its `redirect_uris` contain the
+  redirect this flow will send**; otherwise the broker re-registers and logs
+  why (`cached client_id was registered for …, not … — re-registering`). This
+  covers providers that ignore the requested `redirect_uri` and return their
+  own, and a workspace that moves to another domain — both would otherwise
+  fail at authorize with an opaque "invalid redirect".
 - `pm2 restart` does **not** reload the catalog JSON; a catalog change needs a
   `docker restart` of the container.
 
@@ -199,6 +215,7 @@ Each catalog entry declares:
 | `steps[]` | Numbered instructions shown in the activation modal's left column. |
 | `mcp` | How to spawn the MCP server (or which long-running process to restart). See "Runtime side" below. |
 | `comingSoon` | Marks the entry as visible-but-disabled in the dashboard. |
+| `unavailable` | Reason code for an entry the provider currently blocks (e.g. `"provider-restricted"` on Canva). A marker only — the dashboard does not read it yet, so the `description` must explain why activation will fail. |
 | `process` | `'telegram-bot'` for the long-running PM2 case — triggers `pm2 restart` on activate/remove. |
 
 ### Field types
@@ -670,7 +687,7 @@ The dashboard sits in the sidebar under **Integrations**.
 | **Email (IMAP+SMTP)** | MCP | provider-aware multi-account form + workspace-level `EMAIL_ALLOW_SEND` toggle | Multi-account UI; serialises to `accounts.json` under `{dataDir}/email/`. **Read** (IMAP) is always available. **Write** (SMTP send + draft) is gated by the workspace-level "Allow sending" toggle in the Permissions panel — defaults OFF, flippable from the Settings modal (no credential re-entry). When OFF, the MCP can compose drafts but `send_email` returns "sending disabled". Existing pre-toggle users get OFF by default until they opt in. |
 | **GA4** | MCP | `GA4_PROPERTY_ID`, `GA4_CREDENTIALS_JSON_CONTENT` | JSON paste; `ga4-mcp-server` (pip-installed in Dockerfile). |
 | **Trello** | MCP | `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_BOARDS` (opt) | Boards/lists/cards via `api.trello.com/1`. `TRELLO_BOARDS` accepts URLs or short IDs, optionally with friendly names (`acme:URL,personal:URL`). Tools: read cards/lists (incl. label objects on `get_card`), comment, label, move between columns. |
-| **Google Workspace** | MCP bundle | `GDOCS_CLIENT_ID`, `GDOCS_CLIENT_SECRET`, `GDOCS_REFRESH_TOKEN`, plus workspace toggle `GWORKSPACE_ALLOW_WRITE` | Single tile + single OAuth refresh token unlock six MCPs at once: **Docs** (read/append/replace), **Sheets** (cells, ranges, append, update, create), **Calendar** (events list/CRUD), **Drive** (search/download/export/upload/share/trash, full comment lifecycle: **list_comments** with `quoted_text` + replies, **reply_comment**, **resolve_comment**, **delete_comment** — all over the Drive API; the only comment op NOT here is range-anchored *adding*, which lives in the separate Docs Comments integration), **Slides** (decks, slides, replace), **Tasks** (lists + items). Per-user OAuth (Web client + OAuth Playground); refresh token needs six scopes (documents/drive/spreadsheets/calendar/presentations/tasks). The workspace-level `GWORKSPACE_ALLOW_WRITE` toggle (Settings cog on the active tile) gates *every* write across the bundle — defaults **On**, flippable from the cog without re-pasting credentials. Activation auto-installs six skill playbooks (gdocs/gsheets/gcalendar/gdrive/gslides/gtasks) that share the integration's logo. |
+| **Google Workspace** | MCP bundle | `GDOCS_CLIENT_ID`, `GDOCS_CLIENT_SECRET`, `GDOCS_REFRESH_TOKEN`, plus workspace toggle `GWORKSPACE_ALLOW_WRITE` | Single tile + single OAuth refresh token unlock six MCPs at once: **Docs** (read/append/replace), **Sheets** (cells, ranges, append, update, create), **Calendar** (events list/CRUD), **Drive** (search/download/export/upload/share/trash, full comment lifecycle: **list_comments** with `quoted_text` + replies, **reply_comment**, **resolve_comment**, **delete_comment** — all over the Drive API; the only comment op NOT here is range-anchored *adding*, which lives in the separate Docs Comments integration), **Slides** (decks, slides, `replace_text`, plus writing: `list_text_boxes` → `set_text` / `insert_text` fill any shape by objectId, including the empty placeholders a new slide arrives with; `create_textbox`, `style_text`, `create_image` from a public URL, `set_slide_background`; `batch_update` sends raw Slides API Request objects for everything else — tables, bullets, transforms, reordering, chart embeds), **Tasks** (lists + items). Per-user OAuth (Web client + OAuth Playground); refresh token needs six scopes (documents/drive/spreadsheets/calendar/presentations/tasks). The workspace-level `GWORKSPACE_ALLOW_WRITE` toggle (Settings cog on the active tile) gates *every* write across the bundle — defaults **On**, flippable from the cog without re-pasting credentials. Activation auto-installs six skill playbooks (gdocs/gsheets/gcalendar/gdrive/gslides/gtasks) that share the integration's logo. |
 | **Docs Comments** | MCP (`docs-comments-mcp`) | none in form — populated via "Connect to Google" embedded noVNC | Drives a logged-in chromium against Google Docs to drop inline comments at **anchored text ranges** — the one comment op the Drive API can't do. One tool: `add_comment`. Reply / resolve / delete / list of *existing* comments is handled over the Drive API by the **Google Workspace** integration (`mcp__gdrive__*`), not here. Activated via the `docs-comments-browser-login` field type (see "Interactive browser login" above); session persists in `/var/wsapi-store/docs-comments-profile/`. First-class, shipped to every client. |
 | **X (Twitter)** | MCP | `TWITTERAPI_IO_KEY` | Read-only tier via [twitterapi.io](https://twitterapi.io) — no X account credentials required. Tools: get tweet, user profile, mentions, search. |
 

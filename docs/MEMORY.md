@@ -98,6 +98,12 @@ preloaded there — not even the sender's own.
 
 - `memory_grep` — ripgrep over the shared tree **plus the caller's own private
   tree**, never another teammate's. Cheap deterministic lookup before `Read`.
+  The caller is resolved from the session cookie for browser calls; the bot's
+  MCP call has no cookie, so `workspace-api-mcp` sends the turn's
+  `IDE_ACTOR_SLUG` as `X-IDE-Actor` (the same header `memory_write` sends), and
+  `GET /api/memory/grep` honours it **only from loopback**. With no actor the
+  search excludes `users/**` entirely — which in team mode would hide every
+  per-user card (RESPONSIBILITIES, USER_PROFILE, …) from the bot.
 - `Read` on a concept/topic page, found via the scope's `INDEX.md`.
 - `recent_messages({channel})` — the live rolling tail, fresher than a frozen
   Telegram prefix.
@@ -152,6 +158,17 @@ returned — replacing the wrong claim is worse than replacing none.
 - **rival detection** — `remember` refuses when memory already states the same
   thing differently, and tells the caller to `supersede` instead. This is what
   stops a correction from landing as a second, contradictory bullet.
+- **card shape** — a card's layout is the card's, not the caller's.
+  RESPONSIBILITIES is a flat-list card: `remember` ignores the caller's
+  `section` and appends to its one list (a duty's title passed as `section`
+  used to spawn a second copy under its own heading, which the Routines panel
+  never shows). `## Never` / `## Always` are reserved for RULES and refused on
+  any other card, so a rule cannot hide where the rules reader never looks.
+  Heading matching ignores case, punctuation and spacing (`## Working-style`
+  lands in `## Working style`).
+- **frontmatter is not a claim** — `supersede`/`retire` skip a card's YAML
+  frontmatter, so its `key: value` instructions can never be matched and
+  rewritten as a fact.
 - **undo + log** — every write snapshots the pre-image and appends an event.
 
 ### Silence
@@ -212,6 +229,15 @@ placeholder nodes for entities that were merely frequent in a background
 pipeline; pages are now created deliberately, in the conversation that earns
 them.)
 
+**Live updates.** The file watcher (`lib/watcher.js`) covers `memory/**`, so a
+memory write reaches the file-watch SSE stream and subscribed views — the
+Routines panel, which renders RESPONSIBILITIES — refresh without a page
+reload. Engine bookkeeping under `memory/_engine/` and archived reflect output
+under `memory/_reflect/` are not watched (every write logs there, so watching
+them would fire an event per write and loop on anything that reacts by
+writing). Events from `memory/users/<slug>/` are delivered only to that
+person's own streams.
+
 ---
 
 ## Coexistence with the rest of the bot's context
@@ -245,7 +271,9 @@ saved something.
 | `lib/memory-migrate.js` | one-shot move off the retired pipeline (boot, idempotent) |
 | `lib/memory-graph.js` | `{nodes, edges}` for the dashboard |
 | `lib/memory-grep.js` | ripgrep-backed search, own-tree scoped |
+| `lib/memory-repair.mjs` | one-shot CLI: fold drifted cards back to their declared shape (`repairCards`) |
 | `lib/recent-snapshot.js` | rolling tail writer (content-gated) |
+| `lib/watcher.js` | file-watch SSE source; includes `memory/**`, owner-tags private trees |
 | `routes/memory.js` | graph / grep / prefix / recent / changes / revert / snapshot |
 | `routes/internal.js` | `memory-write`, `memory-log` (loopback only) |
 | `apps/workspace-api-mcp` | the `memory_write`, `memory_log`, `memory_grep`, `recent_messages` tools |
@@ -274,6 +302,26 @@ changing the prefix mid-session — usually a card being rewritten.
 **Updating templates without losing edits.** The entrypoint seed step is
 idempotent. To roll new template content into an already-seeded workspace, copy
 the file in by hand (not `INDEX.md` — it is generated).
+
+**Repairing drifted cards.** Cards written before the card-shape guard can
+carry a heading twice, duties parked under headings of their own on
+RESPONSIBILITIES, or entries missing their `- ` marker (invisible to
+`supersede`/`retire`). From `/opt/ide/workspace-api` inside the container, as
+the workspace-api user:
+
+```
+node lib/memory-repair.mjs --dry-run   # report only
+node lib/memory-repair.mjs             # apply
+```
+
+It walks the whole tree, per-user trees included (skipping `_engine/`,
+`_reflect/`, archives and the generated `INDEX`/`RECENT_*`/`ABOUT` files).
+Content under a duplicate heading joins the first heading of that name; on a
+flat-list card every entry ends up in the one list and gets its list marker
+back. Lines are moved, never dropped; frontmatter, the preamble and HTML-comment
+template blocks are left as they are. Each repaired file goes through the
+normal write path, so it has an undo snapshot and a log line (`op: repair`) and
+can be reverted like any other write. A second run is a no-op.
 
 **Migration.** `migrateToEngine()` runs at boot, once: it archives the retired
 pipeline's files to `/var/wsapi-store/memory-v2-archive-<date>.tar.gz` (outside

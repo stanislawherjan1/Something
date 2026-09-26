@@ -43,7 +43,7 @@ Web chat is **per-session**: each conversation is its own thread with its own Cl
 | `GET /api/files/download?path=` | Same bytes as `/raw` but with `Content-Disposition: attachment` so the browser saves to disk. For directories, streams a zip via `archiver` (lazy, flat memory). RFC 5987 `filename*` form keeps non-ASCII names intact. Backs the file-tree right-click → Download menu item. |
 | `POST /api/files/{create,write,mkdir,move}` | Mutations — gated by `resolveSafePath` (rejects `..`, absolute paths, hidden-set leaves). `write` accepts text only and refuses binary. `move` also backs inline rename in the file tree. |
 | `DELETE /api/files/delete?path=` | Recursive delete; `resolveSafePath` + HARD_HIDDEN guards apply. |
-| `GET /api/files/watch` | Long-lived SSE stream of FS change events from chokidar (`add`/`change`/`unlink`/`addDir`/`unlinkDir`), batched in 100 ms. Heartbeat `: keep-alive` every 30 s so proxies don't close idle. |
+| `GET /api/files/watch` | Long-lived SSE stream of FS change events from chokidar (`add`/`change`/`unlink`/`addDir`/`unlinkDir`) plus payload-free `{ type: 'state', kind }` change notices (`branding` / `team` / `integrations`), batched in 100 ms. Private-tree events reach only their owner's streams. Heartbeat `: keep-alive` every 30 s so proxies don't close idle. |
 
 ## Module layout
 
@@ -51,7 +51,7 @@ Most files stay small and single-purpose; the integration engine under `lib/inte
 
 ```
 workspace-api/
-├── index.js                 # Express setup, helmet, cookie/actor middleware, route mounting, graceful shutdown
+├── index.js                 # Express setup, helmet, cookie/actor middleware, state-change notices, route mounting, graceful shutdown
 ├── package.json
 ├── lib/
 │   ├── config.js            # PORT, PROJECT_DIR, CLAUDE_BIN, size limits, visibility sets
@@ -60,6 +60,7 @@ workspace-api/
 │   ├── sessions.js          # per-actor session manifest (_index.json): id ↔ title ↔ claudeSessionId
 │   ├── chatHistory.js       # append-only per-session JSONL transcripts (+ legacy .chat migration)
 │   ├── claude.js            # runClaudeTurn — spawn `claude -p`, parse stream-json, fire text/tool/image callbacks
+│   ├── usage-limit.js       # usage-limit detection + the "back at HH:MM" notice (IDE_TIMEZONE)
 │   ├── memory-loader.js     # buildCachedPrefix — assembles the cached system-prompt block from memory/
 │   ├── recent-snapshot.js   # rolling RECENT_WEB / RECENT_TELEGRAM snapshots (cross-surface awareness)
 │   ├── memory-graph.js      # memory wiki → graph (cards, topics, links) for the Memory dashboard
@@ -69,7 +70,7 @@ workspace-api/
 │   ├── branding.js          # bot name / avatar / logo metadata
 │   ├── team.js              # allowed-emails whitelist + audit log
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
-│   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), batched broadcasts)
+│   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
 │   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine
 └── routes/
@@ -127,11 +128,23 @@ It writes the user message to stdin, parses JSON-per-line from stdout, and fires
 - `onImage({ mediaType, data })` — images a tool returns (e.g. Playwright screenshots), rendered inline in the chat. Images from the `Read` tool are skipped — the user already has that file open.
 - `onError(message)` on spawn failure or non-zero exit; `onDone({ sessionId })` on clean exit. The session id is captured from the `system/init` event.
 
+**Usage limits.** The CLI reports a spent plan as a structured `rate_limit_event` (`status`, `resetsAt`), not as reply text. When a `rejected` event was seen during the turn, the non-zero exit's generic error is replaced by a single notice from `lib/usage-limit.js` — `Claude usage limit reached. <bot> is back at HH:MM.` — with the reset time rendered in the workspace timezone (`IDE_TIMEZONE`, default UTC). A warning status does not trigger it. The phrase "usage limit reached" is load-bearing: the group watcher matches it to announce once, and the web chat renders it as a limit (clock icon, no retry button) rather than as an error.
+
 Before spawning, it prepends a **cached system-prompt prefix** via `buildCachedPrefix()` (from `lib/memory-loader.js`) — the memory wiki plus the rolling recent-conversation snapshots, assembled so Anthropic prompt-caching hits on every turn. `RECENT_WEB` is **excluded** from the web prefix so one web thread can't bleed into another; `RECENT_TELEGRAM` stays in for cross-surface awareness (the bot can draw on what just happened over Telegram). See `lib/recent-snapshot.js` and [docs/MEMORY.md](../../docs/MEMORY.md).
 
 ### `lib/watcher.js` — file events
 
-One process-wide `chokidar` watcher on `PROJECT_DIR`. Filtered with the same `isVisibleEntry` predicate as the tree listing (default visibility — technical/hidden file changes don't generate events even when `include_hidden` mode is on in the UI). Events are batched in a 100 ms window, then `data: { events: [...] }` is fanned out to every subscriber. `subscribe(res)` returns a detacher; routes/files.js calls it on the `/watch` request and detaches on `req.close`.
+One process-wide `chokidar` watcher on `PROJECT_DIR`. Filtered with the same `isVisibleEntry` predicate as the tree listing (default visibility — technical/hidden file changes don't generate events even when `include_hidden` mode is on in the UI), with explicit carve-outs so the dashboards update without a reload:
+
+- `.claude/skills`, `.reminders.json`, `.tasks.json`;
+- mini-apps (`.claude/miniapps/**`, and `users/<slug>/.claude/miniapps/**` in team mode — the rest of `users/**` stays unwatched);
+- the memory wiki (`memory/**`, which backs Routines and the Memory dashboard), except `memory/_engine/` (undo snapshots and logs written by every memory write) and archived reflect output (`memory/_reflect/`).
+
+Events under `users/<slug>/` and `memory/users/<slug>/` are tagged with the owner and delivered only to that person's own streams (no admin exception). Watching is not exposure — content is still gated in `files.js`.
+
+State that is not a watchable file — branding, the team roster, the integration store — is announced with `publishState(kind)`: a `{ type: 'state', kind }` event with no payload. One middleware in `index.js` publishes it on the response of every successful (status < 400) non-GET request under `/api/branding`, `/api/setup/{branding,logo,avatar}`, `/api/team` and `/api/integrations`, so new routes in those groups are covered automatically and a handler that fails never publishes.
+
+Events are batched in a 100 ms window, then `data: { events: [...] }` is fanned out to every subscriber. `subscribe(res, scope)` returns a detacher; routes/files.js calls it on the `/watch` request and detaches on `req.close`.
 
 ### Sessions, history & cross-surface snapshots
 
@@ -141,7 +154,7 @@ One process-wide `chokidar` watcher on `PROJECT_DIR`. Filtered with the same `is
 
 ## Auth model
 
-workspace-api trusts the gateway: nginx in the frontend service auth-gates `/api/*` via `auth_request /auth/verify` before any byte reaches this process — see `frontend/nginx.conf`. Inside, `attachActor` reads the verified identity and `requireActor` / `requireAdmin` (lib/auth.js) gate the route groups; `/api/internal/*` is **loopback-only** (called by in-container helpers like `bot.sh` and `reminder-monitor.sh`, never by a browser). The container network is closed (workspace-api binds to the docker bridge, not the host), so the gate is load-bearing for security.
+workspace-api trusts the gateway: nginx in the frontend service auth-gates `/api/*` via `auth_request /auth/verify` before any byte reaches this process — see `frontend/nginx.conf`. The exceptions are the exact locations `/api/branding`, `/api/branding/avatar` and `/api/branding/logo`, which nginx proxies without `auth_request` for every method so the login page can read the name and pictures before there is a session; writes there are authorised in-process by the branding router's `requireAdmin`, which verifies the session cookie itself (`attachActor`) and answers 401/403. Inside, `attachActor` reads the verified identity and `requireActor` / `requireAdmin` (lib/auth.js) gate the route groups; `/api/internal/*` is **loopback-only** (called by in-container helpers like `bot.sh` and `reminder-monitor.sh`, never by a browser). The container network is closed (workspace-api binds to the docker bridge, not the host), so the gate is load-bearing for security.
 
 If you ever expose workspace-api outside the auth-gated path, add API-key checks here.
 
@@ -152,7 +165,7 @@ See `frontend/src/components/workspace/README.md` for the React side. In short:
 - `ChatPanel` POSTs to `/api/chat` as multipart (so pasted/attached files ride along) and parses the SSE stream via `fetch` + `ReadableStream` — `data:` lines are text deltas; named events drive the tool chips, inline images, and the terminal `done`/`error`.
 - `FileTree` calls `/api/files/tree` recursively (one fetch per opened directory) and includes `?include_hidden=true` when the eye toggle is on.
 - `FileViewer` calls `/api/files/read`; `ImageViewer` uses `/api/files/raw` directly as an `<img src=…>`.
-- `useFileWatcher` opens an `EventSource` on `/api/files/watch`; `useNotifications` opens a single shared one on `/api/notifications/stream` (mounted once at the workspace shell, feeding the toasts + the Notifications inbox) for reminders and proactive bot messages. Every file event bumps a nonce that components include in their fetch deps to refresh.
+- `useFileWatcher` opens an `EventSource` on `/api/files/watch`; `useNotifications` opens a single shared one on `/api/notifications/stream` (mounted once at the workspace shell, feeding the toasts + the Notifications inbox) for reminders and proactive bot messages. Every event batch bumps a nonce that components include in their fetch deps to refresh. `state` notices are additionally mapped to the URLs that read that state (`branding` → `/api/branding`; `team` → `/api/team`, `/api/me`; `integrations` → `/api/integrations`) and refetched with `refetch(url)` from `lib/useApi.js`, which fetches, caches and pushes the result to every mounted `useApi` hook (unlike `invalidate(url)`, which only drops the cache). A frame that fails to parse still bumps the nonce.
 
 ## Local dev
 

@@ -439,26 +439,27 @@ Only members of `wsapi-broker` (= wsapi itself + mcp) can connect.
 The full Phase-2 (broker) + Phase-3 (bot uid split) timeline + threat
 coverage matrix is in `SECURITY.md` "Encryption scope" section.
 
-### Claude Code Stop hooks
+### Claude Code hooks
 
-`bootstrap/claude-settings.json` registers two Stop-event hooks (and one PostToolUse hook) that fire after every claude turn:
+`bootstrap/claude-settings.json` registers two Stop-event hooks that fire after every claude turn, plus two PreToolUse guards:
 
 | Hook | Event | What it does |
 |---|---|---|
 | `hooks/verify-denials.sh` | Stop | Scans the assistant's last text for absence-claim patterns ("nie mam X", "doesn't exist", "I don't see Y in my tools", …) and, if the model didn't run any lookup tool (Read/Bash/Glob/Grep/memory_grep) that turn, blocks the response and pushes a feedback string asking it to verify before claiming absence. Appends the offending quote to `memory/patterns/verification-failures.md` so `taste-recall` can show it back next session. |
-| `hooks/verify-telegram-reply.sh` | Stop | Detects Telegram-channel turns by `transcript_path` prefix (`/home/bot/*` = bot tmux, `/home/wsapi/*` = web). For Telegram turns, scans the last assistant message for any `mcp__plugin_telegram_telegram__*` tool use. If none, blocks the response and forces the model to reply via the Telegram MCP — closes the silent-failure mode where the response landed in the IDE transcript only and the operator saw nothing. Whitelists internal triggers (`[REMINDER]`, `[REPO_AUDIT_TRIGGER]`, etc.) and explicit silence requests ("tylko zapisz", "don't reply"). |
-| `hooks/post-write-memory.sh` | PostToolUse (Write\|Edit on `memory/`) | Fires a Telegram notification with a 200-char preview of the write so the operator sees within seconds what the bot decided to remember. Closes the memory-write feedback loop. |
+| `hooks/verify-telegram-reply.sh` | Stop | Detects Telegram-channel turns by `transcript_path` prefix (`/home/bot/*` = bot tmux, `/home/wsapi/*` = web). For Telegram turns, scans the current turn for any `mcp__plugin_telegram_telegram__*` tool use. If none, blocks the response and forces the model to reply via the Telegram MCP — closes the silent-failure mode where the response landed in the IDE transcript only and the operator saw nothing. Whitelists internal triggers (`[REMINDER]`, `[REPO_AUDIT_TRIGGER]`, etc.). Deliberate silence is declared by the model, not guessed from keywords: when the sender asked for no reply (in any language or wording), `global-claude.md` tells the model to end the turn with `[[SILENT]]` on its own line, and the hook lets a turn through if that marker appears in the assistant's text since the last trigger. |
+| `hooks/scope-guard.mjs` | PreToolUse (file tools + Bash) | In team mode, denies a non-admin turn access to another teammate's private files (`users/<slug>/`) and private memory (`memory/users/<slug>/`), using the same scope rule as the file API. Fails open on its own errors. |
+| `hooks/skill-fence.mjs` | PreToolUse (Skill) | Blocks the CLI's built-in cloud-scheduling skills (`schedule` and similar), which cannot work from a self-hosted box and collide with the product's own "routines" vocabulary. |
 
 Both Stop hooks log to `/tmp/verify-{denials,telegram-reply}.log` for live observability — operator can `tail -f` to see when they fire. The hooks exit 0 unless they're blocking; blocking sends stderr back to the model as system feedback and CC re-prompts the model with `stop_hook_active=true` so the hook can't loop.
 
-The PostToolUse hook never blocks — it's fire-and-forget for notifications.
+The `hooks` block is always taken wholesale from the template (in both `entrypoint.sh` and the bot's `merge_bot_settings()`), never deep-merged, so a hook removed from the template disappears from live settings on the next merge instead of lingering.
 
 ### Per-channel claude config asymmetry — and how the memory prefix gets in
 
 Web side (`workspace-api` → `runClaudeTurn`) and Telegram side (`bot.sh` → tmux interactive `claude`) both run claude, but through different process trees:
 
 - Web spawns `claude -p` per turn. `runClaudeTurn` calls `buildCachedPrefix()` in-process and passes the result via `--append-system-prompt <block>` on each spawn. claude reads settings from `/home/wsapi/.claude/settings.json` (HOME-based) — `entrypoint.sh` deploys `bootstrap/claude-settings.json` content there.
-- Telegram spawns a single long-lived interactive `claude --channels plugin:telegram@...` inside tmux. There's no per-turn spawn → no opportunity to inject `--append-system-prompt` per turn. Instead, `bot.sh` curls `GET /api/memory/prefix?raw=1` into `$BOT_HOME/.claude/memory-prefix.txt` at tmux startup and passes `--append-system-prompt-file <path>`. claude reads settings from `/home/bot/.claude/settings.json`, which CC overwrites at startup down to a 120-byte stub — bot.sh runs a background `merge_bot_settings()` watchdog that jq-merges `bootstrap/claude-settings.json` back on top (first 30 s at 5 s intervals, then every 5 min).
+- Telegram spawns a single long-lived interactive `claude --channels plugin:telegram@...` inside tmux. There's no per-turn spawn → no opportunity to inject `--append-system-prompt` per turn. Instead, `bot.sh` curls `GET /api/memory/prefix?raw=1` into `$BOT_HOME/.claude/memory-prefix.txt` at tmux startup and passes `--append-system-prompt-file <path>`. claude reads settings from `/home/bot/.claude/settings.json`, which CC overwrites at startup down to a 120-byte stub — bot.sh runs a background `merge_bot_settings()` watchdog that jq-merges `bootstrap/claude-settings.json` back on top, replacing `hooks` wholesale (first 30 s at 5 s intervals, then every 5 min).
 
 Both paths end up with the SAME settings (hooks + `autoMemoryEnabled: false`) and the SAME memory prefix content — just plumbed through different files. The asymmetry exists because tmux's claude is interactive (no per-turn spawn) and CC's first-run code overwrites bot's settings.json (so the watchdog is required to keep hooks alive).
 
@@ -695,6 +696,8 @@ bot/reminder-monitor.sh             ← PM2 process `${BOT_NAME}-reminders`
     - Repeating reminders (daily/weekly) — `due` rolled forward, status stays 'pending'
     - One-shots — status flipped to 'sent', then garbage-collected on the next tick
 ```
+
+**System rituals and timezone:** built-in recurring reminders (e.g. the daily morning planning) are seeded from `bootstrap/reminders.json` by `bootstrap/reconcile-reminders.py`. Their `due` placeholders are `BOOTSTRAP_NEXT_<DAILY|weekday>_<HH>_LOCAL` (hour in the workspace timezone, `IDE_TIMEZONE`, default `UTC`) or `…_UTC` (hour in UTC). The morning planning uses `BOOTSTRAP_NEXT_DAILY_06_LOCAL`, so it fires at 06:00 in `IDE_TIMEZONE`. An unknown zone name logs a warning and falls back to UTC. The placeholder is resolved only when a row is first created; an existing reminder keeps the `due` already in the live file, so changing `IDE_TIMEZONE` does not move rituals that are already scheduled.
 
 **Persistence:**
 - `.reminders.json` lives at `~/project/.reminders.json` — survives container restarts (project volume on server-only clients, Drive sync on legacy clients)
@@ -982,7 +985,9 @@ For the component tree, view registry, chat streaming, source pills, welcome flo
 
 Auth state lives in `AuthContext` ([context/AuthContext.jsx](../ide-template/frontend/src/context/AuthContext.jsx)) which calls `/auth/me` on mount to verify the HttpOnly session cookie. Below 768 px the layout switches to mobile mode via a `useMobile` hook.
 
-The build is a multi-stage Dockerfile (`node:20-slim` → `nginx:alpine`); production bundles ship without source maps.
+**Live updates.** The workspace is push-driven; no view polls or needs a reload to see a change. `useFileWatcher` subscribes to `/api/files/watch` (SSE) and bumps a nonce on every event batch; views include it in their fetch deps. That stream carries file events for the file tree, tasks, skills, reminders, mini-apps and the memory wiki (Routines, Memory dashboard), plus payload-free `{ type: 'state', kind }` notices for branding, the team roster and the integration store — state that is not a watchable file. The client maps each kind to the URLs that read it (`branding` → `/api/branding`; `team` → `/api/team`, `/api/me`; `integrations` → `/api/integrations`) and refetches them with `refetch(url)` from `lib/useApi.js`, which fetches, caches and updates every mounted `useApi` hook, so the data still goes through the normal auth gates. Chat and notifications have their own SSE streams.
+
+The build is a multi-stage Dockerfile (`node:20-slim` → `nginx:alpine`); production bundles ship without source maps. The final stage runs `nginx -t`, so an invalid `nginx.conf` fails the image build instead of crash-looping the deployed frontend.
 
 ---
 
@@ -990,13 +995,13 @@ The build is a multi-stage Dockerfile (`node:20-slim` → `nginx:alpine`); produ
 
 ### Workspace API (Node.js + Express)
 
-Lives at `ide-template/workspace-api/`, started by PM2 (`workspace-api` process), listens on `127.0.0.1:3001` inside the container. nginx proxies `/api/*` here behind `auth_request /auth/verify`.
+Lives at `ide-template/workspace-api/`, started by PM2 (`workspace-api` process), listens on `127.0.0.1:3001` inside the container. nginx proxies `/api/*` here behind `auth_request /auth/verify`, except the exact locations `/api/branding`, `/api/branding/avatar` and `/api/branding/logo`, which are proxied for every method without `auth_request` so the login page can read the name and pictures before there is a session (writes are authorised in-process, see below).
 
 **Endpoints**:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/files/{tree,read,raw,watch}` | GET | Sidebar file tree, per-file content, image bytes, FS-event SSE stream |
+| `/api/files/{tree,read,raw,watch}` | GET | Sidebar file tree, per-file content, image bytes, change-event SSE stream (file events + state-change notices, see [Frontend Architecture](#frontend-architecture)) |
 | `/api/files/download` | GET | Download as attachment — single file streams with original `Content-Disposition`, folder streams as a zip (lazy via `archiver`, flat memory). RFC 5987 `filename*` form for non-ASCII names. Backs the file-tree right-click → Download menu item. |
 | `/api/files/{create,write,mkdir,move,delete}` | POST/DELETE | Mutations gated by `resolveSafePath` (rejects `..`, absolute paths, hidden-set leaves) |
 | `/api/chat` | POST (SSE) | One chat turn against an explicit `sessionId` (falls back to most-recent session for older clients). Wraps `claude -p --output-format stream-json`, forwards text/tool deltas to the browser. **Interrupt + auto-relay**: a new POST with `interrupt: true` mid-turn sends SIGTERM to the in-flight `claude`, persists the partial assistant text to that session's jsonl with `state:'interrupted'`, then spawns a fresh turn `--resume`-ing the same Claude session plus the new user message — the partial stays visible in the UI instead of being cleared. Plain mid-turn POST (no interrupt flag) still kills-and-replaces for legacy clients. Per-session `activeBySession` map + generation counter keeps the dying turn's `onClose` from wiping the fresh entry. Text deltas across multiple `content_block`s are joined with `\n\n` so paragraphs after a tool call don't run together. Tool-result images are interleaved with text in arrival order via an SSE `image` event. |
@@ -1011,10 +1016,13 @@ Lives at `ide-template/workspace-api/`, started by PM2 (`workspace-api` process)
 | `/api/skills` | GET | Project + global skill listing merged with origin metadata + frontmatter description |
 | `/api/skills/raw` | GET | Read-only fetch of one global skill's SKILL.md |
 | `/api/team` | GET/POST/PATCH/DELETE | Team whitelist CRUD — admin-gated, lockout-protected, audit-logged |
-| `/api/branding` | GET (public) / PUT/POST | Workspace title + bot name + avatar + personality + backstory; PUT/POST admin-gated |
+| `/api/branding` | GET (public) / PUT | Workspace title + bot name + personality + backstory. PUT is authorised by the router's `requireAdmin` (session cookie verified in-process; 401/403), not by nginx |
+| `/api/branding/avatar` | GET (public) / POST | The bot's picture. POST uploads a custom image (multipart `avatar`, PNG or JPEG under 2 MiB, checked by magic bytes), `requireAdmin`-gated; presets are chosen through the Settings UI |
 | `/api/setup/*` | GET/POST/DELETE | First-run onboarding wizard endpoints — open pre-bootstrap, admin-gated post-onboarding, rate-limited 10/min/IP, every write audited |
 
 **Self-validating session** — `lib/auth.js` middleware reads the `ide_session` cookie, verifies the JWT against `SESSION_SECRET` (shared with auth-service via env), and cross-checks against the `X-IDE-User` header from nginx auth_request. Header alone is never trusted: defense-in-depth against in-container forgery (e.g. compromised MCP server talking to localhost:3001). On cookie/header mismatch, the actor is dropped and admin gates reject.
+
+**Usage limits** — the Claude CLI reports a spent plan as a structured `rate_limit_event` (`status`, `resetsAt`) on the stream, not as reply text. `lib/claude.js` records the first `rejected` event of a turn (warnings are ignored) and, when the turn then exits non-zero, replaces the generic exit error with one notice built by `lib/usage-limit.js`: `Claude usage limit reached. <bot name> is back at HH:MM.`, the time rendered in the workspace timezone (`IDE_TIMEZONE`, default UTC; falls back to UTC on an unknown zone). The web chat renders that error as a limit (clock icon, muted styling, no retry button) rather than a failure, and the group watcher matches the "usage limit reached" phrase to announce the limit once instead of on every retry.
 
 **Encrypted store** lives at `PROJECT_DIR/.integrations/credentials.json` (mode 0600, `HARD_HIDDEN` so the file API never returns it). Append-only audit log at `.integrations/audit.log` records every activate/remove with timestamp + IP.
 

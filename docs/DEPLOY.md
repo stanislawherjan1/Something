@@ -62,6 +62,7 @@ defaults (`Workspace`/`bot`) are placeholders the user will replace.
 
 - `LEGACY_DRIVE_SYNC=true` — enables rclone Drive sync (for clients that pre-date the project-data volume model)
 - `LEGACY_CONFIG=true` — branding read-only via UI; managed via `.env` + `overrides/public/` + redeploy. Used by legacy clients pre-migration
+- `IDE_TIMEZONE=<IANA zone>` (e.g. `Europe/Berlin`, default `UTC`) — the workspace's local time. System rituals are scheduled in it (the morning planning fires at 06:00 local), and the usage-limit notice ("… is back at HH:MM") is rendered in it. An unknown zone name logs a warning and falls back to UTC. Set it before the first deploy: ritual reminders resolve their time only when first created, so on an existing workspace the already-scheduled rows keep their old hour until their `due` is corrected in `.reminders.json`.
 
 ### Runtime secrets (Claude / Shopify / Meta / GA4 / Telegram / …)
 
@@ -143,6 +144,9 @@ chmod +x deploy.sh
 ```
 
 The script uploads files, builds images, and swaps containers with minimal downtime.
+
+- The frontend image build runs `nginx -t`, so an invalid `nginx.conf` fails the deploy at build time instead of crash-looping the live frontend.
+- After the build, the script prunes stopped containers and the whole build cache, but only dangling images created more than 24 h ago (`docker image prune -f --filter until=24h`). A recent previous image generation therefore survives as untagged images (`docker image ls`) that can be re-tagged and started if a new build misbehaves. It used to be `docker system prune -f`, which removed it immediately.
 
 To deploy manually:
 ```bash
@@ -238,7 +242,7 @@ Bot restart loses the in-memory `claude --channels` conversation context (~5–1
 > **Orphan settings-watchdog (cosmetic, known issue).** Each `pm2 restart <bot>` leaves the `bot.sh` background settings-watchdog subshell orphaned (reparented to PID 1). Not destructive — every watchdog merges the same content — but messy in `ps`. To find them: `pgrep -u bot -f merge_bot_settings`. Safe to kill if needed. Tracked for a `trap` fix in next bot.sh iteration.
 
 > **Which target for `.env` changes?** The `.env` is always uploaded to the server first (regardless of target). But for the change to take effect inside the container, you must restart the right service:
-> - `LEGACY_DRIVE_SYNC`, `RCLONE_*`, `CORPORATE_FOLDER_ID`, `BOT_NAME` → `./deploy.sh code-server`
+> - `LEGACY_DRIVE_SYNC`, `RCLONE_*`, `CORPORATE_FOLDER_ID`, `BOT_NAME`, `IDE_TIMEZONE` → `./deploy.sh code-server`
 > - `VITE_*` branding vars → `./deploy.sh frontend`
 > - `IDE_ALLOWED_EMAILS`, `SESSION_SECRET`, `ALLOWED_ORIGINS` → `./deploy.sh auth`
 >

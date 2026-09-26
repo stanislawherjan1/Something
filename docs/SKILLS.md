@@ -64,13 +64,18 @@ Beyond skills, the system deploys a global `~/.claude/CLAUDE.md` on every contai
 - Telegram formatting (no Markdown, plain text only)
 - Google Drive verification (always read-back after edits)
 - Error handling protocol
-- Cron creation pattern (CronList check before creating)
+- Scheduling: `set_reminder` for anything timed; never CronCreate/CronList/SDK cron or the CLI's built-in `schedule` skill
+- Routines: "Routines" (the sidebar view) is the `RESPONSIBILITIES` memory card — adding one means `memory_write` into `RESPONSIBILITIES`, then running `morning-planner` in the same turn so the duty is folded into today's reminders
 - Capability surfacing (proactively offer relevant tools)
 - Session Notes and Pending Reminders conventions
 - Session Handoff — read previous session notes on start, write summary on end
 - File routing (read `PROJECT_STRUCTURE.md` before saving)
 
 Client-specific behavior (persona, project context, integrations) goes in `project/CLAUDE.md`.
+
+### Skill fence (built-in `schedule` blocked)
+
+The CLI ships a built-in `schedule` skill for Anthropic's cloud routines. A self-hosted container cannot reach that service, and its description ("scheduled cloud agents (routines)") matches the word users type for this product's Routines view. A `PreToolUse` hook on the `Skill` tool (`ide-template/hooks/skill-fence.mjs`, registered in `ide-template/bootstrap/claude-settings.json`) denies `schedule` (also `routines` / `cron`, exact name, plugin prefix ignored) and tells the model the real sequence instead: `memory_write` into `RESPONSIBILITIES`, then `morning-planner` in the same turn — without describing it as a fallback or claiming a scheduler is down. Any other skill passes through; the hook fails open on unparseable input.
 
 ---
 
@@ -87,6 +92,7 @@ ide-template/skills/
 │   ├── file-placement/             ← where-to-save decision tree
 │   ├── legacy-drive-sync/          ← only when LEGACY_DRIVE_SYNC=true (rclone reliability)
 │   ├── memory-cards/               ← 7-card memory model (read at session start)
+│   ├── morning-planner/            ← owns routines (RESPONSIBILITIES) + the daily plan; run after any duty change
 │   ├── non-technical-comms/        ← business-language framing for non-technical users
 │   ├── playwright-protocol/        ← safe browser automation
 │   ├── project-backup/             ← tar.gz + Telegram delivery

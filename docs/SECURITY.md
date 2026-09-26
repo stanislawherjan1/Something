@@ -728,10 +728,16 @@ proxy_set_header X-IDE-User $ide_user;   # nginx — overwrites with auth-servic
 - If a header IS present and disagrees with the cookie, both are dropped (fail-closed) and a stderr warning is logged.
 - This means an in-container forgery has to also forge a valid signed JWT — which requires `SESSION_SECRET`, which lives only in env (not in PROJECT_DIR or any volume readable by the bot).
 
+✅ **`X-IDE-Actor` is trusted only from loopback**
+- In-container helpers (`workspace-api-mcp`) identify the turn's user by sending its `IDE_ACTOR_SLUG` as `X-IDE-Actor` — on `POST /api/internal/memory-write` and on `GET /api/memory/grep`, which scopes the search to that user's private memory tree.
+- Neither Caddy nor nginx strips this header, and `/api/memory/*` is reachable through nginx. So workspace-api accepts it only when the TCP peer is `127.0.0.1` / `::1` (a browser request always arrives from the nginx container's address), and only if it is a well-formed slug. `/api/internal/*` is loopback-only as a whole; `/api/memory/grep` applies the same test inline, prefers the cookie actor when there is one, and ignores the header from any non-loopback peer.
+- Without that test any signed-in member could name a teammate's slug and read their private memory. Any new route that reads `X-IDE-Actor` must apply the same loopback rule.
+
 **Code**:
 - [Caddyfile](../ide-template/Caddyfile)
 - [ide-template/frontend/nginx.conf](../ide-template/frontend/nginx.conf)
 - [ide-template/workspace-api/lib/auth.js](../ide-template/workspace-api/lib/auth.js)
+- [ide-template/workspace-api/routes/memory.js](../ide-template/workspace-api/routes/memory.js), [routes/internal.js](../ide-template/workspace-api/routes/internal.js) (`X-IDE-Actor` loopback checks)
 
 **Result**: Header spoofing alone fails on both ingress (Caddy/nginx strip) and at the application layer (cookie/header mismatch → request runs as anonymous, admin gates reject).
 
