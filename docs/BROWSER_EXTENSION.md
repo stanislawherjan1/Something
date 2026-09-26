@@ -116,13 +116,48 @@ history.
   *Share screenshot* button.
 - Never captured: browser pages (`chrome://…`) and the Chrome Web Store.
 
+## Act — the assistant operates the tab
+
+A switch next to 📷 (off after every panel load). When the user switches it on, the
+assistant can click, type, select and scroll **on the current site** for the rest of the
+conversation, using three tools: `tab_snapshot` (the page's visible text and a numbered list
+of its controls — snapshot logic from browser-use/jev-ultrafast, MIT, in
+`chrome-extension/vendor/`), `tab_act` (one action on a control id from the latest
+snapshot) and `tab_screenshot`.
+
+```
+assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback, needs the turn's token)
+  → GET /api/tab/stream (the user's open panel) → postMessage → extension
+  → chrome.debugger on the active tab (trusted input) → result → POST /api/tab/result → tool result
+```
+
+**Hard limits — enforced in code, not asked of the model:**
+
+| Limit | Where |
+|---|---|
+| Only while the switch is on; switching off detaches from the tab and fails every waiting command at once | extension + workspace-api (`/api/tab/mode`) |
+| Only in a turn the user started from the panel with Act on (one-turn token); never Telegram, workspace chat, reminders or groups | `routes/chat.js` → `routes/tab.js` |
+| One site: another tab, leaving the site, closing the tab, cancelling Chrome's debugging bar, 10 minutes idle or closing the panel switches it off | extension |
+| No leaving the site: links and form submits to another origin, new tabs and downloads are refused before the click; no address bar, no navigate tool | extension |
+| No credentials or payments: password, file, one-time-code and payment-card fields (standard `autocomplete` tokens) are invisible and untouchable; password-manager and account-security sites are refused | extension |
+| No code, cookies, clipboard or network: the model only picks control ids from a snapshot the extension made; it never supplies selectors or scripts | extension |
+| 30 actions a minute at most; every command is logged (`[tab]` in workspace-api's log) | extension + workspace-api |
+| **The Act turn gets an allow-list of tools:** the tab tools and read-only workspace access. No integrations (no mail, Drive, Shopify…), no server browser, no shell, no web fetch, no file or memory writes — whatever a page talks the assistant into, it cannot send anything out or plant instructions for later | `lib/claude.js` (`actTurn`) |
+
+Page text is framed as data both in the prompt and in every snapshot, and the assistant is
+told to work only toward what the user asked and to stop and ask when a page asks for
+something else. That is the soft layer; the table above is what holds if it fails.
+
 ## Files
 
 | Path | What |
 |---|---|
 | `chrome-extension/manifest.json` | MV3 manifest, pinned `key`, permissions |
 | `chrome-extension/background.js` | Opens the panel on toolbar click |
-| `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in |
+| `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in, the Act executor and its limits |
+| `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
+| `ide-template/workspace-api/routes/tab.js` | The relay, Act mode, one-turn tokens, audit log |
+| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` |
 | `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and screenshots |
 | `ide-template/frontend/src/lib/extensionEmbed.js` | Embed detection |
 | `ide-template/frontend/src/components/workspace/ChatPanel.jsx`, `ChatPane.jsx` | Optional `extraFields` / `composerAccessory` / `onTurnDone` (passed through `ChatPane`); `ide:chat-attach` / `ide:chat-send` events |

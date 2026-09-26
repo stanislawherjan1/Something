@@ -281,7 +281,7 @@ ok('the delegate turn is denied every delivery tool', /disallowedTools: DELIVERY
 ok('...and the list covers web_send_message, not only Telegram',
   /mcp__web_channel__web_send_message/.test(gwSrc));
 const claudeSrc = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
-ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', disallowedTools\.join/.test(claudeSrc));
+ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', (disallowedTools|blocked)\.join/.test(claudeSrc));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

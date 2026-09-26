@@ -738,6 +738,11 @@ proxy_set_header X-IDE-User $ide_user;   # nginx — overwrites with auth-servic
 - The token reaches the extension through `/auth/extension/start`, which only runs for extension ids in `EXTENSION_IDS` and delivers the token in the fragment of `https://<id>.chromiumapp.org/…` — a URL only that extension can read. An open pattern here would let any installed extension start the flow on the user's domain and take their session; the allow-list is the control. Set `EXTENSION_IDS=` (empty) to disable extension sign-in.
 - Page content the extension sends (`pageContext`: tab title, address, selected text) is framed as untrusted data in the prompt; the page body is never sent.
 
+✅ **Act: the assistant operating the user's tab is fenced in code**
+- Off by default and after every panel load; only in a turn started from the panel with Act on (one-turn token); one site only; no navigation, no leaving the site, no new tabs or downloads; password, one-time-code and payment-card fields invisible and untouchable; password-manager sites refused; 30 actions/min; idle and tab-switch auto-off; every action logged.
+- **Prompt-injection containment:** the Act turn runs with an allow-list — the tab tools and read-only workspace access, strict MCP config with only workspace-api-mcp, and Bash, WebFetch, WebSearch, Write/Edit, Task and memory writes disallowed — so a page that steers the assistant cannot send data anywhere or persist instructions.
+- Switching Act off is enforced twice: the extension detaches `chrome.debugger` at once, and workspace-api fails every pending command and refuses new ones. Details: [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
+
 **Code**:
 - [Caddyfile](../ide-template/Caddyfile)
 - [ide-template/frontend/nginx.conf](../ide-template/frontend/nginx.conf)

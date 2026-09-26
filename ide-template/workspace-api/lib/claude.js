@@ -14,6 +14,9 @@
 
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
@@ -78,7 +81,7 @@ export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExclu
   return buildCachedPrefix({ memoryDir, excludeIds, actor });
 }
 
-export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -106,8 +109,34 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // closing text becomes a report about that send, and the system delivers the
   // report as a second message. Prompting against it is not enough — the model
   // reads a narrow ban narrowly — so the tools are taken away instead.
-  if (Array.isArray(disallowedTools) && disallowedTools.length) {
-    args.push('--disallowedTools', disallowedTools.join(','));
+  // A turn in which the assistant may operate the user's browser tab (the panel
+  // is in Act). A web page can try to steer it (prompt injection), so the turn
+  // gets an allow-list, not the full toolbox: the tab tools and read-only
+  // workspace access, nothing that can send, publish, fetch, run commands or
+  // write — so whatever a page talks it into, it cannot carry anything out of
+  // the browser or plant instructions for later turns. Only workspace-api-mcp is
+  // loaded (strict MCP config); if its entry cannot be read, NO MCP server is.
+  const blocked = Array.isArray(disallowedTools) ? [...disallowedTools] : [];
+  let actMcpFile = null;
+  if (actTurn) {
+    let servers = {};
+    try {
+      const entry = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers?.['workspace-api'];
+      if (entry) servers = { 'workspace-api': entry };
+    } catch (err) {
+      process.stderr.write(`[claude] act turn: no MCP config (${err.message}) — running with none\n`);
+    }
+    actMcpFile = join(tmpdir(), `act-turn-${randomUUID()}.json`);
+    writeFileSync(actMcpFile, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
+    args[args.indexOf('--mcp-config') + 1] = actMcpFile;
+    args.push('--strict-mcp-config');
+    blocked.push(
+      'Bash', 'WebFetch', 'WebSearch', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Task',
+      'mcp__workspace-api__memory_write', 'mcp__workspace-api__fix_sent_message',
+    );
+  }
+  if (blocked.length) {
+    args.push('--disallowedTools', blocked.join(','));
   }
 
   // Memory cached prefix — ≥4096 token block from project/memory/ so
@@ -231,6 +260,10 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   // Group-context flag for the scope-guard hook: hard-blocks ALL private trees
   // (including the sender's own and an admin's) — see hooks/scope-guard.mjs.
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
+  // A turn started from the browser extension's panel carries a one-turn token
+  // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
+  // — Telegram, workspace chat, reminders, groups — ever gets one.
+  if (tabToken) childEnv.IDE_TAB_TOKEN = String(tabToken);
 
   const proc = spawn(CLAUDE_BIN, args, {
     cwd: PROJECT_DIR,
@@ -405,6 +438,7 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
   proc.on('error', (err) => onError(`spawn failed: ${err.message}`));
 
   proc.on('close', (code, signal) => {
+    if (actMcpFile) { try { unlinkSync(actMcpFile); } catch { /* already gone */ } }
     if (code === 0) return onDone({ sessionId: capturedSessionId });
 
     // A spent plan is not a crash and must not read like one. The turn failed
