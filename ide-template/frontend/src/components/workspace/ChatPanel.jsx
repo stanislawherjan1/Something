@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import { looksLikePath, pathToSelection } from '@/lib/filePaths';
-import { ToolChipRow } from './ToolChip.jsx';
+import { ToolLine, ToolSummary, toolSegments } from './ToolChip.jsx';
 import SpinningAvatar from './SpinningAvatar.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
@@ -81,9 +81,6 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState([]);
-  // Active + recently-finished tool chips for the in-flight turn. Cleared on
-  // new turn / done. Each: { id, name, status: 'running'|'done'|'error', error? }
-  const [chips, setChips] = useState([]);
   const [isDragging, setIsDragging]   = useState(false);
   // Lazy-load state for older history pages.
   const [hasMore, setHasMore]         = useState(false);
@@ -99,7 +96,6 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   const listRef = useRef(null);
   const abortRef = useRef(null);
   const fileInputRef = useRef(null);
-  const chipFadeTimers = useRef(new Map());
   // Monotonic id source for live (optimistic) messages. Date.now()-based ids
   // collide on a double-tap within the same millisecond → duplicate React
   // keys → dropped/merged bubbles. A counter is collision-free per mount.
@@ -136,6 +132,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     // History doesn't persist inline images yet — they're stream-only for now.
     // Future: chatHistory.js could store image refs as on-disk paths.
     images: m.images || [],
+    tools: Array.isArray(m.tools) ? m.tools : null,
     id: `${prefix}-${i}-${m.ts}`,
     ts: m.ts,
     state: 'done',
@@ -350,23 +347,19 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       setAttachments([]);
     }
     setBusy(true);
-    // Fresh turn → drop any leftover chips from the previous one.
-    chipFadeTimers.current.forEach(t => clearTimeout(t));
-    chipFadeTimers.current.clear();
     // A turn that died mid-build (abort/network) never sends tool_result —
     // release any stuck sidebar building-ghosts before the new turn starts.
     for (const chipId of miniappChipIds.current) {
       window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId, active: false } }));
     }
     miniappChipIds.current.clear();
-    setChips([]);
 
     // Sent before the history arrived: keep what is on screen, don't swap it.
     seededRef.current = false;
     setMessages(prev => [
       ...prev,
       { role: 'user',      text: message, attachments: attachmentsMeta, id: nextMsgId('u') },
-      { role: 'assistant', text: '', images: [], content: [], id: nextMsgId('a'), state: 'streaming' },
+      { role: 'assistant', text: '', images: [], content: [], tools: [], live: true, id: nextMsgId('a'), state: 'streaming' },
     ]);
 
     const abort = new AbortController();
@@ -538,7 +531,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   // Mini-app build calls get an instant sidebar ghost row ("Building app…")
   // the moment the tool STARTS — file-watcher events only fire once the spec
   // file exists, which can be many seconds into a build. Tracked in a ref
-  // (not the chips state) so the dispatch stays out of state updaters.
+  // (not message state) so the dispatch stays out of state updaters.
   const isMiniappBuildTool = (name) => /miniapps__(start_tab|save_as_tab)/.test(name || '');
   const miniappChipIds = useRef(new Set());
 
@@ -547,34 +540,32 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       miniappChipIds.current.add(id);
       window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId: id, active: true } }));
     }
-    setChips(prev => prev.some(c => c.id === id)
-      ? prev
-      : [...prev, { id, name, status: 'running' }]);
+    // The tool is recorded on the reply being written, at the point in its
+    // text where it ran (see ToolChip.jsx).
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.role !== 'assistant' || (last.tools || []).some(t => t.id === id)) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...last, tools: [...(last.tools || []), { id, name, at: last.text.length, ok: null }] };
+      return next;
+    });
   }
 
   function completeChip({ id, ok, error }) {
     if (miniappChipIds.current.delete(id)) {
       window.dispatchEvent(new CustomEvent('ide:miniapp-building', { detail: { chipId: id, active: false } }));
     }
-    setChips(prev => prev.map(c => c.id === id
-      ? { ...c, status: ok ? 'done' : 'error', error: error || null }
-      : c));
-    // Fade out the chip a moment after it finishes — keeps the row clean
-    // while the assistant continues writing.
-    const t = setTimeout(() => {
-      setChips(prev => prev.filter(c => c.id !== id));
-      chipFadeTimers.current.delete(id);
-    }, 1500);
-    chipFadeTimers.current.set(id, t);
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.role !== 'assistant' || !(last.tools || []).some(t => t.id === id)) return prev;
+      const next = [...prev];
+      next[next.length - 1] = {
+        ...last,
+        tools: last.tools.map(t => t.id === id ? { ...t, ok: !!ok, ...(error ? { error } : {}) } : t),
+      };
+      return next;
+    });
   }
-
-  // Clear all pending chip fades on unmount / thread switch.
-  useEffect(() => {
-    return () => {
-      chipFadeTimers.current.forEach(t => clearTimeout(t));
-      chipFadeTimers.current.clear();
-    };
-  }, []);
 
   function appendToLastAssistant(delta) {
     setMessages(prev => {
@@ -799,13 +790,15 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
               }
               const isLastAssistant = m.role === 'assistant' && i === messages.length - 1;
               const isEmptyStreaming = isLastAssistant && m.state === 'streaming' && !m.text;
-              // Once text is flowing, a single fixed-height "activity" slot sits
-              // below the bubble and shows EITHER the tool chips OR the typing
-              // dot. Keeping it one slot (same height + gap) means swapping
-              // dot↔chips doesn't shift the text above. (While empty-streaming
-              // the Thinking indicator lives inside the bubble instead.)
+              // Once text is flowing, a fixed-height slot below the bubble holds
+              // the typing dot. A tool line at the end of the reply is its own
+              // activity cue, so then neither the slot nor the inline dot shows.
+              // (While empty-streaming the Thinking indicator lives inside the
+              // bubble instead.)
+              const toolLast = (m.tools?.length || 0) > 0
+                && toolSegments(m.text || '', m.tools).at(-1)?.type === 'tools';
               const showActivityBelow = isLastAssistant && !isEmptyStreaming
-                && (m.state === 'streaming' || chips.length > 0);
+                && m.state === 'streaming' && !toolLast;
               // Retry resends the user message that preceded a failed assistant
               // turn — drops the error bubble + the original prompt, then re-sends.
               const canRetry = isLastAssistant && m.state === 'error' && !busy;
@@ -823,14 +816,13 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
                   <div className={cn(showActivityBelow && 'flex flex-col items-start gap-1.5')}>
                     <ChatBubble
                       message={m}
-                      chips={isEmptyStreaming ? chips : null}
-                      suppressInlineDot={showActivityBelow}
+                      suppressInlineDot={showActivityBelow || toolLast}
                       onRetry={onRetry}
                       onFileSelect={onFileSelect}
                     />
                     {showActivityBelow && (
                       <div className="flex min-h-[24px] items-center px-1">
-                        {chips.length > 0 ? <ToolChipRow chips={chips} /> : <ActivityDot />}
+                        <ActivityDot />
                       </div>
                     )}
                   </div>
@@ -866,7 +858,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
  * assistant messages appear directly on the warm surface (no card/border) so
  * the conversation reads like typewritten prose.
  */
-function ChatBubble({ message, chips, suppressInlineDot, onRetry, onFileSelect }) {
+function ChatBubble({ message, suppressInlineDot, onRetry, onFileSelect }) {
   const isUser      = message.role === 'user';
   const isError     = message.state === 'error';
   const isInterrupted = message.state === 'interrupted';
@@ -940,14 +932,16 @@ function ChatBubble({ message, chips, suppressInlineDot, onRetry, onFileSelect }
           'text-foreground/85',
         )}
       >
-        {isStreaming ? (
-          <ThinkingIndicator chips={chips} />
+        {isStreaming && !message.tools?.length ? (
+          <ThinkingIndicator />
         ) : (
           <>
-            <AssistantBody text={message.text} images={message.images} content={message.content} onFileSelect={onFileSelect} />
+            {message.tools?.length
+              ? <BodyWithTools message={message} onFileSelect={onFileSelect} />
+              : <AssistantBody text={message.text} images={message.images} content={message.content} onFileSelect={onFileSelect} />}
             {/* Blinking "still typing" dot. Suppressed while the activity slot
-                below the bubble is showing (it carries the dot / chips there
-                instead) — keeps the typing cue in one place so nothing jumps. */}
+                below the bubble or a tool line shows the activity instead —
+                keeps the typing cue in one place so nothing jumps. */}
             {message.state === 'streaming' && !suppressInlineDot && (
               <span className="ml-1 inline-block size-2 rounded-full bg-foreground/55 align-middle animate-[cursor-blink_0.9s_steps(1)_infinite]" />
             )}
@@ -1251,6 +1245,31 @@ function AssistantBody({ text, images, content, onFileSelect }) {
   );
 }
 
+// A reply that used tools: its text with a "Used N tools" where they ran. While
+// the reply is still being written, a group with nothing after it yet is the
+// current action (ToolLine) instead. Tool images (Playwright) follow the text.
+function BodyWithTools({ message, onFileSelect }) {
+  const segments = toolSegments(message.text || '', message.tools);
+  const streaming = message.state === 'streaming';
+  const lastText = segments.map(sg => sg.type).lastIndexOf('text');
+  return (
+    <div className="flex flex-col gap-1.5">
+      {segments.map((sg, i) => {
+        if (sg.type === 'text') {
+          return <div key={i}><TextBlock text={sg.text} onFileSelect={onFileSelect} withSources={i === lastText} /></div>;
+        }
+        if (streaming && i === segments.length - 1) return <ToolLine key={i} tools={sg.tools} />;
+        return <ToolSummary key={i} tools={sg.tools} animate={!!message.live} />;
+      })}
+      {Array.isArray(message.images) && message.images.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {message.images.map((img, i) => <ImageBlock key={i} img={img} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Friendly product copy for the various ways a chat turn can fail.
 function friendlyError({ errorKind, errorStatus, errorDetail }) {
   if (errorKind === 'network') {
@@ -1424,24 +1443,18 @@ function formatDayLabel(d) {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// The typing dot shown in the activity slot below a streaming bubble when no
-// tool chip is active — same slot + height as the chips, so swapping between
-// them never shifts the text.
+// The typing dot shown in the activity slot below a streaming bubble while no
+// tool is running.
 function ActivityDot() {
   return (
     <span className="inline-block size-2 rounded-full bg-foreground/45 animate-[cursor-blink_0.9s_steps(1)_infinite]" />
   );
 }
 
-function ThinkingIndicator({ chips }) {
+function ThinkingIndicator() {
   return (
     <div className="flex items-center gap-2 py-0.5">
       <span className="shimmer-text text-[13px] font-medium">Thinking</span>
-      {chips && chips.length > 0 && (
-        <div className="flex items-center">
-          <ToolChipRow chips={chips} />
-        </div>
-      )}
     </div>
   );
 }

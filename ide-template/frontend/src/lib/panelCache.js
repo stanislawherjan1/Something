@@ -24,7 +24,7 @@ export function panelMessages(messages) {
   const done = messages.filter(m => m.state === 'done' && (m.text || m.attachments?.length)).slice(-MAX_MESSAGES);
   const last = done[done.length - 1];
   return {
-    messages: done.map(({ role, text, kind, attachments, ts }) => ({ role, text, kind, attachments, ts })),
+    messages: done.map(({ role, text, kind, attachments, tools, ts }) => ({ role, text, kind, attachments, tools, ts })),
     lastAt: last?.ts ? Date.parse(last.ts) : Date.now(),
   };
 }

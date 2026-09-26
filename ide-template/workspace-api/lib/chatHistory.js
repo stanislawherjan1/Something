@@ -156,7 +156,7 @@ function _markImportedTitleSource(actor, sessionId) {
  * `state` is the new optional field for Phase 4 — pass 'interrupted' when
  * persisting a partial assistant turn that was cut short.
  */
-export function appendToSession(actor, sessionId, { role, text, attachments, kind, state, delivery, relayConvId }) {
+export function appendToSession(actor, sessionId, { role, text, attachments, kind, state, delivery, relayConvId, tools }) {
   migrateLegacyConversation(actor);
   if (!text && !(attachments && attachments.length) && !kind) return null;
 
@@ -172,6 +172,10 @@ export function appendToSession(actor, sessionId, { role, text, attachments, kin
   // existing reader.
   if (delivery && typeof delivery === 'object') entry.delivery = delivery;
   if (relayConvId) entry.relayConvId = relayConvId;
+  // Tools the assistant used while writing this reply: name, outcome, a short
+  // error, and `at` — the offset in `text` where they ran, so the chat can show
+  // "Used N tools" in place. Never arguments or results (no data in history).
+  if (Array.isArray(tools) && tools.length) entry.tools = tools;
 
   mkdirSync(_paths.chatsDir(actor), { recursive: true });
   appendFileSync(sessionFilePath(actor, sessionId), JSON.stringify(entry) + '\n', 'utf8');

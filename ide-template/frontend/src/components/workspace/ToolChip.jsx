@@ -1,19 +1,17 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Loader2, Check, AlertCircle,
+  Check, ChevronRight,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
   Sparkles, ListChecks, Eye, MousePointerClick,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * ToolChip — a calm "the assistant is doing X" pill shown in chat while a tool
- * runs, flipping to a subtle ✓ on success / ⚠ on error, then fading out.
- *
- * Design goals: read like activity, not like a function call. No raw tool ids,
- * no heavy borders. Integration tools (mcp__<integration>__…) show that
- * integration's small logo instead of a generic glyph, so it reads as a brand.
+ * The assistant's tool use in chat: one quiet line for what it is doing now,
+ * folding into a collapsed "Used N tools" that stays with the reply (and in
+ * history). Reads like activity, not like a function call: no raw tool ids.
+ * Integration tools (mcp__<integration>__…) show that integration's small logo
+ * instead of a generic glyph, so it reads as a brand.
  */
 
 // Integration MCP server → logo file under /app/integrations/. Presence here is
@@ -110,46 +108,104 @@ function LeadingVisual({ logo, Icon, muted }) {
   return <Icon className={cn('size-[13px] shrink-0', muted && 'text-muted-foreground/70')} strokeWidth={1.75} />;
 }
 
-export default function ToolChip({ chip }) {
-  const { label, Icon, logo } = displayFor(chip.name);
-  const ok    = chip.status === 'done';
-  const error = chip.status === 'error';
+// ── What the assistant is doing, and what it did ────────────────────────────
+//
+// A reply carries `tools`: [{ id?, name, at, ok, error? }] — `at` is the offset
+// in its text where they ran, `ok` is null while a tool is still running.
+// While the assistant works, one line shows the current action (ToolLine);
+// once it moves on, the group folds into a collapsed "Used N tools"
+// (ToolSummary), which is also what history shows after a reload.
 
+// Split a reply into text and tool groups, in order. Tools with no text between
+// them form one group.
+export function toolSegments(text, tools) {
+  const out = [];
+  let pos = 0;
+  const sorted = [...tools].sort((a, b) => a.at - b.at);
+  for (const t of sorted) {
+    const at = Math.max(pos, Math.min(t.at, text.length));
+    if (at > pos) {
+      const chunk = text.slice(pos, at);
+      if (chunk.trim()) out.push({ type: 'text', text: chunk });
+      pos = at;
+    }
+    const last = out[out.length - 1];
+    if (last?.type === 'tools') last.tools.push(t);
+    else out.push({ type: 'tools', tools: [t] });
+  }
+  const rest = text.slice(pos);
+  if (rest.trim()) out.push({ type: 'text', text: rest });
+  return out;
+}
+
+function StepLabel({ tool, live }) {
+  const { label } = displayFor(tool.name);
+  return <span className={cn(live && tool.ok == null && 'shimmer-text')}>{label}</span>;
+}
+
+// The current action, replaced in place as the next one starts.
+export function ToolLine({ tools }) {
+  const tool = tools[tools.length - 1];
+  const { Icon, logo } = displayFor(tool.name);
+  const failed = tool.ok === false;
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: -4, scale: 0.96 }}
-      animate={{ opacity: 1, y:  0, scale: 1 }}
-      exit={{    opacity: 0, y: -4, scale: 0.96 }}
-      transition={{ duration: 0.18, ease: 'easeOut' }}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[11.5px] font-medium transition-colors duration-200',
-        ok    && 'bg-emerald-500/[0.09] text-emerald-700 dark:text-emerald-400',
-        error && 'bg-destructive/[0.08] text-destructive',
-        !ok && !error && 'bg-muted/60 text-foreground/70',
-      )}
-      title={error ? (chip.error || 'tool failed') : undefined}
-    >
-      <LeadingVisual logo={logo} Icon={Icon} muted={!ok && !error} />
-      <span className="leading-none">{label}</span>
-      {error ? (
-        <AlertCircle className="size-[12px] shrink-0" strokeWidth={2} />
-      ) : ok ? (
-        <Check className="size-[12px] shrink-0" strokeWidth={2.25} />
-      ) : (
-        <Loader2 className="size-[12px] shrink-0 animate-spin text-muted-foreground/55" strokeWidth={2} />
-      )}
-    </motion.div>
+    <div className="relative h-[22px] overflow-hidden">
+      <div
+        key={tool.id || `${tool.name}-${tools.length}`}
+        className={cn(
+          'flex items-center gap-1.5 whitespace-nowrap text-[12.5px] leading-[22px] animate-[tool-roll-in_0.2s_ease-out_both]',
+          failed ? 'text-destructive' : 'text-muted-foreground',
+        )}
+      >
+        <LeadingVisual logo={logo} Icon={Icon} muted={!failed} />
+        <StepLabel tool={tool} live />
+        {tool.ok === true && <Check className="size-3 shrink-0 opacity-70" strokeWidth={2.25} />}
+        {failed && <span className="truncate text-destructive/80">— {tool.error || 'failed'}</span>}
+      </div>
+    </div>
   );
 }
 
-export function ToolChipRow({ chips }) {
-  if (chips.length === 0) return null;
+// "Used N tools · k failed", collapsed; a click lists the steps.
+export function ToolSummary({ tools, animate = false }) {
+  const [open, setOpen] = useState(false);
+  const failed = tools.filter(t => t.ok === false).length;
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <AnimatePresence initial={false}>
-        {chips.map(c => <ToolChip key={c.id} chip={c} />)}
-      </AnimatePresence>
+    <div className={cn('flex flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.1s_both]')}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-[12.5px] leading-[22px] text-muted-foreground transition-colors hover:text-foreground/85"
+      >
+        <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', open && 'rotate-90')} strokeWidth={2} />
+        <span>Used {tools.length} {tools.length === 1 ? 'tool' : 'tools'}</span>
+        {failed > 0 && <><span>·</span><span className="text-destructive">{failed} failed</span></>}
+      </button>
+      <div className={cn('grid transition-[grid-template-rows] duration-200 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden pl-[18px]">
+          {tools.map((t, i) => {
+            const { Icon, logo } = displayFor(t.name);
+            const bad = t.ok === false;
+            return (
+              <span
+                key={t.id || i}
+                style={{ transitionDelay: open ? `${i * 35}ms` : '0ms' }}
+                className={cn(
+                  'flex items-center gap-1.5 text-[12px] transition-[opacity,transform] duration-150',
+                  i === 0 && 'mt-1',
+                  open ? 'translate-y-0 opacity-100' : '-translate-y-[3px] opacity-0',
+                  bad ? 'text-destructive' : 'text-muted-foreground',
+                )}
+              >
+                <LeadingVisual logo={logo} Icon={Icon} muted={!bad} />
+                <StepLabel tool={t} />
+                {bad && t.error && <span className="truncate text-destructive/80">— {t.error}</span>}
+              </span>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

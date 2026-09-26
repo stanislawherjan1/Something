@@ -205,6 +205,18 @@ function maybeAutoTitle(actor, sessionId) {
 // anything — so it is framed as data, never as instructions. Only the URL, the
 // title and what the user themselves selected are sent; never the page body.
 const SCREENSHOT_MARKER_RE = /\n?\s*\[\[\s*SCREENSHOT\s*\]\]\s*/gi;
+
+// Tool steps as stored with a reply: offsets moved to the stored (trimmed) text
+// and clamped to it; a step that never finished counts as not ok.
+const MAX_STORED_TOOLS = 50;
+function storedTools(steps, lead, textLength) {
+  return steps.map(({ name, at, ok, error }) => ({
+    name,
+    at: Math.max(0, Math.min(at - lead, textLength)),
+    ok: ok === true,
+    ...(error ? { error } : {}),
+  }));
+}
 function browserContextBlock(raw) {
   let ctx;
   try { ctx = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return ''; }
@@ -432,6 +444,7 @@ export default function chatRouter() {
           role:  'assistant',
           text:  active.assistantText,
           state: 'interrupted',
+          tools: storedTools(active.toolSteps || [], 0, active.assistantText.length),
         });
       } catch (err) {
         process.stderr.write(`[chat/stop] partial persist failed: ${err.message}\n`);
@@ -488,6 +501,7 @@ export default function chatRouter() {
             role:  'assistant',
             text:  prevActive.assistantText,
             state: 'interrupted',
+            tools: storedTools(prevActive.toolSteps || [], 0, prevActive.assistantText.length),
           });
         } catch (err) {
           process.stderr.write(`[chat] interrupt-persist failed: ${err.message}\n`);
@@ -598,6 +612,9 @@ export default function chatRouter() {
     let proc;
     let spawned = false;
     let assistantText = '';
+    // Tools used in this turn, in order — kept with the reply in history.
+    const toolSteps = [];
+    const toolById = new Map();
 
     let tabToken = null;
     const finish = (kind, payload) => {
@@ -613,7 +630,8 @@ export default function chatRouter() {
       if (kind === 'done' && assistantText) {
         // [[SCREENSHOT]] is a request to the browser extension, not prose.
         const stored = assistantText.replace(SCREENSHOT_MARKER_RE, '').trim() || assistantText;
-        appendToSession(req.chatActor, sid, { role: 'assistant', text: stored });
+        const lead = assistantText.length - assistantText.trimStart().length;
+        appendToSession(req.chatActor, sid, { role: 'assistant', text: stored, tools: storedTools(toolSteps, lead, stored.length) });
         // Phase 5: kick off auto-title async if eligible.
         try { maybeAutoTitle(req.chatActor, sid); }
         catch (err) { process.stderr.write(`[chat] auto-title scheduling failed: ${err.message}\n`); }
@@ -622,7 +640,7 @@ export default function chatRouter() {
         // the gen guard above let us through). Keep the streamed text as an
         // interrupted message so a visible reply doesn't vanish on refresh.
         try {
-          appendToSession(req.chatActor, sid, { role: 'assistant', text: assistantText, state: 'interrupted' });
+          appendToSession(req.chatActor, sid, { role: 'assistant', text: assistantText, state: 'interrupted', tools: storedTools(toolSteps, 0, assistantText.length) });
         } catch (err) { process.stderr.write(`[chat] partial-persist failed: ${err.message}\n`); }
       }
       // Advance the never-blind watermark on EVERY terminal path (done / error /
@@ -668,8 +686,19 @@ export default function chatRouter() {
       actorIsAdmin:  req.chatIsAdmin,
       teammates:     req.chatTeammates,  // roster so the bot recognises other people
       onText:      (delta) => { assistantText += delta; sendData(delta); },
-      onToolStart: ({ id, name })      => sendEvent('tool_start', { id, name }),
-      onToolEnd:   ({ id, ok, error }) => sendEvent('tool_end', { id, ok, error: error || null }),
+      onToolStart: ({ id, name }) => {
+        if (!toolById.has(id) && toolSteps.length < MAX_STORED_TOOLS) {
+          const step = { name, at: assistantText.length, ok: null };
+          toolSteps.push(step);
+          toolById.set(id, step);
+        }
+        sendEvent('tool_start', { id, name });
+      },
+      onToolEnd: ({ id, ok, error }) => {
+        const step = toolById.get(id);
+        if (step) { step.ok = !!ok; if (!ok && error) step.error = String(error).slice(0, 160); }
+        sendEvent('tool_end', { id, ok, error: error || null });
+      },
       onImage:     ({ mediaType, data }) => sendEvent('image', { mediaType, data }),
       onError:     (msg) => finish('error', { error: msg }),
       onDone: ({ sessionId: newClaudeSid }) => {
@@ -691,6 +720,7 @@ export default function chatRouter() {
     activeBySession.set(sid, {
       proc,
       get assistantText() { return assistantText; },   // live view — see Stop / interrupt
+      toolSteps,
       gen:  myGen,
       startedAt: new Date(),
     });
