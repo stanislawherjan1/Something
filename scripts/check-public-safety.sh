@@ -31,8 +31,12 @@ if ! git rev-parse --verify --quiet "$BASE" >/dev/null || ! git rev-parse --veri
 fi
 
 # ── Build the denylist (local only) ─────────────────────────────────────────
+# clients/ and .public-denylist are gitignored, so they exist only in the MAIN
+# working tree; a linked `git worktree` has neither. Read them from there, or
+# a worktree would check against an empty list and pass everything.
+MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 TERMS=()
-for d in clients/*/; do
+for d in "$MAIN_ROOT"/clients/*/; do
     [ -d "$d" ] || continue
     name=$(basename "$d")
     [ "$name" = "example-client" ] && continue
@@ -40,11 +44,11 @@ for d in clients/*/; do
     stem=$(printf '%s' "$name" | sed -E 's/-(ide|ai-space|space|bot)$//')
     [ "$stem" != "$name" ] && [ ${#stem} -ge 4 ] && TERMS+=("$stem")
 done
-if [ -f .public-denylist ]; then
+if [ -f "$MAIN_ROOT/.public-denylist" ]; then
     while IFS= read -r line; do
         line="${line%%#*}"; line="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
         [ -n "$line" ] && TERMS+=("$line")
-    done < .public-denylist
+    done < "$MAIN_ROOT/.public-denylist"
 fi
 
 FOUND=0
