@@ -110,6 +110,10 @@ shell: chrome.cookies.set(<name> = token, httpOnly, secure, SameSite=Lax) → re
 
 The page body is never sent with the message; the assistant reads it only through Look.
 
+While Act works, a large cursor glides to each control before the click or typing (a ripple
+on click, an outline on the field being filled). It is drawn in the extension's isolated
+world, ignores the mouse, and is removed when Act switches off or the user leaves the tab.
+
 ## Look — the assistant sees the tab by itself
 
 In any conversation from the panel that shares the page, the assistant can look at the
@@ -123,9 +127,9 @@ the next message.
 
 ## Act — the assistant operates the tab
 
-A switch above the input (off after every panel load). When the user switches it on, the
-assistant can click, type, select and scroll **on the current site** for the rest of the
-conversation, using three tools: `tab_snapshot` (the page's visible text and a numbered list
+A switch above the input, off by default. Once the user switches it on it stays on while
+they work — across pages, tabs and closing and reopening the panel — and the assistant can
+click, type, select and scroll **on the tab the user is looking at**, using three tools: `tab_snapshot` (the page's visible text and a numbered list
 of its controls — snapshot logic from browser-use/jev-ultrafast, MIT, in
 `chrome-extension/vendor/`), `tab_act` (one action on a control id from the latest
 snapshot) and `tab_screenshot`.
@@ -142,7 +146,7 @@ assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback,
 |---|---|
 | Only while the switch is on; switching off detaches from the tab and fails every waiting command at once | extension + workspace-api (`/api/tab/mode`) |
 | Only in a turn the user started from the panel with Act on (one-turn token); never Telegram, workspace chat, reminders or groups | `routes/chat.js` → `routes/tab.js` |
-| One site: another tab, leaving the site, closing the tab, cancelling Chrome's debugging bar, 10 minutes idle or closing the panel switches it off | extension |
+| Only the tab the user is on: the debugger is attached to it when a command needs it and detached from a tab they leave; a new page needs a fresh snapshot before any action. Cancelling Chrome's debugging bar or 10 minutes without an action switches Act off (kept for the browser session only, never on disk) | extension |
 | No leaving the site: links and form submits to another origin, new tabs and downloads are refused before the click; no address bar, no navigate tool | extension |
 | No credentials or payments: password, file, one-time-code and payment-card fields (standard `autocomplete` tokens) are invisible and untouchable; password-manager and account-security sites are refused | extension |
 | No code, cookies, clipboard or network: the model only picks control ids from a snapshot the extension made; it never supplies selectors or scripts | extension |

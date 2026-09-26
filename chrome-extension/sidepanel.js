@@ -182,14 +182,21 @@ async function selectedText() {
 }
 
 // ── Act: the assistant operates the tab ──────────────────────────────────────
-// Off (Look) by default and after every panel load. The user switches it on
-// for ONE site; it switches itself off — detaching from the tab at once — when
-// the user switches it off, moves to another tab, the tab leaves that site, the
-// user cancels Chrome's debugging bar, nothing happens for 10 minutes, or the
-// panel closes. Every command is re-checked against all of that before it runs.
+// Off (Look) by default. Once the user switches it on it stays on while they
+// work — across pages, tabs and closing/reopening the panel — and always acts on
+// the tab they are looking at: the debugger is attached to that tab when a
+// command needs it and detached from the tab they left. It switches itself off
+// — detaching at once — when the user switches it off, cancels Chrome's
+// debugging bar, or nothing happens for 10 minutes. The assistant still never
+// leaves a site by itself (off-site links/forms are refused), never operates
+// credential sites or sensitive fields, and every command is re-checked right
+// before it runs.
 const IDLE_OFF_MS = 10 * 60 * 1000;
 const MAX_ACTIONS_PER_MIN = 30;
 const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], lastSnapshot: null };
+// Survives the panel closing (chrome.storage.session: this browser session
+// only, never on disk): Act is on until this time.
+const ACT_KEY = 'actUntil';
 let snapshotSource = null;
 
 function siteOf(url) { try { return new URL(url).origin; } catch { return ''; } }
@@ -237,7 +244,9 @@ function actOff(reason) {
   const wasOn = act.on;
   act.on = false; act.tabId = null; act.site = ''; act.lastSnapshot = null; act.stamps = [];
   clearTimeout(act.idleTimer);
+  chrome.storage.session.remove(ACT_KEY).catch(() => {});
   if (tabId != null) chrome.debugger.detach({ tabId }).catch(() => {});
+  clearCursor(tabId);
   if (wasOn && frame.contentWindow && origin) {
     frame.contentWindow.postMessage({ type: 'something:mode', mode: 'look', reason }, origin);
   }
@@ -247,28 +256,70 @@ async function actOn() {
   const tab = await activeTab();
   const problem = forbidden(tab);
   if (problem) return { error: problem };
-  try {
-    await chrome.debugger.attach({ tabId: tab.id }, '1.3');
-  } catch (err) {
-    if (!/already attached/i.test(err.message)) return { error: `Chrome did not allow control of this tab (${err.message}).` };
-  }
-  act.on = true; act.tabId = tab.id; act.site = siteOf(tab.url); act.stamps = []; act.lastSnapshot = null;
+  const attached = await follow(tab);
+  if (attached) return { error: attached };
+  act.on = true; act.stamps = [];
   bumpIdle();
   return { site: act.site.replace(/^https?:\/\//, '') };
 }
 
-function bumpIdle() {
-  clearTimeout(act.idleTimer);
-  act.idleTimer = setTimeout(() => actOff('idle'), IDLE_OFF_MS);
+// Put the debugger on the tab the user is looking at (and off the one they
+// left). Returns an error message, or '' when attached.
+async function follow(tab) {
+  if (act.tabId === tab.id) {
+    if (siteOf(tab.url) !== act.site) { act.site = siteOf(tab.url); act.lastSnapshot = null; }
+    return '';
+  }
+  release();
+  try {
+    await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+  } catch (err) {
+    if (!/already attached/i.test(err.message)) return `Chrome did not allow control of this tab (${err.message}).`;
+  }
+  act.tabId = tab.id; act.site = siteOf(tab.url); act.lastSnapshot = null;
+  return '';
 }
 
-chrome.tabs.onActivated.addListener(({ tabId }) => { if (act.on && tabId !== act.tabId) actOff('switched tab'); });
+// Let go of the tab the user left: no debugging bar, no cursor there.
+function release() {
+  const tabId = act.tabId;
+  act.tabId = null; act.lastSnapshot = null;
+  if (tabId == null) return;
+  chrome.debugger.detach({ tabId }).catch(() => {});
+  clearCursor(tabId);
+}
+
+function bumpIdle(ms = IDLE_OFF_MS) {
+  clearTimeout(act.idleTimer);
+  act.idleTimer = setTimeout(() => actOff('idle'), ms);
+  chrome.storage.session.set({ [ACT_KEY]: Date.now() + ms }).catch(() => {});
+}
+
+// A reopened panel picks Act up again if it was on and has not gone idle.
+async function restoreAct() {
+  let until = 0;
+  try { until = (await chrome.storage.session.get(ACT_KEY))[ACT_KEY] || 0; } catch { /* storage unavailable */ }
+  if (until <= Date.now()) { chrome.storage.session.remove(ACT_KEY).catch(() => {}); return; }
+  act.on = true; act.stamps = [];
+  bumpIdle(until - Date.now());
+  frame.contentWindow?.postMessage({ type: 'something:mode', mode: 'act' }, origin);
+}
+
+// Act follows the user: leaving a tab releases it (the next command attaches to
+// the tab they are on); a new page in the same tab needs a fresh snapshot.
+chrome.tabs.onActivated.addListener(({ tabId }) => { if (act.on && tabId !== act.tabId) release(); });
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (act.on && tabId === act.tabId && info.url && siteOf(info.url) !== act.site) actOff('left the site');
+  if (act.on && tabId === act.tabId && info.url) { act.site = siteOf(info.url); act.lastSnapshot = null; }
 });
-chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === act.tabId) actOff('tab closed'); });
-chrome.debugger.onDetach.addListener(({ tabId }) => { if (tabId === act.tabId) actOff('debugging cancelled'); });
-window.addEventListener('pagehide', () => actOff('panel closed'));
+chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === act.tabId) { act.tabId = null; act.lastSnapshot = null; } });
+// Cancelling Chrome's debugging bar is the user saying stop.
+chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
+  if (tabId !== act.tabId) return;
+  if (reason === 'canceled_by_user') actOff('debugging cancelled');
+  else { act.tabId = null; act.lastSnapshot = null; }
+});
+// Closing the panel lets go of the tab; Act itself stays on (restoreAct).
+window.addEventListener('pagehide', () => release());
 
 const cdp = (method, params = {}) => chrome.debugger.sendCommand({ tabId: act.tabId }, method, params);
 
@@ -309,10 +360,13 @@ async function inTab(tabId, files, func) {
 async function guard() {
   if (!act.on) throw new Error('The user has not switched the panel to Act.');
   const tab = await activeTab();
-  if (!tab || tab.id !== act.tabId) { actOff('switched tab'); throw new Error('The user moved to another tab, so control was switched off.'); }
-  if (siteOf(tab.url) !== act.site) { actOff('left the site'); throw new Error('The tab left the site control was switched on for, so it was switched off.'); }
+  if (!tab) throw new Error('No tab to work in.');
+  // Never on credential sites, browser pages or the workspace — refused, and
+  // released, but Act stays on for the next ordinary page.
   const problem = forbidden(tab);
-  if (problem) { actOff('forbidden page'); throw new Error(problem); }
+  if (problem) { if (tab.id === act.tabId) release(); throw new Error(problem); }
+  const attached = await follow(tab);
+  if (attached) throw new Error(attached);
   const now = Date.now();
   act.stamps = act.stamps.filter((t) => now - t < 60_000);
   if (act.stamps.length >= MAX_ACTIONS_PER_MIN) throw new Error('Too many actions in a minute. Slow down.');
@@ -352,6 +406,79 @@ async function tabSnapshot() {
 // Same checks as jev-ultrafast's executor: the target is an element the
 // snapshot observed (never a model-written selector), still attached, enabled,
 // visible, on screen and not covered — or the action is refused.
+// ── The assistant's cursor on the page ───────────────────────────────────────
+// While Act runs, a large cursor glides to each control before it is clicked or
+// typed into, so the user can follow what the assistant does. It is drawn in the
+// extension's isolated world inside a closed shadow root, ignores the mouse
+// (pointer-events: none — clicks and elementFromPoint pass through it) and is
+// removed the moment Act switches off.
+const CURSOR_MOVE_MS = 340;
+
+function paintCursor(x, y, effect, box) {
+  const ID = 'something-agent-cursor';
+  let host = document.getElementById(ID);
+  if (!host) {
+    host = document.createElement('div');
+    host.id = ID;
+    host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
+    const root = host.attachShadow({ mode: 'closed' });
+    root.innerHTML = `<style>
+      .c { position: fixed; left: 0; top: 0; width: 44px; height: 44px; margin: -3px 0 0 -5px;
+           transition: transform ${340}ms cubic-bezier(.3,.7,.2,1);
+           filter: drop-shadow(0 3px 8px rgba(0,0,0,.28)); will-change: transform; }
+      .c svg { width: 44px; height: 44px; display: block; }
+      .ring { position: fixed; left: 0; top: 0; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+              border: 3px solid rgba(124,58,237,.75); opacity: 0; }
+      .ring.go { animation: ring .5s ease-out; }
+      @keyframes ring { from { opacity: 1; transform: var(--at) scale(.3); } to { opacity: 0; transform: var(--at) scale(1.2); } }
+      .box { position: fixed; border-radius: 6px; box-shadow: 0 0 0 3px rgba(124,58,237,.55), 0 0 0 7px rgba(124,58,237,.15);
+             opacity: 0; transition: opacity .2s; }
+      .box.on { opacity: 1; }
+    </style>
+    <div class="box"></div><div class="ring"></div>
+    <div class="c"><svg viewBox="0 0 24 24"><path d="M4.5 3.2 19 10.4c.8.4.7 1.5-.1 1.8l-5.9 1.9-2.5 5.7c-.3.8-1.4.8-1.8 0L3.3 4.5c-.4-.8.4-1.6 1.2-1.3Z" fill="#7c3aed" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>`;
+    host.__root = root;
+    (document.body || document.documentElement).appendChild(host);
+  }
+  const root = host.__root;
+  if (!root) return;
+  const c = root.querySelector('.c');
+  const first = !host.dataset.placed;
+  if (first) {
+    // First appearance: fade in near the target instead of flying across the page.
+    c.style.transition = 'none';
+    c.style.transform = `translate(${x + 40}px, ${y + 40}px)`;
+    void c.offsetWidth;
+    c.style.transition = '';
+    host.dataset.placed = '1';
+  }
+  c.style.transform = `translate(${x}px, ${y}px)`;
+  const b = root.querySelector('.box');
+  if (box) Object.assign(b.style, { left: `${box.x - 3}px`, top: `${box.y - 3}px`, width: `${box.w + 6}px`, height: `${box.h + 6}px` });
+  b.classList.toggle('on', !!box);
+  if (effect === 'click') {
+    const ring = root.querySelector('.ring');
+    ring.style.setProperty('--at', `translate(${x}px, ${y}px)`);
+    ring.style.transform = `translate(${x}px, ${y}px)`;
+    ring.classList.remove('go'); void ring.offsetWidth; ring.classList.add('go');
+  }
+}
+
+function removeCursor() {
+  document.getElementById('something-agent-cursor')?.remove();
+}
+
+async function cursor(tabId, x, y, effect = '', box = null) {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, func: paintCursor, args: [x, y, effect, box] });
+  } catch { /* the page may be navigating — the cursor is only a picture */ }
+}
+
+async function clearCursor(tabId) {
+  if (tabId == null) return;
+  try { await chrome.scripting.executeScript({ target: { tabId }, func: removeCursor }); } catch { /* gone already */ }
+}
+
 async function tabAct(targetId, text) {
   const tab = await guard();
   const snap = act.lastSnapshot;
@@ -361,6 +488,7 @@ async function tabAct(targetId, text) {
   if (action.kind === 'fill' && typeof text !== 'string') throw new Error('A "fill" control needs text.');
 
   if (action.kind === 'scroll') {
+    await cursor(tab.id, Math.round(snap.w / 2), Math.round(snap.h / 2));
     await cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: Math.round(snap.w / 2), y: Math.round(snap.h / 2), deltaX: 0, deltaY: action.delta });
   } else if (action.kind === 'wait') {
     await new Promise((r) => setTimeout(r, 400));
@@ -397,10 +525,14 @@ async function tabAct(targetId, text) {
         e.dispatchEvent(new Event('input', {bubbles: true}));
         e.dispatchEvent(new Event('change', {bubbles: true}));
       }
-      return {x, y};
+      return {x, y, box: a.kind === 'fill' ? {x: r.x, y: r.y, w: r.width, h: r.height} : null};
     })(${JSON.stringify({ node: action.node, kind: action.kind, value: action.value })})`);
     if (!target) throw new Error('That control changed or is covered. Take a new snapshot.');
     if (target.offsite) throw new Error('That leads away from this site (another address, a new tab or a download), which is not allowed. Stay on this site.');
+    // The cursor travels to the control first, so the user sees where it acts.
+    await cursor(tab.id, target.x, target.y, '', target.box);
+    await new Promise((r) => setTimeout(r, CURSOR_MOVE_MS));
+    await cursor(tab.id, target.x, target.y, 'click', target.box);
     if (action.kind !== 'select') {
       for (const type of ['mousePressed', 'mouseReleased']) {
         await cdp('Input.dispatchMouseEvent', { type, x: target.x, y: target.y, button: 'left', clickCount: 1 });
@@ -448,7 +580,7 @@ window.addEventListener('message', async (e) => {
     try { reply({ ok: true, result: await runCommand(e.data.command || {}) }); }
     catch (err) { reply({ ok: false, error: err.message }); }
   }
-  else if (type === 'something:ready') { actOff('panel reloaded'); revealChat(); pushTab(); }
+  else if (type === 'something:ready') { revealChat(); pushTab(); restoreAct(); }
   else if (type === 'something:theme') applyTheme(e.data.theme, true);
   else if (type === 'something:need-login') { revealChat(); signIn(); }
   else if (type === 'something:selection') reply({ text: await selectedText() });

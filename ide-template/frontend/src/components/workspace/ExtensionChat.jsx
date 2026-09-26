@@ -7,14 +7,17 @@
  *
  *   extension → page   something:tab          { url, title, capturable }  (tab changed)
  *   extension → page   something:mode         { mode: 'look', reason }    (control switched itself off)
+ *   extension → page   something:mode         { mode: 'act' }             (still on from before the panel closed)
  *   page → extension   something:need-login                               (no session here)
  *   page → extension   something:selection    → { text }                  (selected text)
  *   page → extension   something:set-mode     { mode } → { site } | { error }
  *   page → extension   something:tab-command  { command } → { ok, result | error }
  *
- * Act — the assistant operating the tab — is off after every load. Switching it
- * off (or the extension switching itself off) is sent to the extension AND to
- * workspace-api at once, without waiting for either: both refuse from then on.
+ * Act — the assistant operating the tab — is off by default; once the user
+ * switches it on it stays on across pages and a reopened panel (the extension
+ * remembers it until 10 idle minutes pass). Switching it off (or the extension
+ * switching itself off) is sent to the extension AND to workspace-api at once,
+ * without waiting for either: both refuse from then on.
  *
  * Messages are accepted only from the parent frame, and only when that parent
  * is a browser extension; Caddy's `frame-ancestors` already limits which
@@ -31,12 +34,8 @@ import { PARENT_ORIGIN } from '@/lib/extensionEmbed';
 // Opening the panel after a longer pause starts a new conversation.
 const FRESH_AFTER_MS = 4 * 60 * 60 * 1000;
 const OFF_REASONS = {
-  'switched tab': 'You moved to another tab.',
-  'left the site': 'The tab left the site.',
-  'tab closed': 'The tab was closed.',
   'debugging cancelled': 'Chrome’s debugging bar was cancelled.',
   'idle': 'Nothing happened for 10 minutes.',
-  'forbidden page': 'This page cannot be operated.',
 };
 
 // Request/response over postMessage with a timeout, so a missing reply can
@@ -56,12 +55,16 @@ function rpc(type, payload = {}, timeoutMs = 4000) {
   });
 }
 
+// Mode reports go out one after another, so a quick look → act (a reopened
+// panel restoring Act) can never reach the server in the wrong order.
+let modeChain = Promise.resolve();
 function reportMode(mode) {
-  return fetch('/api/tab/mode', {
+  modeChain = modeChain.then(() => fetch('/api/tab/mode', {
     method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode }),
-  }).catch(() => {});
+  })).catch(() => {});
+  return modeChain;
 }
 
 export default function ExtensionChat() {
@@ -114,11 +117,15 @@ export default function ExtensionChat() {
         setIncludePage(true);
       } else if (e.data?.type === 'something:mode' && e.data.mode === 'look') {
         actOff(OFF_REASONS[e.data.reason] || '');
+      } else if (e.data?.type === 'something:mode' && e.data.mode === 'act') {
+        actRef.current = true;
+        setActSite('on');
+        reportMode('act');
       }
     };
     window.addEventListener('message', onMsg);
     window.parent.postMessage({ type: 'something:ready' }, PARENT_ORIGIN);
-    reportMode('look');   // a fresh panel always starts in Look
+    reportMode('look');   // until the extension says Act is still on
     return () => window.removeEventListener('message', onMsg);
   }, [actOff]);
 
@@ -181,8 +188,8 @@ export default function ExtensionChat() {
             onClick={() => (actSite ? actOff() : actOn())}
             disabled={switching || (!actSite && !tab?.capturable)}
             title={actSite
-              ? `The assistant can click and type on ${actSite}. Switch off to stop it at once.`
-              : 'Let the assistant click and type on this site'}
+              ? 'The assistant can click and type on the tab you are on. Switch off to stop it at once.'
+              : 'Let the assistant click and type on the tab you are on'}
             className="inline-flex items-center rounded-md p-1.5 hover:bg-accent disabled:opacity-35"
           >
             <MousePointerClick className={cn('mr-1 size-3.5', actSite ? 'text-destructive/85' : 'text-muted-foreground/75')} strokeWidth={1.75} />
