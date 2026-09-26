@@ -222,6 +222,9 @@ services:
       - NODE_ENV=production
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      # Browser extensions allowed to sign in (comma-separated ids). Unset = the
+      # project's own side-panel extension; empty string = no extension may sign in.
+      - EXTENSION_IDS=${EXTENSION_IDS-dfmejngohcofdhddpgkpgaedmjghpdbh}
       - FRONTEND_DOMAIN=${FRONTEND_DOMAIN}
       - IDE_ALLOWED_EMAILS=${IDE_ALLOWED_EMAILS}
       - SESSION_SECRET=${SESSION_SECRET}

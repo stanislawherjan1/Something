@@ -9,6 +9,8 @@ import LoginPage from './components/LoginPage';
 import AccessDenied from './components/AccessDenied';
 import SetupWizard from './components/SetupWizard';
 import WorkspacePage from './components/workspace/WorkspacePage';
+import ExtensionChat from './components/workspace/ExtensionChat';
+import { isExtensionEmbed } from './lib/extensionEmbed';
 import { BrandingProvider, useBranding } from './components/workspace/identity';
 
 // Workspace is the default view. The legacy code-server iframe is still
@@ -81,6 +83,10 @@ function AppContent() {
   //   ?auth=wizard   → SetupWizard with a fresh-deploy status mock
   //                    (no fetches; saves are no-ops with a 200 ms delay)
   //   (anything else / unset) → workspace (the normal default)
+  // Framed by the browser extension's side panel: only the chat, nothing else.
+  // It handles its own auth gate (the extension signs in when there is no session).
+  if (isExtensionEmbed()) return <ExtensionChat />;
+
   if (import.meta.env.DEV) {
     const fake = new URLSearchParams(window.location.search).get('auth');
     if (fake === 'login')   return <LoginPage />;

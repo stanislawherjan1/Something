@@ -52,7 +52,14 @@ function useVisualViewport() {
  * Iteration 1: text only. No tool_use chips, no markdown rendering, no
  * thread switcher (single hardcoded thread per page mount).
  */
-export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onInitialMessageConsumed, resetNonce = 0 }) {
+// Optional props used only by the browser-extension embed (ExtensionChat.jsx):
+//   extraFields()     → async, returns fields merged into each POST /api/chat
+//                        (the extension's `pageContext`)
+//   composerAccessory → rendered right above the input (current tab + screenshot)
+//   onTurnDone(text)  → the finished assistant text of each turn
+// plus the window events `ide:chat-attach` { files } and `ide:chat-send`
+// { text, files }. The workspace itself passes none of these.
+export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onInitialMessageConsumed, resetNonce = 0, extraFields, composerAccessory, onTurnDone }) {
   // sessionId is required by Phase 2 backend, but we tolerate undefined for
   // a brief render between ChatPane mount and the sessions fetch returning —
   // we hold off on history fetch / send() until it's set.
@@ -348,11 +355,13 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       // parse on the server. The browser sets the multipart Content-Type
       // (with boundary) automatically when body is FormData.
       let body, headers;
+      const extra = extraFields ? await extraFields() : {};
       if (filesToSend.length > 0) {
         const fd = new FormData();
         fd.append('message', message);
         fd.append('sessionId', sessionId);
         if (wasInterrupting) fd.append('interrupt', 'true');
+        for (const [k, v] of Object.entries(extra)) fd.append(k, v);
         for (const f of filesToSend) fd.append('files', f, f.name);
         body    = fd;
         headers = { Accept: 'text/event-stream' };
@@ -361,6 +370,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
           message,
           sessionId,
           ...(wasInterrupting ? { interrupt: true } : {}),
+          ...extra,
         });
         headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
       }
@@ -387,12 +397,13 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       const decoder = new TextDecoder();
       let buf = '';
 
+      let turnText = '';
       const dispatch = (event, data) => {
         if (data == null) return;
         // A turn that's been superseded (interrupt-and-relay) must not keep
         // writing into the bubble the new turn now owns.
         if (genRef.current !== myGen) return;
-        if (event === 'message')         appendToLastAssistant(data);
+        if (event === 'message')         { turnText += data; appendToLastAssistant(data); }
         else if (event === 'image')      appendImageToLastAssistant(data);
         else if (event === 'tool_start') addChip(data);
         else if (event === 'tool_end')   completeChip(data);
@@ -422,6 +433,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         const { event, data } = parseSseChunk(buf);
         dispatch(event, data);
       }
+      if (onTurnDone && genRef.current === myGen) onTurnDone(turnText);
     } catch (err) {
       if (err.name === 'AbortError') {
         // Interrupt-and-relay path: the bubble we aborted was already marked
@@ -441,11 +453,29 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         settleLastAssistant();   // never leave a blinking dot after the turn ends
       }
     }
-  }, [input, attachments, busy, sessionId]);
+  }, [input, attachments, busy, sessionId, extraFields, onTurnDone]);
 
   // Always-current ref so auto-send can call the latest send() without stale closure.
   const sendRef = useRef(send);
   useEffect(() => { sendRef.current = send; });
+
+  // Extension embed: attach files (a screenshot) or send a message from outside.
+  useEffect(() => {
+    const onAttach = (e) => {
+      const files = Array.isArray(e.detail?.files) ? e.detail.files : [];
+      if (files.length) setAttachments(prev => [...prev, ...files]);
+    };
+    const onSend = (e) => {
+      const text = typeof e.detail?.text === 'string' ? e.detail.text : '';
+      if (text) sendRef.current(text, Array.isArray(e.detail?.files) ? e.detail.files : []);
+    };
+    window.addEventListener('ide:chat-attach', onAttach);
+    window.addEventListener('ide:chat-send', onSend);
+    return () => {
+      window.removeEventListener('ide:chat-attach', onAttach);
+      window.removeEventListener('ide:chat-send', onSend);
+    };
+  }, []);
 
   // Abort any in-flight turn on unmount. ChatPane remounts ChatPanel via
   // key={sessionId} on session switch; without this the fetch + reader leak
@@ -791,6 +821,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
 
       <UnreadOtherSessionsBanner currentSessionId={sessionId} />
 
+      {composerAccessory}
       <Composer
         value={input}
         onChange={setInput}
@@ -1078,7 +1109,12 @@ function mdComponentsWithFiles(onFileSelect) {
   };
 }
 
-function TextBlock({ text, onFileSelect, withSources = false }) {
+// A reply may end with [[SCREENSHOT]] — a request to the browser extension to
+// capture the tab. It is an instruction, never something to show.
+const SCREENSHOT_MARKER_RE = /\n?\s*\[\[\s*SCREENSHOT\s*\]\]\s*/gi;
+
+function TextBlock({ text: rawText, onFileSelect, withSources = false }) {
+  const text = String(rawText || '').replace(SCREENSHOT_MARKER_RE, '');
   const { body, sources } = withSources ? splitSources(text) : { body: text, sources: [] };
   const processedBody = linkifyFilePaths(body);
   const components = mdComponentsWithFiles(onFileSelect);

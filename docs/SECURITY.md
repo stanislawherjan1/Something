@@ -733,10 +733,16 @@ proxy_set_header X-IDE-User $ide_user;   # nginx — overwrites with auth-servic
 - Neither Caddy nor nginx strips this header, and `/api/memory/*` is reachable through nginx. So workspace-api accepts it only when the TCP peer is `127.0.0.1` / `::1` (a browser request always arrives from the nginx container's address), and only if it is a well-formed slug. `/api/internal/*` is loopback-only as a whole; `/api/memory/grep` applies the same test inline, prefers the cookie actor when there is one, and ignores the header from any non-loopback peer.
 - Without that test any signed-in member could name a teammate's slug and read their private memory. Any new route that reads `X-IDE-Actor` must apply the same loopback rule.
 
+✅ **Browser-extension sessions: Bearer token, allow-listed extension ids**
+- The side-panel extension ([BROWSER_EXTENSION.md](BROWSER_EXTENSION.md)) has no workspace cookie, so it sends the same session JWT as `Authorization: Bearer`. auth-service (`/auth/verify`, `/auth/me`) and workspace-api's `attachActor` verify it exactly like the cookie — same signature check, same whitelist re-check, same cookie/header mismatch rule.
+- The token reaches the extension through `/auth/extension/start`, which only runs for extension ids in `EXTENSION_IDS` and delivers the token in the fragment of `https://<id>.chromiumapp.org/…` — a URL only that extension can read. An open pattern here would let any installed extension start the flow on the user's domain and take their session; the allow-list is the control. Set `EXTENSION_IDS=` (empty) to disable extension sign-in.
+- Page content the extension sends (`pageContext`: tab title, address, selected text) is framed as untrusted data in the prompt; the page body is never sent.
+
 **Code**:
 - [Caddyfile](../ide-template/Caddyfile)
 - [ide-template/frontend/nginx.conf](../ide-template/frontend/nginx.conf)
 - [ide-template/workspace-api/lib/auth.js](../ide-template/workspace-api/lib/auth.js)
+- [ide-template/auth-service/index.js](../ide-template/auth-service/index.js) (`/auth/extension/start`, Bearer, `EXTENSION_IDS`)
 - [ide-template/workspace-api/routes/memory.js](../ide-template/workspace-api/routes/memory.js), [routes/internal.js](../ide-template/workspace-api/routes/internal.js) (`X-IDE-Actor` loopback checks)
 
 **Result**: Header spoofing alone fails on both ingress (Caddy/nginx strip) and at the application layer (cookie/header mismatch → request runs as anonymous, admin gates reject).

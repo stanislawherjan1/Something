@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Something",
+  "description": "Your workspace chat next to any page.",
+  "version": "0.2.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAshfqh3jMOuudPotHDdtCmkJr4fYD6bHDd7NKhGSI1mKPxavCxvoOygtMjuFjSRVATQKPwsFLlZdYx5M9OOYTY8WudhHdqygILgVi5KCGfDY2umnfuuwY6PIpVzbJX3QhX8QNIVu5bd8x656wXN2NcWiGlJRyO1kGbROB4BmRXXzOTziQKw4zcTYWLW8t3kzlUA55jCxaPZ2Do5uSDLwmONzY8POtaklMa3hUSZE7Huy2CAhH5RIRHMbCWyj3QvciLROYWhs0f7YZ8BjAmTJEFjdJ0pho6RbGJzN2KJAtQjTj/Oh1+Ud06OXSyqdKoE9cac4qrdOUeIWfe88TCZiTAwIDAQAB",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Something",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "identity",
+    "cookies",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "contextMenus"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "<all_urls>"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

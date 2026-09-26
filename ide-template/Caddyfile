@@ -19,6 +19,12 @@ www.{$FRONTEND_DOMAIN} {
     header X-Content-Type-Options "nosniff"
     header Referrer-Policy "strict-origin-when-cross-origin"
     header X-Frame-Options "SAMEORIGIN"
+    # The browser extension's side panel frames /app/?embed=extension. X-Frame-Options
+    # cannot name another origin, so an ENFORCED frame-ancestors carries the rule:
+    # this site itself plus the project's extension id, nobody else (browsers that
+    # understand frame-ancestors ignore X-Frame-Options; older ones keep SAMEORIGIN).
+    # Kept separate from the report-only CSP below, which only reports.
+    header Content-Security-Policy "frame-ancestors 'self' chrome-extension://dfmejngohcofdhddpgkpgaedmjghpdbh"
     # Prevent search engine indexing — this is a private tool, not a public website
     header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
 
@@ -36,7 +42,7 @@ www.{$FRONTEND_DOMAIN} {
     # `frame-src 'self'` allows the legacy code-server iframe.
     # `object-src 'none'` blocks the historical PDF/Flash plugin attack surface.
     # `base-uri 'self'` blocks <base href> hijack.
-    header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self' chrome-extension://dfmejngohcofdhddpgkpgaedmjghpdbh; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
 
     # Strip identity headers injected by clients before they reach the upstream
     request_header -X-IDE-User

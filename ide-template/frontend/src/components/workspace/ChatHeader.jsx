@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import { PanelRightClose, ArrowLeft, Plus, History } from 'lucide-react';
+import { PanelRightClose, ArrowLeft, Plus, History, Sun, Moon } from 'lucide-react';
+import { useTheme } from '@/context/ThemeContext';
+import { ThemeMenuSection } from './ThemeMenu';
 import { cn } from '@/lib/utils';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
@@ -26,6 +28,7 @@ import {
 export default function ChatHeader({
   activeSessionId, onSelectSession,
   onCollapse,
+  showThemeMenu = false,
 }) {
   const { botDisplayName } = useBranding();
   const [dropdownOpen,   setDropdownOpen]   = useState(false);
@@ -76,13 +79,16 @@ export default function ChatHeader({
 
   return (
     <div className="relative flex h-14 shrink-0 items-center gap-2 px-4 max-md:px-2">
-      <button
-        type="button"
-        onClick={onCollapse}
-        className="md:hidden flex items-center justify-center p-2 -ml-1 text-muted-foreground/80 hover:text-foreground rounded-full hover:bg-muted/50"
-      >
-        <ArrowLeft className="size-5" strokeWidth={1.75} />
-      </button>
+      {/* No collapse target (the browser extension's panel) → no back / collapse buttons. */}
+      {onCollapse && (
+        <button
+          type="button"
+          onClick={onCollapse}
+          className="md:hidden flex items-center justify-center p-2 -ml-1 text-muted-foreground/80 hover:text-foreground rounded-full hover:bg-muted/50"
+        >
+          <ArrowLeft className="size-5" strokeWidth={1.75} />
+        </button>
+      )}
 
       <SpinningAvatar size={9} />
 
@@ -105,6 +111,8 @@ export default function ChatHeader({
           <Plus className="size-4" strokeWidth={2} />
         </button>
 
+        {showThemeMenu && <ThemeButton />}
+
         <button
           ref={historyBtnRef}
           type="button"
@@ -126,6 +134,7 @@ export default function ChatHeader({
           )}
         </button>
 
+{onCollapse && (
         <button
           type="button"
           onClick={onCollapse}
@@ -139,6 +148,7 @@ export default function ChatHeader({
         >
           <PanelRightClose className="size-[15px]" strokeWidth={1.75} />
         </button>
+        )}
       </div>
 
       <ChatSessionDropdown
@@ -174,6 +184,39 @@ export default function ChatHeader({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+// Light / Dark / System, for the browser-extension panel where the user menu
+// (which normally holds this) is not shown. Same items and popover styling.
+function ThemeButton() {
+  const [open, setOpen] = useState(false);
+  const { resolvedTheme } = useTheme();
+  const Icon = resolvedTheme === 'dark' ? Moon : Sun;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title="Theme"
+        aria-expanded={open}
+        className={cn(
+          'flex size-7 shrink-0 items-center justify-center rounded-md',
+          'text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground/85',
+          open && 'bg-muted/40 text-foreground/85',
+        )}
+      >
+        <Icon className="size-4" strokeWidth={1.85} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 w-44 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+            <ThemeMenuSection />
+          </div>
+        </>
+      )}
     </div>
   );
 }

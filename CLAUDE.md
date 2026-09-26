@@ -40,6 +40,7 @@ reaches the repo.
 | `ide-template/entrypoint.sh`, `Dockerfile`, `docker-compose.yml`, `deploy.sh` | Container boot, image, stack, deploy |
 | `ide-template/setuid-wrappers/` | C runners that drop each process to its own uid |
 | `install.sh`, `bin/`, `scripts/` | Installer, server preflight/ensure, hardening, dev scripts, `check-docs-impact.sh` |
+| `chrome-extension/` | The side-panel browser extension (developer build, no build step) |
 | `clients/` | Per-client config — **local only**, never committed except `example-client/` |
 | `docs/` | Product + operator documentation (map below) |
 | `docs/future-plans/` | Designs not built yet — **gitignored**, local only |
@@ -57,6 +58,7 @@ reaches the repo.
 | Skills, `global-claude.md` behaviour, the skill catalog | `docs/SKILLS.md` |
 | Team mode: roster, privacy, relay, reminders per user, group mode | `docs/TEAM_MODE.md` |
 | Routines, the morning planner, reminders and their firing | `docs/ROUTINES.md` |
+| The browser extension, its sign-in or `pageContext` | `docs/BROWSER_EXTENSION.md` |
 | workspace-api endpoints or module layout | `ide-template/workspace-api/README.md` |
 | User-visible features | `README.md` |
 

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Something</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <!-- Step 1: which workspace. Mirrors the workspace login page (LoginPage.jsx). -->
+  <section id="setup" hidden>
+    <div class="login">
+      <div class="card">
+        <img class="logo" src="icons/icon-128.png" alt="" />
+        <div class="heading">
+          <h1>Connect your workspace</h1>
+          <p>The address you open your workspace at.</p>
+        </div>
+        <div id="setup-error" class="error-banner" hidden>
+          <svg class="error-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          <span id="setup-error-text"></span>
+        </div>
+        <form id="setup-form">
+          <input id="domain" class="field" type="text" placeholder="workspace.example.com" autocomplete="url" spellcheck="false" required />
+          <button type="submit" class="btn">Continue</button>
+        </form>
+      </div>
+      <p class="footnote">Chrome will ask to let it see the page you are on.</p>
+    </div>
+  </section>
+
+  <!-- Step 2: the workspace chat itself, framed. Kept invisible until it says
+       it is ready, so Chrome's own error page is never what the user sees. -->
+  <div id="loading" hidden><div class="spinner"></div></div>
+  <iframe id="chat" title="Chat" hidden allow="clipboard-read; clipboard-write"></iframe>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+/* Only the address step is drawn here; after it the panel shows the
+   workspace's own chat page. The step is a copy of the workspace login page
+   (ide-template/frontend/src/components/LoginPage.jsx) — same card, radii,
+   borders, shadows, type and error banner — and the tokens mirror
+   ide-template/frontend/src/index.css. Change them together. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --background: #f7f6f2;
+  --foreground: #1c1b18;
+  --card: #ffffff;
+  --muted-foreground: #6b6963;
+  --border: #e8e7e2;
+  --destructive: #dc2626;
+  --radius-md: 6px;            /* tailwind rounded-md, as on the login card */
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --background: #1b1b1a;
+    --foreground: #ebebea;
+    --card: #252524;
+    --muted-foreground: #a8a8a7;
+    --border: #303030;
+    --destructive: #ef4444;
+    color-scheme: dark;
+  }
+}
+/* The theme chosen in the chat (Light / Dark / System) wins over the OS. */
+:root[data-theme="dark"] {
+  --background: #1b1b1a;
+  --foreground: #ebebea;
+  --card: #252524;
+  --muted-foreground: #a8a8a7;
+  --border: #303030;
+  --destructive: #ef4444;
+  color-scheme: dark;
+}
+
+/* foreground / muted at the login page's opacities */
+:root {
+  --fg-90: color-mix(in srgb, var(--foreground) 90%, transparent);
+  --fg-85: color-mix(in srgb, var(--foreground) 85%, transparent);
+  --fg-15: color-mix(in srgb, var(--foreground) 15%, transparent);
+  --fg-8:  color-mix(in srgb, var(--foreground) 8%, transparent);
+  --muted-85: color-mix(in srgb, var(--muted-foreground) 85%, transparent);
+  --muted-55: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  --border-70: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--background); color: var(--foreground);
+  font: 14px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── The framed chat ─────────────────────────────────────── */
+#chat { display: block; width: 100%; height: 100%; border: 0; }
+#chat[hidden] { display: none; }
+#chat.pending { visibility: hidden; position: absolute; inset: 0; }
+#loading { height: 100%; display: flex; align-items: center; justify-content: center; }
+#loading[hidden] { display: none; }
+.spinner {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 1.75px solid color-mix(in srgb, var(--muted-foreground) 25%, transparent);
+  border-top-color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Address step = LoginPage ────────────────────────────── */
+#setup { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
+#setup[hidden] { display: none; }
+.login { width: 100%; max-width: 384px; display: flex; flex-direction: column; }
+.card {
+  display: flex; flex-direction: column; gap: 20px;
+  background: var(--card);
+  border: 1px solid var(--fg-15);
+  border-radius: var(--radius-md);
+  padding: 32px 24px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+.logo {
+  display: block; margin: 0 auto; width: 64px; height: 64px;
+  border-radius: var(--radius-md); object-fit: cover;
+  box-shadow: 0 0 0 1px var(--fg-8), 0 1px 3px rgba(0,0,0,.08);
+}
+.heading { display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.heading h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
+.heading p { margin: 0; font-size: 13px; line-height: 1.625; color: var(--muted-85); }
+
+#setup-form { display: flex; flex-direction: column; gap: 10px; }
+.field {
+  width: 100%; font: inherit; font-size: 13.5px; color: var(--fg-85);
+  background: var(--background);
+  border: 1px solid var(--border-70); border-radius: var(--radius-md);
+  padding: 10px 12px; outline: none;
+  box-shadow: 0 1px 1px rgba(0,0,0,.02);
+  transition: border-color .15s;
+}
+.field::placeholder { color: var(--muted-55); }
+.field:focus { border-color: var(--fg-15); box-shadow: 0 0 0 3px var(--fg-8); }
+.field.invalid { border-color: color-mix(in srgb, var(--destructive) 45%, transparent); }
+
+/* Same as the login page's Google button */
+.btn {
+  display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: 10px;
+  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--fg-85); cursor: pointer;
+  background: var(--background);
+  border: 1px solid var(--border-70); border-radius: var(--radius-md);
+  padding: 10px 16px;
+  box-shadow: 0 1px 1px rgba(0,0,0,.03);
+  transition: background-color .15s, border-color .15s;
+}
+.btn:hover { background: color-mix(in srgb, var(--foreground) 4%, var(--background)); border-color: var(--fg-15); }
+.btn:disabled { opacity: .6; cursor: default; }
+
+/* Same as the login page's ErrorBanner */
+.error-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 25%, transparent);
+  background: color-mix(in srgb, var(--destructive) 4%, transparent);
+  border-radius: var(--radius-md); padding: 10px 12px;
+  font-size: 12.5px; line-height: 1.625; color: var(--muted-85);
+}
+.error-banner[hidden] { display: none; }
+.error-icon {
+  flex: none; width: 14px; height: 14px; margin-top: 3px;
+  fill: none; stroke: color-mix(in srgb, var(--destructive) 85%, transparent);
+  stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.footnote { margin: 28px 0 0; text-align: center; font-size: 11.5px; color: var(--muted-55); }

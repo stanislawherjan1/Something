@@ -14,7 +14,9 @@ import ChatPanel from './ChatPanel.jsx';
  * Session title is intentionally NOT tracked here — the top bar shows the
  * bot name, the session title lives in the dropdown row only.
  */
-export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onInitialMessageConsumed, className }) {
+// extraFields / composerAccessory / onTurnDone pass straight through to ChatPanel
+// (used only by the browser-extension embed).
+export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onInitialMessageConsumed, className, extraFields, composerAccessory, onTurnDone, showThemeMenu }) {
   const [activeSessionId, setActiveSessionId] = useState(null);
 
   // First mount: figure out which session to show. If the workspace has
@@ -92,6 +94,7 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
           activeSessionId={activeSessionId}
           onSelectSession={onSelectSession}
           onCollapse={onCollapse}
+          showThemeMenu={showThemeMenu}
         />
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -102,6 +105,9 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
             onFileSelect={onFileSelect}
             initialMessage={initialMessage}
             onInitialMessageConsumed={onInitialMessageConsumed}
+            extraFields={extraFields}
+            composerAccessory={composerAccessory}
+            onTurnDone={onTurnDone}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">

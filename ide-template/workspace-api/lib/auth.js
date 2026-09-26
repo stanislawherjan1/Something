@@ -57,9 +57,13 @@ function fromHeader(req) {
   return trimmed;
 }
 
+// The session JWT arrives as the cookie (browser) or as `Authorization: Bearer`
+// (the browser extension, which has no workspace cookie). Same token, same
+// signature check — so "cookie" below means "the verified session token".
 function fromCookie(req) {
   if (!SESSION_SECRET) return null;
-  const token = req.cookies?.[SESSION_COOKIE];
+  const bearer = (req.get('Authorization') || '').match(/^Bearer\s+([A-Za-z0-9._-]+)$/);
+  const token = req.cookies?.[SESSION_COOKIE] || (bearer ? bearer[1] : null);
   if (!token || typeof token !== 'string') return null;
   try {
     const payload = jwt.verify(token, SESSION_SECRET);

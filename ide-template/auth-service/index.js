@@ -74,6 +74,26 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Browser extensions allowed to sign in (the side-panel chat). An extension
+// receives the session token at https://<id>.chromiumapp.org/, which only that
+// extension can read, so the id is the whole trust decision: an allow-list, not
+// a pattern — any installed extension could otherwise start this flow on the
+// user's domain and walk away with their session. Default: the project's own
+// extension (pinned id via the manifest `key`).
+const EXTENSION_IDS = (process.env.EXTENSION_IDS ?? 'dfmejngohcofdhddpgkpgaedmjghpdbh')
+    .split(',').map(s => s.trim()).filter(s => /^[a-p]{32}$/.test(s));
+
+// The session JWT travels either as the cookie (browser) or as a Bearer token
+// (the extension, whose requests carry no workspace cookie). Same token, same
+// verification, same whitelist re-check.
+function sessionTokenFrom(req) {
+    const fromCookie = req.cookies[SESSION_COOKIE];
+    if (fromCookie) return fromCookie;
+    const auth = req.get('Authorization') || '';
+    const m = auth.match(/^Bearer\s+([A-Za-z0-9._-]+)$/);
+    return m ? m[1] : null;
+}
+
 // ── State store for OAuth CSRF protection ───────────────────────────────────
 // Map<state, { codeVerifier: string, expiresAt: number }>
 const stateStore = new Map();
@@ -126,9 +146,33 @@ app.get('/auth/google', authLimiter, (req, res) => {
     const codeVerifier = crypto.randomBytes(32).toString('base64url');
     const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
     const returnTo = safeReturnTo(req.query.returnTo);
-
     stateStore.set(state, { codeVerifier, returnTo, expiresAt: Date.now() + STATE_TTL_MS });
+    startGoogleFlow(res, state, codeChallenge);
+});
 
+// ── GET /auth/extension/start ────────────────────────────────────────────────
+// Sign-in for the browser extension, run inside chrome.identity.launchWebAuthFlow.
+// Same Google flow and callback as the web login (no new Google redirect URI);
+// on success the callback hands the session token to the extension's own
+// redirect URL in the fragment, which is never sent to a server or logged.
+app.get('/auth/extension/start', authLimiter, (req, res) => {
+    const ext = String(req.query.ext || '');
+    if (!EXTENSION_IDS.includes(ext)) {
+        return res.status(403).send('This extension is not allowed to sign in to this workspace.');
+    }
+    const state = crypto.randomBytes(32).toString('hex');
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    stateStore.set(state, {
+        codeVerifier,
+        returnTo: '/app/',
+        extensionRedirect: `https://${ext}.chromiumapp.org/auth`,
+        expiresAt: Date.now() + STATE_TTL_MS,
+    });
+    startGoogleFlow(res, state, codeChallenge);
+});
+
+function startGoogleFlow(res, state, codeChallenge) {
     res.cookie('oauth_state', state, {
         httpOnly: true,
         secure: true,
@@ -147,7 +191,7 @@ app.get('/auth/google', authLimiter, (req, res) => {
     });
 
     res.redirect(authUrl);
-});
+}
 
 // ── GET /auth/callback ───────────────────────────────────────────────────────
 // Google redirects here after user consent.
@@ -193,7 +237,7 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
     stateStore.delete(state);
     res.clearCookie('oauth_state');
 
-    const { codeVerifier, returnTo } = storeEntry;
+    const { codeVerifier, returnTo, extensionRedirect } = storeEntry;
 
     // Exchange authorization code for tokens
     let tokens;
@@ -232,12 +276,23 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 
     if (!whitelist.isAllowed(email)) {
         console.warn('[auth] Access denied:', email);
+        if (extensionRedirect) {
+            return res.redirect(`${extensionRedirect}#${new URLSearchParams({ error: 'access_denied', email })}`);
+        }
         return res.redirect(`/?error=access_denied&email=${encodeURIComponent(email)}`);
     }
 
     const name = googlePayload.name || '';
     const picture = googlePayload.picture || '';
     const sessionToken = createSessionToken({ email, name, picture });
+
+    if (extensionRedirect) {
+        console.log(`[auth] Extension session created for ${email}`);
+        // The cookie NAME is per-deployment; the extension installs the session
+        // under it so the framed workspace page is signed in too.
+        const frag = new URLSearchParams({ token: sessionToken, email, cookie: SESSION_COOKIE, expires_in: String(SESSION_TTL_SECONDS) });
+        return res.redirect(`${extensionRedirect}#${frag}`);
+    }
 
     res.cookie(SESSION_COOKIE, sessionToken, {
         httpOnly: true,
@@ -255,7 +310,7 @@ app.get('/auth/callback', authLimiter, async (req, res) => {
 // ── GET /auth/me ─────────────────────────────────────────────────────────────
 // Returns current user info from session cookie. Called by React SPA on mount.
 app.get('/auth/me', (req, res) => {
-    const sessionToken = req.cookies[SESSION_COOKIE];
+    const sessionToken = sessionTokenFrom(req);
     if (!sessionToken) return res.status(401).json({ error: 'Not authenticated' });
 
     try {
@@ -284,7 +339,7 @@ app.get('/auth/me', (req, res) => {
 // ── GET /auth/verify ─────────────────────────────────────────────────────────
 // Called internally by nginx auth_request for every IDE request.
 app.get('/auth/verify', (req, res) => {
-    const sessionToken = req.cookies[SESSION_COOKIE];
+    const sessionToken = sessionTokenFrom(req);
     if (!sessionToken) return res.status(401).send('No session');
 
     try {
