@@ -423,20 +423,20 @@ function paintCursor(x, y, effect, box) {
     host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
     const root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `<style>
-      .c { position: fixed; left: 0; top: 0; width: 44px; height: 44px; margin: -3px 0 0 -5px;
+      .c { position: fixed; left: 0; top: 0; width: 60px; height: 60px; margin: -4px 0 0 -7px;
            transition: transform ${340}ms cubic-bezier(.3,.7,.2,1);
-           filter: drop-shadow(0 3px 8px rgba(0,0,0,.28)); will-change: transform; }
-      .c svg { width: 44px; height: 44px; display: block; }
-      .ring { position: fixed; left: 0; top: 0; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
-              border: 3px solid rgba(124,58,237,.75); opacity: 0; }
+           filter: drop-shadow(0 3px 10px rgba(0,0,0,.3)); will-change: transform; }
+      .c svg { width: 60px; height: 60px; display: block; }
+      .ring { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%;
+              border: 3px solid rgba(17,17,17,.7); box-shadow: 0 0 0 2px rgba(255,255,255,.8); opacity: 0; }
       .ring.go { animation: ring .5s ease-out; }
       @keyframes ring { from { opacity: 1; transform: var(--at) scale(.3); } to { opacity: 0; transform: var(--at) scale(1.2); } }
-      .box { position: fixed; border-radius: 6px; box-shadow: 0 0 0 3px rgba(124,58,237,.55), 0 0 0 7px rgba(124,58,237,.15);
+      .box { position: fixed; border-radius: 6px; box-shadow: 0 0 0 2px rgba(255,255,255,.9), 0 0 0 4px rgba(17,17,17,.75), 0 0 0 9px rgba(17,17,17,.1);
              opacity: 0; transition: opacity .2s; }
       .box.on { opacity: 1; }
     </style>
     <div class="box"></div><div class="ring"></div>
-    <div class="c"><svg viewBox="0 0 24 24"><path d="M4.5 3.2 19 10.4c.8.4.7 1.5-.1 1.8l-5.9 1.9-2.5 5.7c-.3.8-1.4.8-1.8 0L3.3 4.5c-.4-.8.4-1.6 1.2-1.3Z" fill="#7c3aed" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>`;
+    <div class="c"><svg viewBox="0 0 24 24"><path d="M4.5 3.2 19 10.4c.8.4.7 1.5-.1 1.8l-5.9 1.9-2.5 5.7c-.3.8-1.4.8-1.8 0L3.3 4.5c-.4-.8.4-1.6 1.2-1.3Z" fill="#111" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg></div>`;
     host.__root = root;
     (document.body || document.documentElement).appendChild(host);
   }

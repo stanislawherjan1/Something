@@ -110,7 +110,7 @@ shell: chrome.cookies.set(<name> = token, httpOnly, secure, SameSite=Lax) → re
 
 The page body is never sent with the message; the assistant reads it only through Look.
 
-While Act works, a large cursor glides to each control before the click or typing (a ripple
+While Act works, a large black cursor glides to each control before the click or typing (a ripple
 on click, an outline on the field being filled). It is drawn in the extension's isolated
 world, ignores the mouse, and is removed when Act switches off or the user leaves the tab.
 
