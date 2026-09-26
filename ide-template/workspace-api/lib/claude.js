@@ -174,7 +174,7 @@ export function runClaudeTurn({ message, sessionId, webSessionId, relayThread, a
 
     // B3 v2 — relay-thread awareness. If THIS session is a relay channel, the
     // user is mid-conversation WITH the paired teammate(s) through you. Without
-    // this, the bot reads "tak, mam" as a remark to itself and the answer never
+    // this, the bot reads a short "yes, I have it" as a remark to itself and the answer never
     // gets back to the asker — the exact failure this fixes.
     const peers = Array.isArray(relayThread) ? relayThread.filter(p => p && p.slug) : [];
     if (peers.length) {

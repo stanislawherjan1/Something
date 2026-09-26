@@ -108,9 +108,16 @@ test('the group turn deadline is idle-based, not wall-clock', () => {
   assert.ok(/const bumpIdle = \(\) =>/.test(SRC), 'an idle-reset helper must exist');
   assert.ok(/GROUP_TURN_IDLE\b/.test(SRC) && /GROUP_TURN_MAX\b/.test(SRC),
     'both an idle window and an absolute backstop must exist');
+  // A callback resets the deadline either directly or through a helper whose own
+  // body calls bumpIdle() (bumpAlive also records the first-event latency).
+  const resetters = ['bumpIdle'];
+  for (const [, name, body] of SRC.matchAll(/const (\w+) = \(\) => \{([\s\S]*?)\n\s*\};/g)) {
+    if (name !== 'bumpIdle' && /\bbumpIdle\(\)/.test(body)) resetters.push(name);
+  }
+  const resets = new RegExp(`\\b(${resetters.join('|')})\\(\\)`);
   for (const cb of ['onText', 'onToolStart', 'onToolEnd']) {
     const m = SRC.match(new RegExp(cb + ':\\s*\\([^)]*\\)\\s*=>\\s*\\{[^\\n]*'));
-    assert.ok(m && /bumpIdle\(\)/.test(m[0]), `${cb} must reset the idle deadline`);
+    assert.ok(m && resets.test(m[0]), `${cb} must reset the idle deadline`);
   }
 });
 

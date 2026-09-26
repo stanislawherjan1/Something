@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "MOCK=1 vite",
-    "build": "echo '🔍 VITE_IDE_URL=' $VITE_IDE_URL && echo '🔍 All VITE_ vars:' && env | grep VITE_ && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },

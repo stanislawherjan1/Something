@@ -36,8 +36,11 @@
 #   catch reply / replyTo / sendPhoto / etc. all at once.
 #
 # Don't-fire cases:
-#   - User explicitly asked for silence ("nie wysyłaj", "don't reply",
-#     "tylko zapisz", "only save") — operator intent overrides hook.
+#   - The model ended the turn with the `[[SILENT]]` marker — it judged that
+#     the sender asked for no reply ("don't reply", "just save it", in any
+#     language). The model reads the intent; this hook never guesses it from
+#     keywords (a phrase list only ever covered two languages and a handful of
+#     wordings, and failed open for everyone else).
 #
 # Exit:
 #   0 — let through (not a Telegram turn, or reply was sent)
@@ -95,12 +98,6 @@ LAST_USER=$(tail -400 "$TRANSCRIPT" 2>/dev/null | jq -rc '
        else ($c | map(select(.type == "text") | .text) | join(" ")) end)
     | select(. != null and (gsub("\\s"; "") | length) > 0)
 ' 2>/dev/null | tail -1)
-
-# Operator explicitly asked for no reply → don't block.
-if echo "$LAST_USER" | grep -qiE '(nie wysyłaj|nie odpowiadaj|tylko zapisz|tylko notatk|don.t reply|only save|do not reply|skip reply)'; then
-    log "user asked for silence, exit 0"
-    exit 0
-fi
 
 # System triggers (reminder-monitor send-keys, periodic self-audits) come in
 # as user messages but are bot's own internal scheduling — they don't need a
@@ -191,6 +188,26 @@ if [ "${TG_SENDS:-0}" -gt 0 ]; then
     exit 0
 fi
 
+# The model declared deliberate silence with `[[SILENT]]` in its own text THIS
+# turn (same turn-scoping as TG_SENDS: the counter resets at every trigger).
+SILENT_MARKS=$(tail -400 "$TRANSCRIPT" 2>/dev/null | jq -r '
+    if .type == "user" then
+        ((.message.content) as $c
+         | (if ($c | type) == "string" then $c
+            else ($c | map(select(.type == "text") | .text) | join(" ")) end)
+         | if (gsub("\\s"; "") | length) > 0 then "TRIGGER" else empty end)
+    elif .type == "assistant" then
+        (.message.content[]?
+         | select(.type == "text" and (.text | test("\\[\\[SILENT\\]\\]")))
+         | "SILENT")
+    else empty end
+' 2>/dev/null | awk '/TRIGGER/{c=0; next} /SILENT/{c++} END{print c+0}')
+
+if [ "${SILENT_MARKS:-0}" -gt 0 ]; then
+    log "model declared [[SILENT]] this turn, exit 0"
+    exit 0
+fi
+
 log "BLOCKING — Telegram inbound + no telegram reply sent"
 
 cat >&2 <<EOF
@@ -203,10 +220,10 @@ plugin_telegram_telegram tool, e.g. for files/photos). Per the rule in
 ~/.claude/CLAUDE.md "Telegram" section: every Telegram response MUST go
 via the Telegram MCP — no exceptions.
 
-If the operator explicitly asked for silence ("tylko zapisz" / "don't reply"
-/ similar), this hook would have let your reply through silently. Re-read
-the last user message; if you genuinely shouldn't reply, write a one-line
-"acknowledged, not sending" so the hook won't fire on the retry.
+If the sender asked you NOT to reply (in any language or wording: "don't
+reply", "just save it", …), don't send anything — end your turn with exactly
+`[[SILENT]]` on its own line instead. That marker is how you tell this hook
+the silence is intentional.
 
 Retry your response with a Telegram-MCP send.
 EOF
