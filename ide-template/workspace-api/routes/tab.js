@@ -9,8 +9,10 @@
  *     → POST /api/tab/result             { id, ok, result | error } (the panel, as the user)
  *     → the tool call returns
  *
- * The user's Look / Act switch is enforced in two independent places:
- *   - here: the panel reports its mode (POST /api/tab/mode); commands are refused
+ * Looking (tab_snapshot / tab_screenshot) is allowed in any turn started from
+ * the panel with the page shared. Acting (tab_act) needs the user's Act switch,
+ * enforced in two independent places:
+ *   - here: the panel reports its mode (POST /api/tab/mode); tab_act is refused
  *     unless it is "act", and switching to "look" — or the panel going away —
  *     fails every command still waiting, at once;
  *   - in the extension, which also refuses, detaches from the tab, and applies
@@ -25,16 +27,16 @@ const COMMAND_TIMEOUT_MS = 20_000;
 const panels = new Map();   // slug → Set<res>   open panel streams
 const modes = new Map();    // slug → 'act' (absent = look)
 const pending = new Map();  // id → { slug, resolve, timer }
-const turns = new Map();    // token → slug      turns started from the panel
+const turns = new Map();    // token → { slug, act }   turns started from the panel
 
 // Only a turn the user started FROM the panel may drive their tab — never a
 // Telegram message, a workspace chat, a reminder or a group turn, even while
 // the panel is open in Act. routes/chat.js opens a token for a panel turn and
 // closes it when the turn ends; the tools pass it back (IDE_TAB_TOKEN).
-export function openTabTurn(slug) {
+export function openTabTurn(slug, { act = false } = {}) {
   const token = randomUUID();
   // Same resolution the tools' side uses ('default' = a solo workspace).
-  turns.set(token, resolveSlug(slug === 'default' ? '' : slug));
+  turns.set(token, { slug: resolveSlug(slug === 'default' ? '' : slug), act: !!act });
   return token;
 }
 export function closeTabTurn(token) {
@@ -135,15 +137,19 @@ export default function tabRouter() {
     if (!command || typeof command !== 'object' || !['snapshot', 'act', 'screenshot'].includes(command.op)) {
       return res.status(400).json({ ok: false, error: 'command required' });
     }
-    if (turns.get(String(req.body?.turnToken || '')) !== slug) {
-      return res.json({ ok: false, error: 'The browser tab can only be used in a conversation the user is having in the Something panel in Chrome.' });
+    const turn = turns.get(String(req.body?.turnToken || ''));
+    if (!turn || turn.slug !== slug) {
+      return res.json({ ok: false, error: 'The browser tab can only be used in a conversation the user is having in the Something panel in Chrome, about the page they are on.' });
     }
+    // Looking (snapshot / screenshot) is part of every panel turn that shares
+    // the page; acting needs Act switched on — for this turn AND right now.
+    const acting = command.op === 'act';
     const streams = panels.get(slug);
     if (!streams?.size) {
       return res.json({ ok: false, error: 'The browser panel is not open. Ask the user to open the Something panel in Chrome.' });
     }
-    if (modes.get(slug) !== 'act') {
-      return res.json({ ok: false, error: 'The user has not switched the panel to Act, so you cannot use their tab. Ask them to switch it on if they want you to.' });
+    if (acting && (!turn.act || modes.get(slug) !== 'act')) {
+      return res.json({ ok: false, error: 'Act is off, so you can look at the tab but not click or type in it. Tell the user what you would do, or ask them to switch Act on.' });
     }
     const id = randomUUID();
     const done = new Promise((resolve) => {

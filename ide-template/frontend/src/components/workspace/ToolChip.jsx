@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Loader2, Check, AlertCircle,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
-  Sparkles, ListChecks,
+  Sparkles, ListChecks, Eye, MousePointerClick,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +57,11 @@ const TOOL_DISPLAY = {
   'mcp__tasks__add_task':            { label: 'Adding a task',        Icon: ListChecks },
   'mcp__tasks__update_task':         { label: 'Updating a task',      Icon: ListChecks },
   'mcp__tasks__move_task':           { label: 'Moving a task',        Icon: ListChecks },
+
+  // The user's browser tab, from the Chrome side panel.
+  'mcp__workspace-api__tab_screenshot': { label: 'Looking at the tab',  Icon: Eye },
+  'mcp__workspace-api__tab_snapshot':   { label: 'Reading the page',    Icon: Eye },
+  'mcp__workspace-api__tab_act':        { label: 'Working in the tab',  Icon: MousePointerClick },
 
   'mcp__seedream__generate':         { label: 'Creating an image',    Icon: ImageIcon },
   'mcp__nano_banana__generate':      { label: 'Creating an image',    Icon: ImageIcon },

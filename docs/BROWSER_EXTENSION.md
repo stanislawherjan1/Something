@@ -116,6 +116,17 @@ history.
   *Share screenshot* button.
 - Never captured: browser pages (`chrome://…`) and the Chrome Web Store.
 
+## Look — the assistant sees the tab by itself
+
+In any conversation from the panel that shares the page, the assistant can look at the
+tab on its own — `tab_screenshot` or `tab_snapshot` — instead of asking the user for a
+screenshot; the chat shows it as a tool pill ("Looking at the tab", "Reading the page").
+Looking is read-only and uses no debugger (a screenshot via `captureVisibleTab`, the page
+via a script in the extension's isolated world), with the same page rules as Act:
+password-manager sites refused, password / one-time-code / payment-card fields invisible,
+30 requests a minute. Clicking ✕ on the page chip leaves the page — and looking — out of
+the next message.
+
 ## Act — the assistant operates the tab
 
 A switch next to 📷 (off after every panel load). When the user switches it on, the

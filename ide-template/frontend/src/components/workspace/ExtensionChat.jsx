@@ -9,7 +9,7 @@
  *   extension → page   something:mode         { mode: 'look', reason }    (control switched itself off)
  *   page → extension   something:need-login                               (no session here)
  *   page → extension   something:selection    → { text }                  (selected text)
- *   page → extension   something:capture      → { dataUrl } | { error }   (screenshot)
+ *   page → extension   something:capture      → { dataUrl } | { error }   (the 📷 button)
  *   page → extension   something:set-mode     { mode } → { site } | { error }
  *   page → extension   something:tab-command  { command } → { ok, result | error }
  *
@@ -29,7 +29,6 @@ import { useTheme } from '@/context/ThemeContext';
 import { cn } from '@/lib/utils';
 import { PARENT_ORIGIN } from '@/lib/extensionEmbed';
 
-const MARKER_RE = /\[\[\s*SCREENSHOT\s*\]\]/i;
 // Opening the panel after a longer pause starts a new conversation.
 const FRESH_AFTER_MS = 4 * 60 * 60 * 1000;
 const OFF_REASONS = {
@@ -78,10 +77,8 @@ export default function ExtensionChat() {
   const [includePage, setIncludePage] = useState(true);  // for the next message
   const [actSite, setActSite] = useState('');            // non-empty = Act is on, for this site
   const [notice, setNotice] = useState('');
-  const [wantsShot, setWantsShot] = useState(false);     // the assistant asked to see the tab
   const [capturing, setCapturing] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const screenshotReply = useRef(false);
   const actRef = useRef(false);
 
   // Let the extension's own screens (address step, spinner) match the theme.
@@ -144,7 +141,8 @@ export default function ExtensionChat() {
     es.addEventListener('command', async (ev) => {
       let cmd;
       try { cmd = JSON.parse(ev.data); } catch { return; }
-      if (!actRef.current) return answer(cmd.id, { ok: false, error: 'The user has not switched the panel to Act.' });
+      // Looking is always allowed here; acting only while Act is on.
+      if (cmd.op === 'act' && !actRef.current) return answer(cmd.id, { ok: false, error: 'Act is off.' });
       const r = await rpc('something:tab-command', { command: { op: cmd.op, target: cmd.target, text: cmd.text } }, 18000);
       answer(cmd.id, r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error || 'failed' });
     });
@@ -165,18 +163,10 @@ export default function ExtensionChat() {
     if (file) window.dispatchEvent(new CustomEvent('ide:chat-attach', { detail: { files: [file] } }));
   }, [capture]);
 
-  const sendShot = useCallback(async () => {
-    const file = await capture();
-    if (!file) return;
-    setWantsShot(false);
-    screenshotReply.current = true;
-    window.dispatchEvent(new CustomEvent('ide:chat-send', { detail: { text: '(Screenshot of my current tab.)', files: [file] } }));
-  }, [capture]);
 
   // What travels with each message.
   const extraFields = useCallback(async () => {
-    const ctx = { act: actRef.current, isScreenshotReply: screenshotReply.current };
-    screenshotReply.current = false;
+    const ctx = { act: actRef.current };
     if (tab && includePage) {
       ctx.url = tab.url;
       ctx.title = tab.title;
@@ -184,26 +174,12 @@ export default function ExtensionChat() {
       if (sel.text) ctx.selection = sel.text;
     }
     setIncludePage(true);
-    setWantsShot(false);
     return { pageContext: JSON.stringify(ctx) };
   }, [tab, includePage]);
 
-  // The assistant asked to see the tab (in Act it uses tab_screenshot itself).
-  const onTurnDone = useCallback((text) => {
-    if (!actRef.current && MARKER_RE.test(text || '')) setWantsShot(true);
-  }, []);
 
   const accessory = useMemo(() => (
     <div className="flex flex-col gap-1.5 px-4 pb-1.5">
-      {wantsShot && !actSite && (
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-2.5 py-1.5 text-[12px] text-foreground/80">
-          <span>The assistant would like to see this tab.</span>
-          <button onClick={sendShot} disabled={!tab?.capturable || capturing}
-            className="rounded-md bg-foreground px-2 py-0.5 text-[11.5px] font-medium text-background disabled:opacity-40">
-            Share screenshot
-          </button>
-        </div>
-      )}
       {notice && <div className="text-[11.5px] text-muted-foreground/85">{notice}</div>}
       <div className="flex items-center gap-1.5">
         {tab ? (
@@ -242,7 +218,7 @@ export default function ExtensionChat() {
         </div>
       </div>
     </div>
-  ), [tab, includePage, actSite, wantsShot, notice, capturing, switching, attachShot, sendShot, actOn, actOff]);
+  ), [tab, includePage, actSite, notice, capturing, switching, attachShot, actOn, actOff]);
 
   if (isLoading || !session) {
     return (
@@ -263,7 +239,6 @@ export default function ExtensionChat() {
         freshAfterMs={FRESH_AFTER_MS}
         extraFields={extraFields}
         composerAccessory={accessory}
-        onTurnDone={onTurnDone}
       />
     </div>
   );
