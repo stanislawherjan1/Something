@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-impact:
+    # "Docs before main" (CLAUDE.md): changes landing on main that touch shipped
+    # code must update the affected docs or declare `Docs-Impact: none — <reason>`.
+    # On a PR this blocks the merge; on a direct push to main it can only flag it
+    # after the fact — the blocking gate for direct pushes is the local
+    # PreToolUse hook (scripts/hooks/docs-before-main.sh).
+    if: >-
+      (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+       github.event.before != '0000000000000000000000000000000000000000')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check docs impact
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: scripts/check-docs-impact.sh "$BASE" "$HEAD_SHA"
+
+  workspace-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide-template/workspace-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22          # matches the workspace container (Dockerfile: nodesource 22.x)
+          cache: npm
+          cache-dependency-path: ide-template/workspace-api/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Recurrence engine shared by reminder-mcp and the reminder monitor; no deps.
+      - run: node ../apps/reminder-mcp/recur.test.mjs
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ide-template/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20          # matches Dockerfile.frontend (node:20-slim)
+          cache: npm
+          cache-dependency-path: ide-template/frontend/package-lock.json
+      - run: npm ci
+      # Lint is not gated yet: `eslint .` currently reports 68 errors. Add
+      # `npm run lint` here once that backlog is cleared.
+      - run: npm run build

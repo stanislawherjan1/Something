@@ -22,6 +22,10 @@ ide-template/frontend/.env.local
 # macOS
 **/.DS_Store
 
+# Operator-local agent instructions (client names, hosts — never public)
+CLAUDE.local.md
+.public-denylist
+
 # Local-only planning notes (kept out of the repo so future-plans/ can be a scratch pad)
 docs/future-plans/
 
