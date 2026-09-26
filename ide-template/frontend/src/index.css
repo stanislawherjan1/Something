@@ -138,13 +138,17 @@
   to   { opacity: 1; }
 }
 
-/* Tool use in chat (ToolChip.jsx): the current action rolls in, the
-   collapsed "Used N tools" fades in where the action was. */
+/* Tool use in chat (ToolChip.jsx): the current action rolls in; when the
+   assistant moves on it fades out and "Used N tools" fades in where it was.
+   tool-land also brings in the text after it and the pause "Thinking". */
 @keyframes tool-roll-in {
   from { transform: translateY(60%); opacity: 0; }
 }
 @keyframes tool-land {
   from { opacity: 0; }
+}
+@keyframes tool-leave {
+  to { opacity: 0; }
 }
 
 @keyframes text-shimmer {

@@ -144,7 +144,7 @@ function StepLabel({ tool, live }) {
 }
 
 // The current action, replaced in place as the next one starts.
-export function ToolLine({ tools }) {
+export function ToolLine({ tools, still = false }) {
   const tool = tools[tools.length - 1];
   const { Icon, logo } = displayFor(tool.name);
   const failed = tool.ok === false;
@@ -153,7 +153,8 @@ export function ToolLine({ tools }) {
       <div
         key={tool.id || `${tool.name}-${tools.length}`}
         className={cn(
-          'flex items-center gap-1.5 whitespace-nowrap text-[12.5px] leading-[22px] animate-[tool-roll-in_0.2s_ease-out_both]',
+          'flex items-center gap-1.5 whitespace-nowrap text-[12.5px] leading-[22px]',
+          !still && 'animate-[tool-roll-in_0.2s_ease-out_both]',
           failed ? 'text-destructive' : 'text-muted-foreground',
         )}
       >
@@ -171,7 +172,7 @@ export function ToolSummary({ tools, animate = false }) {
   const [open, setOpen] = useState(false);
   const failed = tools.filter(t => t.ok === false).length;
   return (
-    <div className={cn('flex flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.1s_both]')}>
+    <div className={cn('flex flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.17s_both]')}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -206,6 +207,23 @@ export function ToolSummary({ tools, animate = false }) {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// One group of tools in a reply. While it is the current step: the live line.
+// Once the assistant moves on: the line fades out in place and the collapsed
+// summary appears where it was (only animated in a reply written just now).
+export function ToolGroup({ tools, live, animate = false }) {
+  if (live) return <ToolLine tools={tools} />;
+  return (
+    <div className="relative">
+      {animate && (
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 animate-[tool-leave_0.17s_ease-out_both]">
+          <ToolLine tools={tools} still />
+        </div>
+      )}
+      <ToolSummary tools={tools} animate={animate} />
     </div>
   );
 }

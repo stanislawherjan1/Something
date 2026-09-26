@@ -176,8 +176,17 @@ export default function ChatSessionDropdown({
         </div>
       )}
 
-      <div className="px-3 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        Recent
+      <div className="flex items-center justify-between px-3 pt-2 pb-1">
+        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">Recent</span>
+        {sessions.some(x => !x.archived) && !search && (
+          <button
+            type="button"
+            onClick={() => { onRequestDelete?.({ all: true }); onClose?.(); }}
+            className="text-[11px] text-muted-foreground/60 transition-colors hover:text-red-600"
+          >
+            Clear all
+          </button>
+        )}
       </div>
 
       {/* Sessions list */}
@@ -277,19 +286,6 @@ export default function ChatSessionDropdown({
         ))}
       </ul>
 
-      {sessions.some(s => !s.archived) && !search && (
-        <>
-          <div className="my-1 border-t border-border/40" />
-          <button
-            type="button"
-            onClick={() => { onRequestDelete?.({ all: true }); onClose?.(); }}
-            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted-foreground/80 transition-colors hover:bg-red-500/10 hover:text-red-600"
-          >
-            <Trash2 className="size-4 shrink-0" strokeWidth={1.75} />
-            <span className="flex-1">Clear all chats</span>
-          </button>
-        </>
-      )}
     </div>
   );
 }

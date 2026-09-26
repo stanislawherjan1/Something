@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import { looksLikePath, pathToSelection } from '@/lib/filePaths';
-import { ToolLine, ToolSummary, toolSegments } from './ToolChip.jsx';
+import { ToolGroup, toolSegments } from './ToolChip.jsx';
 import SpinningAvatar from './SpinningAvatar.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
@@ -790,9 +790,9 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
               }
               const isLastAssistant = m.role === 'assistant' && i === messages.length - 1;
               const isEmptyStreaming = isLastAssistant && m.state === 'streaming' && !m.text;
-              // Once text is flowing, a fixed-height slot below the bubble holds
-              // the typing dot. A tool line at the end of the reply is its own
-              // activity cue, so then neither the slot nor the inline dot shows.
+              // Once text is flowing, a fixed-height slot below the bubble shows
+              // "Thinking" when the text pauses. A tool line at the end of the
+              // reply is its own activity cue, so then the slot is not shown.
               // (While empty-streaming the Thinking indicator lives inside the
               // bubble instead.)
               const toolLast = (m.tools?.length || 0) > 0
@@ -816,13 +816,12 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
                   <div className={cn(showActivityBelow && 'flex flex-col items-start gap-1.5')}>
                     <ChatBubble
                       message={m}
-                      suppressInlineDot={showActivityBelow || toolLast}
                       onRetry={onRetry}
                       onFileSelect={onFileSelect}
                     />
                     {showActivityBelow && (
                       <div className="flex min-h-[24px] items-center px-1">
-                        <ActivityDot />
+                        <PauseThinking key={(m.text || '').length} />
                       </div>
                     )}
                   </div>
@@ -858,7 +857,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
  * assistant messages appear directly on the warm surface (no card/border) so
  * the conversation reads like typewritten prose.
  */
-function ChatBubble({ message, suppressInlineDot, onRetry, onFileSelect }) {
+function ChatBubble({ message, onRetry, onFileSelect }) {
   const isUser      = message.role === 'user';
   const isError     = message.state === 'error';
   const isInterrupted = message.state === 'interrupted';
@@ -939,12 +938,6 @@ function ChatBubble({ message, suppressInlineDot, onRetry, onFileSelect }) {
             {message.tools?.length
               ? <BodyWithTools message={message} onFileSelect={onFileSelect} />
               : <AssistantBody text={message.text} images={message.images} content={message.content} onFileSelect={onFileSelect} />}
-            {/* Blinking "still typing" dot. Suppressed while the activity slot
-                below the bubble or a tool line shows the activity instead —
-                keeps the typing cue in one place so nothing jumps. */}
-            {message.state === 'streaming' && !suppressInlineDot && (
-              <span className="ml-1 inline-block size-2 rounded-full bg-foreground/55 align-middle animate-[cursor-blink_0.9s_steps(1)_infinite]" />
-            )}
             {/* Interrupted-with-text marker — Phase 4 preserves the partial. */}
             {isInterrupted && message.text && (
               <span className="ml-2 inline-flex items-center gap-1 text-[11px] italic text-muted-foreground/70 align-baseline">
@@ -1247,7 +1240,7 @@ function AssistantBody({ text, images, content, onFileSelect }) {
 
 // A reply that used tools: its text with a "Used N tools" where they ran. While
 // the reply is still being written, a group with nothing after it yet is the
-// current action (ToolLine) instead. Tool images (Playwright) follow the text.
+// current action instead. Tool images (Playwright) follow the text.
 function BodyWithTools({ message, onFileSelect }) {
   const segments = toolSegments(message.text || '', message.tools);
   const streaming = message.state === 'streaming';
@@ -1256,10 +1249,16 @@ function BodyWithTools({ message, onFileSelect }) {
     <div className="flex flex-col gap-1.5">
       {segments.map((sg, i) => {
         if (sg.type === 'text') {
-          return <div key={i}><TextBlock text={sg.text} onFileSelect={onFileSelect} withSources={i === lastText} /></div>;
+          // Text written right after tools waits for "Used N tools" to settle,
+          // then fades in.
+          const afterTools = message.live && segments[i - 1]?.type === 'tools';
+          return (
+            <div key={i} className={cn(afterTools && 'animate-[tool-land_0.3s_ease_0.65s_both]')}>
+              <TextBlock text={sg.text} onFileSelect={onFileSelect} withSources={i === lastText} />
+            </div>
+          );
         }
-        if (streaming && i === segments.length - 1) return <ToolLine key={i} tools={sg.tools} />;
-        return <ToolSummary key={i} tools={sg.tools} animate={!!message.live} />;
+        return <ToolGroup key={i} tools={sg.tools} live={streaming && i === segments.length - 1} animate={!!message.live} />;
       })}
       {Array.isArray(message.images) && message.images.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -1443,11 +1442,14 @@ function formatDayLabel(d) {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-// The typing dot shown in the activity slot below a streaming bubble while no
-// tool is running.
-function ActivityDot() {
+// Below a reply being written: nothing while text flows (the text is the
+// progress), "Thinking" once it has been quiet for a moment. Re-mounted on every
+// new piece of text (key = text length), so the delay restarts with each one.
+function PauseThinking() {
   return (
-    <span className="inline-block size-2 rounded-full bg-foreground/45 animate-[cursor-blink_0.9s_steps(1)_infinite]" />
+    <span className="animate-[tool-land_0.25s_ease-out_0.6s_both]">
+      <span className="shimmer-text text-[13px] font-medium">Thinking</span>
+    </span>
   );
 }
 
