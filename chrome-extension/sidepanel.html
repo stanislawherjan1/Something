@@ -31,7 +31,18 @@
 
   <!-- Step 2: the workspace chat itself, framed. Kept invisible until it says
        it is ready, so Chrome's own error page is never what the user sees. -->
-  <div id="loading" hidden><div class="spinner"></div></div>
+  <!-- While it loads: the chat's outline (header, a few lines, the input), so
+       the panel reads as the chat from the first frame, not as a wait. -->
+  <div id="loading" hidden aria-busy="true">
+    <div class="sk-header"><span class="sk sk-avatar"></span><span class="sk sk-line" style="width:96px"></span></div>
+    <div class="sk-thread">
+      <span class="sk sk-bubble"></span>
+      <span class="sk sk-line" style="width:88%"></span>
+      <span class="sk sk-line" style="width:72%"></span>
+      <span class="sk sk-line" style="width:54%"></span>
+    </div>
+    <div class="sk-composer"></div>
+  </div>
   <iframe id="chat" title="Chat" hidden allow="clipboard-read; clipboard-write"></iframe>
 
   <script src="sidepanel.js"></script>

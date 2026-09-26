@@ -8,6 +8,7 @@ import { ToolChipRow } from './ToolChip.jsx';
 import SpinningAvatar from './SpinningAvatar.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
+import { readPanelCache, writePanelCache, panelMessages } from '@/lib/panelCache';
 
 /**
  * useVisualViewport — tracks the iOS/Android virtual keyboard height.
@@ -66,7 +67,17 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   const historyUrl = sessionId
     ? `/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`
     : '/api/chat/history';
-  const [messages, setMessages] = useState([]);
+  // Extension panel: start from the messages it showed last time for this
+  // conversation (lib/panelCache.js). They are replaced by the real history as
+  // soon as it loads — `seededRef` marks the list as a placeholder until then.
+  const [seed] = useState(() => {
+    const c = readPanelCache();
+    return c?.sessionId && c.sessionId === sessionId && Array.isArray(c.messages)
+      ? c.messages.map((m, i) => ({ ...m, images: [], id: `c-${i}-${m.ts}`, state: 'done' }))
+      : [];
+  });
+  const seededRef = useRef(seed.length > 0);
+  const [messages, setMessages] = useState(seed);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState([]);
@@ -81,7 +92,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   // returns. Prevents the EmptyState flash when switching between sessions
   // (ChatPanel remounts with key={sessionId}, messages start empty until the
   // fetch resolves a moment later).
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(seed.length === 0);
   // iOS keyboard offset — keeps the composer above the virtual keyboard.
   const keyboardOffset = useVisualViewport();
 
@@ -134,7 +145,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   // the scroll-up handler below.
   useEffect(() => {
     if (!sessionId) return;
-    setHistoryLoading(true);
+    if (!seededRef.current) setHistoryLoading(true);
     let cancelled = false;
     fetch(historyUrl)
       .then(r => r.ok ? r.json() : { messages: [], hasMore: false })
@@ -143,7 +154,10 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         const restored = (data.messages || []).map((m, i) => mapEntry(m, i, 'h'));
         // Race-protection: if WelcomeScreen's auto-send already added bubbles
         // before this fetch returned, don't clobber them with empty history.
-        setMessages(prev => prev.length > 0 ? prev : restored);
+        // Remembered messages (extension panel) are only a placeholder.
+        const placeholder = seededRef.current;
+        seededRef.current = false;
+        setMessages(prev => prev.length > 0 && !placeholder ? prev : restored);
         setHasMore(!!data.hasMore);
         if (restored.length) oldestTsRef.current = restored[0].ts;
       })
@@ -151,6 +165,12 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       .finally(() => { if (!cancelled) setHistoryLoading(false); });
     return () => { cancelled = true; };
   }, [sessionId, historyUrl]);
+
+  // Extension panel: remember this screen for the next open (no-op elsewhere).
+  useEffect(() => {
+    if (!sessionId || historyLoading || busy || seededRef.current) return;
+    writePanelCache({ sessionId, ...panelMessages(messages) });
+  }, [sessionId, historyLoading, busy, messages]);
 
   // Once history has loaded, snapshot the notifications already known: they are
   // (or will be) represented in the loaded transcript, so they must NOT be
@@ -341,6 +361,8 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     miniappChipIds.current.clear();
     setChips([]);
 
+    // Sent before the history arrived: keep what is on screen, don't swap it.
+    seededRef.current = false;
     setMessages(prev => [
       ...prev,
       { role: 'user',      text: message, attachments: attachmentsMeta, id: nextMsgId('u') },

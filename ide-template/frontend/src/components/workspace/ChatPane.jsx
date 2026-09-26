@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { readPanelCache } from '@/lib/panelCache';
 import ChatHeader from './ChatHeader.jsx';
 import ChatPanel from './ChatPanel.jsx';
 
@@ -17,7 +18,15 @@ import ChatPanel from './ChatPanel.jsx';
 // extraFields / composerAccessory / onTurnDone pass straight through to ChatPanel
 // (used only by the browser-extension embed).
 export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onInitialMessageConsumed, className, extraFields, composerAccessory, onTurnDone, showThemeMenu, freshAfterMs = 0 }) {
-  const [activeSessionId, setActiveSessionId] = useState(null);
+  // The extension panel reopens on the conversation it last showed, unless
+  // that has gone stale; the lookup below confirms or replaces it.
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    const c = readPanelCache();
+    if (!c?.sessionId) return null;
+    return freshAfterMs > 0 && Date.now() - (c.lastAt || 0) > freshAfterMs ? null : c.sessionId;
+  });
+  // Until the lookup answers there is no "pick a chat" — nothing is decided yet.
+  const [resolved, setResolved] = useState(false);
 
   // First mount: figure out which session to show. If the workspace has
   // no sessions yet, create one on the fly so the welcome-screen autosend
@@ -57,6 +66,7 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
         const s = await create.json();
         setActiveSessionId(s.id);
       } catch { /* tolerate — UI falls back to the "Pick a chat" empty state */ }
+      finally { if (!cancelled) setResolved(true); }
     })();
     return () => { cancelled = true; };
   }, [freshAfterMs]);
@@ -114,11 +124,11 @@ export default function ChatPane({ onCollapse, onFileSelect, initialMessage, onI
             composerAccessory={composerAccessory}
             onTurnDone={onTurnDone}
           />
-        ) : (
+        ) : resolved ? (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
             Pick a chat or create one.
           </div>
-        )}
+        ) : null}
       </div>
     </aside>
   );

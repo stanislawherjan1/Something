@@ -9,7 +9,6 @@
 //   page → shell   something:need-login  → Google sign-in in a popup, session
 //                                          installed, page reloaded
 //   page → shell   something:selection   → { text } selected on the tab
-//   page → shell   something:capture     → { dataUrl } of the visible tab
 //   page → shell   something:theme       { theme: 'light'|'dark'|'system' }
 //   page → shell   something:set-mode    { mode: 'act'|'look' }  → { site } | { error }
 //   page → shell   something:tab-command { command }             → { ok, result | error }
@@ -52,7 +51,7 @@ $('setup-form').addEventListener('submit', async (e) => {
   try { next = normalizeOrigin($('domain').value); } catch { next = ''; }
   if (!next) return showSetup('Not a valid address.');
   // Asked inside the click, before any await: the workspace itself, plus every
-  // site so the panel can read the page you are on and capture it on request.
+  // site so the panel can read the page you are on and look at it when the assistant needs to.
   const granted = await chrome.permissions.request({ origins: [`${next}/*`, '<all_urls>'] });
   if (!granted) return showSetup('Permission is needed to continue.');
   origin = next;
@@ -80,12 +79,23 @@ async function preflight() {
   return '';
 }
 
+// A workspace that already passed the check is framed at once and re-checked
+// alongside; only a first open (or one that failed before) waits for it.
 async function openChat() {
   $('setup').hidden = true;
   frame.hidden = true;
   $('loading').hidden = false;
-  const problem = await preflight();
-  if (problem) return showSetup(problem);
+  const { verified } = await chrome.storage.local.get('verified');
+  const check = preflight().then(async (problem) => {
+    if (problem) {
+      await chrome.storage.local.remove('verified');
+      showSetup(problem);
+    } else {
+      chrome.storage.local.set({ verified: origin });
+    }
+    return problem;
+  });
+  if (verified !== origin && await check) return;
   frame.classList.add('pending');
   frame.hidden = false;
   frame.src = `${origin}/app/?embed=extension`;
@@ -169,11 +179,6 @@ async function selectedText() {
     const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => String(getSelection() || '') });
     return (r?.result || '').slice(0, 4000);
   } catch { return ''; }
-}
-async function captureTab() {
-  const tab = await activeTab();
-  if (!capturable(tab)) throw new Error('This page cannot be captured.');
-  return chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 80 });
 }
 
 // ── Act: the assistant operates the tab ──────────────────────────────────────
@@ -447,9 +452,6 @@ window.addEventListener('message', async (e) => {
   else if (type === 'something:theme') applyTheme(e.data.theme, true);
   else if (type === 'something:need-login') { revealChat(); signIn(); }
   else if (type === 'something:selection') reply({ text: await selectedText() });
-  else if (type === 'something:capture') {
-    try { reply({ dataUrl: await captureTab() }); } catch (err) { reply({ error: err.message }); }
-  }
 });
 
 // "Change workspace" from the toolbar icon's menu (background.js).

@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { readPanelCache, writePanelCache } from '../lib/panelCache';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(undefined); // undefined = loading
+    // undefined = loading. The extension panel starts from the user it last
+    // saw (see lib/panelCache.js); /auth/me below still decides.
+    const [user, setUser] = useState(() => readPanelCache()?.user || undefined);
 
     useEffect(() => {
         fetch('/auth/me', { credentials: 'include' })
@@ -14,15 +17,20 @@ export function AuthProvider({ children }) {
                     // we used to wrap into a Supabase-style user_metadata
                     // block, but Supabase is gone, so the wrapping was
                     // dead surface area making consumers harder to read.
-                    setUser({
+                    const next = {
                         email:   data.email,
                         name:    data.name    || null,
                         picture: data.picture || null,
                         role:    data.role    || null,
                         isAdmin: Boolean(data.isAdmin),
-                    });
+                    };
+                    setUser(next);
+                    writePanelCache({ user: next });
                 } else {
                     setUser(null);
+                    // Signed out: forget the conversation too, so the next
+                    // account never sees this one's messages.
+                    writePanelCache({ user: null, sessionId: null, messages: [] });
                 }
             })
             .catch(() => setUser(null));
