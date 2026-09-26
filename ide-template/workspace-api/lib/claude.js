@@ -287,9 +287,14 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // tool_use id → tool name, captured at content_block_start. Lets us skip
   // forwarding images from `Read` tool results: those are the user's own
   // pasted/attached image being read back, and echoing it into the assistant
-  // bubble is noise. Genuine tool images (Playwright screenshots) still show.
+  // bubble is noise. The same goes for the extension's tab_screenshot: the user
+  // is looking at that tab already, the tool pill says the bot looked too.
+  // Genuine tool images (Playwright screenshots) still show.
   const toolNamesById = new Map();
-  const shouldForwardImage = (toolUseId) => toolNamesById.get(toolUseId) !== 'Read';
+  const shouldForwardImage = (toolUseId) => {
+    const name = toolNamesById.get(toolUseId);
+    return name !== 'Read' && name !== 'mcp__workspace-api__tab_screenshot';
+  };
 
   // Set CLAUDE_DEBUG_STREAM=1 in env to log every parsed event to PM2 stderr.
   // Useful to discover SDK event types we may be ignoring (permission prompts,

@@ -9,7 +9,6 @@
  *   extension → page   something:mode         { mode: 'look', reason }    (control switched itself off)
  *   page → extension   something:need-login                               (no session here)
  *   page → extension   something:selection    → { text }                  (selected text)
- *   page → extension   something:capture      → { dataUrl } | { error }   (the 📷 button)
  *   page → extension   something:set-mode     { mode } → { site } | { error }
  *   page → extension   something:tab-command  { command } → { ok, result | error }
  *
@@ -22,7 +21,7 @@
  * extension may frame the page at all.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Camera, FileText, X, Loader2, MousePointerClick } from 'lucide-react';
+import { FileText, X, Loader2, MousePointerClick } from 'lucide-react';
 import ChatPane from './ChatPane';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -57,11 +56,6 @@ function rpc(type, payload = {}, timeoutMs = 4000) {
   });
 }
 
-async function dataUrlToFile(dataUrl) {
-  const blob = await (await fetch(dataUrl)).blob();
-  return new File([blob], `screenshot-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
-}
-
 function reportMode(mode) {
   return fetch('/api/tab/mode', {
     method: 'POST', credentials: 'include',
@@ -77,7 +71,6 @@ export default function ExtensionChat() {
   const [includePage, setIncludePage] = useState(true);  // for the next message
   const [actSite, setActSite] = useState('');            // non-empty = Act is on, for this site
   const [notice, setNotice] = useState('');
-  const [capturing, setCapturing] = useState(false);
   const [switching, setSwitching] = useState(false);
   const actRef = useRef(false);
 
@@ -149,20 +142,6 @@ export default function ExtensionChat() {
     return () => es.close();
   }, [session]);
 
-  const capture = useCallback(async () => {
-    setNotice('');
-    setCapturing(true);
-    const r = await rpc('something:capture', {}, 8000);
-    setCapturing(false);
-    if (!r.dataUrl) { setNotice(r.error || 'Could not capture this tab.'); return null; }
-    return dataUrlToFile(r.dataUrl);
-  }, []);
-
-  const attachShot = useCallback(async () => {
-    const file = await capture();
-    if (file) window.dispatchEvent(new CustomEvent('ide:chat-attach', { detail: { files: [file] } }));
-  }, [capture]);
-
 
   // What travels with each message.
   const extraFields = useCallback(async () => {
@@ -196,10 +175,6 @@ export default function ExtensionChat() {
           </span>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
-          <button onClick={attachShot} disabled={!tab?.capturable || capturing} title="Attach a screenshot of this tab"
-            className="rounded-md p-1.5 text-muted-foreground/75 hover:bg-accent hover:text-foreground disabled:opacity-35">
-            {capturing ? <Loader2 className="size-3.5 animate-spin" strokeWidth={1.75} /> : <Camera className="size-3.5" strokeWidth={1.75} />}
-          </button>
           <button
             role="switch"
             aria-checked={!!actSite}
@@ -218,7 +193,7 @@ export default function ExtensionChat() {
         </div>
       </div>
     </div>
-  ), [tab, includePage, actSite, notice, capturing, switching, attachShot, actOn, actOff]);
+  ), [tab, includePage, actSite, notice, switching, actOn, actOff]);
 
   if (isLoading || !session) {
     return (

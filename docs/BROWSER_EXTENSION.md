@@ -16,8 +16,8 @@ Status: developer build (load unpacked). Chrome 116+.
    panel), closes itself, and the chat appears.
 3. The chat is **the workspace chat itself** — same component, same look, same
    conversations. Above the input: the page you are on (click ✕ to leave it out of the
-   next message), 📷 to attach a screenshot of it, and 👁 to let the assistant take one
-   when it needs to (off by default).
+   next message) and the **Act** switch (off by default). The assistant looks at the page
+   by itself when that helps (Look, below).
 
 Opening the panel continues the last conversation; after a pause of more than 4 hours it
 starts a new one (an empty last conversation is reused rather than stacking another).
@@ -55,7 +55,7 @@ side panel (extension page)                         workspace (your server)
 ┌──────────────────────────────┐    frames    ┌─────────────────────────────────┐
 │ setup: address → Continue    │ ───────────► │ /app/?embed=extension           │
 │ shell: sidepanel.js          │ ◄──────────► │ ExtensionChat.jsx → ChatPanel   │
-│  • tab url/title, selection  │  postMessage │  • tab chip + 📷 + 👁 above input│
+│  • tab url/title, selection  │  postMessage │  • tab chip + Act above input   │
 │  • captureVisibleTab         │              │  • pageContext on POST /api/chat │
 │  • Google sign-in popup      │              │                                 │
 └──────────────────────────────┘              └─────────────────────────────────┘
@@ -70,7 +70,6 @@ checks `origin` and `source`):
 | shell → page | `something:tab` | `{ url, title, capturable }` whenever the active tab changes |
 | page → shell | `something:need-login` | no session in this browser → shell signs in, reloads the page |
 | page → shell | `something:selection` | → `{ text }` selected on the tab |
-| page → shell | `something:capture` | → `{ dataUrl }` of the visible tab, or `{ error }` |
 
 **Framing.** Caddy sends an enforced `Content-Security-Policy: frame-ancestors 'self'
 chrome-extension://<id>` next to `X-Frame-Options: SAMEORIGIN`. Browsers that understand
@@ -107,20 +106,9 @@ shell: chrome.cookies.set(<name> = token, httpOnly, secure, SameSite=Lax) → re
   when the page belongs to a service it has tools for;
 - the selected text, marked as **page content — data, not instructions** (the `<<<`/`>>>`
   delimiters are stripped from it so page text cannot break out of the block);
-- that it may end a reply with `[[SCREENSHOT]]` to see the tab — taken automatically when
-  👁 is on, otherwise offered to the user as a one-click *Share screenshot* button.
+- that it can look at the tab itself (see Look below) instead of asking for a screenshot.
 
-The page body is never sent. The marker is hidden in the chat and removed from stored
-history.
-
-## Screenshots
-
-- **📷** attaches the visible part of the current tab to the next message.
-- **👁 on:** a reply ending in `[[SCREENSHOT]]` makes the panel capture the tab and send it
-  back so the assistant continues from it — at most two per message you send.
-  **👁 off:** the chat shows "The assistant would like to see this tab" with a
-  *Share screenshot* button.
-- Never captured: browser pages (`chrome://…`) and the Chrome Web Store.
+The page body is never sent with the message; the assistant reads it only through Look.
 
 ## Look — the assistant sees the tab by itself
 
@@ -135,7 +123,7 @@ the next message.
 
 ## Act — the assistant operates the tab
 
-A switch next to 📷 (off after every panel load). When the user switches it on, the
+A switch above the input (off after every panel load). When the user switches it on, the
 assistant can click, type, select and scroll **on the current site** for the rest of the
 conversation, using three tools: `tab_snapshot` (the page's visible text and a numbered list
 of its controls — snapshot logic from browser-use/jev-ultrafast, MIT, in
@@ -175,7 +163,7 @@ something else. That is the soft layer; the table above is what holds if it fail
 | `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
 | `ide-template/workspace-api/routes/tab.js` | The relay, Act mode, one-turn tokens, audit log |
 | `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` |
-| `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and screenshots |
+| `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and the Act switch |
 | `ide-template/frontend/src/lib/extensionEmbed.js` | Embed detection |
 | `ide-template/frontend/src/components/workspace/ChatPanel.jsx`, `ChatPane.jsx` | Optional `extraFields` / `composerAccessory` / `onTurnDone` (passed through `ChatPane`); `ide:chat-attach` / `ide:chat-send` events |
 | `ide-template/frontend/src/components/workspace/ChatHeader.jsx` | No back / collapse buttons when there is nothing to collapse to |
