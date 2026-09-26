@@ -200,6 +200,13 @@ export default function WorkspacePage() {
   });
   const fileEventNonce = useFileWatcher();
   const isMobile = useMobile();
+  // Tablet widths: sidebar + document + chat don't fit side by side, and a
+  // squeezed document is unreadable. Below desktop width the sidebar slides
+  // over the page (and closes after a pick); below landscape-tablet width the
+  // chat does too, so the document always keeps its full width.
+  const sidebarOverlay = useMobile(1279);
+  const chatOverlay = useMobile(899);
+  const chatWidth = sidebarOverlay ? 380 : 460;
 
   const { data: integrationsData } = useApi('/api/integrations');
   const isTelegramActive = !!integrationsData?.integrations?.find(i => i.id === 'telegram')?.active;
@@ -232,12 +239,12 @@ export default function WorkspacePage() {
     try { window.localStorage.setItem(TELEGRAM_LINK_DISMISSED_KEY, '1'); } catch {}
   };
 
-  // On mobile, default sidebar to closed
+  // Where the sidebar floats (phone, tablet) it starts closed.
   useEffect(() => {
-    if (isMobile) {
+    if (sidebarOverlay) {
       setSidebarOpen(false);
     }
-  }, [isMobile]);
+  }, [sidebarOverlay]);
 
   const handleWelcomeSend = (msg, files) => {
     setChatOpen(true);
@@ -265,8 +272,8 @@ export default function WorkspacePage() {
       setChatOpen(false);
     }
     navigate(target);
-    if (isMobile) setSidebarOpen(false);
-  }, [navigate, isMobile, location.pathname, sentFromWelcome]);
+    if (sidebarOverlay) setSidebarOpen(false);
+  }, [navigate, sidebarOverlay, location.pathname, sentFromWelcome]);
 
   return (
     <div
@@ -391,15 +398,16 @@ export default function WorkspacePage() {
       )}
 
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
-      {/* Mobile Sidebar Backdrop */}
+      {/* Floating-sidebar backdrop (phone, tablet) */}
       <AnimatePresence>
-        {isMobile && sidebarOpen && (
+        {sidebarOverlay && sidebarOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
             onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-background/60 backdrop-blur-[2px]"
           />
         )}
       </AnimatePresence>
@@ -414,13 +422,13 @@ export default function WorkspacePage() {
       <div
         className={cn(
           'shrink-0 overflow-hidden',
-          isMobile
+          sidebarOverlay
             ? sidebarOpen
               ? 'fixed inset-y-0 left-0 z-50 w-[280px] shadow-2xl'
               : 'hidden'
             : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
         )}
-        style={!isMobile ? { width: sidebarOpen ? 280 : 0 } : undefined}
+        style={!sidebarOverlay ? { width: sidebarOpen ? 280 : 0 } : undefined}
         aria-hidden={!sidebarOpen}
       >
         <div className="h-full w-[280px]">
@@ -454,6 +462,10 @@ export default function WorkspacePage() {
           as the sidebar so collapse / expand feels symmetric. ChatPane
           stays mounted across toggle — session list, scroll position,
           input draft all survive a collapse. */}
+      {/* Floating-chat backdrop (portrait tablet): a tap on the page closes it */}
+      {hasStarted && !isMobile && chatOverlay && chatOpen && (
+        <div onClick={() => setChatOpen(false)} className="fixed inset-0 z-40 bg-background/40" />
+      )}
       {hasStarted && (
         <div
           className={cn(
@@ -462,12 +474,16 @@ export default function WorkspacePage() {
               ? chatOpen
                 ? 'fixed inset-0 z-50 w-full'
                 : 'hidden'
-              : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+              : chatOverlay
+                ? chatOpen
+                  ? 'fixed inset-y-0 right-0 z-50 w-[min(460px,calc(100vw-48px))] shadow-2xl'
+                  : 'hidden'
+                : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
           )}
-          style={!isMobile ? { width: chatOpen ? 460 : 0 } : undefined}
+          style={!chatOverlay ? { width: chatOpen ? chatWidth : 0 } : undefined}
           aria-hidden={!chatOpen}
         >
-          <div className="h-full w-[460px]">
+          <div className="h-full" style={chatOverlay ? undefined : { width: chatWidth }}>
             <ChatPane
               onCollapse={() => setChatOpen(false)}
               onFileSelect={handleSelect}
@@ -502,12 +518,13 @@ export default function WorkspacePage() {
             whileHover={{ scale: 1.07 }}
             whileTap={{ scale: 0.93 }}
             className={cn(
-              'fixed max-md:bottom-6 right-5 z-50 rounded-full shadow-[0_4px_16px_rgba(0,0,0,0.14),0_1px_3px_rgba(0,0,0,0.08)]',
+              // Bottom only on phones; from small tablets (640) up it sits top-right.
+              'fixed max-sm:bottom-6 right-5 z-50 rounded-full shadow-[0_4px_16px_rgba(0,0,0,0.14),0_1px_3px_rgba(0,0,0,0.08)]',
               'transition-[top] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
-              (showBanner || showLinkBar) ? 'md:top-[68px]' : 'md:top-5',
+              (showBanner || showLinkBar) ? 'sm:top-5 md:top-[68px]' : 'sm:top-5',
             )}
           >
-            <SpinningAvatar className="max-md:size-[60px] md:size-12" />
+            <SpinningAvatar className="max-sm:size-[60px] sm:size-12" />
             {hasUnreadNotifications && (
               <span
                 aria-hidden
