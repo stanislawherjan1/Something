@@ -276,6 +276,20 @@ export default function ChatSessionDropdown({
           </li>
         ))}
       </ul>
+
+      {sessions.some(s => !s.archived) && !search && (
+        <>
+          <div className="my-1 border-t border-border/40" />
+          <button
+            type="button"
+            onClick={() => { onRequestDelete?.({ all: true }); onClose?.(); }}
+            className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px] text-muted-foreground/80 transition-colors hover:bg-red-500/10 hover:text-red-600"
+          >
+            <Trash2 className="size-4 shrink-0" strokeWidth={1.75} />
+            <span className="flex-1">Clear all chats</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }

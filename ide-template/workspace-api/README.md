@@ -28,6 +28,7 @@ Web chat is **per-session**: each conversation is its own thread with its own Cl
 | `POST /api/chat/sessions` | Create a new empty session. Body `{ title? }`. |
 | `PATCH /api/chat/sessions/:id` | Rename / pin / archive. Body `{ title?, pinned?, archived? }`. |
 | `DELETE /api/chat/sessions/:id` | Archive-delete a session (transcript moved to `chats/archive/`). |
+| `DELETE /api/chat/sessions` | Archive-delete every session of the caller ("Clear all chats"). |
 | `GET /api/chat/history?sessionId=&before=&limit=` | Paged transcript for one session (newest-first window). |
 | `POST /api/chat/reset` | Writes a topic-break marker and clears the session's stored Claude id, so the next turn starts a fresh context. Body `{ sessionId? }`. |
 | `POST /api/chat/sessions/:id/stop` | SIGTERM the in-flight `claude` for that session. |

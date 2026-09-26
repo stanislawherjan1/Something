@@ -70,11 +70,20 @@ export default function ChatHeader({
     setPendingDelete(null);
     if (!target) return;
     try {
+      // "Clear all chats": every conversation goes, a fresh one takes its place.
+      if (target.all) {
+        const r = await fetch('/api/chat/sessions', { method: 'DELETE' });
+        if (!r.ok) return;
+        setRefreshNonce(n => n + 1);
+        await createNew();
+        return;
+      }
       const r = await fetch(`/api/chat/sessions/${target.id}`, { method: 'DELETE' });
       if (!r.ok) return;
       setRefreshNonce(n => n + 1);   // makes dropdown re-pull /api/chat/sessions
       if (target.id === activeSessionId) onSelectSession?.(null);
     } catch { /* surface via dropdown error path on its next refetch */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- createNew only calls onSelectSession
   }, [pendingDelete, activeSessionId, onSelectSession]);
 
   return (
@@ -165,12 +174,18 @@ export default function ChatHeader({
       <AlertDialog open={!!pendingDelete} onOpenChange={(v) => { if (!v) setPendingDelete(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete chat?</AlertDialogTitle>
+            <AlertDialogTitle>{pendingDelete?.all ? 'Clear all chats?' : 'Delete chat?'}</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-medium text-foreground/85">
-                {pendingDelete?.title || 'Untitled chat'}
-              </span>
-              {' '}will be archived. You can find it for 30 days before it's removed permanently.
+              {pendingDelete?.all ? (
+                <>All your chats will be archived. You can find them for 30 days before they're removed permanently.</>
+              ) : (
+                <>
+                  <span className="font-medium text-foreground/85">
+                    {pendingDelete?.title || 'Untitled chat'}
+                  </span>
+                  {' '}will be archived. You can find it for 30 days before it's removed permanently.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -179,7 +194,7 @@ export default function ChatHeader({
               onClick={confirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {pendingDelete?.all ? 'Clear all' : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
