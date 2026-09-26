@@ -325,14 +325,29 @@ NODE
 # fire_operator above, so the operator is skipped here to avoid a double-run.
 invoke_turn_teammates() {
     command -v curl >/dev/null 2>&1 || return 1
-    local recips="$1" wire="$2" slug json
+    local recips="$1" wire="$2" mode="${3:-1}" channel="${4:-all}" title="${5:-}" urgency="${6:-now}" slug json msg
     [ "$recips" = "*everyone*" ] && return 0   # planner triggers are per-slug; never mass-execute
+    # mode 2 (a duty the planner placed): wrap it in the same frame the operator's
+    # brain gets, so the reminder contract in global-claude.md applies — do the
+    # work first, then one message about the outcome, or nothing. The headless
+    # turn has no chat to answer into, so it is told that its final reply IS the
+    # message; wsapi delivers it (deliver: {…}) and drops a [[SILENT]] reply.
+    if [ "$mode" = "2" ]; then
+        local frame="REMINDER"
+        [ "$urgency" = "ambient" ] && frame="AMBIENT"
+        msg="[${frame} channel=${channel} | ${wire}]
+(You are running this in the background for the person it is for. Your final reply is delivered to them as your message, in their language, about the outcome only. If nothing is worth raising, reply exactly [[SILENT]] and nothing is sent.)"
+    else
+        msg="$wire"
+    fi
     IFS=',' read -ra _arr <<< "$recips"
     for slug in "${_arr[@]}"; do
         [ -z "$slug" ] && continue
         operator_in_set "$slug" && continue    # operator ran via fire_operator
-        json=$(ACTOR="$slug" MSG="$wire" node - << 'NODE'
-process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process.env.MSG }));
+        json=$(ACTOR="$slug" MSG="$msg" MODE="$mode" CH="$channel" TI="$title" node - << 'NODE'
+const body = { actor: process.env.ACTOR, message: process.env.MSG };
+body.deliver = process.env.MODE === '2' ? { channel: process.env.CH, title: process.env.TI } : undefined;
+process.stdout.write(JSON.stringify(body));
 NODE
 ) || continue
         curl -sS -m 8 -X POST "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" \
@@ -540,10 +555,14 @@ reminders = reminders.map(r => {
     // whitespace IFS like \t would collapse it). Flatten it (+ newlines/tabs)
     // out of every field so content can never inject a column break.
     const flat = (s) => String(s == null ? '' : s).replace(/[\n\t\x1f]+/g, ' ');
-    // 7th column `exec`: '1' marks an EXECUTION reminder (run the wire AS each
-    // teammate recipient via /internal/invoke-turn), vs '' = a delivery reminder
-    // (notify the recipient). Only reconcile-set per-user planner triggers set it.
-    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : ''}\x1f${flat(r.chat || '')}`);
+    // 7th column `exec`:
+    //   '1' = a per-user planner TRIGGER (reconcile sets `exec`): run the wire
+    //         as-is AS each teammate recipient via /internal/invoke-turn;
+    //   '2' = a reminder the PLANNER placed: an instruction for the bot to act
+    //         for that person, never text for them to read. Run it as them and
+    //         deliver only the outcome (or nothing, if nothing is worth saying);
+    //   ''  = a plain reminder the user asked for: notify the recipient.
+    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : (r.origin === 'planner' ? '2' : '')}\x1f${flat(r.chat || '')}`);
     changed = true;
 
     // CLAIM it — do NOT advance or delete yet. The record used to be consumed
@@ -644,10 +663,11 @@ NODEEOF
                 delivered=$?
                 log_fire "$delivered" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
             fi
-            if [ "$exec" = "1" ]; then
-                # EXECUTION reminder (per-user planner): run the wire AS each
-                # teammate recipient in their own scope, not the operator brain.
-                invoke_turn_teammates "$recipients" "$wire"
+            if [ -n "$exec" ]; then
+                # EXECUTION reminder (a planner trigger, or a duty the planner
+                # placed): run it AS each teammate recipient in their own scope,
+                # not the operator brain — and never relay its text to them.
+                invoke_turn_teammates "$recipients" "$wire" "$exec" "$channel" "$title" "$urgency"
                 delivered=$?
                 log_fire "$delivered" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
             else

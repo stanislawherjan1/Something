@@ -401,6 +401,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: `Reminder NOT set: ${rr.error}.` }], isError: true };
     }
     const recurrence = rr.recur; // canonical recur object, or null for one-shot
+
+    // A one-shot in the past fires the moment it is written. That is how a
+    // morning plan landed as nine notifications in one minute: the planner put
+    // "07:15" on the UTC calendar date while it was already the next day where
+    // the team lives, so every item was sixteen hours overdue on arrival. Refuse
+    // it and say what time it actually is, so the caller fixes the date in the
+    // same turn instead of the person getting a burst of stale items.
+    const PAST_GRACE_MS = 5 * 60_000;
+    if (!recurrence && dueDate.getTime() < Date.now() - PAST_GRACE_MS) {
+      const tz = (process.env.IDE_TIMEZONE || '').trim();
+      let local = '';
+      if (tz) {
+        try {
+          local = ` — ${new Intl.DateTimeFormat('en-GB', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' }).format(new Date())} in ${tz}`;
+        } catch { /* unknown zone: UTC alone is still correct */ }
+      }
+      return {
+        content: [{
+          type: 'text',
+          text: `Reminder NOT set: due ${dueDate.toISOString()} is in the past. It is now ${new Date().toISOString()}${local}. `
+            + 'Place it at a future time: take the local time on the person\'s CURRENT local date, then convert to UTC.',
+        }],
+        isError: true,
+      };
+    }
     // First fire: interval honors the explicit `due`; weekly/monthly snap to
     // the next matching slot so the first ping lands on a real occurrence.
     const firstDueMs = recur.computeFirstDue(recurrence, dueDate.getTime(), Date.now());

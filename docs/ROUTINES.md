@@ -100,12 +100,14 @@ own reminders and system rituals are never touched.
 ## Reminders
 
 Stored in `~/project/.reminders.json`, written by `apps/reminder-mcp` (`set_reminder`,
-`list_reminders`, `cancel_reminder`) and by the Reminders panel (cancel only).
+`list_reminders`, `cancel_reminder`) and by the Reminders panel (cancel only). The panel
+lists active reminders only; `sent` / `dead` records stay in the file for 30 days as
+history.
 
 | Field | Meaning |
 |---|---|
 | `title`, `description` | What to do |
-| `due` | Next fire time (ISO, UTC) |
+| `due` | Next fire time (ISO, UTC). A one-shot more than 5 minutes in the past is refused by `set_reminder`, with the current time in the workspace timezone, so a plan placed on the wrong date is fixed instead of firing all at once |
 | `recur` | `interval` (every N minutes/hours/days/weeks), `weekly` (days + time), `monthly` (day or `last` + time); optional `until` / `count` / `skip_hours` / `skip_days`. Times are **UTC** |
 | `urgency` | `now` (default) or `ambient` — a soft item woven into conversation at a natural opening |
 | `channel` | `telegram`, `web` or `all` |
@@ -129,8 +131,9 @@ Stored in `~/project/.reminders.json`, written by `apps/reminder-mcp` (`set_remi
 |---|---|
 | Targets a Telegram group (`chat`) | `/api/internal/group-say` — the group assistant composes it |
 | Solo, or for the operator | `[REMINDER …]` / `[AMBIENT …]` frame into the operator's session; if that session is busy or offline, a headless turn |
-| A teammate's planner trigger (`exec`) | `/api/internal/invoke-turn` — runs as that teammate |
-| Other teammate reminders | `/api/internal/reminder-deliver` — a notification with the stored text |
+| A teammate's planner trigger (`exec`) | `/api/internal/invoke-turn` — runs the planner as that teammate |
+| A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram per `channel`); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |
+| A plain reminder a user asked for ("remind me at 3…") | `/api/internal/reminder-deliver` — a notification with the stored text |
 
 A reminder is consumed only once delivery is confirmed; failures retry with backoff
 (1/2/4/8 min) and, after five attempts, are marked dead and reported to the operator
@@ -149,8 +152,6 @@ result, not the finding).
 
 Tracked for the next iteration of this system:
 
-- Planner reminders addressed to a teammate are delivered as text by
-  `reminder-deliver` rather than executed by the assistant.
 - The planner's replace step cancels its previous reminders before placing new ones; a
   run interrupted in between leaves the day without them.
 - Recurrence is UTC-only, so a fixed local time drifts by an hour at DST changes.

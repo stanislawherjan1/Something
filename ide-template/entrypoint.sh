@@ -294,6 +294,7 @@ d['mcpServers']['reminders'] = {
     'args': ['/opt/ide/apps/reminder-mcp/index.js'],
     'env': {
         'REMINDERS_FILE': '/home/coder/project/.reminders.json',
+        'IDE_TIMEZONE': os.environ.get('IDE_TIMEZONE') or 'UTC',
     },
 }
 # Workspace-API MCP — always-on recent_messages / memory_grep / team tools.
@@ -1580,6 +1581,7 @@ managed['reminders'] = {
     'args': ['/opt/ide/apps/reminder-mcp/index.js'],
     'env': {
         'REMINDERS_FILE': '/home/coder/project/.reminders.json',
+        'IDE_TIMEZONE': os.environ.get('IDE_TIMEZONE') or 'UTC',
     }
 }
 

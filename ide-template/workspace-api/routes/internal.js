@@ -24,6 +24,7 @@ import { sweepIdle } from '../lib/memory-sweep.js';
 import { runClaudeTurn } from '../lib/claude.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
+import { resolve as resolveBranding } from '../lib/branding.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -51,6 +52,58 @@ function findPairedSession(recipientSlug, senderSlug) {
 // a later team-mode phase), so it surfaces in the primary admin's chat history
 // — the operator who'd act on it. Resolved per request so it tracks the current
 // admin. (Matches the per-user actor keying in routes/chat.js.)
+
+// Deliver the final reply of an executed reminder run to the person it ran for
+// (see /internal/invoke-turn). The message is the bot's own words, so it is
+// sent as-is — never wrapped in the reminder's title or instruction text.
+const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
+async function deliverRunOutcome(member, deliver, reply, sentItself) {
+  const text = String(reply || '').trim();
+  if (sentItself) {
+    process.stderr.write(`[invoke-turn] ${member.slug}: outcome sent by the model itself\n`);
+    return;
+  }
+  if (!text || SILENT_RE.test(text)) {
+    process.stderr.write(`[invoke-turn] ${member.slug}: nothing to report (silent)\n`);
+    return;
+  }
+  const channel = ['telegram', 'web', 'all'].includes(deliver.channel) ? deliver.channel : 'all';
+  const botName = resolveBranding().botName;
+  const title = String(deliver.title || botName).trim().slice(0, 120) || botName;
+
+  // The web thread is the record and the place to answer from.
+  const sessionId = createSession(member.slug, { title }).id;
+
+  let tgSent = false;
+  let tgMessageId = null;
+  const prefersTg = member.preferredSurface === 'telegram' || member.preferredSurface === 'both';
+  if (member.telegramChatId && (channel === 'telegram' || (channel === 'all' && prefersTg))) {
+    try {
+      const r = await sendTelegramMessage(member.telegramChatId, text);
+      tgSent = !!(r && r.ok);
+      tgMessageId = (r && r.messageId != null) ? String(r.messageId) : null;
+    } catch (err) {
+      process.stderr.write(`[invoke-turn] ${member.slug}: telegram leg failed: ${err.message}\n`);
+    }
+  }
+  const webToast = channel !== 'telegram' || !tgSent;
+
+  appendToSession(member.slug, sessionId, {
+    role: 'assistant', text, kind: 'bot',
+    delivery: {
+      channel: tgSent ? (webToast ? 'both' : 'telegram') : 'web',
+      tgChatId: tgSent ? String(member.telegramChatId) : null,
+      tgMessageId,
+      relayDepth: 0,
+      framedToBrain: false,
+      at: new Date().toISOString(),
+    },
+  });
+  if (webToast) {
+    publishNotification({ kind: 'bot', title: botName, body: text, meta: { session_id: sessionId }, recipient: member.slug });
+  }
+  process.stderr.write(`[invoke-turn] ${member.slug}: outcome delivered (web${tgSent ? '+telegram' : ''})\n`);
+}
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -225,8 +278,16 @@ export default function internalRouter() {
   // sets reminders as its side effect) and we return 202 at once so the caller
   // (a 60s bash poll) never blocks. Least-privilege: actorIsAdmin is always false
   // — a planner run is single-person and needs no admin reach.
+  //
+  // `deliver` ({ channel, title }) marks a run whose OUTCOME is for the person:
+  // a planner reminder executed on their behalf ("check the inbox, flag what
+  // matters"). A headless turn has no conversation to answer into, so its final
+  // reply text is delivered to them here — a thread in their chat (so they can
+  // answer it), plus Telegram per `channel`. An empty reply or `[[SILENT]]` sends
+  // nothing, which is the normal outcome of a check that found nothing. If the
+  // model already messaged them itself (web_send_message), nothing is re-sent.
   router.post('/internal/invoke-turn', loopbackOnly, (req, res) => {
-    const { actor, message } = req.body || {};
+    const { actor, message, deliver } = req.body || {};
     try {
       if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
       if (typeof message !== 'string' || !message.trim()) {
@@ -234,14 +295,26 @@ export default function internalRouter() {
       }
       const m = resolveMember(actor);
       if (!m) return res.status(400).json({ ok: false, error: 'unknown actor' });
+      const wantDeliver = !!(deliver && typeof deliver === 'object');
+      let reply = '';
+      let sentItself = false;
       runClaudeTurn({
         message: message.trim(),
         actor: m.slug,
         actorName: m.displayName || m.slug,
         actorIsAdmin: false,
-        onText: () => {}, onToolStart: () => {}, onToolEnd: () => {}, onImage: () => {},
+        onText: (t) => { if (wantDeliver) reply += t; },
+        onToolStart: (info) => {
+          if (wantDeliver && /web_send_message/.test(String(info?.name || ''))) sentItself = true;
+        },
+        onToolEnd: () => {}, onImage: () => {},
         onError: (e) => process.stderr.write(`[invoke-turn] ${m.slug}: ${String(e).slice(0, 200)}\n`),
-        onDone: () => process.stderr.write(`[invoke-turn] ${m.slug}: done\n`),
+        onDone: () => {
+          process.stderr.write(`[invoke-turn] ${m.slug}: done\n`);
+          if (!wantDeliver) return;
+          deliverRunOutcome(m, deliver, reply, sentItself).catch((err) =>
+            process.stderr.write(`[invoke-turn] ${m.slug}: delivery failed: ${err.message}\n`));
+        },
       });
       return res.status(202).json({ ok: true, started: m.slug });
     } catch (err) {

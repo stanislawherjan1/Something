@@ -115,7 +115,13 @@ export default function remindersRouter() {
     try {
       const me = actorSlug(req);
       const admin = isAdmin(req);
-      const reminders = readReminders().filter(r => concernsMe(r, me, admin));
+      // `sent` / `dead` records are tombstones the monitor keeps for 30 days so
+      // a repeat can't double-fire and a failure stays inspectable in the file.
+      // They are history, not reminders: listing them showed long-done items as
+      // "2 days ago", as if they were still hanging.
+      const reminders = readReminders()
+        .filter(r => r.status !== 'sent' && r.status !== 'dead')
+        .filter(r => concernsMe(r, me, admin));
       // slug → { name, avatar } for the recipient avatars in the UI.
       const people = {};
       if (getTeamMode()) for (const m of teamList()) {
