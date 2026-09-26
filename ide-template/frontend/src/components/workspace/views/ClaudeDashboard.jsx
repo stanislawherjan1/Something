@@ -537,7 +537,7 @@ function BotModal({ branding, onClose, canEdit = true }) {
             <span className={labelCls}>Name</span>
             <input type="text" value={botName}
               onChange={(e) => setBotName(e.target.value.replace(/[^a-zA-Z0-9 _-]/g, ''))}
-              placeholder="aria · max · luna" spellCheck={false} autoComplete="off"
+              placeholder="ava · max · sol" spellCheck={false} autoComplete="off"
               className={inputCls} />
           </label>
 
