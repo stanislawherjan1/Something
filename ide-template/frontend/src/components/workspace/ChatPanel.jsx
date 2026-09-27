@@ -1060,6 +1060,19 @@ const MD_COMPONENTS = {
     ) : (
       <code className="text-foreground">{children}</code>
     ),
+  // Tables had no overrides either: with no cell padding or rules the columns
+  // ran together ("74 złRyanair17:05"). Scroll sideways inside the bubble when
+  // wide; numbers line up.
+  table: ({ children }) => (
+    <div className="my-2 max-w-full overflow-x-auto">
+      <table className="w-max min-w-full border-collapse text-[13px] leading-[1.45] tabular-nums">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead>{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => <tr className="border-b border-border/50 last:border-b-0">{children}</tr>,
+  th: ({ children, style }) => <th style={style} className="whitespace-nowrap border-b border-border px-2.5 py-1.5 text-left font-semibold text-foreground/85 first:pl-0">{children}</th>,
+  td: ({ children, style }) => <td style={style} className="px-2.5 py-1.5 align-top first:pl-0">{children}</td>,
   a: ({ href, children }) => (
     <a
       href={href}
