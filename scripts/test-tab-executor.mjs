@@ -11,7 +11,7 @@
 //   CHROME=/path/to/chrome node scripts/test-tab-executor.mjs
 //
 // Local only (needs a Chrome binary); not part of CI.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,6 +19,17 @@ import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// First, the reference check `node --check` cannot do: a call to a function
+// that was never defined breaks at runtime only. eslint no-undef catches it.
+{
+  const eslint = join(ROOT, 'ide-template/frontend/node_modules/.bin/eslint');
+  if (existsSync(eslint)) {
+    const r = spawnSync(eslint, ['-c', join(ROOT, 'scripts/extension-lint.config.mjs'), join(ROOT, 'chrome-extension')], { encoding: 'utf8' });
+    if (r.status !== 0) { console.log(r.stdout || r.stderr); console.log('FAIL extension lint (no-undef)'); process.exit(1); }
+    console.log('ok   extension lint (no-undef)');
+  }
+}
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 if (!existsSync(CHROME)) { console.log(`skip: no Chrome at ${CHROME}`); process.exit(0); }
 

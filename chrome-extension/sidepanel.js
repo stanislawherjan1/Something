@@ -438,6 +438,16 @@ async function observe(tab) {
   return state;
 }
 
+// The tab's previous history entry, when it is on the same site — the only
+// "back" on offer (go_back in the observation). Another site's page never is.
+async function previousEntry(tab) {
+  try {
+    const h = await cdp('Page.getNavigationHistory');
+    const prev = h.entries?.[h.currentIndex - 1];
+    return prev && siteOf(prev.url) === siteOf(tab.url) ? prev : null;
+  } catch { return null; }
+}
+
 // After an action the page may be navigating: keep trying for a moment
 // (upstream retries a stale read; a navigation needs longer), then give up.
 const OBSERVE_TRIES = 50, OBSERVE_GAP_MS = 50;
