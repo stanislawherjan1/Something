@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Check, ChevronRight,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
-  Sparkles, ListChecks, Eye, MousePointerClick,
+  Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -72,6 +72,11 @@ const TOOL_DISPLAY = {
   Grep:      { label: 'Searching files',    Icon: Search },
   Glob:      { label: 'Finding files',      Icon: Search },
   Bash:      { label: 'Running a command',  Icon: Terminal },
+
+  // Claude Code's own plumbing: loading a tool's definition, a skill, its to-do list.
+  ToolSearch: { label: 'Getting a tool ready', Icon: Wrench },
+  Skill:      { label: 'Using a skill',        Icon: BookOpen },
+  TodoWrite:  { label: 'Planning the steps',   Icon: ListChecks },
 };
 
 const LOGO_BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') + '/integrations/';
