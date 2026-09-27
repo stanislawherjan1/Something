@@ -163,8 +163,15 @@ export default function tabRouter() {
     for (const s of streams) { try { s.write(frame); } catch { /* closed */ } }
     // Audit trail: every command, who it was for, what it targeted.
     process.stderr.write(`[tab] ${slug}: ${command.op}${command.target ? ' ' + command.target : ''}${command.text != null ? ` (${String(command.text).length} chars)` : ''}\n`);
+    // Round trip = relay + the extension's own work; the extension reports the
+    // latter in `timing`, so the log shows where a slow step spent its time.
+    const sentAt = Date.now();
     done.then((r) => {
-      if (r.ok && r.result?.audit) process.stderr.write(`[tab] ${slug}: ${r.result.audit}\n`);
+      const ms = Date.now() - sentAt;
+      const t = r.result?.timing;
+      const relay = t ? ` relay ${ms - (t.executeMs || 0) - (t.observeMs || 0)} ms` : '';
+      if (r.ok) process.stderr.write(`[tab] ${slug}: ${r.result?.audit || command.op} — ${ms} ms${relay}\n`);
+      else process.stderr.write(`[tab] ${slug}: ${command.op} failed — ${ms} ms: ${String(r.error).slice(0, 120)}\n`);
       res.json(r);
     });
   });

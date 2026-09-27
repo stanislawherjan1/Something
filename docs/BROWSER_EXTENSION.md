@@ -131,8 +131,16 @@ A switch above the input, off by default. Once the user switches it on it stays 
 they work — across pages, tabs and closing and reopening the panel — and the assistant can
 click, type, select and scroll **on the tab the user is looking at**, using three tools: `tab_snapshot` (the page's visible text and a numbered list
 of its controls — snapshot logic from browser-use/jev-ultrafast, MIT, in
-`chrome-extension/vendor/`), `tab_act` (one action on a control id from the latest
-snapshot) and `tab_screenshot`.
+`chrome-extension/vendor/`), `tab_act` (one action on a control id from the page last seen; it
+returns the page as it is right after the action, so the next step needs no separate snapshot)
+and `tab_screenshot`.
+
+Each action runs jev-ultrafast's executor rules: the target must be the observed element, still
+attached, enabled, visible, on screen and not covered, on a page whose freshness guard still
+matches. Afterwards the extension waits only as long as upstream does — two animation frames or
+50 ms, up to 200 ms for an editable combobox's suggestions to appear — and observes again,
+retrying for up to 2.5 s while a navigation settles. The `[tab]` log line of every command shows
+its round trip and how much of it was the relay (`… — 640 ms relay 120 ms`).
 
 ```
 assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback, needs the turn's token)
