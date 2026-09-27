@@ -1061,7 +1061,7 @@ const MD_COMPONENTS = {
       <code className="text-foreground">{children}</code>
     ),
   // Tables had no overrides either: with no cell padding or rules the columns
-  // ran together ("74 złRyanair17:05"). Scroll sideways inside the bubble when
+  // ran together ("74 PLNRyanair17:05"). Scroll sideways inside the bubble when
   // wide; numbers line up.
   table: ({ children }) => (
     <div className="my-2 max-w-full overflow-x-auto">

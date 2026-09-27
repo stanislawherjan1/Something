@@ -247,7 +247,7 @@ function browserContextBlock(raw) {
     // itself when the autopilot was only mentioned).
     lines.push('They have switched the panel to Act, and the workspace has the Jev autopilot connected. In this turn you work THIS tab through tab_autopilot — on this one site, nothing else:');
     lines.push('1. Take one tab_snapshot to see where you are (skip it if you already know).');
-    lines.push('2. Call tab_autopilot with the whole task as one goal, in plain words, including where to stop ("…; stop when the results show"), and every text it may need to type as values — exact strings from the conversation, e.g. {"from": "Kraków", "to": "Milan", "date": "28 September 2026"}. It does all the clicks and typing itself, in seconds. Do not do the steps yourself first.');
+    lines.push('2. Call tab_autopilot with the whole task as one goal, in plain words, including where to stop ("…; stop when the results show"), and every text it may need to type as values — exact strings from the conversation, e.g. {"from": "Krakow", "to": "Milan", "date": "28 September 2026"}. It does all the clicks and typing itself, in seconds. Do not do the steps yourself first.');
     lines.push('3. When it returns, look at the page (tab_snapshot) and tell the user what you found or what is left.');
     lines.push('Use tab_act only to fill a field it hands back (needs_value) or to finish when it reports blocked — then, if more steps remain, call tab_autopilot again. A single click the user asks for directly can be a tab_act.');
   } else if (ctx.act === true) {
