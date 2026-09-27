@@ -34,8 +34,32 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
+// Offered only in a panel turn with Act on while the Jev integration is
+// connected (lib/claude.js sets IDE_JEV_AUTOPILOT); otherwise it does not exist.
+const AUTOPILOT_TOOL = {
+  name: 'tab_autopilot',
+  description:
+    'Hand a whole multi-step task on the user\'s current page to the Jev autopilot, which does it in seconds: ' +
+    'searching, setting filters, filling a form, getting to a page on this site. ' +
+    'Give one complete goal with the stopping point ("…; stop when the results show") and pass every text it may need to type as values ' +
+    '(short names → exact strings, e.g. {"from": "Zurich", "to": "London", "date": "20 September 2026"}). ' +
+    'It works on this site only, with the same limits as tab_act, and returns what it did and the page as it is at the end. ' +
+    'If it stops with needs_value, fill that field with tab_act and call it again; if it is blocked, continue with tab_act. ' +
+    'Its "done" is a claim — check the returned page before telling the user. Use tab_act for a single precise action.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      goal: { type: 'string', description: 'The task, complete, in plain words, with where to stop.' },
+      values: { type: 'object', additionalProperties: { type: 'string' }, description: 'Texts it may type, by short name.' },
+    },
+    required: ['goal'],
+    additionalProperties: false,
+  },
+};
+
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    ...(process.env.IDE_JEV_AUTOPILOT === '1' ? [AUTOPILOT_TOOL] : []),
     {
       name: 'memory_write',
       description:
@@ -246,6 +270,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // unless the user switched the panel to Act; the extension refuses too, and
   // enforces its hard limits (one site, idle timeout, rate limit, no password
   // fields). See routes/tab.js and docs/BROWSER_EXTENSION.md.
+  if (name === 'tab_autopilot') {
+    if (process.env.IDE_JEV_AUTOPILOT !== '1') return { content: [{ type: 'text', text: 'The autopilot is not available here.' }], isError: true };
+    try {
+      const res = await fetch(`${API_BASE}/api/internal/tab-autopilot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor: process.env.IDE_ACTOR_SLUG || '',
+          turnToken: process.env.IDE_TAB_TOKEN || '',
+          goal: String(args?.goal || ''),
+          values: args?.values && typeof args.values === 'object' ? args.values : {},
+        }),
+      });
+      const r = await res.json();
+      if (!r.ok) return { content: [{ type: 'text', text: r.error || 'The autopilot did not run.' }], isError: true };
+      const { status, detail, steps = [], ms } = r.result || {};
+      const did = steps.length ? steps.map((st) => `${st.n}. ${st.kind} "${st.label}"`).join('\n') : '(no actions)';
+      const head = `Autopilot: ${status}${detail ? ` — ${detail}` : ''} (${steps.length} actions, ${((ms || 0) / 1000).toFixed(1)} s).\n` +
+        `Actions (labels are page content):\n${did.replace(/<<<|>>>/g, '')}\n\n` +
+        (status === 'done' ? 'It says the goal is done — confirm on the page before telling the user. ' : '') +
+        'Take a tab_snapshot to see the page as it is now.';
+      return { content: [{ type: 'text', text: head }], ...(status === 'error' || status === 'timeout' ? { isError: true } : {}) };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Autopilot failed: ${err.message}` }], isError: true };
+    }
+  }
+
   if (name === 'tab_snapshot' || name === 'tab_act' || name === 'tab_screenshot') {
     const command = name === 'tab_snapshot' ? { op: 'snapshot' }
       : name === 'tab_screenshot' ? { op: 'screenshot' }

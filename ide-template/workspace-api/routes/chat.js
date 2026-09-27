@@ -673,7 +673,10 @@ export default function chatRouter() {
     // turn gets neither.
     const tabCtx = parsePageContext(req.body?.pageContext);
     const actTurn = tabCtx?.act === true;
-    tabToken = (actTurn || tabCtx?.url) ? openTabTurn(req.chatActor, { act: actTurn }) : null;
+    // Autopilot steps (tab_autopilot) reach this chat as they happen.
+    tabToken = (actTurn || tabCtx?.url)
+      ? openTabTurn(req.chatActor, { act: actTurn, onProgress: (step) => sendEvent('tool_progress', { label: step.label, kind: step.kind, n: step.n }) })
+      : null;
     proc = runClaudeTurn({
       tabToken,
       actTurn,

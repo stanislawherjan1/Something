@@ -622,6 +622,7 @@ async function actOnce(targetId, text) {
   return {
     done: `${action.kind} ${action.id} (${action.label})`,
     page: state ? forModel(state) : null,
+    state,   // raw observation, for the Jev autopilot (runCommand drops it otherwise)
     ...(state ? {} : { note: 'The page is still loading. Take a tab_snapshot in a moment.' }),
     timing: { executeMs, observeMs },
     audit: `${action.kind} "${String(action.label).slice(0, 80)}" on ${tab.url}${action.kind === 'fill' ? ` (${text.length} chars)` : ''} [${executeMs}+${observeMs} ms]`,
@@ -668,9 +669,21 @@ async function tabAct(targetId, text, steps) {
   return { ...last, done: done.join('; '), audit: `${done.length} steps: ${last.audit}` };
 }
 
-async function runCommand({ op, target, text, steps }) {
+// `raw` commands come from the Jev autopilot (workspace-api/lib/jev): it needs
+// the observation as jev-ultrafast's snapshot returns it, not the assistant's
+// readable form. Same checks either way — observing for it needs Act on.
+async function runCommand({ op, target, text, steps, raw }) {
   if (op === 'snapshot') return tabSnapshot();
-  if (op === 'act') return tabAct(target, text, steps);
+  if (op === 'observe') {
+    const tab = await guard();
+    const state = await observeSettled(tab);
+    if (!state) throw new Error('The page is still loading.');
+    return { state, audit: `observe ${tab.url}` };
+  }
+  if (op === 'act') {
+    const { state, ...rest } = await tabAct(target, text, steps);
+    return raw ? { done: rest.done, stopped: rest.stopped, state, timing: rest.timing, audit: rest.audit } : rest;
+  }
   if (op === 'screenshot') return tabScreenshot();
   throw new Error(`Unknown command "${op}".`);
 }

@@ -173,6 +173,38 @@ Page text is framed as data both in the prompt and in every snapshot, and the as
 told to work only toward what the user asked and to stop and ask when a page asks for
 something else. That is the soft layer; the table above is what holds if it fails.
 
+## Autopilot — Jev (optional, experimental)
+
+With the **Jev (TypeSafe)** integration connected — on the Browser agent page, Install tab
+(it is not offered in the Integrations marketplace; once active it is listed there with a link
+back) — a panel turn with Act on also gets `tab_autopilot`: the assistant hands over one
+complete goal plus the values to type (`{"from": "Zurich", …}`), and Jev runs the steps.
+
+```
+tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback, turn token, Act on, Jev connected)
+  → lib/jev/autopilot.js spawns lib/jev/runner.py (python3; the TypeSafe key only in its env)
+  → runner: observe → jev_ultrafast.model.choose (TypeSafe picks operation + target) → act → observe …
+  → every observe / act goes through routes/tab.js sendTabCommand → the panel → the extension's executor
+  → steps stream into the chat's tool line ("Autopilot · Clicking "Search"") → result back to the tool
+```
+
+- **The library, as a library.** `runner.py` imports jev-ultrafast's `model` and `questions`
+  unmodified from the commit deploy.sh fetches into the image (`/opt/jev-ultrafast`, pinned with
+  `scripts/vendor-jev.sh`), not its browser driver; the loop mirrors upstream's `Agent` tick.
+- **Values, not a second model.** When Jev picks a text field, one more TypeSafe choice picks
+  which of the given values fits it; none fits → the run stops with `needs_value` and the
+  assistant fills that field itself. No text-model provider is involved.
+- **Same limits.** Every action is an ordinary `act` command — the table above applies step by
+  step. Switching Act off fails the next command at once, ending the run. Bounds: 30 actions, 60
+  decisions, 90 s; three actions in a row that change nothing stop it as blocked.
+- **Data.** While it runs, the goal, the values, the page's visible text and control labels and
+  values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
+  in the egress allow-list only while the integration is active).
+- **Only here.** The tool exists only in a panel turn with Act on while Jev is connected
+  (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
+- `lib/jev/runner_test.py` runs the loop on the real library with a fake TypeSafe and a fake tab;
+  `scripts/test-tab-executor.mjs` runs the extension's page-side code on a real Chrome.
+
 ## Files
 
 | Path | What |
@@ -181,8 +213,10 @@ something else. That is the soft layer; the table above is what holds if it fail
 | `chrome-extension/background.js` | Opens the panel on toolbar click |
 | `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in, the Act executor and its limits |
 | `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
-| `ide-template/workspace-api/routes/tab.js` | The relay, Act mode, one-turn tokens, audit log |
-| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` |
+| `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, the autopilot route, audit log |
+| `ide-template/workspace-api/lib/jev/` | The Jev autopilot: `autopilot.js` (bridge) and `runner.py` (jev-ultrafast's policy + our executor) |
+| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot`, `tab_autopilot` (only with Jev) |
+| `ide-template/frontend/src/components/workspace/views/BrowserAgentView.jsx` | The Browser agent page: Overview / Install, the Jev card |
 | `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and the Act switch |
 | `ide-template/frontend/src/lib/extensionEmbed.js` | Embed detection |
 | `ide-template/frontend/src/components/workspace/ChatPanel.jsx`, `ChatPane.jsx` | Optional `extraFields` / `composerAccessory` / `onTurnDone` (passed through `ChatPane`); `ide:chat-attach` / `ide:chat-send` events |

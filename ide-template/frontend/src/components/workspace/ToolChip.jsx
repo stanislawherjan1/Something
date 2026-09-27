@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Check, ChevronRight,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
-  Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen,
+  Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen, Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +60,7 @@ const TOOL_DISPLAY = {
   'mcp__workspace-api__tab_screenshot': { label: 'Looking at the tab',  Icon: Eye },
   'mcp__workspace-api__tab_snapshot':   { label: 'Reading the page',    Icon: Eye },
   'mcp__workspace-api__tab_act':        { label: 'Working in the tab',  Icon: MousePointerClick },
+  'mcp__workspace-api__tab_autopilot':  { label: 'Autopilot',           Icon: Zap },
 
   'mcp__seedream__generate':         { label: 'Creating an image',    Icon: ImageIcon },
   'mcp__nano_banana__generate':      { label: 'Creating an image',    Icon: ImageIcon },
@@ -143,9 +144,16 @@ export function toolSegments(text, tools) {
   return out;
 }
 
+// Verbs for the autopilot's own steps (the kind of each action it takes).
+const STEP_VERB = { click: 'Clicking', fill: 'Typing into', select: 'Choosing', scroll: 'Scrolling', wait: 'Waiting' };
+
 function StepLabel({ tool, live }) {
   const { label } = displayFor(tool.name);
-  return <span className={cn(live && tool.ok == null && 'shimmer-text')}>{label}</span>;
+  // While the autopilot runs, its line reads "Autopilot · Clicking "Search"".
+  const step = live && tool.ok == null && tool.progress
+    ? ` · ${STEP_VERB[tool.progress.kind] || 'Working on'} “${String(tool.progress.label).slice(0, 60)}”`
+    : '';
+  return <span className={cn(live && tool.ok == null && 'shimmer-text')}>{label}{step}</span>;
 }
 
 // The current action, replaced in place as the next one starts.
@@ -156,7 +164,7 @@ export function ToolLine({ tools, still = false }) {
   return (
     <div className="relative h-[22px] overflow-hidden">
       <div
-        key={tool.id || `${tool.name}-${tools.length}`}
+        key={`${tool.id || `${tool.name}-${tools.length}`}-${tool.progress?.n ?? ''}`}   // each autopilot step rolls in too
         className={cn(
           'flex items-center gap-1.5 whitespace-nowrap text-[12.5px] leading-[22px]',
           !still && 'animate-[tool-roll-in_0.2s_ease-out_both]',

@@ -68,6 +68,7 @@ provider-side app the operator provisions; those steps are documented below.
 | **Email (IMAP)** | Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by default |
 | **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation) |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
+| **Jev (TypeSafe)** — experimental | Autopilot for the Chrome side panel's Act: multi-step tasks on the page in seconds. Set up on the Browser agent page, not in the marketplace ([BROWSER_EXTENSION.md](BROWSER_EXTENSION.md#autopilot--jev-optional-experimental)) |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
 | **Substack** | Read posts, archives, authors, Notes, comments (no credentials); optional sign-in unlocks drafting, editing, images, publishing/scheduling and Notes — publishing off by default |
 | **X (twitterapi.io)** | Read tweets, profiles, replies, followers, mentions |
@@ -217,6 +218,9 @@ Each catalog entry declares:
 | `comingSoon` | Marks the entry as visible-but-disabled in the dashboard. |
 | `unavailable` | Reason code for an entry the provider currently blocks (e.g. `"provider-restricted"` on Canva). A marker only — the dashboard does not read it yet, so the `description` must explain why activation will fail. |
 | `process` | `'telegram-bot'` for the long-running PM2 case — triggers `pm2 restart` on activate/remove. |
+| `home` | Where the integration is set up when that is not the marketplace — `"browser-agent"` (Jev): the marketplace does not offer it, and lists it under Active with a link there once connected. |
+| `experimental` | Shows a neutral **Experimental** tag (quieter than Beta). |
+| `logoFill` | The logo is a full square icon with its own background: it covers the logo tile instead of sitting on white. |
 
 ### Field types
 

@@ -422,6 +422,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         else if (event === 'image')      appendImageToLastAssistant(data);
         else if (event === 'tool_start') addChip(data);
         else if (event === 'tool_end')   completeChip(data);
+        else if (event === 'tool_progress') progressChip(data);
         else if (event === 'done')       markLastAssistant({ state: 'done' });
         else if (event === 'error')      markLastAssistant({ state: 'error', errorKind: 'stream', errorDetail: data.error });
       };
@@ -547,6 +548,19 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       if (last?.role !== 'assistant' || (last.tools || []).some(t => t.id === id)) return prev;
       const next = [...prev];
       next[next.length - 1] = { ...last, tools: [...(last.tools || []), { id, name, at: last.text.length, ok: null }] };
+      return next;
+    });
+  }
+
+  // A step inside a running tool (the Jev autopilot): shown on its line.
+  function progressChip({ label, kind, n }) {
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      const tools = last?.role === 'assistant' ? last.tools || [] : [];
+      const i = tools.map(t => t.ok).lastIndexOf(null);
+      if (i < 0) return prev;
+      const next = [...prev];
+      next[next.length - 1] = { ...last, tools: tools.map((t, j) => j === i ? { ...t, progress: { label, kind, n } } : t) };
       return next;
     });
   }

@@ -220,6 +220,12 @@ RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
     weasyprint \
     markdown
 
+# Jev autopilot (workspace-api/lib/jev): jev-ultrafast's policy code, fetched at
+# a pinned commit by deploy.sh into jev-src/. Only its model + questions modules
+# are loaded (not its own browser driver), so the one dependency is httpx.
+COPY jev-src /opt/jev-ultrafast
+RUN pip install --no-cache-dir --break-system-packages "httpx[http2]>=0.28,<1"
+
 # === LAYER 2d: Custom MCP servers (shopify, meta, google-ads, seedream) ===
 # Shared helpers used by every MCP — google-oauth.js (token refresh) +
 # broker-client.js (credential fetch over UDS + global HTTPS_PROXY

@@ -142,8 +142,8 @@ export default function ExtensionChat() {
       let cmd;
       try { cmd = JSON.parse(ev.data); } catch { return; }
       // Looking is always allowed here; acting only while Act is on.
-      if (cmd.op === 'act' && !actRef.current) return answer(cmd.id, { ok: false, error: 'Act is off.' });
-      const r = await rpc('something:tab-command', { command: { op: cmd.op, target: cmd.target, text: cmd.text, steps: cmd.steps } }, 18000);
+      if ((cmd.op === 'act' || cmd.op === 'observe') && !actRef.current) return answer(cmd.id, { ok: false, error: 'Act is off.' });
+      const r = await rpc('something:tab-command', { command: { op: cmd.op, target: cmd.target, text: cmd.text, steps: cmd.steps, raw: cmd.raw } }, 18000);
       answer(cmd.id, r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error || 'failed' });
     });
     return () => es.close();
