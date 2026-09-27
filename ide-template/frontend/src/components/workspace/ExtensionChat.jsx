@@ -134,6 +134,9 @@ export default function ExtensionChat() {
   useEffect(() => {
     if (!session) return undefined;
     const es = new EventSource('/api/tab/stream', { withCredentials: true });
+    // Every (re)connection — e.g. after workspace-api restarted — tells the
+    // server where the switch is, since it forgets the mode when it restarts.
+    es.addEventListener('hello', () => reportMode(actRef.current ? 'act' : 'look'));
     const answer = (id, payload) => fetch('/api/tab/result', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

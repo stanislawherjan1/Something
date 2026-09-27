@@ -153,7 +153,7 @@ function StepLabel({ tool, live }) {
   const step = live && tool.ok == null && tool.progress
     ? ` · ${STEP_VERB[tool.progress.kind] || 'Working on'} “${String(tool.progress.label).slice(0, 60)}”`
     : '';
-  return <span className={cn(live && tool.ok == null && 'shimmer-text')}>{label}{step}</span>;
+  return <span className={cn('shrink-0 whitespace-nowrap', live && tool.ok == null && 'shimmer-text')}>{label}{step}</span>;
 }
 
 // The current action, replaced in place as the next one starts.
@@ -162,7 +162,7 @@ export function ToolLine({ tools, still = false }) {
   const { Icon, logo } = displayFor(tool.name);
   const failed = tool.ok === false;
   return (
-    <div className="relative h-[22px] overflow-hidden">
+    <div className="relative h-[22px] w-full min-w-0 overflow-hidden">
       <div
         key={`${tool.id || `${tool.name}-${tools.length}`}-${tool.progress?.n ?? ''}`}   // each autopilot step rolls in too
         className={cn(
@@ -174,7 +174,7 @@ export function ToolLine({ tools, still = false }) {
         <LeadingVisual logo={logo} Icon={Icon} muted={!failed} />
         <StepLabel tool={tool} live />
         {tool.ok === true && <Check className="size-3 shrink-0 opacity-70" strokeWidth={2.25} />}
-        {failed && <span className="truncate text-destructive/80">— {tool.error || 'failed'}</span>}
+        {failed && <span className="min-w-0 truncate text-destructive/80" title={tool.error || undefined}>— {tool.error || 'failed'}</span>}
       </div>
     </div>
   );
@@ -185,7 +185,7 @@ export function ToolSummary({ tools, animate = false }) {
   const [open, setOpen] = useState(false);
   const failed = tools.filter(t => t.ok === false).length;
   return (
-    <div className={cn('flex flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.17s_both]')}>
+    <div className={cn('flex w-full min-w-0 flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.17s_both]')}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -196,7 +196,7 @@ export function ToolSummary({ tools, animate = false }) {
         <span>Used {tools.length} {tools.length === 1 ? 'tool' : 'tools'}</span>
         {failed > 0 && <><span>·</span><span className="text-destructive">{failed} failed</span></>}
       </button>
-      <div className={cn('grid transition-[grid-template-rows] duration-200 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+      <div className={cn('grid w-full transition-[grid-template-rows] duration-200 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden pl-[18px]">
           {tools.map((t, i) => {
             const { Icon, logo } = displayFor(t.name);
@@ -206,7 +206,7 @@ export function ToolSummary({ tools, animate = false }) {
                 key={t.id || i}
                 style={{ transitionDelay: open ? `${i * 35}ms` : '0ms' }}
                 className={cn(
-                  'flex items-center gap-1.5 text-[12px] transition-[opacity,transform] duration-150',
+                  'flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap text-[12px] transition-[opacity,transform] duration-150',
                   i === 0 && 'mt-1',
                   open ? 'translate-y-0 opacity-100' : '-translate-y-[3px] opacity-0',
                   bad ? 'text-destructive' : 'text-muted-foreground',
@@ -214,7 +214,7 @@ export function ToolSummary({ tools, animate = false }) {
               >
                 <LeadingVisual logo={logo} Icon={Icon} muted={!bad} />
                 <StepLabel tool={t} />
-                {bad && t.error && <span className="truncate text-destructive/80">— {t.error}</span>}
+                {bad && t.error && <span className="min-w-0 truncate text-destructive/80" title={t.error}>— {t.error}</span>}
               </span>
             );
           })}

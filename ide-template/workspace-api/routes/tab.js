@@ -44,7 +44,11 @@ const turns = new Map();    // token → { slug, act, onProgress }   turns start
 export function openTabTurn(slug, { act = false, onProgress = null } = {}) {
   const token = randomUUID();
   // Same resolution the tools' side uses ('default' = a solo workspace).
-  turns.set(token, { slug: resolveSlug(slug === 'default' ? '' : slug), act: !!act, onProgress });
+  const resolved = resolveSlug(slug === 'default' ? '' : slug);
+  turns.set(token, { slug: resolved, act: !!act, onProgress });
+  // The message says whether Act was on when it was sent; the panel's switch
+  // is reported separately. Logging both makes a mismatch visible.
+  process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}\n`);
   return token;
 }
 export function closeTabTurn(token) {
@@ -96,7 +100,10 @@ export function sendTabCommand(slug, turnToken, command) {
   if (!streams?.size) {
     return Promise.resolve({ ok: false, error: 'The browser panel is not open. Ask the user to open the Something panel in Chrome.' });
   }
-  if (acting && (!turn.act || modes.get(slug) !== 'act')) {
+  if (acting && !turn.act) {
+    return Promise.resolve({ ok: false, error: 'This message was sent while Act was off, so in this reply you can look at the tab but not click or type. Tell the user what you would do; if Act is on now, they can send the request again.' });
+  }
+  if (acting && modes.get(slug) !== 'act') {
     return Promise.resolve({ ok: false, error: 'Act is off, so you can look at the tab but not click or type in it. Tell the user what you would do, or ask them to switch Act on.' });
   }
   const id = randomUUID();
