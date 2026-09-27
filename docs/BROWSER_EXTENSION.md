@@ -226,6 +226,15 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   (Jev must click; the fields it would have wanted are reported as `needs_value`). The result
   carries the final page, so the assistant answers without another read. Every Jev decision is
   logged (`[jev] … CLICK e12 (0.91) 180 ms`).
+- **Refusals continue the run.** Any refused action — stale, covered, an off-site click — marks
+  that control as refused and Jev chooses again; only an infrastructure failure (Act off, panel
+  closed, no answer) aborts. A `blocked` outcome names the last refusal, so the assistant can
+  explain e.g. that the goal needed leaving the site. After a second BLOCKED the runner scrolls
+  down (up to 3 times): the observation only carries what is on screen, and the needed control —
+  a consent wall's buttons, the end of a long form — is often below the fold. A standing rule in
+  every goal says that walls (cookie/consent, popups, dialogs) in front of the task are part of
+  the task, so Jev dismisses them instead of reporting blocked. All of this was validated
+  end-to-end against the real TypeSafe API and a real consent-walled site.
 - **Context rides with the goal.** `tab_autopilot` takes `context`: the background facts Jev cannot
   see — relative dates resolved to real ones, preferences and constraints from the conversation,
   names, amounts. The turn's instruction tells the assistant to think about what Jev cannot know

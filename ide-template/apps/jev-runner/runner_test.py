@@ -143,6 +143,21 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("cheapest direct", goal)
         self.assertIn("Today is Saturday, 27 September 2026.", goal)
 
+    def test_blocked_scrolls_down_before_giving_up(self):
+        wall = page("wall", [
+            {"id": "e1", "node": 1, "kind": "click", "label": "Language", "role": "button"},
+            {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
+        ], "Before you continue")
+        below = page("wall", [
+            {"id": "e2", "node": 2, "kind": "click", "label": "Reject all", "role": "button"},
+            {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
+        ], "Reject all Accept all")
+        b = FakeBrowser(wall, {"wait": None, "scroll_down": below, "e2": RESULTS})
+        ts = FakeTypeSafe([("BLOCKED", None), ("BLOCKED", None), ("CLICK", "Reject all"), ("DONE", None)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("wait", None), ("scroll_down", None), ("e2", None)])
+
     def test_go_back_is_an_operation_jev_can_take(self):
         with_back = page("detail", [
             {"id": "e9", "node": 9, "kind": "click", "label": "Buy now", "role": "button"},
@@ -198,12 +213,19 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("kept refusing", result["detail"])
         self.assertEqual(result["page"]["title"], "many")
 
-    def test_a_hard_refusal_ends_the_run_with_its_reason(self):
-        b = FakeBrowser(SEARCH, {"e2": "That leads away from this site, which is not allowed."})
+    def test_an_offsite_refusal_marks_the_control_and_continues(self):
+        b = FakeBrowser(TWO, {"e2": "That leads away from this site, which is not allowed.", "e5": RESULTS})
+        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("e2", None), ("e5", None)])
+
+    def test_an_infrastructure_failure_ends_the_run(self):
+        b = FakeBrowser(SEARCH, {"e2": "Act is off, so you can look at the tab but not click or type in it."})
         ts = FakeTypeSafe([("CLICK", "Search")])
         with self.assertRaises(RuntimeError) as ctx:
             self.go(b, ts)
-        self.assertIn("away from this site", str(ctx.exception))
+        self.assertIn("Act is off", str(ctx.exception))
 
     def test_an_invalid_typesafe_answer_is_never_executed(self):
         b = FakeBrowser(SEARCH, {})

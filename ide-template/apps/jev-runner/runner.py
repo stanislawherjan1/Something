@@ -56,8 +56,14 @@ def receive():
 
 
 class Stale(Exception):
-    """The page changed under a decision, or the control was refused as out of
-    date or covered; observe and choose again."""
+    """The action was refused — the page changed, the control is covered or
+    unusable, the click would leave the site. The control is marked refused and
+    Jev chooses again; only an infrastructure failure aborts the run."""
+
+
+# Failures that mean the run itself cannot continue (the executor is gone or
+# says stop) — everything else is a refusal of that one control.
+FATAL_MARKS = ("Act is off", "switched the panel", "panel is not open", "did not answer", "Too many")
 
 
 # A control the executor refused is not offered again on that page, so Jev has
@@ -71,6 +77,8 @@ def goal_for_jev(goal, values, context="", today=""):
     assistant's background facts (context), today's date and the values it may
     type ride along with the goal — TYPE_TEXT and every choice are informed."""
     parts = [goal]
+    # A standing rule, site-agnostic: walls in front of the task are part of it.
+    parts.append("If a cookie or consent wall, a promotional popup or a dialog stands between you and the task, dismissing it IS progress toward the goal.")
     if today:
         parts.append(f"Today is {today}.")
     if context:
@@ -98,12 +106,9 @@ def act(action_id, text=None):
     answer = receive()
     if not answer.get("ok"):
         error = answer.get("error") or "The action was refused."
-        # The extension's stale refusals (the page changed, the control is
-        # covered, no current read) are upstream's StalePage: look again and
-        # choose again.
-        if "changed" in error or "snapshot" in error or "read" in error:
-            raise Stale(error)
-        raise RuntimeError(error)
+        if any(mark in error for mark in FATAL_MARKS):
+            raise RuntimeError(error)
+        raise Stale(error)
     return answer.get("state")
 
 
@@ -137,7 +142,9 @@ def pick_value(goal, values, action, page, history):
 def run(goal, values, max_actions, context="", today=""):
     history, decisions = [], 0
     refused, refusals = set(), 0   # control ids refused on the current page; refusals in a row
+    last_refusal = ""              # e.g. an off-site click — worth naming in the outcome
     blocked_once = False           # a first BLOCKED gets one settle + re-read before it counts
+    recovery_scrolls = 0           # then up to 3 scrolls: the needed control may be below the fold
     jev_goal = goal_for_jev(goal, values, context=context, today=today)
     page = observe()
     while True:
@@ -167,11 +174,22 @@ def run(goal, values, max_actions, context="", today=""):
                 except (Stale, RuntimeError):
                     page = observe()
                 continue
+            # Or the needed control may simply be below the fold — the
+            # observation only carries what is on screen. Scroll and look.
+            if recovery_scrolls < 3 and any(a["id"] == "scroll_down" for a in page["actions"]):
+                recovery_scrolls += 1
+                send({"event": "step", "n": len(history) + 1, "kind": "scroll", "label": "Scroll down (looking further)"})
+                try:
+                    page = act("scroll_down") or observe()
+                except (Stale, RuntimeError):
+                    page = observe()
+                continue
+            note = f" {last_refusal}" if last_refusal else ""
             fills = [a["label"] for a in page["actions"] if a["kind"] == "fill"]
-            if not values and fills:
+            if not values and fills and not last_refusal:
                 return {"status": "needs_value", "page": light(page),
                         "detail": f"Nothing could be typed because no values were given; the page has fields: {', '.join(fills[:6])}. Call again with values."}
-            return {"status": "blocked", "page": light(page), "detail": "Jev found no supported step that makes progress from this page."}
+            return {"status": "blocked", "page": light(page), "detail": f"Jev found no supported step that makes progress from this page.{note}"}
         blocked_once = False
         action = next((a for a in page["actions"] if a["id"] == choice), None)
         if action is None:
@@ -190,6 +208,7 @@ def run(goal, values, max_actions, context="", today=""):
         except Stale as err:
             refused.add(choice)
             refusals += 1
+            last_refusal = f'The click on "{action["label"]}" was refused: {str(err).split(".")[0]}.' 
             # Jev sees the failed attempt in its recent actions.
             history.append({
                 "step": len(history) + 1, "action": f"{action['label']} (refused: {str(err).split('.')[0]})",
