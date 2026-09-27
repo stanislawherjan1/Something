@@ -7,14 +7,15 @@
       "experimental": true,
       "label": "Jev (TypeSafe)",
       "logo": "/integrations/jev.png",
+      "logoFill": true,
       "description": "Lets the browser agent finish multi-step tasks on the page you are on in seconds — search, filters, forms. While it works, the page's visible text and control labels are sent to TypeSafe; password and payment fields never are.",
       "category": "ai",
       "fields": [
         { "name": "TYPESAFE_API_KEY", "label": "TypeSafe API key", "type": "secret", "placeholder": "Paste your key", "helper": "From your TypeSafe account. Jev picks each next step on the page." }
       ],
       "steps": [
-        { "title": "Get a TypeSafe API key", "body": "Open [typesafe.ai](https://typesafe.ai), create an account and an API key. [What Jev is](https://docs.typesafe.ai/introduction).\n\nPaste the key here." },
-        { "title": "Use it", "body": "In the Chrome side panel, switch **Act** on and ask {{botDisplayName}} for a task on the page. Multi-step work goes to the autopilot, and each step shows in the chat." }
+        { "title": "Create a TypeSafe account", "body": "Open [console.typesafe.ai](https://console.typesafe.ai) and sign up, or log in if you already have an account." },
+        { "title": "Create an API key", "body": "In the console, open **[Keys](https://console.typesafe.ai/keys)** and create a key. Copy it and paste it here." }
       ],
       "mcp": { "allowedHosts": ["api.typesafe.ai"] },
       "tagline": "Fast browser autopilot"

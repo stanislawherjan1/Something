@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
-  AppWindow, Eye, MousePointerClick, MousePointer2, FileText, Download, Copy, Check, Zap, ShieldCheck,
+  AppWindow, Eye, MousePointerClick, MousePointer2, FileText, Download, Copy, Check, Zap, ShieldCheck, ArrowRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApi, invalidate } from '@/lib/useApi';
@@ -66,6 +66,19 @@ export default function BrowserAgentView({ sidebarOpen }) {
                   </span>
                 </p>
               </div>
+              {/* The way to the second tab, where installing lives. */}
+              <button
+                type="button"
+                onClick={() => setTab('install')}
+                className="mt-2 flex items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:border-foreground/15"
+              >
+                <Download className="size-4 shrink-0 text-foreground/70" strokeWidth={1.75} />
+                <span className="flex-1">
+                  <span className="block text-[13.5px] font-medium text-foreground/90">How to install</span>
+                  <span className="block text-[12px] text-muted-foreground/80">Add {bot} to Chrome in a few steps.</span>
+                </span>
+                <ArrowRight className="size-4 shrink-0 text-muted-foreground/70" strokeWidth={1.75} />
+              </button>
             </section>
           ) : (
             <>

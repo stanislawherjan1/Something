@@ -553,7 +553,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               {t.kind === 'activation' ? (
                 <div className="flex w-full items-center justify-between gap-2.5 px-3.5 py-2.5 sm:gap-4 sm:px-5 sm:py-3">
                   <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                    <Logo src={t.logo} alt={t.label} size="size-8 sm:size-9" imgSize="size-5" />
+                    <Logo src={t.logo} alt={t.label} fill={!!t.logoFill} size="size-8 sm:size-9" imgSize="size-5" />
                     <div className="min-w-0">
                       <div className="truncate text-[13px] font-semibold text-foreground/90 sm:text-[14px]">{t.label}</div>
                       <div className="mt-0.5 flex items-center gap-1 text-[11.5px] sm:text-[12px]">
@@ -576,7 +576,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               ) : (
                 <div className="flex w-full items-center gap-2.5 px-3.5 py-2.5 sm:gap-3 sm:px-5">
                   {t.logo
-                    ? <Logo src={t.logo} alt={t.label} size="size-8 sm:size-9" imgSize="size-5" />
+                    ? <Logo src={t.logo} alt={t.label} fill={!!t.logoFill} size="size-8 sm:size-9" imgSize="size-5" />
                     : t.kind === 'error'
                       ? <AlertTriangle className="size-4 shrink-0 text-destructive" strokeWidth={2.2} />
                       : (t.kind === 'pending' || t.kind === 'progress')
@@ -745,7 +745,7 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
       'group flex items-center gap-3 rounded-lg border bg-card px-3.5 py-2.5 transition-colors',
       (isComingSoon || cantActivate) ? 'border-border/40' : 'border-border/50 hover:border-border',
     )}>
-      <Logo src={integration.logo} alt={integration.label} dim={isComingSoon || cantActivate} />
+      <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
@@ -803,7 +803,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
     )}>
       {/* Header — logo + status pill */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
-        <Logo src={integration.logo} alt={integration.label} dim={isComingSoon || cantActivate} />
+        <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
         <div className="flex items-center gap-1.5">
           {isBeta && !isComingSoon && (
             <span className="inline-flex items-center rounded-full bg-violet-500/12 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
@@ -935,7 +935,9 @@ function logoUrl(src) {
   return `${base}${src.startsWith('/') ? src : '/' + src}`;
 }
 
-function Logo({ src, alt, dim, size = 'size-12', imgSize = 'size-7' }) {
+// `fill`: the logo is a full square app icon with its own background (the
+// catalog's `logoFill`) — it covers the tile instead of sitting on white.
+function Logo({ src, alt, dim, fill = false, size = 'size-12', imgSize = 'size-7' }) {
   const [errored, setErrored] = useState(false);
   const url = logoUrl(src);
   // Logo tile is always a solid-white square in both themes. The brand
@@ -945,7 +947,7 @@ function Logo({ src, alt, dim, size = 'size-12', imgSize = 'size-7' }) {
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
         size,
         dim && 'opacity-50 grayscale',
       )}
@@ -959,7 +961,7 @@ function Logo({ src, alt, dim, size = 'size-12', imgSize = 'size-7' }) {
           src={url}
           alt=""
           onError={() => setErrored(true)}
-          className={cn('object-contain', imgSize)}
+          className={cn(fill ? 'size-full object-cover' : cn('object-contain', imgSize))}
         />
       )}
     </div>
@@ -1476,7 +1478,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
       <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-background shadow-2xl">
         {/* Header — logo + title only, no description */}
         <div className="flex items-center gap-3.5 border-b border-border/50 px-8 py-5">
-          <Logo src={integration.logo} alt={integration.label} />
+          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} />
           <div className="min-w-0 flex-1 text-[17px] font-semibold text-foreground">
             Activate {integration.label}
           </div>
@@ -1795,7 +1797,7 @@ export function SettingsModal({ integration, onClose, onSuccess }) {
     <ModalShell onClose={onClose} ariaLabel={`${integration.label} settings`}>
       <form onSubmit={save} className="flex w-full max-w-lg flex-col overflow-hidden rounded-lg bg-background shadow-2xl">
         <div className="flex items-center gap-3.5 border-b border-border/50 px-7 py-5">
-          <Logo src={integration.logo} alt={integration.label} />
+          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} />
           <div className="min-w-0 flex-1 text-[16px] font-semibold text-foreground">
             {integration.label} · Settings
           </div>
