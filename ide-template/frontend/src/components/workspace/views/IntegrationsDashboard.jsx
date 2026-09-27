@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -302,7 +302,9 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // operator see at-a-glance "how much of Marketing do I have" without
   // having to mentally subtract the Active tab from the catalog.
   const active   = integrations.filter(i => i.active);
-  const catalog  = useMemo(() => integrations, [integrations]);
+  // Entries with a `home` elsewhere (Jev lives on the Browser agent page) are
+  // set up there; the marketplace lists them only once they are active.
+  const catalog  = useMemo(() => integrations.filter(i => !i.home || i.active), [integrations]);
   const ready    = data?.ready;
 
   // Auto-flip the default tab: fresh deploys land on Marketplace (no
@@ -606,7 +608,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
  * --foreground fill so it matches the rest of the workspace's neutral
  * palette — no brand-accent stripe. Counts in muted pills next to label.
  */
-function Tabs({ value, onChange, items }) {
+export function Tabs({ value, onChange, items }) {
   return (
     <div role="tablist" className="inline-flex items-center gap-1 self-start rounded-lg border border-border/55 bg-muted/40 p-1">
       {items.map((it) => {
@@ -626,12 +628,14 @@ function Tabs({ value, onChange, items }) {
             )}
           >
             <span>{it.label}</span>
-            <span className={cn(
-              'rounded-full px-1.5 text-[10.5px] font-medium tabular-nums',
-              isActive ? 'bg-muted/55 text-muted-foreground' : 'bg-background/70 text-muted-foreground/75',
-            )}>
-              {it.count}
-            </span>
+            {it.count != null && (
+              <span className={cn(
+                'rounded-full px-1.5 text-[10.5px] font-medium tabular-nums',
+                isActive ? 'bg-muted/55 text-muted-foreground' : 'bg-background/70 text-muted-foreground/75',
+              )}>
+                {it.count}
+              </span>
+            )}
           </button>
         );
       })}
@@ -749,6 +753,7 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
           {isBeta && !isComingSoon && !isActive && (
             <span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
           )}
+          {integration.experimental && <ExperimentalTag />}
           {isActive && (
             <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Active</span>
           )}
@@ -781,6 +786,7 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
 }
 
 function IntegrationTile({ integration, ready, canManage = true, showStatus = true, onActivate, onRemove, onSettings }) {
+  const navigate = useNavigate();
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
@@ -804,6 +810,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
               Beta
             </span>
           )}
+          {integration.experimental && <ExperimentalTag />}
           {isActive && (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
@@ -854,6 +861,16 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           >
             <Lock className="size-3.5" strokeWidth={1.75} />
             {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
+          </button>
+        ) : isActive && integration.home === 'browser-agent' ? (
+          // Set up and managed where it is used (the Browser agent page).
+          <button
+            type="button"
+            onClick={() => navigate('/browser-agent')}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+          >
+            Manage on Browser agent
+            <ArrowRight className="size-3.5" strokeWidth={2} />
           </button>
         ) : isActive ? (
           <div className="flex items-center gap-2">
@@ -1737,7 +1754,7 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
  * Activate. That's the deliberate trade-off — the audit log keeps a clean
  * record of credential lifecycle, while ergonomic toggles become free.
  */
-function SettingsModal({ integration, onClose, onSuccess }) {
+export function SettingsModal({ integration, onClose, onSuccess }) {
   const globalFields = (integration.fields || []).filter(f => f.globalForMulti);
 
   const initial = globalFields.reduce((acc, f) => {
@@ -1994,6 +2011,15 @@ export function RemoveDialog({ integration, onClose, onSuccess, title, body, con
 }
 
 // ─── Modal shell ───────────────────────────────────────────────────────────
+
+// Neutral tag for integrations that are early and may change (quieter than Beta).
+export function ExperimentalTag({ className }) {
+  return (
+    <span className={cn('inline-flex shrink-0 items-center rounded-full bg-foreground/[0.07] px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-muted-foreground', className)}>
+      Experimental
+    </span>
+  );
+}
 
 export function ModalShell({ children, onClose, ariaLabel }) {
   useEffect(() => {

@@ -2,6 +2,24 @@
   "$schema_comment": "Catalog of integrations the user can self-activate. Frontend renders one card per entry. fields[].optional skips the required-check; mcp.envMap maps catalog field names to env-var name the MCP code reads; mcp.inheritEnv lists platform env vars (e.g. GOOGLE_CLIENT_ID) to copy from process.env at spawn time. mcp.args supports {appsDir} placeholder so the same catalog works locally and in /opt/ide. mcp.allowedHosts lists every outbound hostname the integration needs at runtime — egress.js writes the active union to /srv/<ide>/egress/allowed-hosts.txt and the host-side egress-allowlist.sh resolves these to ipset entries; values wrapped in {{FIELD}} are substituted from the active store per-tenant (e.g. {{SHOPIFY_STORE_DOMAIN}}, {{EMAIL_HOSTS_RESOLVED}}).",
   "integrations": [
     {
+      "id": "jev",
+      "home": "browser-agent",
+      "experimental": true,
+      "label": "Jev (TypeSafe)",
+      "logo": "/integrations/jev.png",
+      "description": "Lets the browser agent finish multi-step tasks on the page you are on in seconds — search, filters, forms. While it works, the page's visible text and control labels are sent to TypeSafe; password and payment fields never are.",
+      "category": "ai",
+      "fields": [
+        { "name": "TYPESAFE_API_KEY", "label": "TypeSafe API key", "type": "secret", "placeholder": "Paste your key", "helper": "From your TypeSafe account. Jev picks each next step on the page." }
+      ],
+      "steps": [
+        { "title": "Get a TypeSafe API key", "body": "Open [typesafe.ai](https://typesafe.ai), create an account and an API key. [What Jev is](https://docs.typesafe.ai/introduction).\n\nPaste the key here." },
+        { "title": "Use it", "body": "In the Chrome side panel, switch **Act** on and ask {{botDisplayName}} for a task on the page. Multi-step work goes to the autopilot, and each step shows in the chat." }
+      ],
+      "mcp": { "allowedHosts": ["api.typesafe.ai"] },
+      "tagline": "Fast browser autopilot"
+    },
+    {
       "id": "grok",
       "label": "Grok (xAI)",
       "logo": "/integrations/grok.svg",
