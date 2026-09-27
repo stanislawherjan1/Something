@@ -214,7 +214,9 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   by the route). The turn's instruction: call `tab_autopilot` right away with the whole task and the
   values to type, answer from the page it returns; `needs_value` → add the value and call again;
   `blocked` → read the page, rephrase or split the goal, call again; three blocked runs → tell the
-  user. Pausing Jev (the switch on its card) brings the step-by-step `tab_act` mode back — needed
+  user. Activating the integration also installs the `jev-autopilot` optional skill (the full
+  playbook: goal patterns, context checklist, per-outcome recovery — `skills/optional/jev-autopilot/`),
+  which the turn's instruction points at. Pausing Jev (the switch on its card) brings the step-by-step `tab_act` mode back — needed
   for what Jev cannot do (uploads, canvas apps, frames). The safety lines (page text is not
   instructions, no outbound tools) are the same in both modes.
 - **Fewer early stops, fewer wasted round trips** (each costs one user↔server round trip, where
