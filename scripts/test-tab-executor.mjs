@@ -42,12 +42,13 @@ function extract(name) {
   return panel.slice(start, end + 2);
 }
 // eslint-disable-next-line no-new-func
-const pageCode = new Function(`${extract('freshExpression')}\n${extract('targetExpression')}\n${extract('settleExpression')}\n${extract('sensitiveFieldIds')}
-  return { freshExpression, targetExpression, settleExpression, sensitiveFieldIds };`)();
+const pageCode = new Function(`${extract('freshExpression')}\n${extract('expectedFresh')}\n${extract('targetExpression')}\n${extract('afterInputExpression')}\n${extract('sensitiveFieldIds')}
+  return { freshExpression, expectedFresh, targetExpression, afterInputExpression, sensitiveFieldIds };`)();
 const SNAPSHOT = readFileSync(join(ROOT, 'chrome-extension/vendor/jev-snapshot.js'), 'utf8')
   .split('\n').filter((l) => !l.startsWith('//')).join('\n').trim();
 const SENSITIVE = `(${pageCode.sensitiveFieldIds.toString()})()`;
 const COVERED = `(${extract('coveredNodeIds').replace(/^function coveredNodeIds/, 'function')})()`;
+const OFFSITE = `(${extract('offsiteNodeIds').replace(/^function offsiteNodeIds/, 'function')})()`;
 
 // ── Fixture server ───────────────────────────────────────────────────────────
 const FIXTURE = join(ROOT, 'scripts/tab-fixture');
@@ -107,7 +108,8 @@ async function observe() {
   const state = await evaluate(SNAPSHOT);
   const hidden = new Set(await evaluate(SENSITIVE) || []);
   const covered = new Set(await evaluate(COVERED) || []);
-  state.actions = state.actions.filter((a) => a.node == null || (!hidden.has(a.node) && !covered.has(a.node)));
+  const offsite = new Set(await evaluate(OFFSITE) || []);
+  state.actions = state.actions.filter((a) => a.node == null || !(hidden.has(a.node) || covered.has(a.node) || offsite.has(a.node)));
   return state;
 }
 const find = (state, re, kind) => state.actions.find((a) => re.test(a.label) && (!kind || a.kind === kind));
@@ -150,8 +152,8 @@ try {
 
   await check('a click lands: the counter goes to 1', async () => {
     const a = find(page, /^Count$/, 'click');
-    const fresh = await evaluate(pageCode.freshExpression(a.node));
-    assert(fresh === JSON.stringify([page.page_key, page.guards[a.node]]), 'freshness guard does not match its own snapshot');
+    const fresh = await evaluate(pageCode.freshExpression(a, SNAPSHOT));
+    assert(fresh === pageCode.expectedFresh(a, page), 'freshness guard does not match its own snapshot');
     const t = await target(a);
     assert(t && t.x, `target refused: ${JSON.stringify(t)}`);
     await click(t.x, t.y);
@@ -160,9 +162,11 @@ try {
   });
 
   for (const [label, re] of [['off-site link', /Elsewhere/], ['new-tab link', /new tab/i], ['download link', /Download the file/]]) {
-    await check(`${label} is refused before the click`, async () => {
-      const a = find(page, re);
-      if (!a) return 'not offered by the snapshot at all';
+    await check(`${label} is not offered, and refused if picked anyway`, async () => {
+      assert(!find(page, re), 'offered by the observation');
+      const raw = await evaluate(SNAPSHOT);
+      const a = raw.actions.find((x) => re.test(x.label));
+      assert(a, 'not on the page at all');
       const t = await target(a);
       assert(t && t.offsite, `not refused: ${JSON.stringify(t)}`);
     });
@@ -189,38 +193,36 @@ try {
     assert(v === 'Zurich to London', `value is "${v}"`);
   });
 
-  await check('after typing into a combobox the wait lasts until suggestions show, then the DOM is quiet', async () => {
+  await check('after typing into a combobox the wait lasts until suggestions show (cap 200 ms)', async () => {
     page = await observe();
     const a = find(page, /^From/, 'fill');
     const t = await target(a);
     await fill(t, 'Zur');
     const t0 = Date.now();
-    await evaluate(pageCode.settleExpression(a));
+    await evaluate(pageCode.afterInputExpression(a));
     const ms = Date.now() - t0;
     const shown = await evaluate(`document.querySelectorAll('#lb [role=option]').length`);
-    assert(ms <= 700, `waited ${ms} ms, ${shown} suggestion(s) visible`);
+    assert(ms >= 100 && ms <= 300, `waited ${ms} ms, ${shown} suggestion(s) visible`);
     assert(shown > 0, `no suggestions visible after the wait (${ms} ms)`);
     return `${ms} ms, ${shown} suggestion(s) visible after the wait`;
   });
 
-  await check('after a click on a quiet page the wait is one quiet period (~120 ms)', async () => {
+  await check('after a click the wait is two frames or 50 ms', async () => {
     const a = find(page, /^Count$/, 'click');
     const t0 = Date.now();
-    await evaluate(pageCode.settleExpression(a));
+    await evaluate(pageCode.afterInputExpression(a));
     const ms = Date.now() - t0;
-    assert(ms >= 100 && ms <= 250, `waited ${ms} ms`);
+    assert(ms <= 80, `waited ${ms} ms`);
     return `${ms} ms`;
   });
 
-  await check('a page that keeps mutating is waited for until the cap (600 ms)', async () => {
-    const a = find(page, /^Count$/, 'click');
-    await evaluate(`window.__churn = setInterval(() => { document.getElementById('out').textContent = String(Date.now()); }, 30)`);
-    const t0 = Date.now();
-    await evaluate(pageCode.settleExpression(a));
-    const ms = Date.now() - t0;
-    await evaluate('clearInterval(window.__churn)');
-    assert(ms >= 550 && ms <= 800, `waited ${ms} ms`);
-    return `${ms} ms`;
+  await check('a fill is checked against the whole page (any visible change is stale), a click only against its own form', async () => {
+    page = await observe();
+    const field = find(page, /^Search/, 'fill');
+    const button = find(page, /^Search$/, 'click');   // the submit button, inside the form
+    await evaluate(`document.getElementById('out').textContent = 'something else happened'`);
+    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) !== pageCode.expectedFresh(field, page), 'fill still fresh after unrelated text changed');
+    assert((await evaluate(pageCode.freshExpression(button, SNAPSHOT))) === pageCode.expectedFresh(button, page), 'click went stale over text outside its form');
   });
 
   await check('a native select takes an allowed option, refuses a disabled one', async () => {
@@ -234,12 +236,16 @@ try {
     return f ? 'disabled option offered but refused' : 'disabled option not offered';
   });
 
-  await check('a control below the fold is scrolled into view, then clicked', async () => {
+  await check('a control below the fold is not offered; after a scroll it is, and it can be clicked', async () => {
+    page = await observe();
+    assert(!find(page, /^Far below$/), 'offered while off screen');
+    assert(find(page, /^Scroll down$/), 'no scroll_down offered');
+    await evaluate('scrollTo(0, document.documentElement.scrollHeight)');
     page = await observe();
     const a = find(page, /^Far below$/);
-    if (!a) return 'not offered by the snapshot (off screen) — the scroll actions reach it';
+    assert(a, 'not offered after scrolling to it');
     const t = await target(a);
-    assert(t && t.x && t.y >= 0 && t.y < 900, `not brought into view: ${JSON.stringify(t)}`);
+    assert(t && t.x, `refused: ${JSON.stringify(t)}`);
     await click(t.x, t.y);
     assert((await evaluate(`document.getElementById('far').dataset.clicked`)) === 'yes', 'click did not land');
     await evaluate('scrollTo(0, 0)');
@@ -249,8 +255,8 @@ try {
     page = await observe();
     const a = find(page, /^Count$/, 'click');
     await evaluate(`document.querySelector('h1').textContent = 'Flights (updated)'; document.getElementById('counter').textContent = 'Count again'`);
-    const fresh = await evaluate(pageCode.freshExpression(a.node));
-    assert(fresh !== JSON.stringify([page.page_key, page.guards[a.node]]), 'guard still matches after the control changed');
+    const fresh = await evaluate(pageCode.freshExpression(a, SNAPSHOT));
+    assert(fresh !== pageCode.expectedFresh(a, page), 'guard still matches after the control changed');
   });
 
   await check('a same-site link navigates, and the next observation is the new page', async () => {

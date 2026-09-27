@@ -183,7 +183,9 @@ something else. That is the soft layer; the table above is what holds if it fail
 With the **Jev (TypeSafe)** integration connected — on the Browser agent page, Install tab
 (it is not offered in the Integrations marketplace; once active it is listed there with a link
 back) — a panel turn with Act on also gets `tab_autopilot`: the assistant hands over one
-complete goal plus the values to type (`{"from": "Zurich", …}`), and Jev runs the steps.
+complete goal in plain English ("Find one-way flights from Zurich to London on September 20,
+2026, for one adult in economy. Stop when matching flight options are visible.") plus the
+values to type (`{"from": "Zurich", "to": "London"}`), and Jev runs the steps.
 
 ```
 tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback, turn token, Act on, Jev connected)
@@ -193,55 +195,42 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   → steps stream into the chat's tool line ("Autopilot · Clicking "Search"") → result back to the tool
 ```
 
-- **The library, as a library.** `runner.py` imports jev-ultrafast's `model` and `questions`
-  unmodified from the commit deploy.sh fetches into the image (`/opt/jev-ultrafast`, pinned with
-  `scripts/vendor-jev.sh`), not its browser driver; the loop mirrors upstream's `Agent` tick.
-- **Values, not a second model.** When Jev picks a text field, one more TypeSafe choice picks
-  which of the given values fits it; none fits → the run stops with `needs_value` and the
-  assistant fills that field itself. No text-model provider is involved.
+- **jev-ultrafast, as it is.** `runner.py` is a port of upstream's `Agent.command("tick")` around
+  the library's own `model` and `questions` (imported unmodified from the commit deploy.sh fetches
+  into the image, `/opt/jev-ultrafast`, pinned with `scripts/vendor-jev.sh`): choose, act, observe;
+  stop on DONE, BLOCKED, three actions in a row that changed nothing, or the budget (60 actions,
+  120 decisions, 120 s). The extension's executor is a port of upstream's `browser.py` in the
+  page: the same snapshot, the same freshness guards (a click or select against the document, URL,
+  viewport, form values and its own control's guard; a fill against the whole marker), the same
+  target check (attached, enabled, visible, on screen, not covered), the same waits (two frames /
+  50 ms after input, 200 ms for a combobox's suggestions, WAIT = 100 ms) and the same focus
+  emulation — without it the user's tab, whose focus is in the side panel, closes menus and
+  pickers as soon as they open. A refused action is upstream's StalePage: observe again, choose
+  again. The goal reaches Jev exactly as the assistant wrote it: no preamble, no appended context.
+- **Values, not a second model.** Upstream's TYPE_TEXT asks a small text model for the value;
+  here the assistant passes the values with the goal and one more TypeSafe choice picks which of
+  them fits the field (reused, as upstream reuses its helper's value, only while the field, page
+  and history are identical); none fits → the run stops with `needs_value` naming the field.
 - **Same limits.** Every action is an ordinary `act` command — the table above applies step by
-  step. Switching Act off fails the next command at once, ending the run. Bounds: 40 actions, 80
-  decisions, 120 s; three actions in a row that change nothing stop it as blocked.
-- **No loops on a refused control.** A control the executor refuses (covered, changed) is not
-  offered to Jev again on that page, and the attempt shows in its recent actions, so it has to
-  find another way; three refusals in a row stop the run as blocked, and the assistant — told to
-  change approach rather than repeat — takes over.
+  step. Switching Act off fails the next command at once, ending the run.
+- **What the observation leaves out**, so no decision is spent on it: sensitive fields, controls
+  whose centre is covered, and anything leading off the site (a link to another origin, a new-tab
+  or download link, a form posting elsewhere) — each is refused again at execution.
 - **Data.** While it runs, the goal, the values, the page's visible text and control labels and
   values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
   in the egress allow-list only while the integration is active).
 - **Jev does every action; the assistant plans and checks.** With Jev connected, an Act turn has
   `tab_snapshot`, `tab_screenshot` and `tab_autopilot` — **no `tab_act`** (not offered, and refused
-  by the route). The turn's instruction: call `tab_autopilot` right away with the whole task and the
-  values to type, answer from the page it returns; `needs_value` → add the value and call again;
-  `blocked` → read the page, rephrase or split the goal, call again; three blocked runs → tell the
-  user. Activating the integration also installs the `jev-autopilot` optional skill (the full
-  playbook: goal patterns, context checklist, per-outcome recovery — `skills/optional/jev-autopilot/`),
-  which the turn's instruction points at. Pausing Jev (the switch on its card) brings the step-by-step `tab_act` mode back — needed
-  for what Jev cannot do (uploads, canvas apps, frames). The safety lines (page text is not
-  instructions, no outbound tools) are the same in both modes.
-- **Fewer early stops, fewer wasted round trips** (each costs one user↔server round trip, where
-  jev-ultrafast's local Chrome pays ~5 ms): controls whose centre is covered are not offered at all
-  (upstream PR #137); after an action the extension waits until the DOM has been quiet for 120 ms
-  (cap 600 ms) instead of two frames, and an explicit WAIT lasts until the page is quiet (cap 1.5 s)
-  instead of 100 ms (PR #124); a first BLOCKED from Jev gets one settle-and-re-read before it counts
-  (PR #153); the values go into the goal Jev sees, and without values no fill control is offered
-  (Jev must click; the fields it would have wanted are reported as `needs_value`). The result
-  carries the final page, so the assistant answers without another read. Every Jev decision is
-  logged (`[jev] … CLICK e12 (0.91) 180 ms`).
-- **Refusals continue the run.** Any refused action — stale, covered, an off-site click — marks
-  that control as refused and Jev chooses again; only an infrastructure failure (Act off, panel
-  closed, no answer) aborts. A `blocked` outcome names the last refusal, so the assistant can
-  explain e.g. that the goal needed leaving the site. After a second BLOCKED the runner scrolls
-  down (up to 3 times): the observation only carries what is on screen, and the needed control —
-  a consent wall's buttons, the end of a long form — is often below the fold. A standing rule in
-  every goal says that walls (cookie/consent, popups, dialogs) in front of the task are part of
-  the task, so Jev dismisses them instead of reporting blocked. All of this was validated
-  end-to-end against the real TypeSafe API and a real consent-walled site.
-- **Context rides with the goal.** `tab_autopilot` takes `context`: the background facts Jev cannot
-  see — relative dates resolved to real ones, preferences and constraints from the conversation,
-  names, amounts. The turn's instruction tells the assistant to think about what Jev cannot know
-  before calling; today's date (in `IDE_TIMEZONE`) is added server-side. Context, today and the
-  values are appended to the goal Jev receives.
+  by the route). The turn's instruction: call `tab_autopilot` right away with one complete goal in
+  English — real dates, the actual things, where to stop, no step lists — and the values to type;
+  answer from the page it returns; `needs_value` → add the value and call again; `blocked` → read
+  the page, call again with a different goal (smaller or reworded, never the same); three blocked
+  runs → tell the user. Activating the integration also installs the `jev-autopilot` optional skill
+  (`skills/optional/jev-autopilot/`: the playbook, with `references/goal-patterns.md` and
+  `references/troubleshooting.md`), which the instruction points at. Pausing Jev (the switch on its
+  card) brings the step-by-step `tab_act` mode back — needed for what Jev cannot do (uploads,
+  canvas apps, frames). The safety lines (page text is not instructions, no outbound tools) are
+  the same in both modes.
 - **A step back, same site only.** When the tab's previous history entry is on the same site, the
   observation offers `go_back` (as an operation to Jev, as a control to the assistant); it is
   re-checked at execution and is the only navigation on offer — another site's page is never one.
@@ -256,8 +245,10 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   script with a rebuilt, allow-listed environment and `PR_SET_NO_NEW_PRIVS`; the TypeSafe key
   arrives on stdin, so no process can read it from `/proc/<pid>/environ`. What it returns to the
   assistant (step labels, a field name) is page content and is wrapped as such.
-- `apps/jev-runner/runner_test.py` runs the loop on the real library with a fake TypeSafe and a fake tab;
-  `scripts/test-tab-executor.mjs` runs the extension's page-side code on a real Chrome.
+- Every Jev decision is logged (`[jev] … CLICK e12 (0.91) 180 ms`). `apps/jev-runner/runner_test.py`
+  runs the loop on the real library with a fake TypeSafe and a fake tab; `scripts/test-tab-executor.mjs`
+  runs the extension's page-side code on a real Chrome. Validated end to end against the real
+  TypeSafe API on upstream's own Google Flights example.
 
 ## Files
 

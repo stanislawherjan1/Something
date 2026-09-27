@@ -6,7 +6,6 @@ and a fake browser.
 Needs httpx (jev_ultrafast.model imports it); no network, no key.
 """
 
-import json
 import os
 import sys
 import unittest
@@ -60,6 +59,7 @@ def page(title, actions, text="Flights"):
 SEARCH = page("search", [
     {"id": "e1", "node": 1, "kind": "fill", "label": "From", "role": "combobox", "value": ""},
     {"id": "e2", "node": 2, "kind": "click", "label": "Search", "role": "button"},
+    {"id": "wait", "kind": "wait", "label": "Wait for the page to update"},
 ])
 TWO = page("two", [
     {"id": "e2", "node": 2, "kind": "click", "label": "Search", "role": "button"},
@@ -69,7 +69,9 @@ RESULTS = page("results", [{"id": "e3", "node": 3, "kind": "click", "label": "Fi
 
 
 class FakeBrowser:
-    """Serves observations and records actions; `acts` maps id → what happens."""
+    """Serves observations and records actions; `acts` maps id → what happens:
+    a page (the page after), None (nothing changed), a string (refused), or a
+    list of those, consumed in order."""
 
     def __init__(self, first, acts):
         self.state, self.acts, self.log, self.sent = first, acts, [], []
@@ -87,8 +89,6 @@ class FakeBrowser:
             if msg["op"] == "observe":
                 return {"ok": True, "state": self.state}
             self.log.append((msg["id"], msg.get("text")))
-            if msg["id"] == "wait":
-                return {"ok": True, "state": self.state}
             outcome = self.acts.get(msg["id"])
             if isinstance(outcome, list):
                 outcome = outcome.pop(0) if outcome else self.state
@@ -102,10 +102,10 @@ class FakeBrowser:
 
 
 class RunnerTest(unittest.TestCase):
-    def go(self, browser, ts, goal="Find flights from Zurich", values=None, max_actions=10, **kw):
+    def go(self, browser, ts, goal="Find flights from Zurich", values=None, max_actions=10):
         browser.install()
         runner.model.post_json = ts
-        return runner.run(goal, values or {}, max_actions, **kw)
+        return runner.run(goal, values or {}, max_actions)
 
     def test_types_a_given_value_clicks_and_finishes(self):
         b = FakeBrowser(SEARCH, {"e1": None, "e2": RESULTS})
@@ -115,6 +115,14 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(b.log, [("e1", "Zurich"), ("e2", None)])
         steps = [m for m in b.sent if m.get("event") == "step"]
         self.assertEqual([s["label"] for s in steps], ["From", "Search"])
+        self.assertEqual(result["page"]["title"], "results")
+
+    def test_the_goal_reaches_jev_unchanged(self):
+        b = FakeBrowser(SEARCH, {})
+        ts = FakeTypeSafe([("DONE", None)])
+        goal = "Find one-way flights from Zurich to London on September 20, 2026. Stop when options are visible."
+        self.go(b, ts, goal=goal, values={"from": "Zurich"})
+        self.assertEqual(ts.bodies[0]["questions"]["operation"]["instructions"]["goal"], goal)
 
     def test_no_fitting_value_hands_the_field_back(self):
         b = FakeBrowser(SEARCH, {})
@@ -124,39 +132,28 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("From", result["detail"])
         self.assertEqual(b.log, [])
 
-    def test_no_values_means_no_fields_offered_and_a_needs_value_when_blocked(self):
+    def test_no_values_at_all_hands_the_field_back_without_asking_typesafe(self):
         b = FakeBrowser(SEARCH, {})
-        ts = FakeTypeSafe([("BLOCKED", None), ("BLOCKED", None)])
+        ts = FakeTypeSafe([("TYPE_TEXT", "From")])
         result = self.go(b, ts)
         self.assertEqual(result["status"], "needs_value")
         self.assertIn("From", result["detail"])
-        self.assertNotIn("TYPE_TEXT", ts.bodies[0]["questions"]["operation"]["criteria"])
-        self.assertEqual(b.log, [("wait", None)])   # one settle before the second BLOCKED counted
+        self.assertEqual(len(ts.bodies), 1)   # no value question was asked
 
-    def test_values_context_and_today_appear_in_the_goal_jev_sees(self):
-        b = FakeBrowser(SEARCH, {"e1": None, "e2": RESULTS})
-        ts = FakeTypeSafe([("TYPE_TEXT", "From"), "from", ("CLICK", "Search"), ("DONE", None)])
-        self.go(b, ts, values={"from": "Zurich"},
-                context="The user wants the cheapest direct flight.", today="Saturday, 27 September 2026")
-        goal = ts.bodies[0]["questions"]["operation"]["instructions"]["goal"]
-        self.assertIn("from = Zurich", goal)
-        self.assertIn("cheapest direct", goal)
-        self.assertIn("Today is Saturday, 27 September 2026.", goal)
+    def test_blocked_stops_at_once(self):
+        b = FakeBrowser(SEARCH, {})
+        ts = FakeTypeSafe([("BLOCKED", None)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(b.log, [])
+        self.assertEqual(result["page"]["title"], "search")
 
-    def test_blocked_scrolls_down_before_giving_up(self):
-        wall = page("wall", [
-            {"id": "e1", "node": 1, "kind": "click", "label": "Language", "role": "button"},
-            {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
-        ], "Before you continue")
-        below = page("wall", [
-            {"id": "e2", "node": 2, "kind": "click", "label": "Reject all", "role": "button"},
-            {"id": "scroll_down", "kind": "scroll", "label": "Scroll down", "delta": 560},
-        ], "Reject all Accept all")
-        b = FakeBrowser(wall, {"wait": None, "scroll_down": below, "e2": RESULTS})
-        ts = FakeTypeSafe([("BLOCKED", None), ("BLOCKED", None), ("CLICK", "Reject all"), ("DONE", None)])
+    def test_wait_is_an_action_that_does_not_count_as_no_progress(self):
+        b = FakeBrowser(SEARCH, {"wait": [None, None, None, RESULTS]})
+        ts = FakeTypeSafe([("WAIT", None)] * 4 + [("DONE", None)])
         result = self.go(b, ts)
         self.assertEqual(result["status"], "done")
-        self.assertEqual(b.log, [("wait", None), ("scroll_down", None), ("e2", None)])
+        self.assertEqual(len(b.log), 4)
 
     def test_go_back_is_an_operation_jev_can_take(self):
         with_back = page("detail", [
@@ -170,20 +167,22 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(b.log, [("go_back", None)])
         self.assertIn("GO_BACK", ts.bodies[0]["questions"]["operation"]["criteria"])
 
-    def test_a_first_blocked_waits_and_looks_again(self):
-        b = FakeBrowser(SEARCH, {"e2": RESULTS})
-        ts = FakeTypeSafe([("BLOCKED", None), ("CLICK", "Search"), ("DONE", None)])
-        result = self.go(b, ts, values={"from": "Zurich"})
-        self.assertEqual(result["status"], "done")
-        self.assertEqual(b.log, [("wait", None), ("e2", None)])
-        self.assertEqual(result["page"]["title"], "results")
-
-    def test_a_stale_refusal_is_observed_again_not_failed(self):
+    def test_a_refused_action_is_observed_again_and_chosen_again(self):
         b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot.", "e5": RESULTS})
         ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
         result = self.go(b, ts)
         self.assertEqual(result["status"], "done")
         self.assertEqual([m["op"] for m in b.sent if "op" in m].count("observe"), 2)
+        # A refusal is not an executed action: it leaves no trace in Jev's history.
+        self.assertEqual(ts.bodies[1]["state"]["recent_actions"], [])
+
+    def test_a_stale_retry_reuses_the_value_without_asking_again(self):
+        b = FakeBrowser(SEARCH, {"e1": ["The page changed since it was read.", None], "e2": RESULTS})
+        ts = FakeTypeSafe([("TYPE_TEXT", "From"), "from", ("TYPE_TEXT", "From"), ("CLICK", "Search"), ("DONE", None)])
+        result = self.go(b, ts, values={"from": "Zurich"})
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("e1", "Zurich"), ("e1", "Zurich"), ("e2", None)])
+        self.assertEqual(sum("value" in body["questions"] for body in ts.bodies), 1)
 
     def test_three_actions_that_change_nothing_stop_the_run(self):
         b = FakeBrowser(SEARCH, {"e2": None})
@@ -191,34 +190,6 @@ class RunnerTest(unittest.TestCase):
         result = self.go(b, ts)
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(len(b.log), 3)
-
-    def test_a_refused_control_is_not_offered_again(self):
-        b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot.", "e5": RESULTS})
-        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
-        result = self.go(b, ts)
-        self.assertEqual(result["status"], "done")
-        self.assertEqual(b.log, [("e2", None), ("e5", None)])
-        second = ts.bodies[1]["questions"]["click_target"]["criteria"]
-        self.assertFalse(any("Search" in c["element"] for c in second.values()))
-        self.assertIn("refused", ts.bodies[1]["state"]["recent_actions"][-1]["action"])
-
-    def test_three_refusals_in_a_row_stop_as_blocked(self):
-        many = page("many", [{"id": f"e{i}", "node": i, "kind": "click", "label": f"Button {i}", "role": "button"} for i in range(1, 6)])
-        covered = "That control changed or is covered. Take a new snapshot."
-        b = FakeBrowser(many, {f"e{i}": covered for i in range(1, 6)})
-        ts = FakeTypeSafe([("CLICK", f"Button {i}") for i in range(1, 6)])
-        result = self.go(b, ts)
-        self.assertEqual(result["status"], "blocked")
-        self.assertEqual(len(b.log), 3)
-        self.assertIn("kept refusing", result["detail"])
-        self.assertEqual(result["page"]["title"], "many")
-
-    def test_an_offsite_refusal_marks_the_control_and_continues(self):
-        b = FakeBrowser(TWO, {"e2": "That leads away from this site, which is not allowed.", "e5": RESULTS})
-        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
-        result = self.go(b, ts)
-        self.assertEqual(result["status"], "done")
-        self.assertEqual(b.log, [("e2", None), ("e5", None)])
 
     def test_an_infrastructure_failure_ends_the_run(self):
         b = FakeBrowser(SEARCH, {"e2": "Act is off, so you can look at the tab but not click or type in it."})
@@ -241,6 +212,13 @@ class RunnerTest(unittest.TestCase):
         result = self.go(b, ts, max_actions=4)
         self.assertEqual(result["status"], "budget")
         self.assertEqual(len(b.log), 4)
+
+    def test_the_decision_budget_bounds_endless_refusals(self):
+        b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot."})
+        ts = FakeTypeSafe([("CLICK", "Search")] * 30)
+        result = self.go(b, ts, max_actions=4)
+        self.assertEqual(result["status"], "budget")
+        self.assertEqual(len(b.log), 8)
 
 
 if __name__ == "__main__":

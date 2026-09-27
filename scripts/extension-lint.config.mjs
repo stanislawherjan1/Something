@@ -14,7 +14,7 @@ export default [
         chrome: 'readonly', window: 'readonly', document: 'readonly', navigator: 'readonly',
         fetch: 'readonly', URL: 'readonly', URLSearchParams: 'readonly', performance: 'readonly',
         setTimeout: 'readonly', clearTimeout: 'readonly', console: 'readonly', getSelection: 'readonly',
-        innerWidth: 'readonly', innerHeight: 'readonly',
+        innerWidth: 'readonly', innerHeight: 'readonly', location: 'readonly',
       },
     },
     rules: { 'no-undef': 'error', 'no-unused-vars': ['warn', { args: 'none' }] },

@@ -192,7 +192,7 @@ async function selectedText() {
 // credential sites or sensitive fields, and every command is re-checked right
 // before it runs.
 const IDLE_OFF_MS = 10 * 60 * 1000;
-const MAX_ACTIONS_PER_MIN = 30;    // clicks, typing, scrolling
+const MAX_ACTIONS_PER_MIN = 60;    // clicks, typing, scrolling — the autopilot does about one a second
 const MAX_READS_PER_MIN = 120;     // snapshots and screenshots — harmless, so a looser bound
 // Well under the 18 s the panel waits for an answer: an action must never run
 // after its caller has already been told it failed.
@@ -212,7 +212,7 @@ async function throttle(stamps, max, what) {
   }
   stamps.push(now);
 }
-const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], reads: [], lastSnapshot: null, cursorAt: null };
+const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], reads: [], lastSnapshot: null };
 // Survives the panel closing (chrome.storage.session: this browser session
 // only, never on disk): Act is on until this time.
 const ACT_KEY = 'actUntil';
@@ -275,12 +275,33 @@ function coveredNodeIds() {
 }
 const COVERED_JS = `(${coveredNodeIds.toString()})()`;
 
+// Controls that would lead off this site — a link to another origin, one that
+// opens a new tab or downloads, a form posting elsewhere — are refused at click
+// time (targetExpression) and, so that no decision is spent on them, left out
+// of the observation too. Evaluated in the page; returns the node ids to hide.
+function offsiteNodeIds() {
+  const c = window.__jevFast; if (!c) return [];
+  const other = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return true; } };
+  const out = [];
+  for (const [id, e] of c.nodes) {
+    if (!e?.isConnected) continue;
+    const link = e.closest('a[href]');
+    if (link && (link.target === '_blank' || link.hasAttribute('download')
+      || (!/^(javascript:|#)/i.test(link.getAttribute('href') || '') && other(link.href)))) { out.push(id); continue; }
+    const form = e.form || e.closest('form');
+    const submits = e.type === 'submit' || e.type === 'image' || (e.tagName === 'BUTTON' && (!e.type || e.type === 'submit'));
+    if (form && submits && other(e.getAttribute('formaction') || form.getAttribute('action') || location.href)) out.push(id);
+  }
+  return out;
+}
+const OFFSITE_JS = `(${offsiteNodeIds.toString()})()`;
+
 // The one way out, for every trigger. Detaching is what actually cuts the
 // assistant off from the page.
 function actOff(reason) {
   const tabId = act.tabId;
   const wasOn = act.on;
-  act.on = false; act.tabId = null; act.site = ''; act.lastSnapshot = null; act.stamps = []; act.cursorAt = null;
+  act.on = false; act.tabId = null; act.site = ''; act.lastSnapshot = null; act.stamps = [];
   clearTimeout(act.idleTimer);
   chrome.storage.session.remove(ACT_KEY).catch(() => {});
   if (tabId != null) chrome.debugger.detach({ tabId }).catch(() => {});
@@ -315,13 +336,17 @@ async function follow(tab) {
     if (!/already attached/i.test(err.message)) return `Chrome did not allow control of this tab (${err.message}).`;
   }
   act.tabId = tab.id; act.site = siteOf(tab.url); act.lastSnapshot = null;
+  // The user's focus is in the side panel, not in the page; without focus
+  // emulation menus and pickers close as soon as they open and animation
+  // frames stall. jev-ultrafast sets the same for its own tab.
+  try { await cdp('Emulation.setFocusEmulationEnabled', { enabled: true }); } catch { /* an older Chrome */ }
   return '';
 }
 
 // Let go of the tab the user left: no debugging bar, no cursor there.
 function release() {
   const tabId = act.tabId;
-  act.tabId = null; act.lastSnapshot = null; act.cursorAt = null;
+  act.tabId = null; act.lastSnapshot = null;
   if (tabId == null) return;
   chrome.debugger.detach({ tabId }).catch(() => {});
   clearCursor(tabId);
@@ -414,22 +439,24 @@ async function guard({ read = false } = {}) {
 }
 
 // Read the tab once — jev-ultrafast's atomic snapshot — minus sensitive fields
-// (they leave the observation entirely: no id to act on, no value to read). With
-// Act on, it becomes the snapshot the next action is checked against.
+// (they leave the observation entirely: no id to act on, no value to read),
+// covered controls and anything leading off the site. With Act on, it becomes
+// the snapshot the next action is checked against.
 async function observe(tab) {
-  let state, hidden;
-  let covered;
+  let state, hidden, covered, offsite;
   if (act.on) {
     state = await evaluate(await snapshotScript());
     hidden = new Set(await evaluate(SENSITIVE_FIELDS_JS) || []);
     covered = new Set(await evaluate(COVERED_JS) || []);
+    offsite = new Set(await evaluate(OFFSITE_JS) || []);
   } else {
     state = await inTab(tab.id, ['vendor/jev-snapshot.js']);
     hidden = new Set(await inTab(tab.id, null, sensitiveFieldIds) || []);
     covered = new Set(await inTab(tab.id, null, coveredNodeIds) || []);
+    offsite = new Set(await inTab(tab.id, null, offsiteNodeIds) || []);
   }
   if (!state) return null;
-  state.actions = state.actions.filter((a) => a.node == null || (!hidden.has(a.node) && !covered.has(a.node)));
+  state.actions = state.actions.filter((a) => a.node == null || !(hidden.has(a.node) || covered.has(a.node) || offsite.has(a.node)));
   if (act.on) {
     const back = await previousEntry(tab);
     if (back) state.actions.push({ id: 'go_back', kind: 'back', label: `Go back to the previous page${back.title ? ` (${String(back.title).slice(0, 80)})` : ''}` });
@@ -483,42 +510,52 @@ async function tabSnapshot() {
   return { ...forModel(state), audit: `snapshot ${tab.url}` };
 }
 
-// After input, wait for the page to settle: until its DOM has been quiet for a
-// moment (no mutations for QUIET ms), capped. jev-ultrafast waits two frames /
-// 50 ms and retries a stale read locally for 20 ms; here a stale read costs a
-// whole round trip, so waiting a little longer is cheaper. An editable combobox
-// also waits for its visible suggestions. Read-only.
-function settleExpression(action, quiet = 120, cap = 600) {
-  return `((action, quiet, cap) => new Promise((resolve) => {
+// The page-side code of an action, as expressions for Runtime.evaluate — the
+// same checks and waits as jev-ultrafast's own executor (browser.py), so the
+// autopilot behaves on the user's tab as it does on its own. Also run by
+// scripts/test-tab-executor.mjs against a real Chrome.
+
+// After input, before the next read: up to two animation frames or 50 ms; an
+// editable combobox instead waits for its visible suggestions, capped at
+// 200 ms — so no decision is paid for before autocomplete arrives. Read-only.
+function afterInputExpression(action) {
+  return `((action) => new Promise((resolve) => {
     const field = window.__jevFast?.nodes.get(action.node);
     const autocomplete = action.kind === 'fill' && field?.getAttribute('role') === 'combobox';
-    let stopped = false, timer = null;
-    const finish = () => { if (stopped) return; stopped = true; mo.disconnect(); resolve(true); };
-    const optionsShown = () => {
+    let frames = 0, stopped = false;
+    const finish = () => { stopped = true; resolve(true); };
+    setTimeout(finish, autocomplete ? 200 : 50);
+    const ready = () => {
+      if (stopped) return;
       const ids = (field?.getAttribute('aria-controls') || field?.getAttribute('aria-owns') || '').split(/\\s+/).filter(Boolean);
       const roots = ids.length ? ids.map((id) => document.getElementById(id)).filter(Boolean) : [document];
-      return roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')]).some((e) => {
+      const options = roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')]);
+      if (++frames >= 2 && (!autocomplete || options.some((e) => {
         const r = e.getBoundingClientRect();
         return r.width && r.height && r.bottom > 0 && r.top < innerHeight && e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
-      });
+      }))) finish();
+      else requestAnimationFrame(ready);
     };
-    const arm = () => { clearTimeout(timer); timer = setTimeout(() => { if (!autocomplete || optionsShown()) finish(); else arm(); }, quiet); };
-    const mo = new MutationObserver(arm);
-    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
-    setTimeout(finish, cap);
-    arm();
-  }))(${JSON.stringify({ node: action.node, kind: action.kind })}, ${quiet}, ${cap})`;
+    requestAnimationFrame(ready);
+  }))(${JSON.stringify({ node: action.node, kind: action.kind })})`;
 }
 
-// The page-side checks of an action, as expressions for Runtime.evaluate (also
-// run by scripts/test-tab-executor.mjs against a real Chrome).
-function freshExpression(node) {
-  return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(node)}))]) : null; })()`;
+// Is the decision still about the page that was read? A click or select
+// compares the document, URL, viewport, form values and the target's own guard
+// (unrelated content may change); anything else compares the whole marker.
+function freshExpression(action, snapshot) {
+  if (action.kind === 'click' || action.kind === 'select') {
+    return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))]) : null; })()`;
+  }
+  return `(() => { const s = ${snapshot}; return s ? JSON.stringify(s.marker) : null; })()`;
+}
+function expectedFresh(action, snap) {
+  return JSON.stringify(action.kind === 'click' || action.kind === 'select' ? [snap.page_key, snap.guards[action.node]] : snap.marker);
 }
 
-// Same checks as jev-ultrafast's executor: the target is an element the
-// snapshot observed (never a model-written selector), still attached, enabled,
-// visible, on screen and not covered — or the action is refused.
+// The target is an element the snapshot observed (never a model-written
+// selector), still attached, enabled, visible, on screen and not covered — or
+// the action is refused and the page is read again.
 function targetExpression(action) {
   return `((a) => {
       const e = window.__jevFast?.nodes.get(a.node);
@@ -539,18 +576,11 @@ function targetExpression(action) {
       const form = e.form || e.closest('form');
       const submits = e.type === 'submit' || e.type === 'image' || (e.tagName === 'BUTTON' && (!e.type || e.type === 'submit'));
       if (form && submits && other(e.getAttribute('formaction') || form.getAttribute('action') || location.href)) return {offsite: true};
-      // Off screen (the side panel makes the page narrower than usual): scroll it
-      // into view first — scrolling changes nothing on the page — then check it.
-      let r = e.getBoundingClientRect();
-      if (r.width && r.height && (r.y + r.height / 2 < 0 || r.y + r.height / 2 >= innerHeight || r.x + r.width / 2 < 0 || r.x + r.width / 2 >= innerWidth)) {
-        e.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-        r = e.getBoundingClientRect();
-      }
-      const x = r.x + r.width / 2, y = r.y + r.height / 2;
+      const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
       if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
       if (!e.contains(document.elementFromPoint(x, y))) return null;
       if (a.kind === 'select') {
-        if (e.tagName !== 'SELECT' || ![...e.options].some(o => o.value === a.value && !o.disabled)) return null;
+        if (e.tagName !== 'SELECT' || ![...e.options].some(o => o.value === a.value && !o.disabled && !o.closest('optgroup[disabled]'))) return null;
         e.value = a.value;
         e.dispatchEvent(new Event('input', {bubbles: true}));
         e.dispatchEvent(new Event('change', {bubbles: true}));
@@ -560,12 +590,11 @@ function targetExpression(action) {
 }
 
 // ── The assistant's cursor on the page ───────────────────────────────────────
-// While Act runs, a large cursor glides to each control before it is clicked or
+// While Act runs, a large cursor moves to each control as it is clicked or
 // typed into, so the user can follow what the assistant does. It is drawn in the
 // extension's isolated world inside a closed shadow root, ignores the mouse
-// (pointer-events: none — clicks and elementFromPoint pass through it) and is
-// removed the moment Act switches off.
-const CURSOR_MOVE_MS = 100;   // glide time; skipped when the cursor is already near the target
+// (pointer-events: none — clicks and elementFromPoint pass through it), is
+// never waited for, and is removed the moment Act switches off.
 
 function paintCursor(x, y, effect, box) {
   const ID = 'something-agent-cursor';
@@ -658,34 +687,29 @@ async function actOnce(targetId, text, soft = false) {
   if (action.kind === 'fill' && typeof text !== 'string') throw new Error('A "fill" control needs text.');
   const t0 = performance.now();
 
+  // Is the decision still about the page that was read? (jev-ultrafast's
+  // Browser.fresh, checked immediately before input.)
+  if (action.kind !== 'back') {
+    const fresh = await evaluate(freshExpression(action, await snapshotScript()));
+    if (fresh !== expectedFresh(action, snap)) {
+      return refuse(tab, 'The page changed since it was read, so that control may not be the one you picked. Take a new snapshot.', soft);
+    }
+  }
   if (action.kind === 'scroll') {
-    await cursor(tab.id, Math.round(snap.w / 2), Math.round(snap.h / 2));
-    act.cursorAt = { x: Math.round(snap.w / 2), y: Math.round(snap.h / 2) };
+    cursor(tab.id, Math.round(snap.w / 2), Math.round(snap.h / 2));
     await cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: Math.round(snap.w / 2), y: Math.round(snap.h / 2), deltaX: 0, deltaY: action.delta });
   } else if (action.kind === 'wait') {
-    // Until the page has been quiet for a moment, at most 1.5 s — one round
-    // trip instead of several 100 ms ones while results load.
-    try { await evaluate(settleExpression(action, 250, 1500)); } catch { /* navigating */ }
+    await new Promise((r) => setTimeout(r, 100));
   } else if (action.kind === 'back') {
     // One step back in this tab's history — offered (and re-checked) only when
     // that page is on the same site, so it is never a way off it.
     if (!(await previousEntry(tab))) return refuse(tab, 'There is no same-site page to go back to.', soft);
     await chrome.tabs.goBack(tab.id);
   } else {
-    const fresh = await evaluate(freshExpression(action.node));
-    if (fresh !== JSON.stringify([snap.page_key, snap.guards[action.node]])) {
-      return refuse(tab, 'The page changed since it was read, so that control may not be the one you picked. Take a new snapshot.', soft);
-    }
     const target = await evaluate(targetExpression(action));
     if (!target) return refuse(tab, 'That control changed or is covered. Take a new snapshot.', soft);
     if (target.offsite) throw new Error('That leads away from this site (another address, a new tab or a download), which is not allowed. Stay on this site.');
-    // The cursor travels to the control first, so the user sees where it acts —
-    // a short glide, none at all when it is already there.
-    const far = !act.cursorAt || Math.hypot(act.cursorAt.x - target.x, act.cursorAt.y - target.y) > 40;
-    await cursor(tab.id, target.x, target.y, '', target.box);
-    if (far) await new Promise((r) => setTimeout(r, CURSOR_MOVE_MS));
-    act.cursorAt = { x: target.x, y: target.y };
-    cursor(tab.id, target.x, target.y, 'click', target.box);   // the ripple needs no waiting
+    cursor(tab.id, target.x, target.y, 'click', target.box);   // a picture for the user; never waited for
     if (action.kind !== 'select') {
       for (const type of ['mousePressed', 'mouseReleased']) {
         await cdp('Input.dispatchMouseEvent', { type, x: target.x, y: target.y, button: 'left', clickCount: 1 });
@@ -700,11 +724,12 @@ async function actOnce(targetId, text, soft = false) {
   }
   const executeMs = Math.round(performance.now() - t0);
   // Look again right away (jev-ultrafast observes after every action), so the
-  // assistant gets the new page with the result instead of asking for it. The
-  // old snapshot is spent either way: the next action is checked against this
-  // one, or refused until the assistant takes a snapshot.
+  // caller gets the new page with the result instead of asking for it. The old
+  // snapshot is spent either way: the next action is checked against this one.
   act.lastSnapshot = null;
-  if (action.kind !== 'wait') { try { await evaluate(settleExpression(action)); } catch { /* navigating */ } }
+  if (action.kind !== 'wait' && action.kind !== 'scroll' && action.kind !== 'back') {
+    try { await evaluate(afterInputExpression(action)); } catch { /* navigating */ }
+  }
   const state = await observeSettled(tab);
   const observeMs = Math.round(performance.now() - t0) - executeMs;
   return {

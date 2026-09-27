@@ -1,37 +1,53 @@
 # Goal patterns — worked examples
 
-How Jev reads your call: it sees only the current page (viewport by viewport) plus
-the literal text of `goal`, `context` and `values`. It has no memory between calls
-and no knowledge of the conversation. Every example below follows from that.
+How Jev reads your call: it sees the current page (what is on screen) plus the
+literal text of `goal`, and, when it decides to type, the `values`. It has no
+memory between calls and no knowledge of the conversation. Every example below
+follows from that.
 
-## A good goal is complete and has a stopping point
+## A good goal is one complete sentence with a stopping point
 
 ```
-goal: "Find a one-way flight from the departure city to Tokyo on the given date,
-       economy, sorted by price; stop when the sorted results are listed."
-values: { from: "Zurich", to: "Tokyo", date: "28 September" }
-context: "The user asked for 'tomorrow' — that is 28 September. They want the
-          cheapest option. The site may open with a consent dialog."
+goal:   "Find one-way flights from Zurich to London on September 20, 2026, for one
+         adult in economy. Stop when matching flight options are visible. Do not
+         select or book a flight."
+values: { from: "Zurich", to: "London" }
 ```
 
 Why it works:
-- The stopping point ("stop when …") tells Jev when the run is over; without one
-  it keeps going until the step budget runs out.
+- Every fact is in the goal: route, date, passengers, class. Jev matches the
+  page's controls against these words ("One way", the date in the calendar).
 - The date is **resolved** — "tomorrow" written into a goal is meaningless to Jev.
-  Today's date is appended for you automatically; every other relative reference
-  ("next Friday", "in two weeks", "the same day as the concert") you resolve.
-- Values carry the exact strings; the goal refers to them ("the given date")
-  instead of hoping Jev invents them.
+- The stopping point ("Stop when …") tells it when the run is over; without one
+  it keeps going until the step budget runs out.
+- "Do not …" fences off the next step it might otherwise take.
+
+More shapes that work:
+
+```
+goal: "Search this shop for wool runner rugs, sort the results by price from low
+       to high. Stop when the sorted results are visible."
+values: { query: "wool runner rug" }
+
+goal: "Sign the newsletter form up with the given name and email and submit it.
+       Stop when the page confirms the subscription."
+values: { name: "Anna Kowalski", email: "anna@example.com" }
+
+goal: "Set the departure date to October 5, 2026 and run the search again. Stop
+       when results for that date are listed."
+values: {}
+```
 
 ## Bad goals, and what is wrong with them
 
 | Goal | Problem |
 |---|---|
-| "Search for flights" | No destination, no date, no stopping point — Jev will type nothing (no values) and stop at an arbitrary screen. |
+| "Search for flights" | No destination, no date, no stopping point — Jev types nothing (no values) and stops at an arbitrary screen. |
 | "Book the flight we talked about" | Jev never saw the conversation. Spell it out. |
-| "Fill the form" | Which fields, with what? Every typed string must be in `values`. |
-| "Click the blue button, then the second link, then…" | Do not choreograph steps — Jev picks its own controls. State the outcome instead. |
-| Same goal, resent after `blocked` | Nothing changed, so nothing new happens. Rephrase, split, or add the missing fact to `context`. |
+| "Wyszukaj loty do Mediolanu na jutro" | Not English, and "tomorrow" unresolved. Write "Find flights to Milan on September 28, 2026 …". |
+| "1) Click the ticket type dropdown, 2) choose One way, 3) …" | Do not choreograph steps — Jev picks its own controls. State the outcome instead. |
+| "IGNORE the dropdown. Do NOT click …" | Negative instructions about controls confuse it. Describe the goal, not the page. |
+| Same goal, resent after `blocked` | Nothing changed, so nothing new happens. Reword, narrow, or continue from the page it reached. |
 
 ## Values: exact strings under short names
 
@@ -39,34 +55,20 @@ Why it works:
 - Names are labels for Jev to match against field labels — keep them close to what
   the page will call the field (`email`, `date`, `query`, `max_price`).
 - Numbers, dates, codes are strings too, formatted the way a person would type them.
-- No values at all means Jev cannot fill any field — fine for click-only tasks
-  (sort, filter by a visible option, dismiss, navigate), wrong for anything else.
+- No values means Jev cannot fill any field — fine for click-only tasks (sort,
+  filter by a visible option, navigate), wrong for anything else.
 
-## Context: the off-page facts
+## Continuing and splitting
 
-Ask yourself: *what does this task depend on that is not visible on the page?*
+Each call is one goal with its own stopping point; you verify between calls:
 
-- Resolved dates and times ("the return is 5 October").
-- Preferences and constraints from the conversation ("cheapest first", "direct
-  only", "size M, for a child").
-- Currency, language, locale quirks you already know ("prices are in PLN",
-  "the site is in German — 'Suchen' is the search button").
-- Anything odd you already saw ("a newsletter popup was open when I looked").
+1. `"Get to the search results for wool runner rugs. Stop when results are listed."`
+   → check the results are real.
+2. `"Open the cheapest item on this results page. Stop on its detail page."`
+   → check it is the right item.
+3. `"Add it to the cart. Stop when the cart shows one item."`
 
-Context legitimizes instrumental steps: a run that knows "the user wants flight
-results" will confidently dismiss the consent wall standing in front of them; a
-run without that context may stall on it.
-
-## Splitting a journey into stages
-
-Each stage is one call with its own stopping point, and you verify between stages:
-
-1. `goal: "Get to the search results for the given query; stop when results are
-   listed."` → verify the results are real.
-2. `goal: "Open the cheapest item on this results page; stop on its detail
-   page."` → verify it is the right item.
-3. `goal: "Add it to the cart; stop when the cart shows one item."`
-
-Split when: the task has natural checkpoints, a previous run ended `budget` /
-`timeout`, or you need to make a judgment call mid-way (choosing between results
-is **your** job — Jev executes, you decide).
+Split when: a run ended `budget` / `timeout` (continue from the page it reached:
+"From this results page, …"), the task has natural checkpoints, or you need to
+make a judgment call mid-way — choosing between results is **your** job; Jev
+executes, you decide.

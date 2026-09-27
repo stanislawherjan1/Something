@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 const WRAPPER = '/usr/local/bin/jev-runner';
 const DEV_RUNNER = join(dirname(fileURLToPath(import.meta.url)), '../../../apps/jev-runner/runner.py');
 const RUN_TIMEOUT_MS = 120_000;
-const MAX_ACTIONS = 40;
+const MAX_ACTIONS = 60;   // jev-ultrafast's MAX_STEPS
 
 // No secret in the environment: the wrapper rebuilds it from its own
 // allow-list (egress proxy settings, locale) anyway.
@@ -38,7 +38,7 @@ function runnerEnv() {
   return env;
 }
 
-export function runAutopilot({ goal, values = {}, context = '', today = '', apiKey, exec, onStep = () => {}, onDecision = () => {}, maxActions = MAX_ACTIONS }) {
+export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {}, onDecision = () => {}, maxActions = MAX_ACTIONS }) {
   const started = Date.now();
   const steps = [];
   let decisions = 0;
@@ -102,6 +102,6 @@ export function runAutopilot({ goal, values = {}, context = '', today = '', apiK
       }
     }
 
-    write({ goal, values, context, today, max_actions: maxActions, key: apiKey });
+    write({ goal, values, max_actions: maxActions, key: apiKey });
   });
 }
