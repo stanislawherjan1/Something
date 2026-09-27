@@ -182,7 +182,7 @@ complete goal plus the values to type (`{"from": "Zurich", …}`), and Jev runs 
 
 ```
 tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback, turn token, Act on, Jev connected)
-  → lib/jev/autopilot.js spawns lib/jev/runner.py (python3; the TypeSafe key only in its env)
+  → lib/jev/autopilot.js starts /usr/local/bin/jev-runner (setuid → uid mcp) → apps/jev-runner/runner.py (key on stdin)
   → runner: observe → jev_ultrafast.model.choose (TypeSafe picks operation + target) → act → observe …
   → every observe / act goes through routes/tab.js sendTabCommand → the panel → the extension's executor
   → steps stream into the chat's tool line ("Autopilot · Clicking "Search"") → result back to the tool
@@ -202,7 +202,13 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   in the egress allow-list only while the integration is active).
 - **Only here.** The tool exists only in a panel turn with Act on while Jev is connected
   (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
-- `lib/jev/runner_test.py` runs the loop on the real library with a fake TypeSafe and a fake tab;
+- **Isolation.** The runner executes third-party code, so it runs as the `mcp` user like every
+  integration's MCP — never as workspace-api's user, which can decrypt every integration's keys.
+  `setuid-wrappers/jev-runner.c` (root:1001, mode 4750: only workspace-api may start it) execs a fixed
+  script with a rebuilt, allow-listed environment and `PR_SET_NO_NEW_PRIVS`; the TypeSafe key
+  arrives on stdin, so no process can read it from `/proc/<pid>/environ`. What it returns to the
+  assistant (step labels, a field name) is page content and is wrapped as such.
+- `apps/jev-runner/runner_test.py` runs the loop on the real library with a fake TypeSafe and a fake tab;
   `scripts/test-tab-executor.mjs` runs the extension's page-side code on a real Chrome.
 
 ## Files
@@ -214,7 +220,8 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 | `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in, the Act executor and its limits |
 | `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
 | `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, the autopilot route, audit log |
-| `ide-template/workspace-api/lib/jev/` | The Jev autopilot: `autopilot.js` (bridge) and `runner.py` (jev-ultrafast's policy + our executor) |
+| `ide-template/workspace-api/lib/jev/autopilot.js` | The Jev autopilot bridge (tab commands ↔ the runner) |
+| `ide-template/apps/jev-runner/runner.py`, `setuid-wrappers/jev-runner.c` | The runner (jev-ultrafast's policy + our executor) and the wrapper that starts it as `mcp` |
 | `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot`, `tab_autopilot` (only with Jev) |
 | `ide-template/frontend/src/components/workspace/views/BrowserAgentView.jsx` | The Browser agent page: Overview / Install, the Jev card |
 | `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and the Act switch |

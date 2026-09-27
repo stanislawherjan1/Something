@@ -13,7 +13,11 @@ rules. The loop mirrors upstream `Agent.command('tick')`. What differs:
   values with the goal, and Jev picks which one fits the field (one more
   TypeSafe choice). If none fits, the run stops and hands that field back.
 
-Protocol: JSON lines. stdin first carries {"goal", "values", "max_actions"},
+Runs as the mcp user through the setuid wrapper jev-runner (never as
+workspace-api's user, which can decrypt every integration's keys). The
+TypeSafe key arrives on stdin with the request, never in the environment.
+
+Protocol: JSON lines. stdin first carries {"goal", "values", "max_actions", "key"},
 then the answers to this process's requests; stdout carries requests
 ({"op": "observe"} / {"op": "act", "id", "text"}), progress
 ({"event": "step", ...}) and one final {"result": {...}}.
@@ -146,6 +150,10 @@ def run(goal, values, max_actions):
 
 def main():
     request = receive()
+    # The key stays in this process's memory; jev_ultrafast.model reads it from
+    # os.environ at call time (putenv does not show in /proc/<pid>/environ).
+    if request.get("key"):
+        os.environ["TYPESAFE_API_KEY"] = str(request["key"])
     goal = str(request.get("goal") or "").strip()
     values = {str(k): str(v) for k, v in (request.get("values") or {}).items() if str(v).strip()}
     max_actions = max(1, min(int(request.get("max_actions") or 30), MAX_STEPS))

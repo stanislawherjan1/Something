@@ -1,7 +1,7 @@
 """Tests for the Jev runner: the real jev-ultrafast policy code, a fake TypeSafe
 and a fake browser.
 
-    JEV_ULTRAFAST_DIR=<a jev-ultrafast checkout> python3 runner_test.py
+    JEV_ULTRAFAST_DIR=<a jev-ultrafast checkout> python3 apps/jev-runner/runner_test.py
 
 Needs httpx (jev_ultrafast.model imports it); no network, no key.
 """

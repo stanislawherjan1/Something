@@ -120,13 +120,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # The 2026-06-04 canary incident traced 11/16 web-side MCPs silently
 # failing back to a stale `prctl(PR_SET_NO_NEW_PRIVS)` call in wsapi-runner;
 # removing it matched the same trade-off bot-runner.c documents.
+# jev-runner (the Jev autopilot, as mcp) is root:1001 mode 4750: only
+# workspace-api (gid 1001) may start it — the bot cannot.
 COPY setuid-wrappers /tmp/setuid-wrappers
 RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/wsapi-runner.c   && \
     gcc -O2 -Wall -Wextra -o /usr/local/bin/mcp-runner     /tmp/setuid-wrappers/mcp-runner.c     && \
     gcc -O2 -Wall -Wextra -o /usr/local/bin/bot-runner     /tmp/setuid-wrappers/bot-runner.c     && \
     gcc -O2 -Wall -Wextra -o /usr/local/bin/monitor-runner /tmp/setuid-wrappers/monitor-runner.c && \
+    gcc -O2 -Wall -Wextra -o /usr/local/bin/jev-runner     /tmp/setuid-wrappers/jev-runner.c     && \
     chown root:root /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/local/bin/bot-runner /usr/local/bin/monitor-runner && \
     chmod 4755     /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/local/bin/bot-runner /usr/local/bin/monitor-runner && \
+    chown root:1001 /usr/local/bin/jev-runner && chmod 4750 /usr/local/bin/jev-runner && \
     rm -rf /tmp/setuid-wrappers
 
 # === LAYER 2: Claude Code CLI + pm2 ===
@@ -220,11 +224,14 @@ RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
     weasyprint \
     markdown
 
-# Jev autopilot (workspace-api/lib/jev): jev-ultrafast's policy code, fetched at
+# Jev autopilot (apps/jev-runner, via the jev-runner wrapper): jev-ultrafast's policy code, fetched at
 # a pinned commit by deploy.sh into jev-src/. Only its model + questions modules
 # are loaded (not its own browser driver), so the one dependency is httpx.
 COPY jev-src /opt/jev-ultrafast
 RUN pip install --no-cache-dir --break-system-packages "httpx[http2]>=0.28,<1"
+# The runner around it, started as the mcp user by /usr/local/bin/jev-runner.
+COPY apps/jev-runner /opt/ide/apps/jev-runner
+RUN rm -f /opt/ide/apps/jev-runner/runner_test.py
 
 # === LAYER 2d: Custom MCP servers (shopify, meta, google-ads, seedream) ===
 # Shared helpers used by every MCP — google-oauth.js (token refresh) +

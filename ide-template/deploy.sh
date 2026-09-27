@@ -254,7 +254,7 @@ ssh "$HETZNER_HOST" "
 " || exit 1
 
 # jev-ultrafast (browser-use/jev-ultrafast, MIT) at the pinned commit — the Jev
-# autopilot's policy code (workspace-api/lib/jev/runner.py imports its model and
+# autopilot's policy code (apps/jev-runner/runner.py imports its model and
 # questions). Fetched here for the same reason as the plugin marketplace above:
 # the Docker build's network cannot be trusted with GitHub. Bump together with
 # scripts/vendor-jev.sh.
@@ -287,6 +287,7 @@ scp setuid-wrappers/wsapi-runner.c   "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers
 scp setuid-wrappers/mcp-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/bot-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/monitor-runner.c "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
+scp setuid-wrappers/jev-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/README.md        "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 
 # Default skills (always installed) + optional skills (installed when
@@ -356,6 +357,10 @@ scp apps/pdf-mcp/index.js            "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/" 
 scp apps/pdf-mcp/package.json        "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
 scp apps/pdf-mcp/render.py           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
 scp apps/pdf-mcp/house.css           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
+# jev-runner — the Jev autopilot's runner (jev-ultrafast policy + our executor),
+# started as mcp by the jev-runner setuid wrapper. COPY'd by the Dockerfile.
+ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/jev-runner'"
+scp apps/jev-runner/runner.py "$HETZNER_HOST:$REMOTE_PATH/apps/jev-runner/" || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/miniapp-mcp'"

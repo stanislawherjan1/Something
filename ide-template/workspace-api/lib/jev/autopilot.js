@@ -1,12 +1,15 @@
 /**
  * The Jev autopilot: one goal, many steps, on the user's browser tab.
  *
- * Spawns lib/jev/runner.py — jev-ultrafast's policy (TypeSafe's Jev picks
- * each operation and target) around our executor — and answers its requests
- * by running commands on the tab through routes/tab.js sendTabCommand, so every
- * action gets the same checks as the assistant's own tab_act, and the
- * extension's Act limits on top. The TypeSafe key is decrypted by the caller and
- * lives only in the runner's environment for the run.
+ * Spawns the runner (apps/jev-runner/runner.py — jev-ultrafast's policy, where
+ * TypeSafe's Jev picks each operation and target, around our executor) through
+ * the setuid wrapper /usr/local/bin/jev-runner, so that third-party code runs
+ * as the mcp user like every integration's MCP — never as this process's user,
+ * which can decrypt every integration's keys. The TypeSafe key is sent on the
+ * runner's stdin (not in its environment). Its requests are answered by running
+ * commands on the tab through routes/tab.js sendTabCommand, so every action
+ * gets the same checks as the assistant's own tab_act and the extension's Act
+ * limits on top.
  *
  *   runner → { op: 'observe' }          → exec({ op: 'observe' })               → { ok, state }
  *   runner → { op: 'act', id, text }    → exec({ op: 'act', target, text, raw }) → { ok, state }
@@ -17,16 +20,17 @@ import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const RUNNER = join(dirname(fileURLToPath(import.meta.url)), 'runner.py');
-const PYTHON = process.env.JEV_PYTHON || 'python3';
+// In the container: the setuid wrapper (fixed script, uid mcp). JEV_PYTHON is
+// for local development and tests only: run the repo's runner directly.
+const WRAPPER = '/usr/local/bin/jev-runner';
+const DEV_RUNNER = join(dirname(fileURLToPath(import.meta.url)), '../../../apps/jev-runner/runner.py');
 const RUN_TIMEOUT_MS = 90_000;
 const MAX_ACTIONS = 30;
 
-// Only what the runner needs: its key, where the library is, and the egress
-// proxy settings so api.typesafe.ai goes through the allow-list like
-// everything else.
-function runnerEnv(apiKey) {
-  const env = { TYPESAFE_API_KEY: apiKey, PYTHONUNBUFFERED: '1' };
+// No secret in the environment: the wrapper rebuilds it from its own
+// allow-list (egress proxy settings, locale) anyway.
+function runnerEnv() {
+  const env = { PYTHONUNBUFFERED: '1' };
   for (const k of ['PATH', 'HOME', 'LANG', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy',
     'JEV_ULTRAFAST_DIR', 'TYPESAFE_MODEL', 'SSL_CERT_FILE']) {
     if (process.env[k]) env[k] = process.env[k];
@@ -47,7 +51,9 @@ export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {
       resolve({ ...result, steps, ms: Date.now() - started });
     };
 
-    const child = spawn(PYTHON, [RUNNER], { env: runnerEnv(apiKey), stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = process.env.JEV_PYTHON
+      ? spawn(process.env.JEV_PYTHON, [DEV_RUNNER], { env: runnerEnv(), stdio: ['pipe', 'pipe', 'pipe'] })
+      : spawn(WRAPPER, [], { env: runnerEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
     const timer = setTimeout(() => finish({ status: 'timeout', detail: `Stopped after ${RUN_TIMEOUT_MS / 1000} s.` }), RUN_TIMEOUT_MS);
     const write = (obj) => { try { child.stdin.write(JSON.stringify(obj) + '\n'); } catch { /* closed */ } };
     let stderr = '';
@@ -90,6 +96,6 @@ export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {
       }
     }
 
-    write({ goal, values, max_actions: maxActions });
+    write({ goal, values, max_actions: maxActions, key: apiKey });
   });
 }
