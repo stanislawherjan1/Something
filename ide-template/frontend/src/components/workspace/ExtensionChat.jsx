@@ -30,6 +30,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { cn } from '@/lib/utils';
 import { PARENT_ORIGIN } from '@/lib/extensionEmbed';
+import { WORKSPACE_FONT_STYLE } from '@/lib/workspaceFont';
 
 // Opening the panel after a longer pause starts a new conversation.
 const FRESH_AFTER_MS = 4 * 60 * 60 * 1000;
@@ -214,7 +215,7 @@ export default function ExtensionChat() {
   return (
     // text-foreground: the workspace sets it on its own root; without it here the
     // input inherits the body's legacy always-dark text colour in dark mode.
-    <div className="fixed inset-0 flex flex-col bg-background text-foreground">
+    <div className="fixed inset-0 flex flex-col bg-background text-foreground" style={WORKSPACE_FONT_STYLE}>
       <ChatPane
         className="h-full border-l-0"
         showThemeMenu

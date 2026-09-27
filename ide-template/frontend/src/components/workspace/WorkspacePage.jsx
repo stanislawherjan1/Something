@@ -16,6 +16,7 @@ import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import useDesktopNotifications from './useDesktopNotifications.js';
 import { useMobile } from '@/lib/useMobile';
+import { WORKSPACE_FONT_STYLE } from '@/lib/workspaceFont';
 import { useApi, invalidate } from '@/lib/useApi';
 
 /**
@@ -278,10 +279,7 @@ export default function WorkspacePage() {
   return (
     <div
       className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground antialiased"
-      style={{
-        fontFamily: '"Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif',
-        fontFeatureSettings: '"cv11", "ss01", "ss03", "calt"',
-      }}
+      style={WORKSPACE_FONT_STYLE}
     >
       {/* Server-pushed notification toasts (bottom-right overlay). Subscribes
           once to /api/notifications/stream for the whole workspace shell, so
