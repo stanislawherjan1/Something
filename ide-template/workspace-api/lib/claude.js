@@ -21,7 +21,7 @@ import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
 import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
 import { syncMcpServers } from './integrations/runtime.js';
-import { isActive as integrationActive } from './integrations/store.js';
+import { isUsable as integrationUsable } from './integrations/store.js';
 import { primaryAdminSlug } from './team.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
@@ -266,10 +266,10 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // — Telegram, workspace chat, reminders, groups — ever gets one.
   if (tabToken) childEnv.IDE_TAB_TOKEN = String(tabToken);
   // The Jev autopilot (tab_autopilot) exists only in such a turn with Act on,
-  // and only while the Jev integration is connected — nowhere else.
+  // and only while the Jev integration is connected and not paused.
   if (tabToken && actTurn) {
     let jev = false;
-    try { jev = integrationActive('jev'); } catch { /* store not ready */ }
+    try { jev = integrationUsable('jev'); } catch { /* store not ready */ }   // connected and not paused
     if (jev) childEnv.IDE_JEV_AUTOPILOT = '1';
   }
 

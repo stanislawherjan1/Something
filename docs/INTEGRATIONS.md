@@ -220,6 +220,7 @@ Each catalog entry declares:
 | `process` | `'telegram-bot'` for the long-running PM2 case — triggers `pm2 restart` on activate/remove. |
 | `home` | Where the integration is set up when that is not the marketplace — `"browser-agent"` (Jev): the marketplace does not offer it, and lists it under Active with a link there once connected. |
 | `experimental` | Shows a neutral **Experimental** tag (quieter than Beta). |
+| `pausable` | An admin can pause it without disconnecting (`PUT /api/integrations/:id/paused {paused}`): the key stays, its tools and its `allowedHosts` go away until resumed; no bot restart. `GET /api/integrations` reports `paused`. |
 | `logoFill` | The logo is a full square icon with its own background: it covers the logo tile instead of sitting on white. |
 
 ### Field types

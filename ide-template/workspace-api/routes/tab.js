@@ -72,9 +72,9 @@ function viewerSlug(req) {
   return getUser(req.actor)?.slug || (getTeamMode() ? null : (primaryAdminSlug() || 'default'));
 }
 
-// Is the Jev autopilot available (the integration connected)?
+// Is the Jev autopilot available (connected, not paused)?
 export function jevConnected() {
-  try { return integrationsStore.isActive('jev'); } catch { return false; }
+  try { return integrationsStore.isUsable('jev'); } catch { return false; }
 }
 
 // Run one command on the user's tab and wait for the answer. Every check lives
@@ -210,7 +210,7 @@ export default function tabRouter() {
     if (!slug || !turn || turn.slug !== slug) {
       return res.json({ ok: false, error: 'The autopilot only works in a conversation the user is having in the Something panel in Chrome.' });
     }
-    if (!jevConnected()) return res.json({ ok: false, error: 'The Jev integration is not connected.' });
+    if (!jevConnected()) return res.json({ ok: false, error: 'The Jev autopilot is not connected or is paused.' });
     if (!turn.act || modes.get(slug) !== 'act') {
       return res.json({ ok: false, error: 'Act is off, so the autopilot cannot work. Ask the user to switch Act on.' });
     }

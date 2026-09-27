@@ -200,8 +200,11 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 - **Data.** While it runs, the goal, the values, the page's visible text and control labels and
   values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
   in the egress allow-list only while the integration is active).
-- **Only here.** The tool exists only in a panel turn with Act on while Jev is connected
-  (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
+- **Only here.** The tool exists only in a panel turn with Act on while Jev is connected and not
+  paused (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
+- **Pause.** An admin can switch the autopilot off on the Jev card without disconnecting: the key
+  stays, the tool disappears from the next turn, the route refuses, and `api.typesafe.ai` leaves
+  the egress allow-list until it is switched back on.
 - **Isolation.** The runner executes third-party code, so it runs as the `mcp` user like every
   integration's MCP — never as workspace-api's user, which can decrypt every integration's keys.
   `setuid-wrappers/jev-runner.c` (root:1001, mode 4750: only workspace-api may start it) execs a fixed

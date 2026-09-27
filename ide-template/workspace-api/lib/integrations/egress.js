@@ -163,6 +163,8 @@ export function computeAllowedHosts() {
       process.stderr.write(`[egress] decrypt ${id} failed, skipping: ${err.message}\n`);
       continue;
     }
+    // Paused (catalog `pausable`): connected, but its hosts stay closed.
+    if (cat.pausable && !cat.multi && plain?.PAUSED === 'yes') continue;
 
     const isMulti = cat.multi === true;
     const fields  = isMulti ? null : plain;

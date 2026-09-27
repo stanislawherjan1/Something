@@ -95,6 +95,26 @@ export function isActive(id) {
   return Boolean(state[id]);
 }
 
+/**
+ * Paused: connected, key kept, but switched off for now (catalog `pausable`,
+ * e.g. the Jev autopilot). Stored as the internal field PAUSED. A paused
+ * integration is left out of its tools and of the egress allow-list.
+ */
+export function isPaused(id) {
+  if (!getCatalog(id)?.pausable || !isActive(id)) return false;
+  try { return decryptFor(id)?.PAUSED === 'yes'; } catch { return false; }
+}
+
+/** Connected and not paused — what callers mean by "can be used now". */
+export function isUsable(id) {
+  return isActive(id) && !isPaused(id);
+}
+
+export function setPaused(id, paused) {
+  if (!getCatalog(id)?.pausable) throw new Error(`${id} cannot be paused`);
+  return updateInternal(id, { PAUSED: paused ? 'yes' : 'no' });
+}
+
 /** Snapshot of every integration's status, for the dashboard. */
 export function listStatus() {
   const state = readAll();

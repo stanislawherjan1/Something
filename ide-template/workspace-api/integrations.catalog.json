@@ -4,6 +4,7 @@
     {
       "id": "jev",
       "home": "browser-agent",
+      "pausable": true,
       "experimental": true,
       "label": "Jev (TypeSafe)",
       "logo": "/integrations/jev.png",

@@ -32,10 +32,22 @@ export default function BrowserAgentView({ sidebarOpen }) {
   const isAdmin = !!me?.isAdmin;
   const { data, reload: reloadApi } = useApi('/api/integrations');
   const jev = data?.integrations?.find(i => i.id === 'jev') || null;
-  const autopilot = !!jev?.active;
+  const autopilot = !!jev?.active && !jev?.paused;
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState(false);
   const reload = useCallback(() => { invalidate('/api/integrations'); return reloadApi(); }, [reloadApi]);
+  // Pause / resume without disconnecting: the key stays (PUT …/jev/paused).
+  const [pausing, setPausing] = useState(false);
+  const setPaused = useCallback(async (paused) => {
+    setPausing(true);
+    try {
+      await fetch('/api/integrations/jev/paused', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paused }),
+      });
+    } catch { /* the card shows the state it reloads */ }
+    await reload();
+    setPausing(false);
+  }, [reload]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -110,6 +122,8 @@ export default function BrowserAgentView({ sidebarOpen }) {
                     ready={!!data?.ready}
                     onConnect={() => setConnecting(true)}
                     onRemove={() => setRemoving(true)}
+                    onPause={setPaused}
+                    pausing={pausing}
                   />
                 </section>
               )}
@@ -139,8 +153,9 @@ export default function BrowserAgentView({ sidebarOpen }) {
 // The optional Jev integration: what it adds (a speed comparison), where the
 // page's text goes, and one action. Admins connect / disconnect; everyone else
 // sees the state.
-function JevCard({ jev, isAdmin, ready, onConnect, onRemove }) {
-  const on = jev.active;
+function JevCard({ jev, isAdmin, ready, onConnect, onRemove, onPause, pausing }) {
+  const connected = jev.active;
+  const on = connected && !jev.paused;
   return (
     <div className="flex flex-col gap-3.5 rounded-lg border border-border/60 bg-card p-4">
       <div className="flex items-start gap-3">
@@ -150,12 +165,32 @@ function JevCard({ jev, isAdmin, ready, onConnect, onRemove }) {
             Jev autopilot
             {on
               ? <span className="rounded-full bg-emerald-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">On</span>
-              : <ExperimentalTag />}
+              : connected
+                ? <span className="rounded-full bg-foreground/[0.07] px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Paused</span>
+                : <ExperimentalTag />}
           </div>
           <div className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground/85">
-            {on ? 'Multi-step tasks run by themselves while Act is on.' : 'Finishes multi-step tasks for you — search, filters, forms.'}
+            {on ? 'Multi-step tasks run by themselves while Act is on.'
+              : connected ? 'Paused — the key is kept. Nothing goes to TypeSafe until it is on again.'
+                : 'Finishes multi-step tasks for you — search, filters, forms.'}
           </div>
         </div>
+        {/* Admins pause and resume it here without disconnecting. */}
+        {connected && isAdmin && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            disabled={pausing}
+            onClick={() => onPause(on)}
+            title={on ? 'Pause the autopilot (the key is kept)' : 'Turn the autopilot back on'}
+            className="mt-0.5 shrink-0 rounded-md p-1 hover:bg-muted/50 disabled:opacity-50"
+          >
+            <span className={cn('relative block h-4 w-7 rounded-full transition-colors', on ? 'bg-foreground/80' : 'bg-muted-foreground/30')}>
+              <span className={cn('absolute top-0.5 size-3 rounded-full bg-background transition-all', on ? 'left-3.5' : 'left-0.5')} />
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5 rounded-md border border-border/50 bg-background px-3 py-2.5">
@@ -169,8 +204,8 @@ function JevCard({ jev, isAdmin, ready, onConnect, onRemove }) {
       </div>
 
       {!isAdmin ? (
-        on && <div className="text-[11.5px] text-muted-foreground/70">Set up by a workspace admin.</div>
-      ) : on ? (
+        connected && <div className="text-[11.5px] text-muted-foreground/70">Set up by a workspace admin.</div>
+      ) : connected ? (
         <button
           type="button"
           onClick={onRemove}

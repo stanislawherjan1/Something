@@ -137,6 +137,8 @@ export default function integrationsRouter() {
         // For multi=true integrations: how many items the user added.
         itemCount:         s?.itemCount ?? null,
         globalFieldValues,
+        // Pausable integrations (Jev): switched off for now, key kept.
+        ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
       };
     });
     // no-store so the dashboard's post-OAuth refetch always sees the freshly
@@ -147,6 +149,22 @@ export default function integrationsRouter() {
       readyError:   isReady() ? null : readinessError(),
       integrations: items,
     });
+  });
+
+  // Pause / resume a `pausable` integration without removing it: the key stays,
+  // its tools and its egress hosts go away until resumed. No bot restart —
+  // the tools that use it check at the start of every turn.
+  router.put('/integrations/:id/paused', requireAdmin, readyOr503, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
+    const id = req.params.id;
+    const cat = catalog.get(id);
+    if (!cat?.pausable) return res.status(404).json({ error: `"${id}" cannot be paused.` });
+    if (!store.isActive(id)) return res.status(404).json({ error: `${cat.label} is not connected.` });
+    if (typeof req.body?.paused !== 'boolean') return res.status(400).json({ error: 'Body must be { paused: true | false }.' });
+    try { store.setPaused(id, req.body.paused); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+    try { writeAllowedHostsFile(); }
+    catch (err) { process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`); }
+    res.json({ ok: true, paused: req.body.paused });
   });
 
   // ─── Remote-MCP OAuth (catalog entries with mcp.type === "http") ─────────
