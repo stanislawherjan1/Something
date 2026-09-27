@@ -36,7 +36,10 @@
   <a id="same" href="/page2.html">Next page</a>
   <span class="cover-wrap"><button id="covered" type="button">Covered</button><span class="cover"></span></span>
   <div id="out"></div>
+  <div style="height: 3000px"></div>
+  <button id="far" type="button">Far below</button>
 <script>
+  document.getElementById('far').addEventListener('click', (e) => { e.currentTarget.dataset.clicked = 'yes'; });
   // A counter the test reads back after a real click.
   document.getElementById('counter').addEventListener('click', (e) => {
     e.currentTarget.dataset.n = String((+e.currentTarget.dataset.n || 0) + 1);

@@ -210,6 +210,17 @@ try {
     return f ? 'disabled option offered but refused' : 'disabled option not offered';
   });
 
+  await check('a control below the fold is scrolled into view, then clicked', async () => {
+    page = await observe();
+    const a = find(page, /^Far below$/);
+    if (!a) return 'not offered by the snapshot (off screen) — the scroll actions reach it';
+    const t = await target(a);
+    assert(t && t.x && t.y >= 0 && t.y < 900, `not brought into view: ${JSON.stringify(t)}`);
+    await click(t.x, t.y);
+    assert((await evaluate(`document.getElementById('far').dataset.clicked`)) === 'yes', 'click did not land');
+    await evaluate('scrollTo(0, 0)');
+  });
+
   await check('the page changed → the freshness guard no longer matches', async () => {
     page = await observe();
     const a = find(page, /^Count$/, 'click');

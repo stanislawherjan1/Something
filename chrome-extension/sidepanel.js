@@ -192,8 +192,27 @@ async function selectedText() {
 // credential sites or sensitive fields, and every command is re-checked right
 // before it runs.
 const IDLE_OFF_MS = 10 * 60 * 1000;
-const MAX_ACTIONS_PER_MIN = 30;
-const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], lastSnapshot: null, cursorAt: null };
+const MAX_ACTIONS_PER_MIN = 30;    // clicks, typing, scrolling
+const MAX_READS_PER_MIN = 120;     // snapshots and screenshots — harmless, so a looser bound
+// Well under the 18 s the panel waits for an answer: an action must never run
+// after its caller has already been told it failed.
+const MAX_THROTTLE_WAIT_MS = 10_000;
+
+// Over the per-minute bound, wait for a slot (up to 10 s) instead of refusing:
+// a refusal only makes the caller retry at once and burn the bound further.
+async function throttle(stamps, max, what) {
+  let now = Date.now();
+  while (stamps.length && now - stamps[0] >= 60_000) stamps.shift();
+  if (stamps.length >= max) {
+    const wait = 60_000 - (now - stamps[0]) + 50;
+    if (wait > MAX_THROTTLE_WAIT_MS) throw new Error(`Too many ${what} in a minute. Wait ${Math.ceil(wait / 1000)} seconds before the next one — do not retry sooner.`);
+    await new Promise((r) => setTimeout(r, wait));
+    now = Date.now();
+    while (stamps.length && now - stamps[0] >= 60_000) stamps.shift();
+  }
+  stamps.push(now);
+}
+const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], reads: [], lastSnapshot: null, cursorAt: null };
 // Survives the panel closing (chrome.storage.session: this browser session
 // only, never on disk): Act is on until this time.
 const ACT_KEY = 'actUntil';
@@ -340,15 +359,12 @@ async function snapshotScript() {
 // Looking without Act: the current tab, read-only, no debugger attached (so no
 // debugging bar) — a screenshot via captureVisibleTab, the page via a script in
 // the extension's isolated world. Same page rules and rate limit as Act.
-const look = { stamps: [] };
+const look = { stamps: [] };   // reads without Act
 async function lookGuard() {
   const tab = await activeTab();
   const problem = tab ? forbidden(tab) : 'No tab to look at.';
   if (problem) throw new Error(problem);
-  const now = Date.now();
-  look.stamps = look.stamps.filter((t) => now - t < 60_000);
-  if (look.stamps.length >= MAX_ACTIONS_PER_MIN) throw new Error('Too many requests in a minute. Slow down.');
-  look.stamps.push(now);
+  await throttle(look.stamps, MAX_READS_PER_MIN, 'reads');
   return tab;
 }
 async function inTab(tabId, files, func) {
@@ -357,7 +373,7 @@ async function inTab(tabId, files, func) {
 }
 
 // Everything an Act command must pass, checked right before it runs.
-async function guard() {
+async function guard({ read = false } = {}) {
   if (!act.on) throw new Error('The user has not switched the panel to Act.');
   const tab = await activeTab();
   if (!tab) throw new Error('No tab to work in.');
@@ -367,10 +383,8 @@ async function guard() {
   if (problem) { if (tab.id === act.tabId) release(); throw new Error(problem); }
   const attached = await follow(tab);
   if (attached) throw new Error(attached);
-  const now = Date.now();
-  act.stamps = act.stamps.filter((t) => now - t < 60_000);
-  if (act.stamps.length >= MAX_ACTIONS_PER_MIN) throw new Error('Too many actions in a minute. Slow down.');
-  act.stamps.push(now);
+  if (read) await throttle(act.reads, MAX_READS_PER_MIN, 'reads');
+  else await throttle(act.stamps, MAX_ACTIONS_PER_MIN, 'actions');
   bumpIdle();
   return tab;
 }
@@ -422,7 +436,7 @@ function forModel(state) {
 }
 
 async function tabSnapshot() {
-  const tab = act.on ? await guard() : await lookGuard();
+  const tab = act.on ? await guard({ read: true }) : await lookGuard();
   const state = await observe(tab);
   if (!state) throw new Error('The page is still loading. Try again in a moment.');
   return { ...forModel(state), audit: `snapshot ${tab.url}` };
@@ -482,7 +496,14 @@ function targetExpression(action) {
       const form = e.form || e.closest('form');
       const submits = e.type === 'submit' || e.type === 'image' || (e.tagName === 'BUTTON' && (!e.type || e.type === 'submit'));
       if (form && submits && other(e.getAttribute('formaction') || form.getAttribute('action') || location.href)) return {offsite: true};
-      const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+      // Off screen (the side panel makes the page narrower than usual): scroll it
+      // into view first — scrolling changes nothing on the page — then check it.
+      let r = e.getBoundingClientRect();
+      if (r.width && r.height && (r.y + r.height / 2 < 0 || r.y + r.height / 2 >= innerHeight || r.x + r.width / 2 < 0 || r.x + r.width / 2 >= innerWidth)) {
+        e.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        r = e.getBoundingClientRect();
+      }
+      const x = r.x + r.width / 2, y = r.y + r.height / 2;
       if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
       if (!e.contains(document.elementFromPoint(x, y))) return null;
       if (a.kind === 'select') {
@@ -647,7 +668,7 @@ async function actOnce(targetId, text, soft = false) {
 }
 
 async function tabScreenshot() {
-  const tab = act.on ? await guard() : await lookGuard();
+  const tab = act.on ? await guard({ read: true }) : await lookGuard();
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 70 });
   return { data: dataUrl.replace(/^data:image\/\w+;base64,/, ''), mimeType: 'image/jpeg', audit: `screenshot ${tab.url}` };
 }
@@ -696,7 +717,7 @@ async function tabAct(targetId, text, steps, soft = false) {
 async function runCommand({ op, target, text, steps, raw }) {
   if (op === 'snapshot') return tabSnapshot();
   if (op === 'observe') {
-    const tab = await guard();
+    const tab = await guard({ read: true });
     const state = await observeSettled(tab);
     if (!state) throw new Error('The page is still loading.');
     return { state, audit: `observe ${tab.url}` };
