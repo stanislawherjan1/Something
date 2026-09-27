@@ -49,6 +49,7 @@ const AUTOPILOT_TOOL = {
     'Do a task on the user\'s current browser tab: the Jev autopilot picks and performs every click and keystroke itself, in about a second a step. ' +
     'Give it the whole task as one goal in plain words, with the stopping point ("…; stop when the results show"), and every text it may need to type as values ' +
     '(short names to exact strings, e.g. {"from": "Krakow", "to": "Milan", "date": "3 October 2026"}). Call it right away — it reads the page itself. ' +
+    'It knows NOTHING outside the page and what you send: put every needed background fact into context — relative dates resolved to real ones ("tomorrow" is useless, name the date), preferences from the conversation (cheapest, direct, a class or size), names, amounts. ' +
     'It stays on this site and returns what it did plus the page as it is at the end: answer from that page. ' +
     'needs_value: add the value it names and call again. blocked: read the returned page (or tab_screenshot), rephrase or split the goal, call again; after three blocked runs tell the user what is in the way. ' +
     'Its "done" is a claim: confirm on the returned page before telling the user.',
@@ -56,6 +57,7 @@ const AUTOPILOT_TOOL = {
     type: 'object',
     properties: {
       goal: { type: 'string', description: 'The task, complete, in plain words, with where to stop.' },
+      context: { type: 'string', description: 'Background facts it needs but cannot see: resolved dates, preferences, constraints from the conversation. A few short sentences.' },
       values: { type: 'object', additionalProperties: { type: 'string' }, description: 'Texts it may type, by short name.' },
     },
     required: ['goal'],
@@ -301,6 +303,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           actor: process.env.IDE_ACTOR_SLUG || '',
           turnToken: process.env.IDE_TAB_TOKEN || '',
           goal: String(args?.goal || ''),
+          context: typeof args?.context === 'string' ? args.context : '',
           values: args?.values && typeof args.values === 'object' ? args.values : {},
         }),
       });

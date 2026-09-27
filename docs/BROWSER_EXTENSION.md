@@ -168,7 +168,7 @@ assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback,
 | Only while the switch is on; switching off detaches from the tab and fails every waiting command at once | extension + workspace-api (`/api/tab/mode`) |
 | Only in a turn the user started from the panel with Act on (one-turn token); never Telegram, workspace chat, reminders or groups | `routes/chat.js` → `routes/tab.js` |
 | Only the tab the user is on: the debugger is attached to it when a command needs it and detached from a tab they leave; a new page needs a fresh snapshot before any action. Cancelling Chrome's debugging bar or 10 minutes without an action switches Act off (kept for the browser session only, never on disk) | extension |
-| No leaving the site: links and form submits to another origin, new tabs and downloads are refused before the click; no address bar, no navigate tool | extension |
+| No leaving the site: links and form submits to another origin, new tabs and downloads are refused before the click; no address bar, no navigate tool. The one navigation offered is one step back in history, only when that page is on the same site | extension |
 | No credentials or payments: password, file, one-time-code and payment-card fields (standard `autocomplete` tokens) are invisible and untouchable; password-manager and account-security sites are refused | extension |
 | No code, cookies, clipboard or network: the model only picks control ids from a snapshot the extension made; it never supplies selectors or scripts | extension |
 | 30 actions a minute at most; every command is logged (`[tab]` in workspace-api's log) | extension + workspace-api |
@@ -226,6 +226,14 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   (Jev must click; the fields it would have wanted are reported as `needs_value`). The result
   carries the final page, so the assistant answers without another read. Every Jev decision is
   logged (`[jev] … CLICK e12 (0.91) 180 ms`).
+- **Context rides with the goal.** `tab_autopilot` takes `context`: the background facts Jev cannot
+  see — relative dates resolved to real ones, preferences and constraints from the conversation,
+  names, amounts. The turn's instruction tells the assistant to think about what Jev cannot know
+  before calling; today's date (in `IDE_TIMEZONE`) is added server-side. Context, today and the
+  values are appended to the goal Jev receives.
+- **A step back, same site only.** When the tab's previous history entry is on the same site, the
+  observation offers `go_back` (as an operation to Jev, as a control to the assistant); it is
+  re-checked at execution and is the only navigation on offer — another site's page is never one.
 - **Only here.** The tool exists only in a panel turn with Act on while Jev is connected and not
   paused (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
 - **Pause.** An admin can switch the autopilot off on the Jev card without disconnecting: the key

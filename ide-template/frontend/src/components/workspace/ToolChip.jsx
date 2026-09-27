@@ -145,7 +145,7 @@ export function toolSegments(text, tools) {
 }
 
 // Verbs for the autopilot's own steps (the kind of each action it takes).
-const STEP_VERB = { click: 'Clicking', fill: 'Typing into', select: 'Choosing', scroll: 'Scrolling', wait: 'Waiting' };
+const STEP_VERB = { click: 'Clicking', fill: 'Typing into', select: 'Choosing', scroll: 'Scrolling', wait: 'Waiting', back: 'Going back' };
 
 function StepLabel({ tool, live }) {
   const { label } = displayFor(tool.name);

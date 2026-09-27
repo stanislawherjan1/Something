@@ -346,8 +346,13 @@ async function restoreAct() {
 // Act follows the user: leaving a tab releases it (the next command attaches to
 // the tab they are on); a new page in the same tab needs a fresh snapshot.
 chrome.tabs.onActivated.addListener(({ tabId }) => { if (act.on && tabId !== act.tabId) release(); });
+// A same-site address change (many apps rewrite the URL as you use them) keeps
+// the read: each action is still checked against the live page. Another site
+// drops it.
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (act.on && tabId === act.tabId && info.url) { act.site = siteOf(info.url); act.lastSnapshot = null; }
+  if (!act.on || tabId !== act.tabId || !info.url) return;
+  if (siteOf(info.url) !== act.site) act.lastSnapshot = null;
+  act.site = siteOf(info.url);
 });
 chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === act.tabId) { act.tabId = null; act.lastSnapshot = null; } });
 // Cancelling Chrome's debugging bar is the user saying stop.
@@ -425,6 +430,10 @@ async function observe(tab) {
   }
   if (!state) return null;
   state.actions = state.actions.filter((a) => a.node == null || (!hidden.has(a.node) && !covered.has(a.node)));
+  if (act.on) {
+    const back = await previousEntry(tab);
+    if (back) state.actions.push({ id: 'go_back', kind: 'back', label: `Go back to the previous page${back.title ? ` (${String(back.title).slice(0, 80)})` : ''}` });
+  }
   if (act.on) act.lastSnapshot = state;
   return state;
 }
@@ -647,6 +656,11 @@ async function actOnce(targetId, text, soft = false) {
     // Until the page has been quiet for a moment, at most 1.5 s — one round
     // trip instead of several 100 ms ones while results load.
     try { await evaluate(settleExpression(action, 250, 1500)); } catch { /* navigating */ }
+  } else if (action.kind === 'back') {
+    // One step back in this tab's history — offered (and re-checked) only when
+    // that page is on the same site, so it is never a way off it.
+    if (!(await previousEntry(tab))) return refuse(tab, 'There is no same-site page to go back to.', soft);
+    await chrome.tabs.goBack(tab.id);
   } else {
     const fresh = await evaluate(freshExpression(action.node));
     if (fresh !== JSON.stringify([snap.page_key, snap.guards[action.node]])) {

@@ -232,9 +232,16 @@ export default function tabRouter() {
     try { key = integrationsStore.decryptFor('jev')?.TYPESAFE_API_KEY; } catch { key = null; }
     if (!key) return res.json({ ok: false, error: 'The Jev integration has no key.' });
     process.stderr.write(`[tab] ${slug}: autopilot "${goal.slice(0, 80)}"\n`);
+    // Today's date, in the workspace's timezone when one is set — the one fact
+    // Jev can never read off the page ("tomorrow", "next Friday" depend on it).
+    let today = '';
+    try { today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full', timeZone: process.env.IDE_TIMEZONE || undefined }).format(new Date()); }
+    catch { today = new Intl.DateTimeFormat('en-GB', { dateStyle: 'full' }).format(new Date()); }
     const result = await runAutopilot({
       goal,
       values: req.body?.values && typeof req.body.values === 'object' ? req.body.values : {},
+      context: typeof req.body?.context === 'string' ? req.body.context.slice(0, 1500) : '',
+      today,
       apiKey: key,
       exec: (command) => sendTabCommand(slug, token, command),
       onStep: (step) => { try { turn.onProgress?.(step); } catch { /* the chat went away */ } },

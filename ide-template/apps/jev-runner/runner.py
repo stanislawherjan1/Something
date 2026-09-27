@@ -66,13 +66,18 @@ class Stale(Exception):
 MAX_REFUSALS_IN_A_ROW = 3
 
 
-def goal_for_jev(goal, values):
-    """The goal as Jev sees it: with the values it may type, so TYPE_TEXT is an
-    informed choice, not a guess."""
-    if not values:
-        return goal
-    listed = "; ".join(f"{k} = {v}" for k, v in values.items())
-    return f"{goal}\nValues available to type into fields: {listed}"
+def goal_for_jev(goal, values, context="", today=""):
+    """The goal as Jev sees it. Jev knows nothing outside the page, so the
+    assistant's background facts (context), today's date and the values it may
+    type ride along with the goal — TYPE_TEXT and every choice are informed."""
+    parts = [goal]
+    if today:
+        parts.append(f"Today is {today}.")
+    if context:
+        parts.append(f"Background from the user's conversation: {context}")
+    if values:
+        parts.append("Values available to type into fields: " + "; ".join(f"{k} = {v}" for k, v in values.items()))
+    return "\n".join(parts)
 
 
 def light(state):
@@ -129,12 +134,11 @@ def pick_value(goal, values, action, page, history):
     return None if choice == "NONE" else keys[choice][1]
 
 
-def run(goal, values, max_actions):
+def run(goal, values, max_actions, context="", today=""):
     history, decisions = [], 0
     refused, refusals = set(), 0   # control ids refused on the current page; refusals in a row
     blocked_once = False           # a first BLOCKED gets one settle + re-read before it counts
-    wanted_fields = []             # fill controls Jev wanted but had no value for
-    jev_goal = goal_for_jev(goal, values)
+    jev_goal = goal_for_jev(goal, values, context=context, today=today)
     page = observe()
     while True:
         if len(history) >= max_actions:
@@ -219,6 +223,8 @@ def main():
     if request.get("key"):
         os.environ["TYPESAFE_API_KEY"] = str(request["key"])
     goal = str(request.get("goal") or "").strip()
+    context = str(request.get("context") or "").strip()[:1500]
+    today = str(request.get("today") or "").strip()[:80]
     values = {str(k): str(v) for k, v in (request.get("values") or {}).items() if str(v).strip()}
     max_actions = max(1, min(int(request.get("max_actions") or 40), MAX_STEPS))
     try:
@@ -226,7 +232,7 @@ def main():
             raise ValueError("No goal was given.")
         if not os.environ.get("TYPESAFE_API_KEY"):
             raise ValueError("Jev is not connected (no TypeSafe key).")
-        outcome = run(goal, values, max_actions)
+        outcome = run(goal, values, max_actions, context=context, today=today)
     except SystemExit:
         raise
     except Exception as err:  # every failure ends the run with a reason, never a traceback

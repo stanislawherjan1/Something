@@ -102,10 +102,10 @@ class FakeBrowser:
 
 
 class RunnerTest(unittest.TestCase):
-    def go(self, browser, ts, goal="Find flights from Zurich", values=None, max_actions=10):
+    def go(self, browser, ts, goal="Find flights from Zurich", values=None, max_actions=10, **kw):
         browser.install()
         runner.model.post_json = ts
-        return runner.run(goal, values or {}, max_actions)
+        return runner.run(goal, values or {}, max_actions, **kw)
 
     def test_types_a_given_value_clicks_and_finishes(self):
         b = FakeBrowser(SEARCH, {"e1": None, "e2": RESULTS})
@@ -133,11 +133,27 @@ class RunnerTest(unittest.TestCase):
         self.assertNotIn("TYPE_TEXT", ts.bodies[0]["questions"]["operation"]["criteria"])
         self.assertEqual(b.log, [("wait", None)])   # one settle before the second BLOCKED counted
 
-    def test_values_appear_in_the_goal_jev_sees(self):
+    def test_values_context_and_today_appear_in_the_goal_jev_sees(self):
         b = FakeBrowser(SEARCH, {"e1": None, "e2": RESULTS})
         ts = FakeTypeSafe([("TYPE_TEXT", "From"), "from", ("CLICK", "Search"), ("DONE", None)])
-        self.go(b, ts, values={"from": "Zurich"})
-        self.assertIn("from = Zurich", ts.bodies[0]["questions"]["operation"]["instructions"]["goal"])
+        self.go(b, ts, values={"from": "Zurich"},
+                context="The user wants the cheapest direct flight.", today="Saturday, 27 September 2026")
+        goal = ts.bodies[0]["questions"]["operation"]["instructions"]["goal"]
+        self.assertIn("from = Zurich", goal)
+        self.assertIn("cheapest direct", goal)
+        self.assertIn("Today is Saturday, 27 September 2026.", goal)
+
+    def test_go_back_is_an_operation_jev_can_take(self):
+        with_back = page("detail", [
+            {"id": "e9", "node": 9, "kind": "click", "label": "Buy now", "role": "button"},
+            {"id": "go_back", "kind": "back", "label": "Go back to the previous page (Results)"},
+        ])
+        b = FakeBrowser(with_back, {"go_back": RESULTS})
+        ts = FakeTypeSafe([("GO_BACK", None), ("DONE", None)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("go_back", None)])
+        self.assertIn("GO_BACK", ts.bodies[0]["questions"]["operation"]["criteria"])
 
     def test_a_first_blocked_waits_and_looks_again(self):
         b = FakeBrowser(SEARCH, {"e2": RESULTS})

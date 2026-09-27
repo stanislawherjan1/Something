@@ -38,7 +38,7 @@ function runnerEnv() {
   return env;
 }
 
-export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {}, onDecision = () => {}, maxActions = MAX_ACTIONS }) {
+export function runAutopilot({ goal, values = {}, context = '', today = '', apiKey, exec, onStep = () => {}, onDecision = () => {}, maxActions = MAX_ACTIONS }) {
   const started = Date.now();
   const steps = [];
   let decisions = 0;
@@ -102,6 +102,6 @@ export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {
       }
     }
 
-    write({ goal, values, max_actions: maxActions, key: apiKey });
+    write({ goal, values, context, today, max_actions: maxActions, key: apiKey });
   });
 }
