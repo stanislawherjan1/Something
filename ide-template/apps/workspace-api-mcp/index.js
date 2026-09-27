@@ -210,10 +210,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'A control id from the latest tab_snapshot, e.g. "e12", "scroll_down".' },
+          id: { type: 'string', description: 'A control id from the page you last saw, e.g. "e12", "scroll_down".' },
           text: { type: 'string', description: 'Text to type, for a "fill" control.' },
+          steps: {
+            type: 'array', maxItems: 5,
+            description: 'Several steps on the same page in one go, in order (e.g. fill three form fields, then click Submit) — ' +
+              'instead of id/text. Each step is checked and done like a single action; it stops at the first step that fails, ' +
+              'when the address changes, or when a later control changed, and returns the page as it is then.',
+            items: {
+              type: 'object',
+              properties: { id: { type: 'string' }, text: { type: 'string' } },
+              required: ['id'],
+              additionalProperties: false,
+            },
+          },
         },
-        required: ['id'],
         additionalProperties: false,
       },
     },
@@ -238,7 +249,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (name === 'tab_snapshot' || name === 'tab_act' || name === 'tab_screenshot') {
     const command = name === 'tab_snapshot' ? { op: 'snapshot' }
       : name === 'tab_screenshot' ? { op: 'screenshot' }
-      : { op: 'act', target: String(args?.id || ''), text: typeof args?.text === 'string' ? args.text : undefined };
+      : { op: 'act', target: String(args?.id || ''), text: typeof args?.text === 'string' ? args.text : undefined,
+          steps: Array.isArray(args?.steps) ? args.steps : undefined };
     try {
       const res = await fetch(`${API_BASE}/api/internal/tab-command`, {
         method: 'POST',
@@ -263,7 +275,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const wrap = (page) => `${UNTRUSTED}\n<<<UNTRUSTED PAGE CONTENT\n${JSON.stringify(page, null, 1).replace(/<<<|>>>/g, '')}\n>>>`;
       if (name === 'tab_act') {
         // The action and, right after it, the page it left behind.
-        const head = `Done: ${rest.done}.`;
+        const head = `Done: ${rest.done}.${rest.stopped ? ` ${rest.stopped}` : ''}`;
         if (!rest.page) return { content: [{ type: 'text', text: `${head} ${rest.note || 'The page is still loading. Take a tab_snapshot in a moment.'}` }] };
         return { content: [{ type: 'text', text: `${head} The page now:\n${wrap(rest.page)}` }] };
       }

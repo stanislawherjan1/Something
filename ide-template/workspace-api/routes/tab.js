@@ -159,10 +159,13 @@ export default function tabRouter() {
       }, COMMAND_TIMEOUT_MS);
       pending.set(id, { slug, resolve, timer });
     });
-    const frame = `event: command\ndata: ${JSON.stringify({ id, op: command.op, target: command.target, text: command.text })}\n\n`;
+    const steps = Array.isArray(command.steps)
+      ? command.steps.slice(0, 5).map((st) => ({ id: String(st?.id || ''), ...(typeof st?.text === 'string' ? { text: st.text } : {}) }))
+      : undefined;
+    const frame = `event: command\ndata: ${JSON.stringify({ id, op: command.op, target: command.target, text: command.text, steps })}\n\n`;
     for (const s of streams) { try { s.write(frame); } catch { /* closed */ } }
     // Audit trail: every command, who it was for, what it targeted.
-    process.stderr.write(`[tab] ${slug}: ${command.op}${command.target ? ' ' + command.target : ''}${command.text != null ? ` (${String(command.text).length} chars)` : ''}\n`);
+    process.stderr.write(`[tab] ${slug}: ${command.op}${command.target ? ' ' + command.target : ''}${command.text != null ? ` (${String(command.text).length} chars)` : ''}${steps ? ` [${steps.map((st) => st.id).join(', ')}]` : ''}\n`);
     // Round trip = relay + the extension's own work; the extension reports the
     // latter in `timing`, so the log shows where a slow step spent its time.
     const sentAt = Date.now();

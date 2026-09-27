@@ -529,7 +529,7 @@ async function clearCursor(tabId) {
   try { await chrome.scripting.executeScript({ target: { tabId }, func: removeCursor }); } catch { /* gone already */ }
 }
 
-async function tabAct(targetId, text) {
+async function actOnce(targetId, text) {
   const tab = await guard();
   const snap = act.lastSnapshot;
   if (!snap) throw new Error('Take a tab_snapshot first.');
@@ -624,9 +624,43 @@ async function tabScreenshot() {
   return { data: dataUrl.replace(/^data:image\/\w+;base64,/, ''), mimeType: 'image/jpeg', audit: `screenshot ${tab.url}` };
 }
 
-async function runCommand({ op, target, text }) {
+// A short batch (e.g. a form's fields, then Submit): each step runs through
+// actOnce — every check, then a fresh observation — and the batch stops at the
+// first step that fails, when the address changes, or when a later step's
+// control is no longer the one the assistant picked (label changed or gone).
+const MAX_BATCH = 5;
+async function tabAct(targetId, text, steps) {
+  if (!Array.isArray(steps) || !steps.length) return actOnce(targetId, text);
+  const list = steps.slice(0, MAX_BATCH);
+  const labels = new Map((act.lastSnapshot?.actions || []).map((a) => [a.id, a.label]));
+  const url = act.lastSnapshot?.url;
+  const done = [];
+  let last = null;
+  for (const step of list) {
+    const id = String(step?.id || '');
+    if (done.length) {
+      const now = act.lastSnapshot;
+      const control = now?.actions.find((a) => a.id === id);
+      const why = !now ? 'the page is still loading'
+        : now.url !== url ? 'the page moved to another address'
+          : !control || control.label !== labels.get(id) ? `control ${id} is not the one that was picked any more`
+            : '';
+      if (why) return { ...last, done: done.join('; '), stopped: `Stopped before ${id}: ${why}. Choose the next step from this page.` };
+    }
+    try {
+      last = await actOnce(id, typeof step?.text === 'string' ? step.text : undefined);
+    } catch (err) {
+      if (!done.length) throw err;
+      return { ...last, done: done.join('; '), stopped: `Stopped at ${id}: ${err.message}` };
+    }
+    done.push(last.done);
+  }
+  return { ...last, done: done.join('; '), audit: `${done.length} steps: ${last.audit}` };
+}
+
+async function runCommand({ op, target, text, steps }) {
   if (op === 'snapshot') return tabSnapshot();
-  if (op === 'act') return tabAct(target, text);
+  if (op === 'act') return tabAct(target, text, steps);
   if (op === 'screenshot') return tabScreenshot();
   throw new Error(`Unknown command "${op}".`);
 }

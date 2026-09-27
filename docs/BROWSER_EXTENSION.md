@@ -142,6 +142,14 @@ matches. Afterwards the extension waits only as long as upstream does — two an
 retrying for up to 2.5 s while a navigation settles. The `[tab]` log line of every command shows
 its round trip and how much of it was the relay (`… — 640 ms relay 120 ms`).
 
+`tab_act` also takes `steps` — up to five actions on the same page (a form's fields, then its
+submit button) in one call. Each step gets every check and a fresh observation; the batch stops
+at the first failure, when the address changes, or when a later control is no longer the one the
+assistant picked (its label changed or it is gone), and returns the page as it is then.
+
+`scripts/vendor-jev.sh [commit]` refreshes the vendored snapshot (and licence) from
+jev-ultrafast and shows the diff.
+
 ```
 assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback, needs the turn's token)
   → GET /api/tab/stream (the user's open panel) → postMessage → extension
