@@ -61,6 +61,10 @@ SEARCH = page("search", [
     {"id": "e1", "node": 1, "kind": "fill", "label": "From", "role": "combobox", "value": ""},
     {"id": "e2", "node": 2, "kind": "click", "label": "Search", "role": "button"},
 ])
+TWO = page("two", [
+    {"id": "e2", "node": 2, "kind": "click", "label": "Search", "role": "button"},
+    {"id": "e5", "node": 5, "kind": "click", "label": "Show flights", "role": "link"},
+])
 RESULTS = page("results", [{"id": "e3", "node": 3, "kind": "click", "label": "First flight", "role": "link"}], "3 flights")
 
 
@@ -126,11 +130,11 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(len(ts.bodies), 1)
 
     def test_a_stale_refusal_is_observed_again_not_failed(self):
-        b = FakeBrowser(SEARCH, {"e2": ["That control changed or is covered. Take a new snapshot.", RESULTS]})
-        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Search"), ("DONE", None)])
+        b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot.", "e5": RESULTS})
+        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
         result = self.go(b, ts)
         self.assertEqual(result["status"], "done")
-        self.assertEqual(b.log, [("e2", None), ("e2", None)])
+        self.assertEqual([m["op"] for m in b.sent if "op" in m].count("observe"), 2)
 
     def test_three_actions_that_change_nothing_stop_the_run(self):
         b = FakeBrowser(SEARCH, {"e2": None})
@@ -138,6 +142,26 @@ class RunnerTest(unittest.TestCase):
         result = self.go(b, ts)
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(len(b.log), 3)
+
+    def test_a_refused_control_is_not_offered_again(self):
+        b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot.", "e5": RESULTS})
+        ts = FakeTypeSafe([("CLICK", "Search"), ("CLICK", "Show flights"), ("DONE", None)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("e2", None), ("e5", None)])
+        second = ts.bodies[1]["questions"]["click_target"]["criteria"]
+        self.assertFalse(any("Search" in c["element"] for c in second.values()))
+        self.assertIn("refused", ts.bodies[1]["state"]["recent_actions"][-1]["action"])
+
+    def test_three_refusals_in_a_row_stop_as_blocked(self):
+        many = page("many", [{"id": f"e{i}", "node": i, "kind": "click", "label": f"Button {i}", "role": "button"} for i in range(1, 6)])
+        covered = "That control changed or is covered. Take a new snapshot."
+        b = FakeBrowser(many, {f"e{i}": covered for i in range(1, 6)})
+        ts = FakeTypeSafe([("CLICK", f"Button {i}") for i in range(1, 6)])
+        result = self.go(b, ts)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(len(b.log), 3)
+        self.assertIn("another way", result["detail"])
 
     def test_a_hard_refusal_ends_the_run_with_its_reason(self):
         b = FakeBrowser(SEARCH, {"e2": "That leads away from this site, which is not allowed."})

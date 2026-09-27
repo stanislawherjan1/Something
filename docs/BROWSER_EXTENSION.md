@@ -202,6 +202,10 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 - **Same limits.** Every action is an ordinary `act` command — the table above applies step by
   step. Switching Act off fails the next command at once, ending the run. Bounds: 30 actions, 60
   decisions, 90 s; three actions in a row that change nothing stop it as blocked.
+- **No loops on a refused control.** A control the executor refuses (covered, changed) is not
+  offered to Jev again on that page, and the attempt shows in its recent actions, so it has to
+  find another way; three refusals in a row stop the run as blocked, and the assistant — told to
+  change approach rather than repeat — takes over.
 - **Data.** While it runs, the goal, the values, the page's visible text and control labels and
   values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
   in the egress allow-list only while the integration is active).

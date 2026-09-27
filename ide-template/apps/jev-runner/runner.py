@@ -56,7 +56,14 @@ def receive():
 
 
 class Stale(Exception):
-    """The page changed under a decision; observe and choose again."""
+    """The page changed under a decision, or the control was refused as out of
+    date or covered; observe and choose again."""
+
+
+# A control the executor refused is not offered again on that page, so Jev has
+# to find another way (another control, a scroll). After this many refusals in
+# a row the run stops as blocked and the assistant takes over.
+MAX_REFUSALS_IN_A_ROW = 3
 
 
 def observe():
@@ -110,6 +117,7 @@ def pick_value(goal, values, action, page, history):
 
 def run(goal, values, max_actions):
     history, decisions = [], 0
+    refused, refusals = set(), 0   # control ids refused on the current page; refusals in a row
     page = observe()
     while True:
         if len(history) >= max_actions:
@@ -117,7 +125,8 @@ def run(goal, values, max_actions):
         if decisions >= max_actions * 2:
             return {"status": "budget", "detail": "Stopped at the decision budget."}
         decisions += 1
-        decision = model.choose(page, goal, history)
+        offered = {**page, "actions": [a for a in page["actions"] if a["id"] not in refused]}
+        decision = model.choose(offered, goal, history)
         choice = decision["choice"]
         if choice in {"DONE", "BLOCKED"}:
             return {"status": "done" if choice == "DONE" else "blocked"}
@@ -133,9 +142,19 @@ def run(goal, values, max_actions):
         send({"event": "step", "n": len(history) + 1, "kind": action["kind"], "label": action["label"]})
         try:
             after = act(choice, text)
-        except Stale:
+        except Stale as err:
+            refused.add(choice)
+            refusals += 1
+            # Jev sees the failed attempt in its recent actions.
+            history.append({
+                "step": len(history) + 1, "action": f"{action['label']} (refused: {str(err).split('.')[0]})",
+                "kind": action["kind"], "text": None, "operation": decision["operation"], "page_changed": False,
+            })
+            if refusals >= MAX_REFUSALS_IN_A_ROW:
+                return {"status": "blocked", "detail": f"The page kept refusing the controls it picked (last: \"{action['label']}\" — {str(err).split('.')[0]}). Try another way: look at the page and pick a different control."}
             page = observe()
             continue
+        refusals = 0
         history.append({
             "step": len(history) + 1, "action": action["label"], "kind": action["kind"],
             "text": text, "operation": decision["operation"], "page_changed": None,
@@ -143,6 +162,8 @@ def run(goal, values, max_actions):
         before = fingerprint(page)
         page = after or observe()
         history[-1]["page_changed"] = fingerprint(page) != before
+        if history[-1]["page_changed"]:
+            refused = set()   # the page moved on: earlier refusals no longer apply
         # Three actions in a row that changed nothing: it is going in circles.
         recent = history[-3:]
         if len(recent) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in recent):
