@@ -453,9 +453,48 @@ function settleExpression(action) {
   }))(${JSON.stringify({ node: action.node, kind: action.kind })})`;
 }
 
+// The page-side checks of an action, as expressions for Runtime.evaluate (also
+// run by scripts/test-tab-executor.mjs against a real Chrome).
+function freshExpression(node) {
+  return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(node)}))]) : null; })()`;
+}
+
 // Same checks as jev-ultrafast's executor: the target is an element the
 // snapshot observed (never a model-written selector), still attached, enabled,
 // visible, on screen and not covered — or the action is refused.
+function targetExpression(action) {
+  return `((a) => {
+      const e = window.__jevFast?.nodes.get(a.node);
+      if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
+          !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
+      // Never a password, file, one-time-code or payment-card field — re-checked
+      // here because the page may have changed the element since the snapshot.
+      if (e.type === 'password' || e.type === 'file') return null;
+      const ac = String(e.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/);
+      if (ac.some(t => t === 'current-password' || t === 'new-password' || t === 'one-time-code' || t.startsWith('cc-'))) return null;
+      if (a.kind === 'fill' && (e.readOnly || e.getAttribute('aria-readonly') === 'true')) return null;
+      // Stay on this site: a link, or a form submit, that leads to another origin
+      // is refused before the click, so the navigation never happens.
+      const other = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return true; } };
+      const link = e.closest('a[href]');
+      if (link && !/^(javascript:|#)/i.test(link.getAttribute('href') || '') && other(link.href)) return {offsite: true};
+      if (link && (link.target === '_blank' || link.hasAttribute('download'))) return {offsite: true};
+      const form = e.form || e.closest('form');
+      const submits = e.type === 'submit' || e.type === 'image' || (e.tagName === 'BUTTON' && (!e.type || e.type === 'submit'));
+      if (form && submits && other(e.getAttribute('formaction') || form.getAttribute('action') || location.href)) return {offsite: true};
+      const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+      if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
+      if (!e.contains(document.elementFromPoint(x, y))) return null;
+      if (a.kind === 'select') {
+        if (e.tagName !== 'SELECT' || ![...e.options].some(o => o.value === a.value && !o.disabled)) return null;
+        e.value = a.value;
+        e.dispatchEvent(new Event('input', {bubbles: true}));
+        e.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      return {x, y, box: a.kind === 'fill' ? {x: r.x, y: r.y, w: r.width, h: r.height} : null};
+    })(${JSON.stringify({ node: action.node, kind: action.kind, value: action.value })})`;
+}
+
 // ── The assistant's cursor on the page ───────────────────────────────────────
 // While Act runs, a large cursor glides to each control before it is clicked or
 // typed into, so the user can follow what the assistant does. It is drawn in the
@@ -545,40 +584,11 @@ async function actOnce(targetId, text) {
   } else if (action.kind === 'wait') {
     await new Promise((r) => setTimeout(r, 100));
   } else {
-    const fresh = await evaluate(`(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))]) : null; })()`);
+    const fresh = await evaluate(freshExpression(action.node));
     if (fresh !== JSON.stringify([snap.page_key, snap.guards[action.node]])) {
       throw new Error('The page changed since the snapshot. Take a new snapshot.');
     }
-    const target = await evaluate(`((a) => {
-      const e = window.__jevFast?.nodes.get(a.node);
-      if (!e?.isConnected || e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]') ||
-          !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return null;
-      // Never a password, file, one-time-code or payment-card field — re-checked
-      // here because the page may have changed the element since the snapshot.
-      if (e.type === 'password' || e.type === 'file') return null;
-      const ac = String(e.getAttribute('autocomplete') || '').toLowerCase().split(/\\s+/);
-      if (ac.some(t => t === 'current-password' || t === 'new-password' || t === 'one-time-code' || t.startsWith('cc-'))) return null;
-      if (a.kind === 'fill' && (e.readOnly || e.getAttribute('aria-readonly') === 'true')) return null;
-      // Stay on this site: a link, or a form submit, that leads to another origin
-      // is refused before the click, so the navigation never happens.
-      const other = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return true; } };
-      const link = e.closest('a[href]');
-      if (link && !/^(javascript:|#)/i.test(link.getAttribute('href') || '') && other(link.href)) return {offsite: true};
-      if (link && (link.target === '_blank' || link.hasAttribute('download'))) return {offsite: true};
-      const form = e.form || e.closest('form');
-      const submits = e.type === 'submit' || e.type === 'image' || (e.tagName === 'BUTTON' && (!e.type || e.type === 'submit'));
-      if (form && submits && other(e.getAttribute('formaction') || form.getAttribute('action') || location.href)) return {offsite: true};
-      const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
-      if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return null;
-      if (!e.contains(document.elementFromPoint(x, y))) return null;
-      if (a.kind === 'select') {
-        if (e.tagName !== 'SELECT' || ![...e.options].some(o => o.value === a.value && !o.disabled)) return null;
-        e.value = a.value;
-        e.dispatchEvent(new Event('input', {bubbles: true}));
-        e.dispatchEvent(new Event('change', {bubbles: true}));
-      }
-      return {x, y, box: a.kind === 'fill' ? {x: r.x, y: r.y, w: r.width, h: r.height} : null};
-    })(${JSON.stringify({ node: action.node, kind: action.kind, value: action.value })})`);
+    const target = await evaluate(targetExpression(action));
     if (!target) throw new Error('That control changed or is covered. Take a new snapshot.');
     if (target.offsite) throw new Error('That leads away from this site (another address, a new tab or a download), which is not allowed. Stay on this site.');
     // The cursor travels to the control first, so the user sees where it acts —

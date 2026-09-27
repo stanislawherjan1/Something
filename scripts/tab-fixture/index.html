@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tab executor fixture</title>
+<style>
+  body { font: 14px sans-serif; margin: 20px; }
+  label { display: block; margin: 6px 0; }
+  #lb { list-style: none; margin: 0; padding: 0; border: 1px solid #ccc; }
+  #lb:empty { display: none; }
+  .cover-wrap { position: relative; display: inline-block; }
+  .cover { position: absolute; inset: 0; background: #fff; }
+</style>
+</head>
+<body>
+  <h1>Flights</h1>
+  <p>Search for a flight. This text is page content.</p>
+  <form id="f" action="/results.html">
+    <label>Search <input id="q" name="q" value="old value" /></label>
+    <label>From <input id="from" role="combobox" aria-controls="lb" aria-expanded="false" autocomplete="off" /></label>
+    <ul id="lb" role="listbox"></ul>
+    <label>Class
+      <select id="cls"><option value="e">Economy</option><option value="b">Business</option><option value="f" disabled>First</option></select>
+    </label>
+    <label><input type="checkbox" id="direct" /> Direct only</label>
+    <label>Password <input type="password" id="pw" /></label>
+    <label>Card number <input id="cc" autocomplete="cc-number" /></label>
+    <label>Code <input id="otp" autocomplete="one-time-code" /></label>
+    <button id="go" type="submit">Search</button>
+  </form>
+  <button id="counter" type="button">Count</button>
+  <button id="dis" type="button" disabled>Disabled</button>
+  <a id="off" href="https://elsewhere.example.com/page">Elsewhere</a>
+  <a id="blank" href="/page2.html" target="_blank">Open in a new tab</a>
+  <a id="dl" href="/file.pdf" download>Download the file</a>
+  <a id="same" href="/page2.html">Next page</a>
+  <span class="cover-wrap"><button id="covered" type="button">Covered</button><span class="cover"></span></span>
+  <div id="out"></div>
+<script>
+  // A counter the test reads back after a real click.
+  document.getElementById('counter').addEventListener('click', (e) => {
+    e.currentTarget.dataset.n = String((+e.currentTarget.dataset.n || 0) + 1);
+  });
+  // An autocomplete that answers 120 ms after typing, like a real one.
+  const from = document.getElementById('from'), lb = document.getElementById('lb');
+  let t = null;
+  from.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      lb.innerHTML = ['Zurich', 'Zurich Airport'].filter((c) => c.toLowerCase().startsWith(from.value.toLowerCase().slice(0, 3)))
+        .map((c) => `<li role="option" tabindex="-1">${c}</li>`).join('');
+      from.setAttribute('aria-expanded', lb.children.length ? 'true' : 'false');
+    }, 120);
+  });
+  // The form stays on this site.
+  document.getElementById('f').addEventListener('submit', (e) => {
+    e.preventDefault();
+    document.getElementById('out').textContent = `submitted ${document.getElementById('q').value}`;
+  });
+</script>
+</body>
+</html>
