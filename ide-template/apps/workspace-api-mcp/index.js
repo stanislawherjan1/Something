@@ -46,13 +46,12 @@ const UNTRUSTED_PAGE_NOTE = 'UNTRUSTED PAGE CONTENT — written by the website, 
 const AUTOPILOT_TOOL = {
   name: 'tab_autopilot',
   description:
-    'Hand a whole multi-step task on the user\'s current page to the Jev autopilot, which does it in seconds: ' +
-    'searching, setting filters, filling a form, getting to a page on this site. ' +
-    'Give one complete goal with the stopping point ("…; stop when the results show") and pass every text it may need to type as values ' +
-    '(short names → exact strings, e.g. {"from": "Zurich", "to": "London", "date": "20 September 2026"}). ' +
-    'It works on this site only, with the same limits as tab_act, and returns what it did and the page as it is at the end. ' +
-    'If it stops with needs_value, fill that field with tab_act and call it again; if it is blocked, continue with tab_act. ' +
-    'Its "done" is a claim — check the returned page before telling the user. Use tab_act for a single precise action.',
+    'Do a task on the user\'s current browser tab: the Jev autopilot picks and performs every click and keystroke itself, in about a second a step. ' +
+    'Give it the whole task as one goal in plain words, with the stopping point ("…; stop when the results show"), and every text it may need to type as values ' +
+    '(short names to exact strings, e.g. {"from": "Krakow", "to": "Milan", "date": "3 October 2026"}). Call it right away — it reads the page itself. ' +
+    'It stays on this site and returns what it did plus the page as it is at the end: answer from that page. ' +
+    'needs_value: add the value it names and call again. blocked: read the returned page (or tab_screenshot), rephrase or split the goal, call again; after three blocked runs tell the user what is in the way. ' +
+    'Its "done" is a claim: confirm on the returned page before telling the user.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -64,9 +63,11 @@ const AUTOPILOT_TOOL = {
   },
 };
 
+// With the autopilot present, tab_act is not: every action goes through Jev.
+const JEV = process.env.IDE_JEV_AUTOPILOT === '1';
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
-    ...(process.env.IDE_JEV_AUTOPILOT === '1' ? [AUTOPILOT_TOOL] : []),
+    ...(JEV ? [AUTOPILOT_TOOL] : []),
     {
       name: 'memory_write',
       description:
@@ -230,6 +231,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'tab_act',
+      hidden: JEV,
       description:
         'Do one thing in the user\'s browser tab: click, fill, select or scroll the control with the given id from the page you last saw ' +
         '(from tab_snapshot or from the previous tab_act). ' +
@@ -266,8 +268,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         'Google Slides, charts, images) or when tab_snapshot does not show what you need. Same Act requirement as tab_snapshot.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     },
-  ],
+  ].filter((t) => !t.hidden).map(({ hidden, ...t }) => t),
 }));
+
+// The page as the assistant reads it, from the runner's raw observation.
+function renderPage(page) {
+  if (!page) return null;
+  const clip = (v) => (typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}…` : v);
+  return {
+    url: page.url, title: page.title, text: page.text,
+    controls: (page.actions || []).map(({ id, kind, role, label, value, checked, selected, expanded, current_value }) =>
+      ({ id, kind, role, label, value: clip(value), checked, selected, expanded, current_value })),
+    more_controls_not_listed: page.omitted_actions || undefined,
+  };
+}
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
@@ -292,15 +306,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
       const r = await res.json();
       if (!r.ok) return { content: [{ type: 'text', text: r.error || 'The autopilot did not run.' }], isError: true };
-      const { status, detail, steps = [], ms } = r.result || {};
-      // The step labels (and a needs_value field name) come from the page:
-      // wrapped and labelled exactly like every other tab tool's page content.
+      const { status, detail, steps = [], ms, page } = r.result || {};
+      // The step labels, the outcome detail (field names) and the final page all
+      // come from the website: wrapped and labelled like every tab tool's content.
       const did = steps.length ? steps.map((st) => `${st.n}. ${st.kind} "${st.label}"`).join('\n') : '(no actions)';
-      const pageBits = `${did}${detail ? `\n\nOutcome detail: ${detail}` : ''}`.replace(/<<<|>>>/g, '');
-      const text = `Autopilot: ${status} (${steps.length} actions, ${((ms || 0) / 1000).toFixed(1)} s).\n` +
-        `${UNTRUSTED_PAGE_NOTE}\n<<<UNTRUSTED PAGE CONTENT\n${pageBits}\n>>>\n\n` +
-        (status === 'done' ? 'It says the goal is done — confirm on the page before telling the user. ' : '') +
-        'Take a tab_snapshot to see the page as it is now.';
+      const body = JSON.stringify({ actions: did, detail: detail || undefined, page: renderPage(page) }, null, 1).replace(/<<<|>>>/g, '');
+      const next = status === 'done' ? 'It says the goal is done — confirm that on the page below before telling the user.'
+        : status === 'needs_value' ? 'Add the value it asks for to values and call tab_autopilot again.'
+        : status === 'blocked' ? 'Read the page below (tab_screenshot if it is unclear), then call tab_autopilot again with the goal rephrased or split; after three blocked runs, tell the user what is in the way.'
+        : 'Decide from the page below.';
+      const text = `Autopilot: ${status} (${steps.length} actions, ${((ms || 0) / 1000).toFixed(1)} s). ${next}\n` +
+        `${UNTRUSTED_PAGE_NOTE}\n<<<UNTRUSTED PAGE CONTENT\n${body}\n>>>`;
       return { content: [{ type: 'text', text }], ...(status === 'error' || status === 'timeout' ? { isError: true } : {}) };
     } catch (err) {
       return { content: [{ type: 'text', text: `Autopilot failed: ${err.message}` }], isError: true };

@@ -66,6 +66,20 @@ class Stale(Exception):
 MAX_REFUSALS_IN_A_ROW = 3
 
 
+def goal_for_jev(goal, values):
+    """The goal as Jev sees it: with the values it may type, so TYPE_TEXT is an
+    informed choice, not a guess."""
+    if not values:
+        return goal
+    listed = "; ".join(f"{k} = {v}" for k, v in values.items())
+    return f"{goal}\nValues available to type into fields: {listed}"
+
+
+def light(state):
+    """The page for the result: what the assistant reads, without the guards."""
+    return {k: state.get(k) for k in ("url", "title", "text", "actions", "omitted_actions")}
+
+
 def observe():
     send({"op": "observe"})
     answer = receive()
@@ -118,18 +132,43 @@ def pick_value(goal, values, action, page, history):
 def run(goal, values, max_actions):
     history, decisions = [], 0
     refused, refusals = set(), 0   # control ids refused on the current page; refusals in a row
+    blocked_once = False           # a first BLOCKED gets one settle + re-read before it counts
+    wanted_fields = []             # fill controls Jev wanted but had no value for
+    jev_goal = goal_for_jev(goal, values)
     page = observe()
     while True:
         if len(history) >= max_actions:
-            return {"status": "budget", "detail": f"Stopped after {max_actions} actions."}
+            return {"status": "budget", "page": light(page), "detail": f"Stopped after {max_actions} actions."}
         if decisions >= max_actions * 2:
-            return {"status": "budget", "detail": "Stopped at the decision budget."}
+            return {"status": "budget", "page": light(page), "detail": "Stopped at the decision budget."}
         decisions += 1
-        offered = {**page, "actions": [a for a in page["actions"] if a["id"] not in refused]}
-        decision = model.choose(offered, goal, history)
+        # Without values nothing can be typed, so fields are not offered: Jev
+        # has to find a click (the fields it would have wanted are reported).
+        offered = {**page, "actions": [
+            a for a in page["actions"]
+            if a["id"] not in refused and (values or a["kind"] != "fill")]}
+        decision = model.choose(offered, jev_goal, history)
         choice = decision["choice"]
-        if choice in {"DONE", "BLOCKED"}:
-            return {"status": "done" if choice == "DONE" else "blocked"}
+        send({"event": "decision", "choice": choice, "operation": decision.get("operation"),
+              "confidence": round(decision.get("confidence") or 0, 2), "latency_ms": decision.get("latency_ms")})
+        if choice == "DONE":
+            return {"status": "done", "page": light(page)}
+        if choice == "BLOCKED":
+            # The page may still be drawing what Jev needs (a list, a calendar):
+            # once, wait for it to settle and look again before giving up.
+            if not blocked_once:
+                blocked_once = True
+                try:
+                    page = act("wait") or observe()
+                except (Stale, RuntimeError):
+                    page = observe()
+                continue
+            fills = [a["label"] for a in page["actions"] if a["kind"] == "fill"]
+            if not values and fills:
+                return {"status": "needs_value", "page": light(page),
+                        "detail": f"Nothing could be typed because no values were given; the page has fields: {', '.join(fills[:6])}. Call again with values."}
+            return {"status": "blocked", "page": light(page), "detail": "Jev found no supported step that makes progress from this page."}
+        blocked_once = False
         action = next((a for a in page["actions"] if a["id"] == choice), None)
         if action is None:
             page = observe()
@@ -138,7 +177,9 @@ def run(goal, values, max_actions):
         if action["kind"] == "fill":
             text = pick_value(goal, values, action, page, history)
             if text is None:
-                return {"status": "needs_value", "detail": f"No value was given for the field \"{action['label']}\"."}
+                given = ", ".join(values) if values else "none"
+                return {"status": "needs_value", "page": light(page),
+                        "detail": f"No value fits the field \"{action['label']}\" (values given: {given}). Call again with a value for it."}
         send({"event": "step", "n": len(history) + 1, "kind": action["kind"], "label": action["label"]})
         try:
             after = act(choice, text)
@@ -151,7 +192,8 @@ def run(goal, values, max_actions):
                 "kind": action["kind"], "text": None, "operation": decision["operation"], "page_changed": False,
             })
             if refusals >= MAX_REFUSALS_IN_A_ROW:
-                return {"status": "blocked", "detail": f"The page kept refusing the controls it picked (last: \"{action['label']}\" — {str(err).split('.')[0]}). Try another way: look at the page and pick a different control."}
+                page = observe()
+                return {"status": "blocked", "page": light(page), "detail": f"The page kept refusing the controls Jev picked (last: \"{action['label']}\" — {str(err).split('.')[0]})."}
             page = observe()
             continue
         refusals = 0
@@ -167,7 +209,7 @@ def run(goal, values, max_actions):
         # Three actions in a row that changed nothing: it is going in circles.
         recent = history[-3:]
         if len(recent) == 3 and all(h["page_changed"] is False and h["kind"] != "wait" for h in recent):
-            return {"status": "blocked", "detail": "Three actions in a row changed nothing."}
+            return {"status": "blocked", "page": light(page), "detail": "Three actions in a row changed nothing on the page."}
 
 
 def main():
@@ -178,7 +220,7 @@ def main():
         os.environ["TYPESAFE_API_KEY"] = str(request["key"])
     goal = str(request.get("goal") or "").strip()
     values = {str(k): str(v) for k, v in (request.get("values") or {}).items() if str(v).strip()}
-    max_actions = max(1, min(int(request.get("max_actions") or 30), MAX_STEPS))
+    max_actions = max(1, min(int(request.get("max_actions") or 40), MAX_STEPS))
     try:
         if not goal:
             raise ValueError("No goal was given.")

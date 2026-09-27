@@ -204,6 +204,11 @@ export default function tabRouter() {
     const slug = resolveSlug(req.body?.actor);
     const command = req.body?.command;
     if (command?.op === 'observe') return res.status(400).json({ ok: false, error: 'command required' });   // the autopilot's, not a tool's
+    // With Jev connected, every action on the tab goes through the autopilot:
+    // the assistant's own tab_act is not offered and is refused here too.
+    if (command?.op === 'act' && jevConnected()) {
+      return res.json({ ok: false, error: 'Actions on this tab go through tab_autopilot while the Jev autopilot is connected. Give it the goal (with the values to type) instead.' });
+    }
     res.json(await sendTabCommand(slug, req.body?.turnToken, command));
   });
 
@@ -233,8 +238,10 @@ export default function tabRouter() {
       apiKey: key,
       exec: (command) => sendTabCommand(slug, token, command),
       onStep: (step) => { try { turn.onProgress?.(step); } catch { /* the chat went away */ } },
+      // Every choice Jev makes, for diagnosis: what, how sure, how long.
+      onDecision: (d) => process.stderr.write(`[jev] ${slug}: ${d.operation || d.choice} ${d.choice} (${d.confidence}) ${d.latency_ms} ms\n`),
     });
-    process.stderr.write(`[tab] ${slug}: autopilot ${result.status} after ${result.steps.length} steps — ${result.ms} ms\n`);
+    process.stderr.write(`[tab] ${slug}: autopilot ${result.status} after ${result.steps.length} steps, ${result.decisions} decisions — ${result.ms} ms${result.detail ? `: ${String(result.detail).slice(0, 120)}` : ''}\n`);
     res.json({ ok: true, result });
   });
 

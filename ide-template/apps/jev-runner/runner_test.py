@@ -87,6 +87,8 @@ class FakeBrowser:
             if msg["op"] == "observe":
                 return {"ok": True, "state": self.state}
             self.log.append((msg["id"], msg.get("text")))
+            if msg["id"] == "wait":
+                return {"ok": True, "state": self.state}
             outcome = self.acts.get(msg["id"])
             if isinstance(outcome, list):
                 outcome = outcome.pop(0) if outcome else self.state
@@ -122,12 +124,28 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("From", result["detail"])
         self.assertEqual(b.log, [])
 
-    def test_no_values_at_all_hands_the_field_back_without_asking(self):
+    def test_no_values_means_no_fields_offered_and_a_needs_value_when_blocked(self):
         b = FakeBrowser(SEARCH, {})
-        ts = FakeTypeSafe([("TYPE_TEXT", "From")])
+        ts = FakeTypeSafe([("BLOCKED", None), ("BLOCKED", None)])
         result = self.go(b, ts)
         self.assertEqual(result["status"], "needs_value")
-        self.assertEqual(len(ts.bodies), 1)
+        self.assertIn("From", result["detail"])
+        self.assertNotIn("TYPE_TEXT", ts.bodies[0]["questions"]["operation"]["criteria"])
+        self.assertEqual(b.log, [("wait", None)])   # one settle before the second BLOCKED counted
+
+    def test_values_appear_in_the_goal_jev_sees(self):
+        b = FakeBrowser(SEARCH, {"e1": None, "e2": RESULTS})
+        ts = FakeTypeSafe([("TYPE_TEXT", "From"), "from", ("CLICK", "Search"), ("DONE", None)])
+        self.go(b, ts, values={"from": "Zurich"})
+        self.assertIn("from = Zurich", ts.bodies[0]["questions"]["operation"]["instructions"]["goal"])
+
+    def test_a_first_blocked_waits_and_looks_again(self):
+        b = FakeBrowser(SEARCH, {"e2": RESULTS})
+        ts = FakeTypeSafe([("BLOCKED", None), ("CLICK", "Search"), ("DONE", None)])
+        result = self.go(b, ts, values={"from": "Zurich"})
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(b.log, [("wait", None), ("e2", None)])
+        self.assertEqual(result["page"]["title"], "results")
 
     def test_a_stale_refusal_is_observed_again_not_failed(self):
         b = FakeBrowser(TWO, {"e2": "That control changed or is covered. Take a new snapshot.", "e5": RESULTS})
@@ -161,7 +179,8 @@ class RunnerTest(unittest.TestCase):
         result = self.go(b, ts)
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(len(b.log), 3)
-        self.assertIn("another way", result["detail"])
+        self.assertIn("kept refusing", result["detail"])
+        self.assertEqual(result["page"]["title"], "many")
 
     def test_a_hard_refusal_ends_the_run_with_its_reason(self):
         b = FakeBrowser(SEARCH, {"e2": "That leads away from this site, which is not allowed."})

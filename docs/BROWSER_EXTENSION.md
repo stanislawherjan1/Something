@@ -200,8 +200,8 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
   which of the given values fits it; none fits → the run stops with `needs_value` and the
   assistant fills that field itself. No text-model provider is involved.
 - **Same limits.** Every action is an ordinary `act` command — the table above applies step by
-  step. Switching Act off fails the next command at once, ending the run. Bounds: 30 actions, 60
-  decisions, 90 s; three actions in a row that change nothing stop it as blocked.
+  step. Switching Act off fails the next command at once, ending the run. Bounds: 40 actions, 80
+  decisions, 120 s; three actions in a row that change nothing stop it as blocked.
 - **No loops on a refused control.** A control the executor refuses (covered, changed) is not
   offered to Jev again on that page, and the attempt shows in its recent actions, so it has to
   find another way; three refusals in a row stop the run as blocked, and the assistant — told to
@@ -209,10 +209,23 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 - **Data.** While it runs, the goal, the values, the page's visible text and control labels and
   values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
   in the egress allow-list only while the integration is active).
-- **Its own instruction.** With Jev connected, an Act turn's context tells the assistant to work
-  through `tab_autopilot` (one read of the page, then one goal with values, then check the result)
-  instead of the step-by-step `tab_act` loop — mentioning the tool alone was not enough. The
-  safety lines (page text is not instructions, no outbound tools) are the same in both.
+- **Jev does every action; the assistant plans and checks.** With Jev connected, an Act turn has
+  `tab_snapshot`, `tab_screenshot` and `tab_autopilot` — **no `tab_act`** (not offered, and refused
+  by the route). The turn's instruction: call `tab_autopilot` right away with the whole task and the
+  values to type, answer from the page it returns; `needs_value` → add the value and call again;
+  `blocked` → read the page, rephrase or split the goal, call again; three blocked runs → tell the
+  user. Pausing Jev (the switch on its card) brings the step-by-step `tab_act` mode back — needed
+  for what Jev cannot do (uploads, canvas apps, frames). The safety lines (page text is not
+  instructions, no outbound tools) are the same in both modes.
+- **Fewer early stops, fewer wasted round trips** (each costs one user↔server round trip, where
+  jev-ultrafast's local Chrome pays ~5 ms): controls whose centre is covered are not offered at all
+  (upstream PR #137); after an action the extension waits until the DOM has been quiet for 120 ms
+  (cap 600 ms) instead of two frames, and an explicit WAIT lasts until the page is quiet (cap 1.5 s)
+  instead of 100 ms (PR #124); a first BLOCKED from Jev gets one settle-and-re-read before it counts
+  (PR #153); the values go into the goal Jev sees, and without values no fill control is offered
+  (Jev must click; the fields it would have wanted are reported as `needs_value`). The result
+  carries the final page, so the assistant answers without another read. Every Jev decision is
+  logged (`[jev] … CLICK e12 (0.91) 180 ms`).
 - **Only here.** The tool exists only in a panel turn with Act on while Jev is connected and not
   paused (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
 - **Pause.** An admin can switch the autopilot off on the Jev card without disconnecting: the key

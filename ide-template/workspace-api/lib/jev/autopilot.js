@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url';
 // for local development and tests only: run the repo's runner directly.
 const WRAPPER = '/usr/local/bin/jev-runner';
 const DEV_RUNNER = join(dirname(fileURLToPath(import.meta.url)), '../../../apps/jev-runner/runner.py');
-const RUN_TIMEOUT_MS = 90_000;
-const MAX_ACTIONS = 30;
+const RUN_TIMEOUT_MS = 120_000;
+const MAX_ACTIONS = 40;
 
 // No secret in the environment: the wrapper rebuilds it from its own
 // allow-list (egress proxy settings, locale) anyway.
@@ -38,9 +38,10 @@ function runnerEnv() {
   return env;
 }
 
-export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {}, maxActions = MAX_ACTIONS }) {
+export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {}, onDecision = () => {}, maxActions = MAX_ACTIONS }) {
   const started = Date.now();
   const steps = [];
+  let decisions = 0;
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result) => {
@@ -48,7 +49,7 @@ export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {
       settled = true;
       clearTimeout(timer);
       try { child.kill('SIGTERM'); } catch { /* gone */ }
-      resolve({ ...result, steps, ms: Date.now() - started });
+      resolve({ ...result, steps, decisions, ms: Date.now() - started });
     };
 
     const child = process.env.JEV_PYTHON
@@ -80,6 +81,11 @@ export function runAutopilot({ goal, values = {}, apiKey, exec, onStep = () => {
     async function handle(msg) {
       if (settled) return;
       if (msg.result) return finish(msg.result);
+      if (msg.event === 'decision') {
+        decisions += 1;
+        onDecision(msg);
+        return;
+      }
       if (msg.event === 'step') {
         const step = { n: msg.n, kind: msg.kind, label: String(msg.label || '').slice(0, 120) };
         steps.push(step);

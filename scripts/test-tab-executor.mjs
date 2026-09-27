@@ -36,6 +36,7 @@ const pageCode = new Function(`${extract('freshExpression')}\n${extract('targetE
 const SNAPSHOT = readFileSync(join(ROOT, 'chrome-extension/vendor/jev-snapshot.js'), 'utf8')
   .split('\n').filter((l) => !l.startsWith('//')).join('\n').trim();
 const SENSITIVE = `(${pageCode.sensitiveFieldIds.toString()})()`;
+const COVERED = `(${extract('coveredNodeIds').replace(/^function coveredNodeIds/, 'function')})()`;
 
 // ── Fixture server ───────────────────────────────────────────────────────────
 const FIXTURE = join(ROOT, 'scripts/tab-fixture');
@@ -94,7 +95,8 @@ async function open(path) {
 async function observe() {
   const state = await evaluate(SNAPSHOT);
   const hidden = new Set(await evaluate(SENSITIVE) || []);
-  state.actions = state.actions.filter((a) => a.node == null || !hidden.has(a.node));
+  const covered = new Set(await evaluate(COVERED) || []);
+  state.actions = state.actions.filter((a) => a.node == null || (!hidden.has(a.node) && !covered.has(a.node)));
   return state;
 }
 const find = (state, re, kind) => state.actions.find((a) => re.test(a.label) && (!kind || a.kind === kind));
@@ -155,10 +157,10 @@ try {
     });
   }
 
-  await check('a covered button is refused', async () => {
-    const a = find(page, /^Covered$/);
-    if (!a) return 'not offered by the snapshot at all';
-    assert((await target(a)) === null, 'covered button accepted');
+  await check('a covered button is not offered at all', async () => {
+    assert(!find(page, /^Covered$/), 'covered button offered');
+    // and the count button beside it, uncovered, still is
+    assert(find(page, /^Count$/), 'an uncovered button vanished with it');
   });
 
   await check('a disabled button is refused', async () => {
@@ -176,7 +178,7 @@ try {
     assert(v === 'Zurich to London', `value is "${v}"`);
   });
 
-  await check('after typing into a combobox the wait lasts until suggestions show (≤ 200 ms)', async () => {
+  await check('after typing into a combobox the wait lasts until suggestions show, then the DOM is quiet', async () => {
     page = await observe();
     const a = find(page, /^From/, 'fill');
     const t = await target(a);
@@ -185,17 +187,28 @@ try {
     await evaluate(pageCode.settleExpression(a));
     const ms = Date.now() - t0;
     const shown = await evaluate(`document.querySelectorAll('#lb [role=option]').length`);
-    assert(ms <= 260, `waited ${ms} ms, ${shown} suggestion(s) visible`);
+    assert(ms <= 700, `waited ${ms} ms, ${shown} suggestion(s) visible`);
     assert(shown > 0, `no suggestions visible after the wait (${ms} ms)`);
     return `${ms} ms, ${shown} suggestion(s) visible after the wait`;
   });
 
-  await check('after a click the wait is short (two frames or 50 ms)', async () => {
+  await check('after a click on a quiet page the wait is one quiet period (~120 ms)', async () => {
     const a = find(page, /^Count$/, 'click');
     const t0 = Date.now();
     await evaluate(pageCode.settleExpression(a));
     const ms = Date.now() - t0;
-    assert(ms <= 120, `waited ${ms} ms`);
+    assert(ms >= 100 && ms <= 250, `waited ${ms} ms`);
+    return `${ms} ms`;
+  });
+
+  await check('a page that keeps mutating is waited for until the cap (600 ms)', async () => {
+    const a = find(page, /^Count$/, 'click');
+    await evaluate(`window.__churn = setInterval(() => { document.getElementById('out').textContent = String(Date.now()); }, 30)`);
+    const t0 = Date.now();
+    await evaluate(pageCode.settleExpression(a));
+    const ms = Date.now() - t0;
+    await evaluate('clearInterval(window.__churn)');
+    assert(ms >= 550 && ms <= 800, `waited ${ms} ms`);
     return `${ms} ms`;
   });
 

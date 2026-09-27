@@ -256,6 +256,25 @@ function sensitiveFieldIds() {
 // The same function as an expression, for Runtime.evaluate in Act.
 const SENSITIVE_FIELDS_JS = `(${sensitiveFieldIds.toString()})()`;
 
+// Controls whose centre is covered by something else (an overlay, a button on
+// top of a row): the act guard would refuse them, so they are not offered at
+// all — a decision spent on one is a round trip wasted. Same test as at click
+// time. Evaluated in the page; returns the node ids to leave out.
+function coveredNodeIds() {
+  const c = window.__jevFast; if (!c) return [];
+  const out = [];
+  for (const [id, e] of c.nodes) {
+    if (!e?.isConnected) continue;
+    const r = e.getBoundingClientRect();
+    const x = r.x + r.width / 2, y = r.y + r.height / 2;
+    if (!r.width || !r.height || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    const hit = document.elementFromPoint(x, y);
+    if (hit && !e.contains(hit) && !hit.contains(e)) out.push(id);
+  }
+  return out;
+}
+const COVERED_JS = `(${coveredNodeIds.toString()})()`;
+
 // The one way out, for every trigger. Detaching is what actually cuts the
 // assistant off from the page.
 function actOff(reason) {
@@ -394,15 +413,18 @@ async function guard({ read = false } = {}) {
 // Act on, it becomes the snapshot the next action is checked against.
 async function observe(tab) {
   let state, hidden;
+  let covered;
   if (act.on) {
     state = await evaluate(await snapshotScript());
     hidden = new Set(await evaluate(SENSITIVE_FIELDS_JS) || []);
+    covered = new Set(await evaluate(COVERED_JS) || []);
   } else {
     state = await inTab(tab.id, ['vendor/jev-snapshot.js']);
     hidden = new Set(await inTab(tab.id, null, sensitiveFieldIds) || []);
+    covered = new Set(await inTab(tab.id, null, coveredNodeIds) || []);
   }
   if (!state) return null;
-  state.actions = state.actions.filter((a) => a.node == null || !hidden.has(a.node));
+  state.actions = state.actions.filter((a) => a.node == null || (!hidden.has(a.node) && !covered.has(a.node)));
   if (act.on) act.lastSnapshot = state;
   return state;
 }
@@ -442,29 +464,31 @@ async function tabSnapshot() {
   return { ...forModel(state), audit: `snapshot ${tab.url}` };
 }
 
-// After input, give the page just enough time to react — jev-ultrafast's wait
-// (browser.py observe): two animation frames or 50 ms; an editable combobox
-// waits for its visible suggestions, capped at 200 ms. Read-only.
-function settleExpression(action) {
-  return `((action) => new Promise((resolve) => {
+// After input, wait for the page to settle: until its DOM has been quiet for a
+// moment (no mutations for QUIET ms), capped. jev-ultrafast waits two frames /
+// 50 ms and retries a stale read locally for 20 ms; here a stale read costs a
+// whole round trip, so waiting a little longer is cheaper. An editable combobox
+// also waits for its visible suggestions. Read-only.
+function settleExpression(action, quiet = 120, cap = 600) {
+  return `((action, quiet, cap) => new Promise((resolve) => {
     const field = window.__jevFast?.nodes.get(action.node);
     const autocomplete = action.kind === 'fill' && field?.getAttribute('role') === 'combobox';
-    let frames = 0, stopped = false;
-    const finish = () => { stopped = true; resolve(true); };
-    setTimeout(finish, autocomplete ? 200 : 50);
-    const ready = () => {
-      if (stopped) return;
+    let stopped = false, timer = null;
+    const finish = () => { if (stopped) return; stopped = true; mo.disconnect(); resolve(true); };
+    const optionsShown = () => {
       const ids = (field?.getAttribute('aria-controls') || field?.getAttribute('aria-owns') || '').split(/\\s+/).filter(Boolean);
       const roots = ids.length ? ids.map((id) => document.getElementById(id)).filter(Boolean) : [document];
-      const options = roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')]);
-      if (++frames >= 2 && (!autocomplete || options.some((e) => {
+      return roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')]).some((e) => {
         const r = e.getBoundingClientRect();
         return r.width && r.height && r.bottom > 0 && r.top < innerHeight && e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
-      }))) finish();
-      else requestAnimationFrame(ready);
+      });
     };
-    requestAnimationFrame(ready);
-  }))(${JSON.stringify({ node: action.node, kind: action.kind })})`;
+    const arm = () => { clearTimeout(timer); timer = setTimeout(() => { if (!autocomplete || optionsShown()) finish(); else arm(); }, quiet); };
+    const mo = new MutationObserver(arm);
+    mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    setTimeout(finish, cap);
+    arm();
+  }))(${JSON.stringify({ node: action.node, kind: action.kind })}, ${quiet}, ${cap})`;
 }
 
 // The page-side checks of an action, as expressions for Runtime.evaluate (also
@@ -522,7 +546,7 @@ function targetExpression(action) {
 // extension's isolated world inside a closed shadow root, ignores the mouse
 // (pointer-events: none — clicks and elementFromPoint pass through it) and is
 // removed the moment Act switches off.
-const CURSOR_MOVE_MS = 180;   // glide time; skipped when the cursor is already near the target
+const CURSOR_MOVE_MS = 100;   // glide time; skipped when the cursor is already near the target
 
 function paintCursor(x, y, effect, box) {
   const ID = 'something-agent-cursor';
@@ -534,7 +558,7 @@ function paintCursor(x, y, effect, box) {
     const root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `<style>
       .c { position: fixed; left: 0; top: 0; width: 60px; height: 60px; margin: -4px 0 0 -7px;
-           transition: transform ${180}ms cubic-bezier(.3,.7,.2,1);
+           transition: transform ${100}ms cubic-bezier(.3,.7,.2,1);
            filter: drop-shadow(0 3px 10px rgba(0,0,0,.3)); will-change: transform; }
       .c svg { width: 60px; height: 60px; display: block; }
       .ring { position: fixed; left: 0; top: 0; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%;
@@ -620,7 +644,9 @@ async function actOnce(targetId, text, soft = false) {
     act.cursorAt = { x: Math.round(snap.w / 2), y: Math.round(snap.h / 2) };
     await cdp('Input.dispatchMouseEvent', { type: 'mouseWheel', x: Math.round(snap.w / 2), y: Math.round(snap.h / 2), deltaX: 0, deltaY: action.delta });
   } else if (action.kind === 'wait') {
-    await new Promise((r) => setTimeout(r, 100));
+    // Until the page has been quiet for a moment, at most 1.5 s — one round
+    // trip instead of several 100 ms ones while results load.
+    try { await evaluate(settleExpression(action, 250, 1500)); } catch { /* navigating */ }
   } else {
     const fresh = await evaluate(freshExpression(action.node));
     if (fresh !== JSON.stringify([snap.page_key, snap.guards[action.node]])) {
