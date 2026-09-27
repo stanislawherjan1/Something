@@ -48,7 +48,7 @@ export function openTabTurn(slug, { act = false, onProgress = null } = {}) {
   turns.set(token, { slug: resolved, act: !!act, onProgress });
   // The message says whether Act was on when it was sent; the panel's switch
   // is reported separately. Logging both makes a mismatch visible.
-  process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}\n`);
+  process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}, autopilot ${act && jevConnected() ? 'offered' : 'not offered'}\n`);
   return token;
 }
 export function closeTabTurn(token) {

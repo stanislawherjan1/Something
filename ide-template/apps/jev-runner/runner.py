@@ -72,9 +72,10 @@ def act(action_id, text=None):
     answer = receive()
     if not answer.get("ok"):
         error = answer.get("error") or "The action was refused."
-        # The extension's stale refusals ("changed", "Take a new snapshot") are
-        # upstream's StalePage: look again and choose again.
-        if "changed" in error or "snapshot" in error:
+        # The extension's stale refusals (the page changed, the control is
+        # covered, no current read) are upstream's StalePage: look again and
+        # choose again.
+        if "changed" in error or "snapshot" in error or "read" in error:
             raise Stale(error)
         raise RuntimeError(error)
     return answer.get("state")

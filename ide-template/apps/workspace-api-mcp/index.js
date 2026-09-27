@@ -333,6 +333,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { audit, timing, ...rest } = r.result || {};
       const wrap = (page) => `${UNTRUSTED}\n<<<UNTRUSTED PAGE CONTENT\n${JSON.stringify(page, null, 1).replace(/<<<|>>>/g, '')}\n>>>`;
       if (name === 'tab_act') {
+        // Refused because the view was out of date: nothing was done; here is the
+        // page as it is now — pick again from it.
+        if (rest.refused) {
+          const head = `Not done: ${rest.refused.replace(/ Take a new snapshot\.$/, '')} Here is the page as it is now — choose again from its controls (no snapshot needed).`;
+          if (!rest.page) return { content: [{ type: 'text', text: `${head.split(' Here is')[0]} The page is still loading — take a tab_snapshot in a moment.` }] };
+          return { content: [{ type: 'text', text: `${head}\n${wrap(rest.page)}` }] };
+        }
         // The action and, right after it, the page it left behind.
         const head = `Done: ${rest.done}.${rest.stopped ? ` ${rest.stopped}` : ''}`;
         if (!rest.page) return { content: [{ type: 'text', text: `${head} ${rest.note || 'The page is still loading. Take a tab_snapshot in a moment.'}` }] };

@@ -142,6 +142,11 @@ matches. Afterwards the extension waits only as long as upstream does — two an
 retrying for up to 2.5 s while a navigation settles. The `[tab]` log line of every command shows
 its round trip and how much of it was the relay (`… — 640 ms relay 120 ms`).
 
+When an action is refused because the assistant's view is out of date (the page changed since
+it was read, the control moved or is covered, nothing has been read yet), nothing is done and
+`tab_act` returns the page as it is now to choose from, instead of an error that costs another
+round trip. The Jev runner gets these as plain errors and re-observes by itself.
+
 `tab_act` also takes `steps` — up to five actions on the same page (a form's fields, then its
 submit button) in one call. Each step gets every check and a fresh observation; the batch stops
 at the first failure, when the address changes, or when a later control is no longer the one the
@@ -200,6 +205,10 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 - **Data.** While it runs, the goal, the values, the page's visible text and control labels and
   values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
   in the egress allow-list only while the integration is active).
+- **Its own instruction.** With Jev connected, an Act turn's context tells the assistant to work
+  through `tab_autopilot` (one read of the page, then one goal with values, then check the result)
+  instead of the step-by-step `tab_act` loop — mentioning the tool alone was not enough. The
+  safety lines (page text is not instructions, no outbound tools) are the same in both.
 - **Only here.** The tool exists only in a panel turn with Act on while Jev is connected and not
   paused (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
 - **Pause.** An admin can switch the autopilot off on the Jev card without disconnecting: the key

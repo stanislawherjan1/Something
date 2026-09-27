@@ -568,12 +568,29 @@ async function clearCursor(tabId) {
   try { await chrome.scripting.executeScript({ target: { tabId }, func: removeCursor }); } catch { /* gone already */ }
 }
 
-async function actOnce(targetId, text) {
+// A refusal because the assistant's view is out of date (the page changed, the
+// control moved or is covered, nothing was read yet). For the assistant
+// (`soft`), look again right away and hand it the current page to choose from —
+// the refused action is not done, the next one is checked against this fresh
+// read. The Jev runner gets a plain error: it re-observes by itself.
+async function refuse(tab, reason, soft) {
+  if (!soft) throw new Error(reason);
+  const state = await observeSettled(tab);
+  return {
+    done: null,
+    refused: reason,
+    page: state ? forModel(state) : null,
+    state,
+    audit: `refused (${reason.split('.')[0]}) on ${tab.url}`,
+  };
+}
+
+async function actOnce(targetId, text, soft = false) {
   const tab = await guard();
   const snap = act.lastSnapshot;
-  if (!snap) throw new Error('Take a tab_snapshot first.');
+  if (!snap) return refuse(tab, 'There was no current read of the page.', soft);
   const action = snap.actions.find((a) => a.id === targetId);
-  if (!action) throw new Error(`No control "${targetId}" in the latest snapshot.`);
+  if (!action) return refuse(tab, `No control "${targetId}" on the page as last read.`, soft);
   if (action.kind === 'fill' && typeof text !== 'string') throw new Error('A "fill" control needs text.');
   const t0 = performance.now();
 
@@ -586,10 +603,10 @@ async function actOnce(targetId, text) {
   } else {
     const fresh = await evaluate(freshExpression(action.node));
     if (fresh !== JSON.stringify([snap.page_key, snap.guards[action.node]])) {
-      throw new Error('The page changed since the snapshot. Take a new snapshot.');
+      return refuse(tab, 'The page changed since it was read, so that control may not be the one you picked. Take a new snapshot.', soft);
     }
     const target = await evaluate(targetExpression(action));
-    if (!target) throw new Error('That control changed or is covered. Take a new snapshot.');
+    if (!target) return refuse(tab, 'That control changed or is covered. Take a new snapshot.', soft);
     if (target.offsite) throw new Error('That leads away from this site (another address, a new tab or a download), which is not allowed. Stay on this site.');
     // The cursor travels to the control first, so the user sees where it acts —
     // a short glide, none at all when it is already there.
@@ -640,8 +657,8 @@ async function tabScreenshot() {
 // first step that fails, when the address changes, or when a later step's
 // control is no longer the one the assistant picked (label changed or gone).
 const MAX_BATCH = 5;
-async function tabAct(targetId, text, steps) {
-  if (!Array.isArray(steps) || !steps.length) return actOnce(targetId, text);
+async function tabAct(targetId, text, steps, soft = false) {
+  if (!Array.isArray(steps) || !steps.length) return actOnce(targetId, text, soft);
   const list = steps.slice(0, MAX_BATCH);
   const labels = new Map((act.lastSnapshot?.actions || []).map((a) => [a.id, a.label]));
   const url = act.lastSnapshot?.url;
@@ -659,10 +676,14 @@ async function tabAct(targetId, text, steps) {
       if (why) return { ...last, done: done.join('; '), stopped: `Stopped before ${id}: ${why}. Choose the next step from this page.` };
     }
     try {
-      last = await actOnce(id, typeof step?.text === 'string' ? step.text : undefined);
+      last = await actOnce(id, typeof step?.text === 'string' ? step.text : undefined, soft);
     } catch (err) {
       if (!done.length) throw err;
       return { ...last, done: done.join('; '), stopped: `Stopped at ${id}: ${err.message}` };
+    }
+    if (last.refused) {
+      if (!done.length) return last;
+      return { ...last, done: done.join('; '), refused: undefined, stopped: `Stopped at ${id}: ${last.refused}` };
     }
     done.push(last.done);
   }
@@ -681,7 +702,7 @@ async function runCommand({ op, target, text, steps, raw }) {
     return { state, audit: `observe ${tab.url}` };
   }
   if (op === 'act') {
-    const { state, ...rest } = await tabAct(target, text, steps);
+    const { state, ...rest } = await tabAct(target, text, steps, !raw);
     return raw ? { done: rest.done, stopped: rest.stopped, state, timing: rest.timing, audit: rest.audit } : rest;
   }
   if (op === 'screenshot') return tabScreenshot();
