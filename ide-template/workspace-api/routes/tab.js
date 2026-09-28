@@ -201,8 +201,9 @@ export default function tabRouter() {
   });
 
   // The extension's signing key (see panelKeys). Only for a request made by the
-  // extension itself: browsers set Origin, and page scripts cannot forge it.
-  router.get('/tab/panel-key', (req, res) => {
+  // extension itself: on a POST Chrome sends the extension's Origin, which page
+  // scripts cannot forge (on a GET from an extension page it sends none).
+  router.post('/tab/panel-key', (req, res) => {
     const slug = viewerSlug(req);
     if (!slug) return res.status(401).json({ error: 'Unauthorized.' });
     if (!EXTENSION_ORIGINS.includes(String(req.get('Origin') || ''))) return res.status(403).json({ error: 'Only the extension may fetch this.' });

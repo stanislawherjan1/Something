@@ -846,7 +846,9 @@ async function fetchPanelKey() {
     const session = cookies.find((c) => /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(c.value));
     if (session) headers.Authorization = `Bearer ${session.value}`;
   } catch { /* the cookie alone may do */ }
-  const res = await fetch(`${origin}/api/tab/panel-key`, { credentials: 'include', headers, cache: 'no-store' });
+  // POST: Chrome sends the extension's Origin with it (not with a GET), and the
+  // workspace hands the key only to that Origin.
+  const res = await fetch(`${origin}/api/tab/panel-key`, { method: 'POST', credentials: 'include', headers, cache: 'no-store' });
   if (!res.ok) throw new Error(`The workspace did not hand out its command key (${res.status}).`);
   const { key } = await res.json();
   panelKey = await crypto.subtle.importKey('raw', bytesFromB64url(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
