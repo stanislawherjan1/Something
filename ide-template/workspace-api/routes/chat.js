@@ -665,13 +665,17 @@ export default function chatRouter() {
       res.end();
     };
 
+    // The browser closes this stream when the user sends the next message
+    // mid-turn (and on reload). The turn is NOT over then: its entry must stay
+    // until finish() so that next message finds it, keeps what it already
+    // wrote (as interrupted) and stops it. Dropping the entry here left the
+    // old turn running unseen beside the new one, and its reply was discarded
+    // when it ended — answers vanished from the chat while the work went on.
     req.on('close', () => {
       if (!finished && proc && !proc.killed && req.aborted) {
         process.stderr.write('[chat] request aborted, killing claude\n');
         proc.kill('SIGTERM');
       }
-      const cur = activeBySession.get(sid);
-      if (cur && cur.gen === myGen) activeBySession.delete(sid);
     });
 
     // A turn from the browser panel that shares the page may LOOK at the tab (a
