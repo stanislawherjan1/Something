@@ -650,6 +650,13 @@ export default function chatRouter() {
           appendToSession(req.chatActor, sid, { role: 'assistant', text: assistantText, state: 'interrupted', tools: storedTools(toolSteps, 0, assistantText.length) });
         } catch (err) { process.stderr.write(`[chat] partial-persist failed: ${err.message}\n`); }
       }
+      // The reason there is no (full) answer — the plan's limit, a crash — is
+      // kept too: the card the user saw live must still explain the gap after
+      // a reload, or a question simply looks ignored.
+      if (kind === 'error' && payload?.error) {
+        try { appendToSession(req.chatActor, sid, { role: 'assistant', text: '', state: 'error', error: payload.error }); }
+        catch (err) { process.stderr.write(`[chat] error-persist failed: ${err.message}\n`); }
+      }
       // Advance the never-blind watermark on EVERY terminal path (done / error /
       // interrupt / abort) — once the prompt was built and the process spawned,
       // the undelivered set WAS fed to the brain, so it's consumed. Not advancing

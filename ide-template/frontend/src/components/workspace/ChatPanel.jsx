@@ -135,7 +135,9 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
     tools: Array.isArray(m.tools) ? m.tools : null,
     id: `${prefix}-${i}-${m.ts}`,
     ts: m.ts,
-    state: 'done',
+    // A turn that ended without an answer keeps its reason (the plan's limit,
+    // a crash) and shows the same card it showed live.
+    ...(m.error ? { state: 'error', errorKind: 'stream', errorDetail: m.error } : { state: 'done' }),
   });
 
   // Initial page load. Fetches the most-recent slice; older pages arrive via

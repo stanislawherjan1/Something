@@ -160,7 +160,7 @@ function formatWebEntry(msg) {
   const ts = msg.ts || '?';
   if (msg.kind === 'reset') return `## ${ts} — — — reset marker — — —`;
   const role = msg.role || 'unknown';
-  const text = String(msg.text == null ? '' : msg.text).trim();
+  const text = String(msg.text == null ? '' : msg.text).trim() || (msg.error ? `(no answer — ${String(msg.error).trim()})` : '');
   return `## ${ts} — ${role}\n${text}`;
 }
 
