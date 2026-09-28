@@ -59,7 +59,7 @@ ok('undo is mounted', route(memory, 'post', '/memory/revert'));
 // it, the flag that lists the tool in an Act turn, and the record it reads.
 ok('use_integrations tool exists', /name: 'use_integrations'/.test(mcp));
 ok('...and something serves it', route(tab, 'post', '/internal/tab-handoff'));
-ok('...and an Act turn is flagged so the tool is listed', /IDE_ACT_TURN = '1'/.test(claude));
+ok('...and a page turn is flagged so the tool is listed', /IDE_PAGE_TURN = '1'/.test(claude));
 ok('...and the panel turn hands it the user\'s message and the tab', /openTabTurn\(req\.chatActor, \{[\s\S]*?message,[\s\S]*?url:/.test(chat));
 
 console.log(`\n${pass} passed, ${fail} failed`);

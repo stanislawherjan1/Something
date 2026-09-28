@@ -333,8 +333,8 @@ Act turn (reads the page, tab tools only)
   → POST /api/internal/tab-handoff { turnToken }          loopback; Act still on
   → lib/tab-handoff.js starts a second claude -p turn with
       • the user's message exactly as typed (stored by routes/chat.js when the panel turn began)
-      • the tab's URL and title as the panel reported them
-      • the chat's dialogue text (user and assistant messages; never tool results)
+      • the tab's address reduced to what identifies an item (host; path, query and fragment parts that look like ids)
+      • the user's earlier messages in the chat (not the assistant's — those were written while reading pages)
       • every integration, minus the tools that deliver messages
       • no tab token, no Act flag, a fresh session (never the panel's transcript)
   → its integration calls stream into the panel chat as they run (its housekeeping — tool lookups, memory reads — does not)
@@ -365,19 +365,25 @@ assistant never needs to ask the user to switch Act off to use an integration.
 
 ---
 
-## The Act turn: model, tools, prompt
+## Page turns: model, tools, prompt
 
-`lib/claude.js` (`runClaudeTurn`, `actTurn`) starts an Act turn differently from any other:
+A turn from the panel with the page shared — Look or Act — is a **page turn**. `lib/claude.js`
+(`runClaudeTurn`, `pageTurn`) starts it differently from any other:
 
-| | Act turn | Other web turns |
+| | Page turn (Look or Act) | Other web turns (incl. the panel with ✕ on the page chip) |
 |---|---|---|
+| Built-in tools | none (`--tools ""`) | all |
 | MCP servers | only `workspace-api` (a generated config + `--strict-mcp-config`); if its entry cannot be read, none | every active integration |
-| Disallowed | `Bash`, `WebFetch`, `WebSearch`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Task`, `memory_write`, `fix_sent_message`, `AskUserQuestion` | `AskUserQuestion` (+ what the caller adds) |
-| Tab tools | `tab_snapshot`, `tab_act`, `tab_screenshot`, `use_integrations` | `tab_snapshot`, `tab_screenshot` in a panel turn that shares the page; not even listed elsewhere (the MCP lists them only when the turn carries a tab token) |
-| Env | `IDE_TAB_TOKEN` (one-turn token), `IDE_ACT_TURN=1` | `IDE_TAB_TOKEN` in a panel turn that shares the page |
+| workspace-api tools | `tab_snapshot`, `tab_screenshot`, `tab_act` (acts only with Act on), `use_integrations`; memory tools denied | everything but the tab tools (not even listed without a tab token) |
+| Environment | the server's secrets removed (anything named like a secret, token, key, password or credential), only the CLI's own credential kept; `IDE_TAB_TOKEN`, `IDE_PAGE_TURN=1` | as the server's |
 | Model | the bot's pinned model | the same |
-| Effort | `--effort medium` (`IDE_ACT_EFFORT` overrides) | the CLI default |
+| Effort | `--effort medium` in Act (`IDE_ACT_EFFORT` overrides) | the CLI default |
 | Tool loading | all at once (`ENABLE_TOOL_SEARCH=false`): with tool search the model saw only tool names, spent calls looking schemas up, and once looked `use_integrations` up by the wrong name and asked for Act to be switched off | the CLI default (tool search) |
+
+The user's memory cards are still in the prompt, so the assistant knows who it is working with;
+what it cannot do from a page turn is reach further — every file, memory search, integration or
+web request goes through `use_integrations`, which never sees the page. Leaving the page out of
+a message (✕ on the page chip) makes it an ordinary turn with the full toolbox.
 
 **The model.** Every web turn — the panel and the workspace chat — runs on the model pinned
 for the bot in `bootstrap/claude-settings.json`; workspace-api's own user has no settings file,
@@ -427,8 +433,8 @@ Enforced in code, not asked of the model.
 | No code, cookies, clipboard or network: the model only picks control ids from a read the extension made; it never supplies selectors or scripts | extension |
 | 60 actions and 120 reads a minute; every command is logged | extension + workspace-api |
 | A command for a user without an open panel fails at once; any command times out after 20 s | workspace-api |
-| The Act turn's tools are an allow-list: tab tools and read-only workspace access — no integrations, server browser, shell, web fetch, file or memory writes. Whatever a page talks the assistant into, it cannot send anything out or plant instructions for later | `lib/claude.js` |
-| The hand-off turn never sees the page: `use_integrations` takes no input; the turn it starts is built from what workspace-api stored (the user's message, the tab's address) plus dialogue text; no tab token, no Act flag, no resumed session, no delivery tools; one at a time, two per message, 120 s | `routes/tab.js`, `lib/tab-handoff.js` |
+| A page turn (Look or Act: the page is shared) has no built-in tools at all (`--tools ""`: no file reads, shell, web), only the workspace-api MCP with the tab tools and `use_integrations` (memory tools denied), and an environment with the server's secrets removed. A page that steers it can make it click on that page, but not read files, memory, keys or other people's data to carry there | `lib/claude.js` |
+| The hand-off turn gets nothing a page wrote: `use_integrations` takes no input; the turn it starts has the user's message as typed, the user's earlier messages (not the assistant's), and the tab's address reduced to its id-like parts — no title, no free text; no tab token, no page flag, no resumed session, no delivery or tab tools; one at a time, two per message, 120 s | `routes/tab.js`, `lib/tab-handoff.js` |
 | Only the workspace and this extension can frame the chat; only this extension id can sign in | Caddy, auth-service |
 
 ---
@@ -539,8 +545,8 @@ A change to the executor should also be tried on a real site from the panel befo
 | `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens and their records, the hand-off route, the audit log |
 | `ide-template/workspace-api/lib/tab-handoff.js` | The hand-off turn: its prompt, what it is given and denied, its bounds |
 | `ide-template/workspace-api/routes/chat.js` | `pageContext` → `browserContextBlock`; opens and closes the tab turn |
-| `ide-template/workspace-api/lib/claude.js` | The Act turn's allow-list, model and effort; `IDE_TAB_TOKEN`, `IDE_ACT_TURN` |
-| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot`, `use_integrations` (Act turns only), the untrusted-content wrapping |
+| `ide-template/workspace-api/lib/claude.js` | The page turn's toolset and environment, model and effort; `IDE_TAB_TOKEN`, `IDE_PAGE_TURN` |
+| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` (only with a tab token), `use_integrations` (page turns only), the untrusted-content wrapping |
 | `ide-template/global-claude.md` | "The Chrome side panel" — the bot's standing instructions |
 | `ide-template/Caddyfile` | `frame-ancestors` for the extension |
 | `ide-template/auth-service/index.js` | `/auth/extension/start`, Bearer, `EXTENSION_IDS` |

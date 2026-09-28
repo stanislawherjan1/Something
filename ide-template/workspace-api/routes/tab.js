@@ -19,8 +19,8 @@
  *     its hard limits (one site, idle timeout, rate limit, no password fields).
  * A command for someone without an open panel fails immediately, never hangs.
  *
- * An Act turn holds no integration tools (a page can carry injected
- * instructions). When a task is better done through an API, it calls
+ * A page turn (Look or Act) holds no integration tools (a page can carry
+ * injected instructions). When a task needs them, it calls
  * use_integrations → POST /api/internal/tab-handoff { turnToken }: a second
  * turn runs from the user's own message and the tab's address, never the page
  * (lib/tab-handoff.js), and its answer is the tool's result.
@@ -219,7 +219,6 @@ export default function tabRouter() {
     if (!slug || !turn || turn.slug !== slug) {
       return res.json({ ok: false, error: 'The hand-off only works in a conversation the user is having in the Something panel in Chrome.' });
     }
-    if (!turn.act || modes.get(slug) !== 'act') return res.json({ ok: false, error: 'Act is off; do this in an ordinary turn instead.' });
     if (!turn.message.trim()) return res.json({ ok: false, error: 'There is no request to hand off.' });
     if (turn.handoff) return res.json({ ok: false, error: 'A hand-off is already running for this message.' });
     if (turn.handoffs >= MAX_HANDOFFS_PER_TURN) {

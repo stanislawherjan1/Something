@@ -142,22 +142,31 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // question. The product asks in plain words anyway — no pickers in a
   // conversation — so the tool is never offered here.
   const blocked = ['AskUserQuestion', ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
+  // A page turn — started from the browser panel with the page shared, Look
+  // or Act — reads a web page, and a page can carry injected instructions. So
+  // it holds nothing a page could turn against the user: no built-in tools at
+  // all (no file reads, shell, web), only the workspace-api MCP, and of that
+  // only the tab tools and use_integrations — the hand-off to a turn that has
+  // the integrations and never sees the page (lib/tab-handoff.js). The user's
+  // memory cards are still in the prompt; only reaching further is gone.
+  const pageTurn = !!tabToken;
   let actMcpFile = null;
-  if (actTurn) {
+  if (pageTurn) {
     let servers = {};
     try {
       const entry = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers?.['workspace-api'];
       if (entry) servers = { 'workspace-api': entry };
     } catch (err) {
-      process.stderr.write(`[claude] act turn: no MCP config (${err.message}) — running with none\n`);
+      process.stderr.write(`[claude] page turn: no MCP config (${err.message}) — running with none\n`);
     }
-    actMcpFile = join(tmpdir(), `act-turn-${randomUUID()}.json`);
+    actMcpFile = join(tmpdir(), `page-turn-${randomUUID()}.json`);
     writeFileSync(actMcpFile, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
     args[args.indexOf('--mcp-config') + 1] = actMcpFile;
     args.push('--strict-mcp-config');
+    args.push('--tools', '');
     blocked.push(
-      'Bash', 'WebFetch', 'WebSearch', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Task',
-      'mcp__workspace-api__memory_write', 'mcp__workspace-api__fix_sent_message',
+      'mcp__workspace-api__memory_write', 'mcp__workspace-api__memory_grep', 'mcp__workspace-api__memory_log',
+      'mcp__workspace-api__recent_messages', 'mcp__workspace-api__fix_sent_message',
     );
   }
   args.push('--disallowedTools', blocked.join(','));
@@ -289,10 +298,18 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
   // — Telegram, workspace chat, reminders, groups — ever gets one.
   if (tabToken) childEnv.IDE_TAB_TOKEN = String(tabToken);
-  // An Act turn gets use_integrations (the hand-off to a turn that never sees
-  // the page); that second turn has neither flag, so it cannot hand off again.
-  if (tabToken && actTurn) {
-    childEnv.IDE_ACT_TURN = '1';
+  // A page turn gets use_integrations; the hand-off turn has neither flag, so
+  // it cannot hand off again.
+  if (pageTurn) {
+    childEnv.IDE_PAGE_TURN = '1';
+    // Nothing secret in a turn that reads web pages: the server's own keys
+    // (session signing, OAuth clients, integration tokens) are dropped from its
+    // environment. Only the CLI's own credential stays — it cannot run without
+    // it, and with no built-in tools nothing in the turn can read it.
+    for (const k of Object.keys(childEnv)) {
+      if (k === 'CLAUDE_CODE_OAUTH_TOKEN' || k === 'IDE_TAB_TOKEN') continue;
+      if (/SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|_KEY$|CREDENTIAL|PRIVATE/i.test(k)) delete childEnv[k];
+    }
     // Load every tool up front. With tool search the CLI shows only tool
     // NAMES and the model must look each one up first: an Act turn then spent
     // calls finding tab_act's schema, and missed use_integrations entirely
