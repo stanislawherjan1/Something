@@ -355,11 +355,13 @@ user's own words.
 **Bounds.** One hand-off at a time per message, at most two per message, 120 s each. Switching
 Act off, the panel closing or the turn ending stops a running hand-off.
 
-**When the assistant hands off** (the Act instruction): the address belongs to a service it
-has an integration for — a calendar, mail, a document or spreadsheet, a Miro board, a store, a
-task board — and the task is about that service's data (an event, an email, a row, a board
-item, an order, a card). It clicks for what exists only in the page, or when there is no
-integration for the site.
+**API or clicking** (the Act instruction presents both as available at once, and they mix in
+one task): the API through `use_integrations` for data in a service the workspace is connected
+to — an event, an email, a document, a board item, an order, a card — because it is faster and
+does not break when the page changes; clicking when there is no integration for the site, when
+the thing exists only in the page, when the API refuses (no access to that item, a missing
+feature), or to show or confirm the result on the page. A way the user asks for wins. The
+assistant never needs to ask the user to switch Act off to use an integration.
 
 ---
 
@@ -375,6 +377,7 @@ integration for the site.
 | Env | `IDE_TAB_TOKEN` (one-turn token), `IDE_ACT_TURN=1` | `IDE_TAB_TOKEN` in a panel turn that shares the page |
 | Model | the bot's pinned model | the same |
 | Effort | `--effort medium` (`IDE_ACT_EFFORT` overrides) | the CLI default |
+| Tool loading | all at once (`ENABLE_TOOL_SEARCH=false`): with tool search the model saw only tool names, spent calls looking schemas up, and once looked `use_integrations` up by the wrong name and asked for Act to be switched off | the CLI default (tool search) |
 
 **The model.** Every web turn — the panel and the workspace chat — runs on the model pinned
 for the bot in `bootstrap/claude-settings.json`; workspace-api's own user has no settings file,

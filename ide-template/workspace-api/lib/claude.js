@@ -291,7 +291,15 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   if (tabToken) childEnv.IDE_TAB_TOKEN = String(tabToken);
   // An Act turn gets use_integrations (the hand-off to a turn that never sees
   // the page); that second turn has neither flag, so it cannot hand off again.
-  if (tabToken && actTurn) childEnv.IDE_ACT_TURN = '1';
+  if (tabToken && actTurn) {
+    childEnv.IDE_ACT_TURN = '1';
+    // Load every tool up front. With tool search the CLI shows only tool
+    // NAMES and the model must look each one up first: an Act turn then spent
+    // calls finding tab_act's schema, and missed use_integrations entirely
+    // (looked it up by the wrong name) and asked the user to switch Act off.
+    // An Act turn has a handful of tools, so there is nothing to save.
+    childEnv.ENABLE_TOOL_SEARCH = 'false';
+  }
 
   const proc = spawn(CLAUDE_BIN, args, {
     cwd: PROJECT_DIR,
