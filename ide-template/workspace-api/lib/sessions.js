@@ -203,11 +203,15 @@ export function updateSession(actor, sessionId, patch) {
  * Decoupling our sessionId from Claude's lets us recover from a corrupt Claude
  * session by clearing this field without affecting the sidebar entry.
  */
-export function setClaudeSessionId(actor, sessionId, claudeSessionId) {
+export function setClaudeSessionId(actor, sessionId, claudeSessionId, turnKind) {
   const idx = readIndex(actor);
   const s = idx.sessions.find(x => x.id === sessionId);
   if (!s) return null;
   s.claudeSessionId = claudeSessionId || null;
+  // Which kind of turn that Claude session belongs to: 'page' (the browser
+  // panel with the page shared) or 'normal'. A turn only resumes a session of
+  // its own kind — see routes/chat.js.
+  if (turnKind) s.claudeSessionKind = turnKind;
   writeIndex(actor, idx);
   return s;
 }

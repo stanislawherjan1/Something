@@ -156,7 +156,7 @@ function _markImportedTitleSource(actor, sessionId) {
  * `state` is the new optional field for Phase 4 — pass 'interrupted' when
  * persisting a partial assistant turn that was cut short.
  */
-export function appendToSession(actor, sessionId, { role, text, attachments, kind, state, delivery, relayConvId, tools, error }) {
+export function appendToSession(actor, sessionId, { role, text, attachments, kind, state, delivery, relayConvId, tools, error, page }) {
   migrateLegacyConversation(actor);
   if (!text && !(attachments && attachments.length) && !kind && !error) return null;
 
@@ -168,6 +168,9 @@ export function appendToSession(actor, sessionId, { role, text, attachments, kin
   // Why a turn gave no (full) answer — a spent plan, a crash — kept so the
   // reason is still there after a reload, not only while it streamed.
   if (error) entry.error = String(error).slice(0, 400);
+  // Written by the assistant while a web page was open in the browser panel:
+  // a replay of the chat marks these lines, since they may quote the page.
+  if (page) entry.page = true;
   // Relay/cross-surface bookkeeping (team mode). `delivery` records which
   // channel an out-of-band message actually went out on (web/telegram/both)
   // so a Telegram reply can be threaded deterministically; `relayConvId` ties
