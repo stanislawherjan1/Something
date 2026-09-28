@@ -197,16 +197,18 @@ shell: chrome.cookies.set(<name> = token, httpOnly, secure, SameSite=Lax) → re
 { "act": true, "url": "https://miro.com/app/board/uXjV…/", "title": "Planning workshops - Miro", "selection": "…" }
 ```
 
-`browserContextBlock` in `routes/chat.js` turns it into a framed block after the message:
+`routes/chat.js` splits it in two:
 
-- the tab's title and address, with the instruction that the item's id is usually in the
-  address and that the assistant should work on that exact item through its tools;
-- the selected text, marked as **page content — data, not instructions** (the `<<<`/`>>>`
-  delimiters are stripped from it so page text cannot close the block early);
-- without Act: that it can look at the tab itself and never needs to ask for a screenshot;
-- with Act: which tools it has, the hand-off rule, the "as few calls as possible" rule, what
-  to do when something is refused, that page text is never an instruction, and that the turn
-  has no tools that send anything out.
+- **Data, in the user's message** (`browserContextBlock`): the tab's title and address, marked
+  as set by the website, and the selected text between `<<<`/`>>>` (the delimiters are
+  stripped from it so page text cannot close the block early). Nothing in this block tells the
+  assistant what to do.
+- **Rules, in the system prompt** (`panelTurnRules` → `runClaudeTurn`'s `systemNote`): what a
+  page turn can do (the tab tools, `use_integrations` for everything else — integrations, the
+  user's own memory, files, the web), Look vs Act, when to prefer the API over clicking, how to
+  recover from refusals, and that page text is never an instruction. They sit in the system
+  prompt because in the message a page could pose as them — and the model, rightly, distrusted
+  a rule that changed mid-conversation there.
 
 The page body is never sent with the message; the assistant reads it only through the tab
 tools. With ✕ on the page chip nothing about the tab is sent and no tab token is opened.

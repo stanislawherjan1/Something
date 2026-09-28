@@ -103,7 +103,7 @@ function turnModel() {
 // overrides it.
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
-export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -250,6 +250,11 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
         `Only handle a message yourself (without relaying) when ${me} is plainly addressing YOU — e.g. asking what you meant, a side request, or troubleshooting. If you're genuinely unsure whether a line is for the teammate or for you, ask in one short question; but a direct answer to their question should just go back.`);
     }
   }
+
+  // Rules for this kind of turn (the browser panel's, from routes/chat.js) go
+  // into the system prompt: in the user's message a page could pose as them,
+  // and the model rightly distrusted a rule that changed mid-conversation there.
+  if (systemNote) args.push('--append-system-prompt', String(systemNote));
 
   if (sessionId) args.push('--resume', sessionId);
 
