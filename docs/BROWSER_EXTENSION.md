@@ -337,7 +337,7 @@ Act turn (reads the page, tab tools only)
       • the chat's dialogue text (user and assistant messages; never tool results)
       • every integration, minus the tools that deliver messages
       • no tab token, no Act flag, a fresh session (never the panel's transcript)
-  → its tool calls stream into the panel chat as they run
+  → its integration calls stream into the panel chat as they run (its housekeeping — tool lookups, memory reads — does not)
   → its answer comes back as the tool's result; the Act turn tells the user (and may look again)
 ```
 
@@ -373,7 +373,7 @@ assistant never needs to ask the user to switch Act off to use an integration.
 |---|---|---|
 | MCP servers | only `workspace-api` (a generated config + `--strict-mcp-config`); if its entry cannot be read, none | every active integration |
 | Disallowed | `Bash`, `WebFetch`, `WebSearch`, `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Task`, `memory_write`, `fix_sent_message`, `AskUserQuestion` | `AskUserQuestion` (+ what the caller adds) |
-| Tab tools | `tab_snapshot`, `tab_act`, `tab_screenshot`, `use_integrations` | `tab_snapshot`, `tab_screenshot` in a panel turn that shares the page; none elsewhere |
+| Tab tools | `tab_snapshot`, `tab_act`, `tab_screenshot`, `use_integrations` | `tab_snapshot`, `tab_screenshot` in a panel turn that shares the page; not even listed elsewhere (the MCP lists them only when the turn carries a tab token) |
 | Env | `IDE_TAB_TOKEN` (one-turn token), `IDE_ACT_TURN=1` | `IDE_TAB_TOKEN` in a panel turn that shares the page |
 | Model | the bot's pinned model | the same |
 | Effort | `--effort medium` (`IDE_ACT_EFFORT` overrides) | the CLI default |
@@ -475,6 +475,7 @@ path first.
 | "Too many actions in a minute" | over 60 a minute for more than 10 s of waiting | wait the seconds it says |
 | Act switches itself off | idle 10 minutes, or the debugging bar was cancelled; the chat says which | switch it on again |
 | A red "AskUserQuestion" chip | the assistant tried an interactive picker (before it was disallowed) | current server build |
+| A red step in "Used N tools" | only an integration's call that really failed is shown as failed; refusals by design (Act off, page loading) and steps the assistant retried read as ordinary steps, with the reason in the tooltip | — |
 | The assistant clicks in Calendar/Miro instead of using the integration | an old server build without the hand-off, or no active integration for that service | deploy; connect the integration |
 | "Claude usage limit reached. … is back at HH:MM" | the Claude plan's limit; the time is in `IDE_TIMEZONE` (UTC when unset) | wait, or check the plan's usage on claude.ai |
 
