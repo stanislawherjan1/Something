@@ -137,7 +137,7 @@ export default function integrationsRouter() {
         // For multi=true integrations: how many items the user added.
         itemCount:         s?.itemCount ?? null,
         globalFieldValues,
-        // Pausable integrations (Jev): switched off for now, key kept.
+        // Pausable integrations: switched off for now, key kept.
         ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
       };
     });

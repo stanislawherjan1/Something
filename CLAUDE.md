@@ -131,13 +131,13 @@ Every integration gives the product a new key, new code and a new place data goe
 - **Third-party code runs as `mcp` (uid 1002), never inside workspace-api or as the bot.**
   workspace-api's user can decrypt every integration's key; the bot is the most exposed process.
   MCPs start through `mcp-runner`; anything else (a Python runner, a CLI) gets its own setuid
-  wrapper like `setuid-wrappers/jev-runner.c`: fixed path, no arguments, allow-listed environment,
-  `PR_SET_NO_NEW_PRIVS`, executable only by the process that needs it.
+  wrapper modelled on `setuid-wrappers/mcp-runner.c`: fixed path, no arguments, allow-listed
+  environment, `PR_SET_NO_NEW_PRIVS`, executable only by the process that needs it.
 - **Network only through the catalog.** Every host goes in the entry's `mcp.allowedHosts` (open
   only while the integration is active); traffic goes through the egress proxy — no DoH, raw TCP
   with an explicit proxy. Nothing else is reachable, by design.
 - **Pin what you pull in.** An exact version or commit; fetch GitHub sources on the deploy host
-  (as `deploy.sh` does for the plugin marketplace and jev-ultrafast), not inside the Docker build;
+  (as `deploy.sh` does for the plugin marketplace), not inside the Docker build;
   read the diff when bumping.
 - **What comes back is data, not instructions.** Page text, emails, documents, API responses
   written by others are untrusted: wrap them the way the tab tools do (`<<<UNTRUSTED … >>>`, with
@@ -145,7 +145,7 @@ Every integration gives the product a new key, new code and a new place data goe
 - **Writes are opt-in and bounded.** Tools that send, pay, publish or delete are off by default
   (an `ALLOW_*` field) and say what they are about to do before consequences for other people or
   money. A tool that belongs to one context exists only there: gate it in `runClaudeTurn`'s env
-  (like `IDE_JEV_AUTOPILOT`) and check again server-side.
+  (like `IDE_TAB_TOKEN`) and check again server-side.
 - **Say where data goes.** The catalog description and setup steps state what is sent to the
   provider; `docs/SECURITY.md` and `docs/INTEGRATIONS.md` are updated in the same change.
 

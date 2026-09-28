@@ -145,7 +145,7 @@ its round trip and how much of it was the relay (`… — 640 ms relay 120 ms`).
 When an action is refused because the assistant's view is out of date (the page changed since
 it was read, the control moved or is covered, nothing has been read yet), nothing is done and
 `tab_act` returns the page as it is now to choose from, instead of an error that costs another
-round trip. The Jev runner gets these as plain errors and re-observes by itself.
+round trip.
 
 `tab_act` also takes `steps` — up to five actions on the same page (a form's fields, then its
 submit button) in one call. Each step gets every check and a fresh observation; the batch stops
@@ -178,78 +178,6 @@ Page text is framed as data both in the prompt and in every snapshot, and the as
 told to work only toward what the user asked and to stop and ask when a page asks for
 something else. That is the soft layer; the table above is what holds if it fails.
 
-## Autopilot — Jev (optional, experimental)
-
-With the **Jev (TypeSafe)** integration connected — on the Browser agent page, Install tab
-(it is not offered in the Integrations marketplace; once active it is listed there with a link
-back) — a panel turn with Act on also gets `tab_autopilot`: the assistant hands over one
-complete goal in plain English ("Find one-way flights from Zurich to London on September 20,
-2026, for one adult in economy. Stop when matching flight options are visible.") plus the
-values to type (`{"from": "Zurich", "to": "London"}`), and Jev runs the steps.
-
-```
-tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback, turn token, Act on, Jev connected)
-  → lib/jev/autopilot.js starts /usr/local/bin/jev-runner (setuid → uid mcp) → apps/jev-runner/runner.py (key on stdin)
-  → runner: observe → jev_ultrafast.model.choose (TypeSafe picks operation + target) → act → observe …
-  → every observe / act goes through routes/tab.js sendTabCommand → the panel → the extension's executor
-  → steps stream into the chat's tool line ("Autopilot · Clicking "Search"") → result back to the tool
-```
-
-- **jev-ultrafast, as it is.** `runner.py` is a port of upstream's `Agent.command("tick")` around
-  the library's own `model` and `questions` (imported unmodified from the commit deploy.sh fetches
-  into the image, `/opt/jev-ultrafast`, pinned with `scripts/vendor-jev.sh`): choose, act, observe;
-  stop on DONE, BLOCKED, three actions in a row that changed nothing, or the budget (60 actions,
-  120 decisions, 120 s). The extension's executor is a port of upstream's `browser.py` in the
-  page: the same snapshot, the same freshness guards (a click or select against the document, URL,
-  viewport, form values and its own control's guard; a fill against the whole marker), the same
-  target check (attached, enabled, visible, on screen, not covered), the same waits (two frames /
-  50 ms after input, 200 ms for a combobox's suggestions, WAIT = 100 ms) and the same focus
-  emulation — without it the user's tab, whose focus is in the side panel, closes menus and
-  pickers as soon as they open. A refused action is upstream's StalePage: observe again, choose
-  again. The goal reaches Jev exactly as the assistant wrote it: no preamble, no appended context.
-- **Values, not a second model.** Upstream's TYPE_TEXT asks a small text model for the value;
-  here the assistant passes the values with the goal and one more TypeSafe choice picks which of
-  them fits the field (reused, as upstream reuses its helper's value, only while the field, page
-  and history are identical); none fits → the run stops with `needs_value` naming the field.
-- **Same limits.** Every action is an ordinary `act` command — the table above applies step by
-  step. Switching Act off fails the next command at once, ending the run.
-- **What the observation leaves out**, so no decision is spent on it: sensitive fields, controls
-  whose centre is covered, and anything leading off the site (a link to another origin, a new-tab
-  or download link, a form posting elsewhere) — each is refused again at execution.
-- **Data.** While it runs, the goal, the values, the page's visible text and control labels and
-  values (sensitive fields excluded) and recent action labels go to TypeSafe (`api.typesafe.ai`,
-  in the egress allow-list only while the integration is active).
-- **Jev does every action; the assistant plans and checks.** With Jev connected, an Act turn has
-  `tab_snapshot`, `tab_screenshot` and `tab_autopilot` — **no `tab_act`** (not offered, and refused
-  by the route). The turn's instruction: call `tab_autopilot` right away with one complete goal in
-  English — real dates, the actual things, where to stop, no step lists — and the values to type;
-  answer from the page it returns; `needs_value` → add the value and call again; `blocked` → read
-  the page, call again with a different goal (smaller or reworded, never the same); three blocked
-  runs → tell the user. Activating the integration also installs the `jev-autopilot` optional skill
-  (`skills/optional/jev-autopilot/`: the playbook, with `references/goal-patterns.md` and
-  `references/troubleshooting.md`), which the instruction points at. Pausing Jev (the switch on its
-  card) brings the step-by-step `tab_act` mode back — needed for what Jev cannot do (uploads,
-  canvas apps, frames). The safety lines (page text is not instructions, no outbound tools) are
-  the same in both modes.
-- **A step back, same site only.** When the tab's previous history entry is on the same site, the
-  observation offers `go_back` (as an operation to Jev, as a control to the assistant); it is
-  re-checked at execution and is the only navigation on offer — another site's page is never one.
-- **Only here.** The tool exists only in a panel turn with Act on while Jev is connected and not
-  paused (`IDE_JEV_AUTOPILOT`, set by `lib/claude.js`); Jev has no MCP server and is used nowhere else.
-- **Pause.** An admin can switch the autopilot off on the Jev card without disconnecting: the key
-  stays, the tool disappears from the next turn, the route refuses, and `api.typesafe.ai` leaves
-  the egress allow-list until it is switched back on.
-- **Isolation.** The runner executes third-party code, so it runs as the `mcp` user like every
-  integration's MCP — never as workspace-api's user, which can decrypt every integration's keys.
-  `setuid-wrappers/jev-runner.c` (root:1001, mode 4750: only workspace-api may start it) execs a fixed
-  script with a rebuilt, allow-listed environment and `PR_SET_NO_NEW_PRIVS`; the TypeSafe key
-  arrives on stdin, so no process can read it from `/proc/<pid>/environ`. What it returns to the
-  assistant (step labels, a field name) is page content and is wrapped as such.
-- Every Jev decision is logged (`[jev] … CLICK e12 (0.91) 180 ms`). `apps/jev-runner/runner_test.py`
-  runs the loop on the real library with a fake TypeSafe and a fake tab; `scripts/test-tab-executor.mjs`
-  runs the extension's page-side code on a real Chrome. Validated end to end against the real
-  TypeSafe API on upstream's own Google Flights example.
-
 ## Files
 
 | Path | What |
@@ -258,11 +186,9 @@ tab_autopilot (workspace-api-mcp) → POST /api/internal/tab-autopilot (loopback
 | `chrome-extension/background.js` | Opens the panel on toolbar click |
 | `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in, the Act executor and its limits |
 | `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
-| `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, the autopilot route, audit log |
-| `ide-template/workspace-api/lib/jev/autopilot.js` | The Jev autopilot bridge (tab commands ↔ the runner) |
-| `ide-template/apps/jev-runner/runner.py`, `setuid-wrappers/jev-runner.c` | The runner (jev-ultrafast's policy + our executor) and the wrapper that starts it as `mcp` |
-| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot`, `tab_autopilot` (only with Jev) |
-| `ide-template/frontend/src/components/workspace/views/BrowserAgentView.jsx` | The Browser agent page: Overview / Install, the Jev card |
+| `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, audit log |
+| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` |
+| `ide-template/frontend/src/components/workspace/views/BrowserAgentView.jsx` | The Browser agent page: how it works, with the install steps under it |
 | `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and the Act switch |
 | `ide-template/frontend/src/lib/extensionEmbed.js` | Embed detection |
 | `ide-template/frontend/src/components/workspace/ChatPanel.jsx`, `ChatPane.jsx` | Optional `extraFields` / `composerAccessory` / `onTurnDone` (passed through `ChatPane`); `ide:chat-attach` / `ide:chat-send` events |

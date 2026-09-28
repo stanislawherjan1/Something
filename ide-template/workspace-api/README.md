@@ -87,7 +87,7 @@ workspace-api/
     ├── notifications.js     # GET /api/notifications/stream — SSE notification feed
     ├── bot.js               # POST /api/bot/{restart,send} — lifecycle + web→tmux relay
     ├── internal.js          # loopback-only: sync-mcp, notify, chat-session (in-container callers)
-    ├── tab.js               # the browser panel relay: /api/tab/*, /api/internal/tab-command, /api/internal/tab-autopilot (Jev)
+    ├── tab.js               # the browser panel relay: /api/tab/*, /api/internal/tab-command
     └── docs-comments-login.js  # OAuth/VNC bridge for the Docs Comments integration
 ```
 

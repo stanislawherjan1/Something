@@ -302,7 +302,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // operator see at-a-glance "how much of Marketing do I have" without
   // having to mentally subtract the Active tab from the catalog.
   const active   = integrations.filter(i => i.active);
-  // Entries with a `home` elsewhere (Jev lives on the Browser agent page) are
+  // Entries with a `home` elsewhere (set up on another page) are
   // set up there; the marketplace lists them only once they are active.
   const catalog  = useMemo(() => integrations.filter(i => !i.home || i.active), [integrations]);
   const ready    = data?.ready;

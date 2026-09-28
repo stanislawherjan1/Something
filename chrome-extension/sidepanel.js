@@ -192,7 +192,7 @@ async function selectedText() {
 // credential sites or sensitive fields, and every command is re-checked right
 // before it runs.
 const IDLE_OFF_MS = 10 * 60 * 1000;
-const MAX_ACTIONS_PER_MIN = 60;    // clicks, typing, scrolling — the autopilot does about one a second
+const MAX_ACTIONS_PER_MIN = 60;    // clicks, typing, scrolling
 const MAX_READS_PER_MIN = 120;     // snapshots and screenshots — harmless, so a looser bound
 // Well under the 18 s the panel waits for an answer: an action must never run
 // after its caller has already been told it failed.
@@ -511,8 +511,7 @@ async function tabSnapshot() {
 }
 
 // The page-side code of an action, as expressions for Runtime.evaluate — the
-// same checks and waits as jev-ultrafast's own executor (browser.py), so the
-// autopilot behaves on the user's tab as it does on its own. Also run by
+// same checks and waits as jev-ultrafast's own executor (browser.py). Also run by
 // scripts/test-tab-executor.mjs against a real Chrome.
 
 // After input, before the next read: up to two animation frames or 50 ms; an
@@ -673,12 +672,10 @@ async function clearCursor(tabId) {
 }
 
 // A refusal because the assistant's view is out of date (the page changed, the
-// control moved or is covered, nothing was read yet). For the assistant
-// (`soft`), look again right away and hand it the current page to choose from —
-// the refused action is not done, the next one is checked against this fresh
-// read. The Jev runner gets a plain error: it re-observes by itself.
-async function refuse(tab, reason, soft) {
-  if (!soft) throw new Error(reason);
+// control moved or is covered, nothing was read yet): look again right away and
+// hand it the current page to choose from — the refused action is not done,
+// the next one is checked against this fresh read.
+async function refuse(tab, reason) {
   const state = await observeSettled(tab);
   return {
     done: null,
@@ -689,12 +686,12 @@ async function refuse(tab, reason, soft) {
   };
 }
 
-async function actOnce(targetId, text, soft = false) {
+async function actOnce(targetId, text) {
   const tab = await guard();
   const snap = act.lastSnapshot;
-  if (!snap) return refuse(tab, 'There was no current read of the page.', soft);
+  if (!snap) return refuse(tab, 'There was no current read of the page.');
   const action = snap.actions.find((a) => a.id === targetId);
-  if (!action) return refuse(tab, `No control "${targetId}" on the page as last read.`, soft);
+  if (!action) return refuse(tab, `No control "${targetId}" on the page as last read.`);
   if (action.kind === 'fill' && typeof text !== 'string') throw new Error('A "fill" control needs text.');
   const t0 = performance.now();
 
@@ -706,7 +703,7 @@ async function actOnce(targetId, text, soft = false) {
   if (['click', 'select', 'fill'].includes(action.kind)) {
     const fresh = await evaluate(freshExpression(action));
     if (fresh !== expectedFresh(action, snap)) {
-      return refuse(tab, `The page changed since it was read (${staleWhy(action, fresh, snap)}), so that control may not be the one you picked. Take a new snapshot.`, soft);
+      return refuse(tab, `The page changed since it was read (${staleWhy(action, fresh, snap)}), so that control may not be the one you picked. Take a new snapshot.`);
     }
   }
   if (action.kind === 'scroll') {
@@ -717,11 +714,11 @@ async function actOnce(targetId, text, soft = false) {
   } else if (action.kind === 'back') {
     // One step back in this tab's history — offered (and re-checked) only when
     // that page is on the same site, so it is never a way off it.
-    if (!(await previousEntry(tab))) return refuse(tab, 'There is no same-site page to go back to.', soft);
+    if (!(await previousEntry(tab))) return refuse(tab, 'There is no same-site page to go back to.');
     await chrome.tabs.goBack(tab.id);
   } else {
     const target = await evaluate(targetExpression(action));
-    if (!target) return refuse(tab, 'That control changed or is covered. Take a new snapshot.', soft);
+    if (!target) return refuse(tab, 'That control changed or is covered. Take a new snapshot.');
     if (target.offsite) throw new Error('That leads away from this site (another address, a new tab or a download), which is not allowed. Stay on this site.');
     cursor(tab.id, target.x, target.y, 'click', target.box);   // a picture for the user; never waited for
     if (action.kind !== 'select') {
@@ -749,7 +746,7 @@ async function actOnce(targetId, text, soft = false) {
   return {
     done: `${action.kind} ${action.id} (${action.label})`,
     page: state ? forModel(state) : null,
-    state,   // raw observation, for the Jev autopilot (runCommand drops it otherwise)
+    state,   // the raw observation (refuse() and tabAct read it; runCommand drops it)
     ...(state ? {} : { note: 'The page is still loading. Take a tab_snapshot in a moment.' }),
     timing: { executeMs, observeMs },
     audit: `${action.kind} "${String(action.label).slice(0, 80)}" on ${tab.url}${action.kind === 'fill' ? ` (${text.length} chars)` : ''} [${executeMs}+${observeMs} ms]`,
@@ -767,8 +764,8 @@ async function tabScreenshot() {
 // first step that fails, when the address changes, or when a later step's
 // control is no longer the one the assistant picked (label changed or gone).
 const MAX_BATCH = 5;
-async function tabAct(targetId, text, steps, soft = false) {
-  if (!Array.isArray(steps) || !steps.length) return actOnce(targetId, text, soft);
+async function tabAct(targetId, text, steps) {
+  if (!Array.isArray(steps) || !steps.length) return actOnce(targetId, text);
   const list = steps.slice(0, MAX_BATCH);
   const labels = new Map((act.lastSnapshot?.actions || []).map((a) => [a.id, a.label]));
   const url = act.lastSnapshot?.url;
@@ -786,7 +783,7 @@ async function tabAct(targetId, text, steps, soft = false) {
       if (why) return { ...last, done: done.join('; '), stopped: `Stopped before ${id}: ${why}. Choose the next step from this page.` };
     }
     try {
-      last = await actOnce(id, typeof step?.text === 'string' ? step.text : undefined, soft);
+      last = await actOnce(id, typeof step?.text === 'string' ? step.text : undefined);
     } catch (err) {
       if (!done.length) throw err;
       return { ...last, done: done.join('; '), stopped: `Stopped at ${id}: ${err.message}` };
@@ -800,20 +797,11 @@ async function tabAct(targetId, text, steps, soft = false) {
   return { ...last, done: done.join('; '), audit: `${done.length} steps: ${last.audit}` };
 }
 
-// `raw` commands come from the Jev autopilot (workspace-api/lib/jev): it needs
-// the observation as jev-ultrafast's snapshot returns it, not the assistant's
-// readable form. Same checks either way — observing for it needs Act on.
-async function runCommand({ op, target, text, steps, raw }) {
+async function runCommand({ op, target, text, steps }) {
   if (op === 'snapshot') return tabSnapshot();
-  if (op === 'observe') {
-    const tab = await guard({ read: true });
-    const state = await observeSettled(tab);
-    if (!state) throw new Error('The page is still loading.');
-    return { state, audit: `observe ${tab.url}` };
-  }
   if (op === 'act') {
-    const { state, ...rest } = await tabAct(target, text, steps, !raw);
-    return raw ? { done: rest.done, stopped: rest.stopped, state, timing: rest.timing, audit: rest.audit } : rest;
+    const { state, ...rest } = await tabAct(target, text, steps);   // eslint-disable-line no-unused-vars
+    return rest;
   }
   if (op === 'screenshot') return tabScreenshot();
   throw new Error(`Unknown command "${op}".`);

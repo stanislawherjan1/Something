@@ -1,8 +1,7 @@
 #!/bin/bash
 # vendor-jev.sh — take jev-ultrafast's page snapshot (and its licence) at a
 # given commit into chrome-extension/vendor/, keeping our attribution header,
-# and show what changed. The same commit is the one the Jev runner pins, so
-# bump both together (JEV_ULTRAFAST_REF in ide-template/Dockerfile).
+# and show what changed.
 #
 #   scripts/vendor-jev.sh              # the pinned commit (below)
 #   scripts/vendor-jev.sh <commit>     # another commit, e.g. to try upstream main

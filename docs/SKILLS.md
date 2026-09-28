@@ -109,7 +109,6 @@ ide-template/skills/
     ├── gcalendar/, gdocs/, gdrive/, gsheets/, gslides/, gtasks/  ← Google Workspace
     ├── google-ads/{campaigns,copy,negatives,report}/
     ├── image-generation-{nano-banana,seedream}/   ← BYTEPLUS_API_KEY or GEMINI_API_KEY
-    ├── jev-autopilot/                          ← driving the tab via tab_autopilot (requires: jev)
     ├── meta/{ads-campaigns,ads-report,ads-audiences}/
     ├── research-twitter-account/, x-research/     ← X (Twitter) research
     ├── docs-comments/                          ← shipped to all clients
@@ -120,7 +119,7 @@ ide-template/skills/
 
 **INDEX.md autogen at boot.** Entrypoint walks both skill trees, parses each `SKILL.md` frontmatter, and writes a one-line-per-skill `~/project/.claude/skills/INDEX.md`. The model uses `cat INDEX.md | grep -i <keyword>` to verify skill existence before claiming absence (per the **Before claiming absence** rule in global-claude.md). Eliminates "I don't have a skill for X" hallucinations.
 
-**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`, `jev-autopilot/references/{goal-patterns, troubleshooting}`. The remaining default split candidates (repo-audit, task-management, security, reminders, file-placement, project-backup) are queued for Phase 2.
+**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`. The remaining default split candidates (repo-audit, task-management, security, reminders, file-placement, project-backup) are queued for Phase 2.
 
 **`allowed-tools` field is mandatory** for new skills — declares the minimum tool scope. Pure-reference skills get `Read`. Memory skills get `Read, Edit, Write`. Integration skills get tight MCP wildcards (`mcp__shopify__*`). Defaults to full access if omitted — only do that for orchestration skills that genuinely need everything.
 

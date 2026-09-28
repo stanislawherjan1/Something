@@ -253,32 +253,6 @@ ssh "$HETZNER_HOST" "
     exit 1
 " || exit 1
 
-# jev-ultrafast (browser-use/jev-ultrafast, MIT) at the pinned commit — the Jev
-# autopilot's policy code (apps/jev-runner/runner.py imports its model and
-# questions). Fetched here for the same reason as the plugin marketplace above:
-# the Docker build's network cannot be trusted with GitHub. Bump together with
-# scripts/vendor-jev.sh.
-JEV_ULTRAFAST_REF=1231850a0bf1a0c0341fe408ef1668dbbfdfac46
-echo -e "${CYAN}  Fetching jev-ultrafast @ ${JEV_ULTRAFAST_REF:0:7} into build context...${NC}"
-ssh "$HETZNER_HOST" "
-    set -e
-    cd '$REMOTE_PATH'
-    for attempt in 1 2 3; do
-        rm -rf jev-src && mkdir jev-src
-        if (cd jev-src && git init -q && \
-              GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 fetch -q --depth 1 \
-                https://github.com/browser-use/jev-ultrafast.git $JEV_ULTRAFAST_REF && \
-              git checkout -q FETCH_HEAD); then
-            rm -rf jev-src/.git
-            exit 0
-        fi
-        echo \"  jev-ultrafast fetch failed (attempt \$attempt/3) — retrying\" >&2
-        sleep \$((attempt * 3))
-    done
-    echo '  jev-ultrafast fetch failed after 3 attempts' >&2
-    exit 1
-" || exit 1
-
 # Setuid wrappers (Phase-2/3 broker + uid isolation) — Dockerfile compiles
 # them in-image into /usr/local/bin/{wsapi,mcp,bot}-runner with mode 4755
 # root-owned.
@@ -287,7 +261,6 @@ scp setuid-wrappers/wsapi-runner.c   "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers
 scp setuid-wrappers/mcp-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/bot-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/monitor-runner.c "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
-scp setuid-wrappers/jev-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 scp setuid-wrappers/README.md        "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 
 # Default skills (always installed) + optional skills (installed when
@@ -357,10 +330,6 @@ scp apps/pdf-mcp/index.js            "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/" 
 scp apps/pdf-mcp/package.json        "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
 scp apps/pdf-mcp/render.py           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
 scp apps/pdf-mcp/house.css           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
-# jev-runner — the Jev autopilot's runner (jev-ultrafast policy + our executor),
-# started as mcp by the jev-runner setuid wrapper. COPY'd by the Dockerfile.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/jev-runner'"
-scp apps/jev-runner/runner.py "$HETZNER_HOST:$REMOTE_PATH/apps/jev-runner/" || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/miniapp-mcp'"

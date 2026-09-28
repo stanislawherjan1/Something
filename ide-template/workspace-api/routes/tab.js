@@ -18,37 +18,30 @@
  *   - in the extension, which also refuses, detaches from the tab, and applies
  *     its hard limits (one site, idle timeout, rate limit, no password fields).
  * A command for someone without an open panel fails immediately, never hangs.
- *
- * With the Jev integration connected, a panel turn with Act on may also hand a
- * whole goal to the autopilot (tab_autopilot → POST /api/internal/tab-autopilot,
- * lib/jev/autopilot.js). It drives the tab through sendTabCommand — the same
- * checks, the same extension limits on every action.
+
  */
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { getUser, list as teamList, primaryAdminSlug, getTeamMode } from '../lib/team.js';
-import * as integrationsStore from '../lib/integrations/store.js';
-import { runAutopilot } from '../lib/jev/autopilot.js';
 
 const COMMAND_TIMEOUT_MS = 20_000;
 const panels = new Map();   // slug → Set<res>   open panel streams
 const modes = new Map();    // slug → 'act' (absent = look)
 const pending = new Map();  // id → { slug, resolve, timer }
-const turns = new Map();    // token → { slug, act, onProgress }   turns started from the panel
+const turns = new Map();    // token → { slug, act }   turns started from the panel
 
 // Only a turn the user started FROM the panel may drive their tab — never a
 // Telegram message, a workspace chat, a reminder or a group turn, even while
 // the panel is open in Act. routes/chat.js opens a token for a panel turn and
 // closes it when the turn ends; the tools pass it back (IDE_TAB_TOKEN).
-// `onProgress` receives autopilot steps for that turn's chat stream.
-export function openTabTurn(slug, { act = false, onProgress = null } = {}) {
+export function openTabTurn(slug, { act = false } = {}) {
   const token = randomUUID();
   // Same resolution the tools' side uses ('default' = a solo workspace).
   const resolved = resolveSlug(slug === 'default' ? '' : slug);
-  turns.set(token, { slug: resolved, act: !!act, onProgress });
+  turns.set(token, { slug: resolved, act: !!act });
   // The message says whether Act was on when it was sent; the panel's switch
   // is reported separately. Logging both makes a mismatch visible.
-  process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}, autopilot ${act && jevConnected() ? 'offered' : 'not offered'}\n`);
+  process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}\n`);
   return token;
 }
 export function closeTabTurn(token) {
@@ -76,16 +69,11 @@ function viewerSlug(req) {
   return getUser(req.actor)?.slug || (getTeamMode() ? null : (primaryAdminSlug() || 'default'));
 }
 
-// Is the Jev autopilot available (connected, not paused)?
-export function jevConnected() {
-  try { return integrationsStore.isUsable('jev'); } catch { return false; }
-}
-
 // Run one command on the user's tab and wait for the answer. Every check lives
-// here, for the assistant's tools and the autopilot alike.
-export function sendTabCommand(slug, turnToken, command) {
+// here.
+function sendTabCommand(slug, turnToken, command) {
   if (!slug) return Promise.resolve({ ok: false, error: 'unknown actor' });
-  if (!command || typeof command !== 'object' || !['snapshot', 'act', 'screenshot', 'observe'].includes(command.op)) {
+  if (!command || typeof command !== 'object' || !['snapshot', 'act', 'screenshot'].includes(command.op)) {
     return Promise.resolve({ ok: false, error: 'command required' });
   }
   const turn = turns.get(String(turnToken || ''));
@@ -93,9 +81,8 @@ export function sendTabCommand(slug, turnToken, command) {
     return Promise.resolve({ ok: false, error: 'The browser tab can only be used in a conversation the user is having in the Something panel in Chrome, about the page they are on.' });
   }
   // Looking (snapshot / screenshot) is part of every panel turn that shares
-  // the page; acting — and the autopilot's raw observe — need Act switched on,
-  // for this turn AND right now.
-  const acting = command.op === 'act' || command.op === 'observe';
+  // the page; acting needs Act switched on, for this turn AND right now.
+  const acting = command.op === 'act';
   const streams = panels.get(slug);
   if (!streams?.size) {
     return Promise.resolve({ ok: false, error: 'The browser panel is not open. Ask the user to open the Something panel in Chrome.' });
@@ -117,7 +104,7 @@ export function sendTabCommand(slug, turnToken, command) {
   const steps = Array.isArray(command.steps)
     ? command.steps.slice(0, 5).map((st) => ({ id: String(st?.id || ''), ...(typeof st?.text === 'string' ? { text: st.text } : {}) }))
     : undefined;
-  const frame = `event: command\ndata: ${JSON.stringify({ id, op: command.op, target: command.target, text: command.text, steps, raw: command.raw === true || undefined })}\n\n`;
+  const frame = `event: command\ndata: ${JSON.stringify({ id, op: command.op, target: command.target, text: command.text, steps })}\n\n`;
   for (const s of streams) { try { s.write(frame); } catch { /* closed */ } }
   // Audit trail: every command, who it was for, what it targeted.
   process.stderr.write(`[tab] ${slug}: ${command.op}${command.target ? ' ' + command.target : ''}${command.text != null ? ` (${String(command.text).length} chars)` : ''}${steps ? ` [${steps.map((st) => st.id).join(', ')}]` : ''}\n`);
@@ -202,47 +189,7 @@ export default function tabRouter() {
   // From the assistant's tools: run one command on the user's tab.
   router.post('/internal/tab-command', loopbackOnly, async (req, res) => {
     const slug = resolveSlug(req.body?.actor);
-    const command = req.body?.command;
-    if (command?.op === 'observe') return res.status(400).json({ ok: false, error: 'command required' });   // the autopilot's, not a tool's
-    // With Jev connected, every action on the tab goes through the autopilot:
-    // the assistant's own tab_act is not offered and is refused here too.
-    if (command?.op === 'act' && jevConnected()) {
-      return res.json({ ok: false, error: 'Actions on this tab go through tab_autopilot while the Jev autopilot is connected. Give it the goal (with the values to type) instead.' });
-    }
-    res.json(await sendTabCommand(slug, req.body?.turnToken, command));
-  });
-
-  // From tab_autopilot: hand a whole goal to Jev. Only with the integration
-  // connected and Act on; the run stops when Act goes off (every pending
-  // command fails at once, see cancelPending) or the panel closes.
-  router.post('/internal/tab-autopilot', loopbackOnly, async (req, res) => {
-    const slug = resolveSlug(req.body?.actor);
-    const token = String(req.body?.turnToken || '');
-    const turn = turns.get(token);
-    if (!slug || !turn || turn.slug !== slug) {
-      return res.json({ ok: false, error: 'The autopilot only works in a conversation the user is having in the Something panel in Chrome.' });
-    }
-    if (!jevConnected()) return res.json({ ok: false, error: 'The Jev autopilot is not connected or is paused.' });
-    if (!turn.act || modes.get(slug) !== 'act') {
-      return res.json({ ok: false, error: 'Act is off, so the autopilot cannot work. Ask the user to switch Act on.' });
-    }
-    const goal = String(req.body?.goal || '').trim();
-    if (!goal) return res.json({ ok: false, error: 'Give the autopilot a goal.' });
-    let key;
-    try { key = integrationsStore.decryptFor('jev')?.TYPESAFE_API_KEY; } catch { key = null; }
-    if (!key) return res.json({ ok: false, error: 'The Jev integration has no key.' });
-    process.stderr.write(`[tab] ${slug}: autopilot "${goal.slice(0, 80)}"\n`);
-    const result = await runAutopilot({
-      goal,
-      values: req.body?.values && typeof req.body.values === 'object' ? req.body.values : {},
-      apiKey: key,
-      exec: (command) => sendTabCommand(slug, token, command),
-      onStep: (step) => { try { turn.onProgress?.(step); } catch { /* the chat went away */ } },
-      // Every choice Jev makes, for diagnosis: what, how sure, how long.
-      onDecision: (d) => process.stderr.write(`[jev] ${slug}: ${d.operation || d.choice} ${d.choice} (${d.confidence}) ${d.latency_ms} ms\n`),
-    });
-    process.stderr.write(`[tab] ${slug}: autopilot ${result.status} after ${result.steps.length} steps, ${result.decisions} decisions — ${result.ms} ms${result.detail ? `: ${String(result.detail).slice(0, 120)}` : ''}\n`);
-    res.json({ ok: true, result });
+    res.json(await sendTabCommand(slug, req.body?.turnToken, req.body?.command));
   });
 
   return router;

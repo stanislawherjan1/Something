@@ -96,8 +96,8 @@ export function isActive(id) {
 }
 
 /**
- * Paused: connected, key kept, but switched off for now (catalog `pausable`,
- * e.g. the Jev autopilot). Stored as the internal field PAUSED. A paused
+ * Paused: connected, key kept, but switched off for now (catalog `pausable`).
+ * Stored as the internal field PAUSED. A paused
  * integration is left out of its tools and of the egress allow-list.
  */
 export function isPaused(id) {
