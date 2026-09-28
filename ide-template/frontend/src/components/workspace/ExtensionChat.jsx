@@ -133,24 +133,36 @@ export default function ExtensionChat() {
   // Commands from the assistant (via workspace-api) → the extension → the answer back.
   useEffect(() => {
     if (!session) return undefined;
-    const es = new EventSource('/api/tab/stream', { withCredentials: true });
-    // Every (re)connection — e.g. after workspace-api restarted — tells the
-    // server where the switch is, since it forgets the mode when it restarts.
-    es.addEventListener('hello', () => reportMode(actRef.current ? 'act' : 'look'));
+    let es = null, retry = null, gone = false;
     const answer = (id, payload) => fetch('/api/tab/result', {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...payload }),
     }).catch(() => {});
-    es.addEventListener('command', async (ev) => {
+    const onCommand = async (ev) => {
       let cmd;
       try { cmd = JSON.parse(ev.data); } catch { return; }
       // Looking is always allowed here; acting only while Act is on.
       if ((cmd.op === 'act' || cmd.op === 'observe') && !actRef.current) return answer(cmd.id, { ok: false, error: 'Act is off.' });
       const r = await rpc('something:tab-command', { command: { op: cmd.op, target: cmd.target, text: cmd.text, steps: cmd.steps, raw: cmd.raw } }, 18000);
       answer(cmd.id, r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error || 'failed' });
-    });
-    return () => es.close();
+    };
+    const connect = () => {
+      es = new EventSource('/api/tab/stream', { withCredentials: true });
+      // Every (re)connection — e.g. after workspace-api restarted — tells the
+      // server where the switch is, since it forgets the mode when it restarts.
+      es.addEventListener('hello', () => reportMode(actRef.current ? 'act' : 'look'));
+      es.addEventListener('command', onCommand);
+      // A server restart answers with an error status, and EventSource then
+      // stops for good; without this the panel stays deaf until it is reopened.
+      es.onerror = () => {
+        if (gone || es.readyState !== EventSource.CLOSED) return;
+        clearTimeout(retry);
+        retry = setTimeout(connect, 2000);
+      };
+    };
+    connect();
+    return () => { gone = true; clearTimeout(retry); es?.close(); };
   }, [session]);
 
 
