@@ -82,10 +82,12 @@ const ATTACHMENT_BUCKET = 'main';
 const REPLAY_MAX_MESSAGES = 30;
 const REPLAY_MAX_CHARS    = 6000;
 
-// The user's own messages in a chat, oldest first — what a hand-off may know
-// of the conversation (lib/tab-handoff.js). Same window and reset rule as the
-// replay below; the assistant's lines are left out.
-function userMessages(actor, sessionId) {
+// The conversation as a hand-off sees it (lib/tab-handoff.js): what the user
+// wrote and what the assistant replied — replies the user saw before writing
+// their next message, so "ok" to a proposal carries the proposal. Oldest
+// first, same window and reset rule as the replay below. Kept as records with
+// their role, never as flat text, so a reply cannot pose as the user.
+function handoffDialogue(actor, sessionId) {
   let page;
   try { page = readSessionPage(actor, sessionId, { limit: REPLAY_MAX_MESSAGES }); }
   catch { return []; }
@@ -93,7 +95,9 @@ function userMessages(actor, sessionId) {
   let lastReset = -1;
   for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].kind === 'reset') { lastReset = i; break; }
   if (lastReset >= 0) msgs = msgs.slice(lastReset + 1);
-  return msgs.filter(m => m.role === 'user' && !m.kind && String(m.text || '').trim()).map(m => String(m.text).trim());
+  return msgs
+    .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.kind && !m.error && String(m.text || '').trim())
+    .map(m => ({ role: m.role, text: String(m.text).trim() }));
 }
 
 function buildResumeContext(actor, sessionId) {
@@ -731,9 +735,8 @@ export default function chatRouter() {
           act: actTurn,
           message,
           url: typeof tabCtx?.url === 'string' ? tabCtx.url : '',
-          // The user's earlier messages only: the assistant's replies in a
-          // panel chat were written while reading pages.
-          history: () => userMessages(req.chatActor, sid),
+          // The conversation so far — the user's words and the replies they saw.
+          history: () => handoffDialogue(req.chatActor, sid),
           actor: req.chatActor,
           actorName: req.chatActorName,
           actorIsAdmin: req.chatIsAdmin,

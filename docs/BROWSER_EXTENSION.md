@@ -334,7 +334,8 @@ Act turn (reads the page, tab tools only)
   → lib/tab-handoff.js starts a second claude -p turn with
       • the user's message exactly as typed (stored by routes/chat.js when the panel turn began)
       • the tab's address reduced to what identifies an item (host; path, query and fragment parts that look like ids)
-      • the user's earlier messages in the chat (not the assistant's — those were written while reading pages)
+      • the conversation so far as role-tagged JSON records — the user's messages and the replies they saw, so an "ok"
+        carries the proposal it answers; a reply cannot pose as the user, and only the user's words ask for anything
       • every integration, minus the tools that deliver messages
       • no tab token, no Act flag, a fresh session (never the panel's transcript)
   → its integration calls stream into the panel chat as they run (its housekeeping — tool lookups, memory reads — does not)
@@ -434,7 +435,7 @@ Enforced in code, not asked of the model.
 | 60 actions and 120 reads a minute; every command is logged | extension + workspace-api |
 | A command for a user without an open panel fails at once; any command times out after 20 s | workspace-api |
 | A page turn (Look or Act: the page is shared) has no built-in tools at all (`--tools ""`: no file reads, shell, web), only the workspace-api MCP with the tab tools and `use_integrations` (memory tools denied), and an environment with the server's secrets removed. A page that steers it can make it click on that page, but not read files, memory, keys or other people's data to carry there | `lib/claude.js` |
-| The hand-off turn gets nothing a page wrote: `use_integrations` takes no input; the turn it starts has the user's message as typed, the user's earlier messages (not the assistant's), and the tab's address reduced to its id-like parts — no title, no free text; no tab token, no page flag, no resumed session, no delivery or tab tools; one at a time, two per message, 120 s | `routes/tab.js`, `lib/tab-handoff.js` |
+| The hand-off turn gets nothing a page wrote: `use_integrations` takes no input; the turn it starts has the user's message as typed, the conversation so far as role-tagged records (the user's messages and the replies they saw, so an "ok" carries the proposal it answers; a reply can never pose as the user), and the tab's address reduced to its id-like parts — no title, no free text; no tab token, no page flag, no resumed session, no delivery or tab tools; one at a time, two per message, 120 s | `routes/tab.js`, `lib/tab-handoff.js` |
 | Only commands the workspace signed run: every command carries an HMAC made with a per-user key the extension fetches itself (`POST /api/tab/panel-key`, answered only to the extension's own Origin) and the framed page never sees; each runs once, within 5 minutes. A script in the framed page — another extension's content script included — can only relay what the server issued | `routes/tab.js`, extension |
 | Act follows the user, not the page: switching tabs moves it along, but if the tab reaches another site by itself (a redirect, a script, a link the page opened) Act pauses — reading still works — until the user taps **Continue here** in the panel | extension, `ExtensionChat.jsx` |
 | Page turns never share a Claude session with ordinary turns: a turn resumes only a session of its own kind (`claudeSessionKind` in the chat index); when the kind changes a fresh session starts from the text of the conversation, with replies written while a page was open marked as such — whatever a page planted in a transcript stays in a turn that holds only the tab tools | `routes/chat.js`, `lib/sessions.js` |
