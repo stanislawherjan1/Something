@@ -27,7 +27,19 @@ export const HANDOFF_DENIED_TOOLS = [
   'mcp__plugin_telegram_telegram__sendMessage',
   'mcp__plugin_telegram_telegram__reply',
   'mcp__workspace-api__fix_sent_message',
+  // It never sees the page (and has no token for it anyway).
+  'mcp__workspace-api__tab_snapshot',
+  'mcp__workspace-api__tab_act',
+  'mcp__workspace-api__tab_screenshot',
+  'mcp__workspace-api__use_integrations',
 ];
+
+// What of the hand-off reaches the panel chat: its work with the integrations,
+// not its housekeeping (looking tools up, reading memory).
+const SHOWN = (name) => {
+  const n = String(name || '');
+  return n.startsWith('mcp__') && !n.startsWith('mcp__workspace-api__');
+};
 
 export const HANDOFF_TIMEOUT_MS = 120_000;
 
@@ -75,6 +87,7 @@ export function runHandoff({ runTurn, turn, timeoutMs = HANDOFF_TIMEOUT_MS }) {
   };
   const emit = (event, data) => { try { turn.onEvent?.(event, data); } catch { /* the chat went away */ } };
   let reply = '';
+  const shown = new Set();
   const timer = setTimeout(() => {
     try { proc?.kill?.('SIGTERM'); } catch { /* gone */ }
     finish({ ok: false, error: `The hand-off took longer than ${Math.round(timeoutMs / 1000)} s and was stopped.` });
@@ -89,8 +102,8 @@ export function runHandoff({ runTurn, turn, timeoutMs = HANDOFF_TIMEOUT_MS }) {
       teammates: turn.teammates,
       disallowedTools: HANDOFF_DENIED_TOOLS,
       onText: (t) => { reply += t; },
-      onToolStart: (info) => emit('tool_start', info),
-      onToolEnd: (info) => emit('tool_end', info),
+      onToolStart: (info) => { if (SHOWN(info?.name)) { shown.add(info.id); emit('tool_start', info); } },
+      onToolEnd: (info) => { if (shown.has(info?.id)) emit('tool_end', info); },
       onImage: (img) => emit('image', img),
       onError: (msg) => finish({ ok: false, error: String(msg || 'The hand-off failed.').slice(0, 400) }),
       onDone: () => finish({ ok: true, reply: reply.trim() }),

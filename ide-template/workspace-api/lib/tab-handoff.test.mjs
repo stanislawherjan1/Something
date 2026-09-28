@@ -66,19 +66,24 @@ function fakeRun(script = (o) => { o.onText('Moved it to 15:00.'); o.onDone({});
   ok('not an Act turn: it cannot hand off again', !o.actTurn);
   ok('a fresh session: never resumes the panel\'s transcript', o.sessionId == null);
   ok('every delivery tool is denied', HANDOFF_DENIED_TOOLS.every((t) => o.disallowedTools.includes(t)));
+  ok('...and the tab tools too', ['tab_snapshot', 'tab_act', 'tab_screenshot', 'use_integrations'].every((t) => o.disallowedTools.includes(`mcp__workspace-api__${t}`)));
   ok('it runs as the person who asked', o.actor === 'anna' && o.actorIsAdmin === false);
 }
 
 // ── Its tool calls show in the panel chat ──
 {
   const { run } = fakeRun((o) => {
+    o.onToolStart({ id: 't0', name: 'ToolSearch' });
+    o.onToolEnd({ id: 't0', ok: true });
     o.onToolStart({ id: 't1', name: 'mcp__google_workspace__update_event' });
     o.onToolEnd({ id: 't1', ok: true });
+    o.onToolStart({ id: 't2', name: 'mcp__workspace-api__memory_grep' });
+    o.onToolEnd({ id: 't2', ok: false });
     o.onText('Done.'); o.onDone({});
   });
   const events = [];
-  await runHandoff({ runTurn: run, turn: turn({ onEvent: (e, d) => events.push(e) }) }).done;
-  ok('tool_start and tool_end are forwarded', events.join(',') === 'tool_start,tool_end', events.join(','));
+  await runHandoff({ runTurn: run, turn: turn({ onEvent: (e, d) => events.push(`${e}:${d.id}`) }) }).done;
+  ok('only the integration calls reach the panel chat', events.join(',') === 'tool_start:t1,tool_end:t1', events.join(','));
 }
 
 // ── Bounds and failures ──
