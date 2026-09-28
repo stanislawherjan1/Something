@@ -222,7 +222,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           steps: {
             type: 'array', maxItems: 5,
             description: 'Several steps on the same page in one go, in order (e.g. fill three form fields, then click Submit) — ' +
-              'instead of id/text. Each step is checked and done like a single action; it stops at the first step that fails, ' +
+              'prefer this whenever more than one control on the current page is needed; one call instead of several. Instead of id/text. Each step is checked and done like a single action; it stops at the first step that fails, ' +
               'when the address changes, or when a later control changed, and returns the page as it is then.',
             items: {
               type: 'object',

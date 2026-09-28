@@ -147,6 +147,13 @@ it was read, the control moved or is covered, nothing has been read yet), nothin
 `tab_act` returns the page as it is now to choose from, instead of an error that costs another
 round trip.
 
+An Act turn runs on the bot's pinned model (web turns read it from
+`bootstrap/claude-settings.json`; `IDE_WEB_MODEL` overrides) at a lower effort
+(`--effort medium`, `IDE_ACT_EFFORT` overrides): many small steps, each waiting on the
+model, so less deliberation per click. The turn's instruction asks for as few calls as
+possible — never a snapshot after `tab_act`, and a form's fields plus its submit as `steps`
+in one call.
+
 `tab_act` also takes `steps` — up to five actions on the same page (a form's fields, then its
 submit button) in one call. Each step gets every check and a fresh observation; the batch stops
 at the first failure, when the address changes, or when a later control is no longer the one the

@@ -81,6 +81,27 @@ export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExclu
   return buildCachedPrefix({ memoryDir, excludeIds, actor });
 }
 
+// The model every web turn runs on: the one the bot is pinned to
+// (bootstrap/claude-settings.json, which entrypoint merges into the bot's
+// settings). workspace-api's own user has no settings file, so without this
+// the web chat and the side panel ran on the CLI's built-in default — an older
+// model than the Telegram bot's. IDE_WEB_MODEL overrides it.
+const BOOTSTRAP_SETTINGS = '/opt/ide/bootstrap/claude-settings.json';
+let webModel;
+function turnModel() {
+  if (webModel === undefined) {
+    webModel = process.env.IDE_WEB_MODEL || '';
+    if (!webModel) {
+      try { webModel = String(JSON.parse(readFileSync(BOOTSTRAP_SETTINGS, 'utf8')).model || ''); } catch { webModel = ''; }
+    }
+  }
+  return webModel;
+}
+// A turn that operates the browser tab takes many small steps, each waiting on
+// the model; less deliberation per click keeps it moving. IDE_ACT_EFFORT
+// overrides it.
+const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
+
 export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
@@ -138,6 +159,8 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   if (blocked.length) {
     args.push('--disallowedTools', blocked.join(','));
   }
+  if (turnModel()) args.push('--model', turnModel());
+  if (actTurn && ACT_EFFORT) args.push('--effort', ACT_EFFORT);
 
   // Memory cached prefix — ≥4096 token block from project/memory/ so
   // Anthropic's prompt cache fires (otherwise nothing is cached and every

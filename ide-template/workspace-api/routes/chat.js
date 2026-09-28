@@ -243,6 +243,7 @@ function browserContextBlock(raw) {
   }
   if (ctx.act === true) {
     lines.push('They have switched the panel to Act: in this turn you can operate THIS tab with tab_snapshot, tab_act and tab_screenshot — clicks and typing on this one site, nothing else.');
+    lines.push('Work in as few calls as you can: every tab_act returns the page it leaves, so never snapshot after it. When several controls on the page are needed now — the fields of a form, filters, then its submit button — pass them all as steps in ONE tab_act instead of one call each. Only a control that appears after an earlier step (an autocomplete suggestion, a date in a calendar that opens) needs a new call.');
   }
   // The goal comes from the user, never from the page, and this turn has no
   // tools that send anything out.
