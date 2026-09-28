@@ -149,13 +149,27 @@ function StepLabel({ tool, live }) {
   return <span className={cn('shrink-0 whitespace-nowrap', live && tool.ok == null && 'shimmer-text')}>{label}</span>;
 }
 
+// A failure worth showing is an integration that did not work (its MCP call
+// failed). Everything else that comes back as an error is normal work: a
+// built-in step the model retries (a wrong tool name or argument, a path that
+// is not there), a tab action refused by design (Act off, page still loading),
+// the workspace's own housekeeping. Those read as ordinary steps; the reason
+// stays in the tooltip for diagnosis.
+function realFailure(tool) {
+  if (tool.ok !== false) return false;
+  const name = String(tool.name || '');
+  if (!name.startsWith('mcp__')) return false;
+  if (name.startsWith('mcp__workspace-api__') && name !== 'mcp__workspace-api__use_integrations') return false;
+  return !/tool_use_error|No such tool available/i.test(String(tool.error || ''));
+}
+
 // The current action, replaced in place as the next one starts.
 export function ToolLine({ tools, still = false }) {
   const tool = tools[tools.length - 1];
   const { Icon, logo } = displayFor(tool.name);
-  const failed = tool.ok === false;
+  const failed = realFailure(tool);
   return (
-    <div className="relative h-[22px] w-full min-w-0 overflow-hidden">
+    <div className="relative h-[22px] w-full min-w-0 overflow-hidden" title={tool.ok === false && !failed ? tool.error || undefined : undefined}>
       <div
         key={tool.id || `${tool.name}-${tools.length}`}
         className={cn(
@@ -176,7 +190,7 @@ export function ToolLine({ tools, still = false }) {
 // "Used N tools · k failed", collapsed; a click lists the steps.
 export function ToolSummary({ tools, animate = false }) {
   const [open, setOpen] = useState(false);
-  const failed = tools.filter(t => t.ok === false).length;
+  const failed = tools.filter(realFailure).length;
   return (
     <div className={cn('flex w-full min-w-0 flex-col items-start', animate && 'animate-[tool-land_0.22s_ease-out_0.17s_both]')}>
       <button
@@ -193,10 +207,11 @@ export function ToolSummary({ tools, animate = false }) {
         <div className="flex min-h-0 flex-col gap-[3px] overflow-hidden pl-[18px]">
           {tools.map((t, i) => {
             const { Icon, logo } = displayFor(t.name);
-            const bad = t.ok === false;
+            const bad = realFailure(t);
             return (
               <span
                 key={t.id || i}
+                title={t.ok === false && !bad ? t.error || undefined : undefined}
                 style={{ transitionDelay: open ? `${i * 35}ms` : '0ms' }}
                 className={cn(
                   'flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap text-[12px] transition-[opacity,transform] duration-150',
