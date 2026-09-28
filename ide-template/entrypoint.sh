@@ -161,6 +161,22 @@ if [ "$(id -u)" = "0" ]; then
             chmod 0660         /home/bot/.${BOT_NAME:-bot}/integrations.env 2>/dev/null || true
         fi
 
+        # The Telegram brain's proof of identity for workspace-api's memory
+        # routes (workspace-api/lib/turn-identity.js). A fresh token each boot,
+        # readable by the bot user only (0400 — not the botshare group, which
+        # workspace-api and its turns belong to); workspace-api gets only its
+        # SHA-256, so none of its turns can read the token itself.
+        BOT_TURN_ID="$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n')"
+        umask_prev=$(umask); umask 077
+        printf '%s' "$BOT_TURN_ID" > /home/bot/.${BOT_NAME:-bot}/turn-id
+        umask "$umask_prev"
+        chown bot:bot /home/bot/.${BOT_NAME:-bot}/turn-id 2>/dev/null || true
+        chmod 0400    /home/bot/.${BOT_NAME:-bot}/turn-id 2>/dev/null || true
+        printf '%s' "$BOT_TURN_ID" | sha256sum | cut -d' ' -f1 > /var/wsapi-store/bot-turn-id.sha256
+        chown 1001:1001 /var/wsapi-store/bot-turn-id.sha256 2>/dev/null || true
+        chmod 0640      /var/wsapi-store/bot-turn-id.sha256 2>/dev/null || true
+        unset BOT_TURN_ID umask_prev
+
         # /home/bot/.claude.json — the file claude (uid 1003) reads at
         # tmux start and the file workspace-api (uid 1001) writes to via
         # CLAUDE_CONFIG_PATH. Pre-seed it here, as root, BEFORE PM2 fires

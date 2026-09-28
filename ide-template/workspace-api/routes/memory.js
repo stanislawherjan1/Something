@@ -26,6 +26,7 @@ import { buildCachedPrefix, meetsCacheFloor } from '../lib/memory-loader.js';
 import { readLog, revert as revertEvent } from '../lib/memory-engine.js';
 import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
 import { getTeamMode, primaryAdminSlug, getUser, isAdmin } from '../lib/team.js';
+import { resolveTurnToken } from '../lib/turn-identity.js';
 
 export default function memoryRouter() {
   const router = Router();
@@ -68,10 +69,13 @@ export default function memoryRouter() {
       // /api/ is reachable through nginx and Caddy strips X-IDE-User but not
       // this header. Without the loopback test any signed-in member could name
       // someone else's slug and read their private memory.
+      // The turn's identity comes from its turn token (lib/turn-identity.js),
+      // not from a claimed slug: any process on loopback could send one.
       const ip = req.socket?.remoteAddress || '';
       const fromLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-      const hdrRaw = typeof req.headers['x-ide-actor'] === 'string' ? req.headers['x-ide-actor'] : '';
-      const hdrActor = fromLoopback && /^[a-z0-9-]+$/.test(hdrRaw) ? hdrRaw : null;
+      const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+      const turn = fromLoopback ? resolveTurnToken(hdr('x-ide-turn'), hdr('x-ide-actor')) : null;
+      const hdrActor = turn && !turn.group ? turn.actor : null;
 
       const actor = getTeamMode() ? (getUser(req.actor)?.slug || hdrActor || null) : null;
       const matches = await grepMemory(q, { maxCount: max, regex, actor });

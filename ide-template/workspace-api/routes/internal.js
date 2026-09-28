@@ -25,6 +25,7 @@ import { runClaudeTurn } from '../lib/claude.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
+import { resolveTurnToken } from '../lib/turn-identity.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -610,17 +611,19 @@ export default function internalRouter() {
   // touches memory/, which keeps one uid on the tree (no coder-vs-wsapi
   // permission trap) and one place where the guards live.
   //
-  // IDENTITY: the MCP forwards the turn's IDE_ACTOR_SLUG / IDE_GROUP_CONTEXT as
-  // headers. Trusting a header is only safe because this route is loopback-only
-  // and those env vars are set per-spawn by lib/claude.js — the same trust
-  // boundary the scope-guard hook already runs on. A browser reaches wsapi
-  // through the separate nginx container, so its peer is never loopback.
+  // IDENTITY: the MCP sends the turn's token (X-IDE-Turn); the actor and the
+  // group flag come from it (lib/turn-identity.js), never from a claimed slug —
+  // any process on loopback could claim one. No valid token in team mode means
+  // no identity and group rules: shared memory only.
   router.post('/internal/memory-write', loopbackOnly, async (req, res) => {
     const body = req.body || {};
     const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
-    const actorRaw = hdr('x-ide-actor') || body.actor || '';
-    const actor = /^[a-z0-9-]+$/.test(actorRaw) ? actorRaw : null;
-    const inGroup = hdr('x-ide-group') === '1';
+    const turn = resolveTurnToken(hdr('x-ide-turn'), hdr('x-ide-actor'));
+    const team = getTeamMode();
+    let actor, inGroup;
+    if (turn) { actor = turn.actor; inGroup = turn.group; }
+    else if (!team) { actor = null; inGroup = false; }   // solo: no private trees to guard
+    else { actor = null; inGroup = true; }                // unproven: shared memory only
 
     // A group turn's reply is public and its session is shared across senders,
     // so a group write may only ever touch SHARED memory. Private work is

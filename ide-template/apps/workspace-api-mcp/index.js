@@ -368,6 +368,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           // The turn's identity, set per-spawn by workspace-api/lib/claude.js.
           'X-IDE-Actor': process.env.IDE_ACTOR_SLUG || '',
           'X-IDE-Group': process.env.IDE_GROUP_CONTEXT === '1' ? '1' : '0',
+          // The proof behind that identity (workspace-api/lib/turn-identity.js).
+          'X-IDE-Turn': process.env.IDE_TURN_ID || '',
         },
         body: JSON.stringify(payload),
       });
@@ -440,7 +442,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // memory/users/<slug>/ — the turn's own RESPONSIBILITIES included — is
       // ever found.
       const res = await fetch(url, {
-        headers: { 'X-IDE-Actor': process.env.IDE_ACTOR_SLUG || '' },
+        headers: { 'X-IDE-Actor': process.env.IDE_ACTOR_SLUG || '', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
       });
       if (!res.ok) {
         const body = await res.text();

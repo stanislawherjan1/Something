@@ -1359,6 +1359,13 @@ if command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
         if printf '%s' "$OP_SLUG" | grep -qE '^[a-z0-9-]+$'; then
             export IDE_ACTOR_SLUG="$OP_SLUG"
             export IDE_ACTOR_IS_ADMIN=1
+            # The proof behind that identity for the memory routes: a token
+            # entrypoint wrote at boot, readable by this user only.
+            if [ -r "$PER_BOT_DIR/turn-id" ]; then
+                export IDE_TURN_ID="$(cat "$PER_BOT_DIR/turn-id")"
+            else
+                log "Operator identity: no turn-id file — memory calls will run without a proven identity (shared memory only)."
+            fi
             log "Operator identity: IDE_ACTOR_SLUG=$OP_SLUG IDE_ACTOR_IS_ADMIN=1 (relays attributed; scope-guard admin-passthrough)."
         else
             log "Operator identity: not in team mode (or no slug) — leaving IDE_ACTOR_SLUG unset (solo/legacy)."

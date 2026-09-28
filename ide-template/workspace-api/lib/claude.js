@@ -24,6 +24,7 @@ import { syncMcpServers } from './integrations/runtime.js';
 import { primaryAdminSlug } from './team.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
+import { issueTurnToken, revokeTurnToken } from './turn-identity.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 // How much of claude's stderr to keep for diagnosing a failed turn.
@@ -294,6 +295,10 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // Group-context flag for the scope-guard hook: hard-blocks ALL private trees
   // (including the sender's own and an admin's) — see hooks/scope-guard.mjs.
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
+  // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
+  // they take the actor and group flag from this token, never from a header.
+  const turnId = issueTurnToken({ actor, group: !!groupContext });
+  childEnv.IDE_TURN_ID = turnId;
   // A turn started from the browser extension's panel carries a one-turn token
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
   // — Telegram, workspace chat, reminders, groups — ever gets one.
@@ -493,9 +498,10 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
     process.stderr.write(`[claude] ${text}`);
   });
 
-  proc.on('error', (err) => onError(`spawn failed: ${err.message}`));
+  proc.on('error', (err) => { revokeTurnToken(turnId); onError(`spawn failed: ${err.message}`); });
 
   proc.on('close', (code, signal) => {
+    revokeTurnToken(turnId);
     if (actMcpFile) { try { unlinkSync(actMcpFile); } catch { /* already gone */ } }
     if (code === 0) return onDone({ sessionId: capturedSessionId });
 
