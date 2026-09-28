@@ -540,17 +540,39 @@ function afterInputExpression(action) {
   }))(${JSON.stringify({ node: action.node, kind: action.kind })})`;
 }
 
-// Is the decision still about the page that was read? A click or select
-// compares the document, URL, viewport, form values and the target's own guard
-// (unrelated content may change); anything else compares the whole marker.
+// Is the decision still about the page that was read? An action on a control
+// (click, select, fill) compares the document, URL, viewport, form values and
+// that control's own guard — its identity, state and surrounding form or row —
+// so unrelated content elsewhere may change (a live price, a carousel). A
+// scroll or wait compares the whole marker.
 function freshExpression(action, snapshot) {
-  if (action.kind === 'click' || action.kind === 'select') {
+  if (['click', 'select', 'fill'].includes(action.kind)) {
     return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))]) : null; })()`;
   }
   return `(() => { const s = ${snapshot}; return s ? JSON.stringify(s.marker) : null; })()`;
 }
 function expectedFresh(action, snap) {
-  return JSON.stringify(action.kind === 'click' || action.kind === 'select' ? [snap.page_key, snap.guards[action.node]] : snap.marker);
+  return JSON.stringify(['click', 'select', 'fill'].includes(action.kind) ? [snap.page_key, snap.guards[action.node]] : snap.marker);
+}
+// Which part of a stale check changed, for the log: the refusal says why.
+function staleWhy(action, fresh, snap) {
+  let now; try { now = JSON.parse(fresh); } catch { return 'unreadable'; }
+  const was = JSON.parse(expectedFresh(action, snap));
+  if (!now) return 'no snapshot cache';
+  const names = ['click', 'select', 'fill'].includes(action.kind) ? ['page', 'control'] : ['load', 'url', 'scrollX', 'scrollY', 'width', 'height', 'title', 'text', 'controls', 'fields'];
+  const sub = ['load', 'url', 'scrollX', 'scrollY', 'width', 'height', 'fields'];
+  const out = [];
+  now.forEach((v, i) => {
+    if (JSON.stringify(v) === JSON.stringify(was[i])) return;
+    if (['click', 'select', 'fill'].includes(action.kind) && i === 0) {
+      v.forEach((w, j) => { if (JSON.stringify(w) !== JSON.stringify(was[0][j])) out.push(sub[j]); });
+    } else if (['click', 'select', 'fill'].includes(action.kind) && i === 1) {
+      const parts = ['id', 'role', 'name', 'value', 'checked', 'index', 'readonly', 'disabled', 'aria-disabled', 'expanded', 'aria-checked', 'aria-selected', 'href', 'context'];
+      (v || []).forEach((w, j) => { if (JSON.stringify(w) !== JSON.stringify((was[1] || [])[j])) out.push(`control.${parts[j]}`); });
+      if (!v) out.push('control gone');
+    } else out.push(names[i]);
+  });
+  return out.join(',') || 'unknown';
 }
 
 // The target is an element the snapshot observed (never a model-written
@@ -692,7 +714,7 @@ async function actOnce(targetId, text, soft = false) {
   if (action.kind !== 'back') {
     const fresh = await evaluate(freshExpression(action, await snapshotScript()));
     if (fresh !== expectedFresh(action, snap)) {
-      return refuse(tab, 'The page changed since it was read, so that control may not be the one you picked. Take a new snapshot.', soft);
+      return refuse(tab, `The page changed since it was read (${staleWhy(action, fresh, snap)}), so that control may not be the one you picked. Take a new snapshot.`, soft);
     }
   }
   if (action.kind === 'scroll') {

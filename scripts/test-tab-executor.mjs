@@ -216,13 +216,15 @@ try {
     return `${ms} ms`;
   });
 
-  await check('a fill is checked against the whole page (any visible change is stale), a click only against its own form', async () => {
+  await check('a fill or click is checked against its own control and form, so a change elsewhere does not refuse it', async () => {
     page = await observe();
     const field = find(page, /^Search/, 'fill');
     const button = find(page, /^Search$/, 'click');   // the submit button, inside the form
     await evaluate(`document.getElementById('out').textContent = 'something else happened'`);
-    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) !== pageCode.expectedFresh(field, page), 'fill still fresh after unrelated text changed');
+    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) === pageCode.expectedFresh(field, page), 'fill went stale over text outside its form');
     assert((await evaluate(pageCode.freshExpression(button, SNAPSHOT))) === pageCode.expectedFresh(button, page), 'click went stale over text outside its form');
+    await evaluate(`document.getElementById('q').value = 'typed by the user meanwhile'`);
+    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) !== pageCode.expectedFresh(field, page), 'fill still fresh after a form value changed');
   });
 
   await check('a native select takes an allowed option, refuses a disabled one', async () => {
