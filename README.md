@@ -41,7 +41,7 @@ Everything you'd reach for to automate your work (markdown for context, skills f
 Your coworkers:
 
 - **Have a name and a personality.** Set once in the first-login wizard.
-- **Live on Telegram, the web, and next to any page in Chrome.** Pick what suits you; same memory everywhere.
+- **Live on Telegram and the web.** Pick one or both; same memory either way.
 - **Remember between sessions.** Markdown notes, a knowledge graph, recent threads.
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups.
@@ -104,33 +104,13 @@ https://github.com/user-attachments/assets/dbdf7444-ad67-4ff0-8a46-033cf2ce3271
 Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, the **team Telegram groups** it's part of, and **Chrome's side panel**, next to whatever page you're on. Same name, same memory, same context, whichever you reach for.
 
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
+- **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
 - **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
 - **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into — never barging in on its own.
-- **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
 
 It's all connected. What you said on Telegram is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 
 Proactive messages travel the same paths. When a job finishes or a reminder comes due, your coworker pings you on Telegram, in the web app, or both; a web ping is a notification you click straight into its thread.
-
-<br/>
-
-<a id="browser"></a>
-
-## Right next to your browser
-
-<p align="center">
-  <img src="assets/browser.png" alt="A browser window with the side panel open: the coworker reads the page, then works in it, one control picked out" width="820" />
-</p>
-
-<br/>
-
-Install the Chrome extension from the workspace's **Browser agent** page and your coworker sits in the side panel, beside whatever you're looking at. It's the same chat, with the same memory and conversations, and it knows which page you're on.
-
-- **It looks by itself.** Ask *"which of these orders are late?"* and it reads the page or takes a screenshot on its own. No copy-pasting, no "can you send me a screenshot".
-- **It works in the page when you let it.** Flip the **Act** switch and it clicks, types, picks from dropdowns and scrolls for you: filling in a form, searching a site, working through a multi-step flow. You watch a cursor move as it goes, and it stops the moment you switch Act off.
-- **It uses the API when that's better.** On a page of a service it's connected to, such as a calendar event, a Miro board or an email, it hands the job to the integration instead of clicking: *"move this meeting to 3pm"* becomes one Calendar call, not ten clicks.
-
-It is fenced in code, not in the prompt: it stays on the site you're on, never touches password, one-time-code or card fields, refuses password managers, and while it can act on a page it has no way to send anything out. What a web page says is treated as content, never as an instruction. Full details in **[docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md)**.
 
 <br/>
 
@@ -252,6 +232,26 @@ Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914
 > Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · Substack · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
 You activate each one from the Integrations dashboard, no redeploy, no `.env` editing. Credentials are encrypted at rest; removing an integration wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+
+<br/>
+
+<a id="browser"></a>
+
+## Right next to your browser
+
+<p align="center">
+  <img src="assets/browser.png" alt="A browser window with the side panel open: the coworker reads the page, then works in it, one control picked out" width="820" />
+</p>
+
+<br/>
+
+Install the Chrome extension from the workspace's **Browser agent** page and your coworker sits in the side panel, beside whatever you're looking at. It's the same chat, with the same memory and conversations, and it knows which page you're on.
+
+- **It looks by itself.** Ask *"which of these orders are late?"* and it reads the page or takes a screenshot on its own. No copy-pasting, no "can you send me a screenshot".
+- **It works in the page when you let it.** Flip the **Act** switch and it clicks, types, picks from dropdowns and scrolls for you: filling in a form, searching a site, working through a multi-step flow. You watch a cursor move as it goes, and it stops the moment you switch Act off.
+- **It uses the API when that's better.** On a page of a service it's connected to, such as a calendar event, a Miro board or an email, it hands the job to the integration instead of clicking: *"move this meeting to 3pm"* becomes one Calendar call, not ten clicks.
+
+It is fenced in code, not in the prompt: it stays on the site you're on, never touches password, one-time-code or card fields, refuses password managers, and while it can act on a page it has no way to send anything out. What a web page says is treated as content, never as an instruction. Full details in **[docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md)**.
 
 <br/>
 
