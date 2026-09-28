@@ -18,34 +18,51 @@
  *   - in the extension, which also refuses, detaches from the tab, and applies
  *     its hard limits (one site, idle timeout, rate limit, no password fields).
  * A command for someone without an open panel fails immediately, never hangs.
-
+ *
+ * An Act turn holds no integration tools (a page can carry injected
+ * instructions). When a task is better done through an API, it calls
+ * use_integrations → POST /api/internal/tab-handoff { turnToken }: a second
+ * turn runs from the user's own message and the tab's address, never the page
+ * (lib/tab-handoff.js), and its answer is the tool's result.
  */
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { getUser, list as teamList, primaryAdminSlug, getTeamMode } from '../lib/team.js';
+import { runClaudeTurn } from '../lib/claude.js';
+import { runHandoff } from '../lib/tab-handoff.js';
 
 const COMMAND_TIMEOUT_MS = 20_000;
 const panels = new Map();   // slug → Set<res>   open panel streams
 const modes = new Map();    // slug → 'act' (absent = look)
 const pending = new Map();  // id → { slug, resolve, timer }
-const turns = new Map();    // token → { slug, act }   turns started from the panel
+const turns = new Map();    // token → turn record (see openTabTurn)   turns started from the panel
+const MAX_HANDOFFS_PER_TURN = 2;
 
 // Only a turn the user started FROM the panel may drive their tab — never a
 // Telegram message, a workspace chat, a reminder or a group turn, even while
 // the panel is open in Act. routes/chat.js opens a token for a panel turn and
 // closes it when the turn ends; the tools pass it back (IDE_TAB_TOKEN).
-export function openTabTurn(slug, { act = false } = {}) {
+//
+// For a hand-off (use_integrations) the record also keeps what that second
+// turn may be given — the user's own message, the tab's address and title as
+// the panel reported them, a replay of the chat's dialogue (`history`, lazy),
+// who is asking — and `onEvent`, which streams its tool calls into this chat.
+export function openTabTurn(slug, { act = false, message = '', url = '', title = '', history = null, actor = '',
+  actorName = '', actorIsAdmin = false, teammates = [], onEvent = null } = {}) {
   const token = randomUUID();
   // Same resolution the tools' side uses ('default' = a solo workspace).
   const resolved = resolveSlug(slug === 'default' ? '' : slug);
-  turns.set(token, { slug: resolved, act: !!act });
+  turns.set(token, { slug: resolved, act: !!act, message: String(message || ''), url: String(url || ''), title: String(title || ''),
+    history, actor, actorName, actorIsAdmin, teammates, onEvent, handoff: null, handoffs: 0 });
   // The message says whether Act was on when it was sent; the panel's switch
   // is reported separately. Logging both makes a mismatch visible.
   process.stderr.write(`[tab] ${resolved}: panel turn (${act ? 'act' : 'look'}), switch is ${modes.get(resolved) === 'act' ? 'act' : 'look'}\n`);
   return token;
 }
 export function closeTabTurn(token) {
-  if (token) turns.delete(token);
+  if (!token) return;
+  turns.get(token)?.handoff?.kill();
+  turns.delete(token);
 }
 
 function loopbackOnly(req, res, next) {
@@ -190,6 +207,32 @@ export default function tabRouter() {
   router.post('/internal/tab-command', loopbackOnly, async (req, res) => {
     const slug = resolveSlug(req.body?.actor);
     res.json(await sendTabCommand(slug, req.body?.turnToken, req.body?.command));
+  });
+
+  // From use_integrations: run the user's request through the integrations in
+  // a turn that never sees the page. The body carries the turn token and nothing
+  // else — no text from the model that read the page reaches that turn.
+  router.post('/internal/tab-handoff', loopbackOnly, async (req, res) => {
+    const slug = resolveSlug(req.body?.actor);
+    const token = String(req.body?.turnToken || '');
+    const turn = turns.get(token);
+    if (!slug || !turn || turn.slug !== slug) {
+      return res.json({ ok: false, error: 'The hand-off only works in a conversation the user is having in the Something panel in Chrome.' });
+    }
+    if (!turn.act || modes.get(slug) !== 'act') return res.json({ ok: false, error: 'Act is off; do this in an ordinary turn instead.' });
+    if (!turn.message.trim()) return res.json({ ok: false, error: 'There is no request to hand off.' });
+    if (turn.handoff) return res.json({ ok: false, error: 'A hand-off is already running for this message.' });
+    if (turn.handoffs >= MAX_HANDOFFS_PER_TURN) {
+      return res.json({ ok: false, error: `Already handed off ${MAX_HANDOFFS_PER_TURN} times for this message. Tell the user what happened instead.` });
+    }
+    turn.handoffs += 1;
+    process.stderr.write(`[tab] ${slug}: hand-off to the integrations (${turn.url.slice(0, 120)})\n`);
+    const started = Date.now();
+    turn.handoff = runHandoff({ runTurn: runClaudeTurn, turn });
+    const result = await turn.handoff.done;
+    turn.handoff = null;
+    process.stderr.write(`[tab] ${slug}: hand-off ${result.ok ? 'done' : 'failed'} — ${Date.now() - started} ms${result.ok ? '' : `: ${String(result.error).slice(0, 120)}`}\n`);
+    res.json(result);
   });
 
   return router;

@@ -26,6 +26,9 @@ const internal = readFileSync(new URL('../routes/internal.js', import.meta.url),
 const memory   = readFileSync(new URL('../routes/memory.js', import.meta.url), 'utf8');
 const monitor  = readFileSync(new URL('../../bot/recent-snapshot-monitor.sh', import.meta.url), 'utf8');
 const mcp      = readFileSync(new URL('../../apps/workspace-api-mcp/index.js', import.meta.url), 'utf8');
+const tab      = readFileSync(new URL('../routes/tab.js', import.meta.url), 'utf8');
+const claude   = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
+const chat     = readFileSync(new URL('../routes/chat.js', import.meta.url), 'utf8');
 
 const route = (file, method, path) =>
   new RegExp(`router\\.${method}\\('${path.replace(/\//g, '\\/')}'`).test(file);
@@ -51,6 +54,13 @@ ok('...and a tool reaches that route', /name: 'fix_sent_message'/.test(mcp) && /
 // The write feed the dashboard reads.
 ok('the memory change feed is mounted', route(memory, 'get', '/memory/changes'));
 ok('undo is mounted', route(memory, 'post', '/memory/revert'));
+
+// The browser panel's hand-off to the integrations: the tool, the route behind
+// it, the flag that lists the tool in an Act turn, and the record it reads.
+ok('use_integrations tool exists', /name: 'use_integrations'/.test(mcp));
+ok('...and something serves it', route(tab, 'post', '/internal/tab-handoff'));
+ok('...and an Act turn is flagged so the tool is listed', /IDE_ACT_TURN = '1'/.test(claude));
+ok('...and the panel turn hands it the user\'s message and the tab', /openTabTurn\(req\.chatActor, \{[\s\S]*?message,[\s\S]*?url:/.test(chat));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

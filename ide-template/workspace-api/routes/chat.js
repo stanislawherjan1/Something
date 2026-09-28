@@ -243,6 +243,7 @@ function browserContextBlock(raw) {
   }
   if (ctx.act === true) {
     lines.push('They have switched the panel to Act: in this turn you can operate THIS tab with tab_snapshot, tab_act and tab_screenshot — clicks and typing on this one site, nothing else.');
+    lines.push('This turn has no integration tools, on purpose: it reads a web page. When the page belongs to a service you have an integration for (the address tells: a calendar, mail, a document or spreadsheet, a Miro board, a store, a task board…) and the task is about its data — an event, an email, a row, a board item, an order, a card — call use_integrations instead of clicking: it runs the user\'s request through your integrations in a separate turn (it takes the request from their message and the item from the address; you pass nothing) and returns what was done. Then tell the user, looking at the tab again if that helps. Click for what exists only in the page itself, or when there is no integration for the site.');
     lines.push('Work in as few calls as you can: every tab_act returns the page it leaves, so never snapshot after it. When several controls on the page are needed now — the fields of a form, filters, then its submit button — pass them all as steps in ONE tab_act instead of one call each. Only a control that appears after an earlier step (an autocomplete suggestion, a date in a calendar that opens) needs a new call.');
   }
   // The goal comes from the user, never from the page, and this turn has no
@@ -679,8 +680,23 @@ export default function chatRouter() {
     // turn gets neither.
     const tabCtx = parsePageContext(req.body?.pageContext);
     const actTurn = tabCtx?.act === true;
+    // An Act turn's record also carries what a hand-off to the integrations
+    // may be given (routes/tab.js, lib/tab-handoff.js): the user's own message
+    // as typed — never the page — the tab's address, the chat's dialogue, and a
+    // sink that streams the hand-off's tool calls into this chat.
     tabToken = (actTurn || tabCtx?.url)
-      ? openTabTurn(req.chatActor, { act: actTurn })
+      ? openTabTurn(req.chatActor, {
+          act: actTurn,
+          message,
+          url: typeof tabCtx?.url === 'string' ? tabCtx.url : '',
+          title: typeof tabCtx?.title === 'string' ? tabCtx.title : '',
+          history: () => buildResumeContext(req.chatActor, sid),
+          actor: req.chatActor,
+          actorName: req.chatActorName,
+          actorIsAdmin: req.chatIsAdmin,
+          teammates: req.chatTeammates,
+          onEvent: (event, data) => sendEvent(event, data),
+        })
       : null;
     proc = runClaudeTurn({
       tabToken,

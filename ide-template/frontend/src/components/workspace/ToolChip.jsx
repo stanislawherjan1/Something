@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Check, ChevronRight,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
-  Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen,
+  Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen, Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -60,6 +60,7 @@ const TOOL_DISPLAY = {
   'mcp__workspace-api__tab_screenshot': { label: 'Looking at the tab',  Icon: Eye },
   'mcp__workspace-api__tab_snapshot':   { label: 'Reading the page',    Icon: Eye },
   'mcp__workspace-api__tab_act':        { label: 'Working in the tab',  Icon: MousePointerClick },
+  'mcp__workspace-api__use_integrations': { label: 'Using your integrations', Icon: Plug },
 
   'mcp__seedream__generate':         { label: 'Creating an image',    Icon: ImageIcon },
   'mcp__nano_banana__generate':      { label: 'Creating an image',    Icon: ImageIcon },

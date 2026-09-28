@@ -137,7 +137,11 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // write — so whatever a page talks it into, it cannot carry anything out of
   // the browser or plant instructions for later turns. Only workspace-api-mcp is
   // loaded (strict MCP config); if its entry cannot be read, NO MCP server is.
-  const blocked = Array.isArray(disallowedTools) ? [...disallowedTools] : [];
+  // AskUserQuestion opens an interactive picker: a -p turn has no terminal to
+  // show it, so the call fails and the chat shows an error chip instead of the
+  // question. The product asks in plain words anyway — no pickers in a
+  // conversation — so the tool is never offered here.
+  const blocked = ['AskUserQuestion', ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
   let actMcpFile = null;
   if (actTurn) {
     let servers = {};
@@ -156,9 +160,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
       'mcp__workspace-api__memory_write', 'mcp__workspace-api__fix_sent_message',
     );
   }
-  if (blocked.length) {
-    args.push('--disallowedTools', blocked.join(','));
-  }
+  args.push('--disallowedTools', blocked.join(','));
   if (turnModel()) args.push('--model', turnModel());
   if (actTurn && ACT_EFFORT) args.push('--effort', ACT_EFFORT);
 
@@ -287,6 +289,9 @@ export function runClaudeTurn({ tabToken, actTurn = false, message, sessionId, w
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
   // — Telegram, workspace chat, reminders, groups — ever gets one.
   if (tabToken) childEnv.IDE_TAB_TOKEN = String(tabToken);
+  // An Act turn gets use_integrations (the hand-off to a turn that never sees
+  // the page); that second turn has neither flag, so it cannot hand off again.
+  if (tabToken && actTurn) childEnv.IDE_ACT_TURN = '1';
 
   const proc = spawn(CLAUDE_BIN, args, {
     cwd: PROJECT_DIR,

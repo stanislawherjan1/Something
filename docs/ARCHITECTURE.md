@@ -96,7 +96,7 @@ New to the project? These terms recur throughout the docs.
 | **Bot** | Claude Code CLI + PM2 + tmux | Telegram AI assistant |
 | **Email (mailbox read)** | IMAP client (Node.js, email-mcp) | Pull: bot reads existing Gmail / Zoho / IMAP mailboxes on demand, read-only |
 | **MCP servers** | shopify-mcp, meta-mcp, email-mcp, … + npm packages | Claude tool extensions |
-| **Browser agent** | Chrome MV3 side-panel extension + workspace-api tab relay (`routes/tab.js`) | The assistant looks at / operates the user's own tab — see [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
+| **Browser agent** | Chrome MV3 side-panel extension + workspace-api tab relay (`routes/tab.js`); an Act turn's hand-off to the integrations runs as a second `claude -p` turn that never sees the page (`lib/tab-handoff.js`) | The assistant looks at / operates the user's own tab — see [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 | **Container Runtime** | Docker + Docker Compose | Containerization |
 | **Hosting** | Hetzner VPS | One server per client |
 

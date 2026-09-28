@@ -179,7 +179,29 @@ assistant tool (workspace-api-mcp) → POST /api/internal/tab-command (loopback,
 | No credentials or payments: password, file, one-time-code and payment-card fields (standard `autocomplete` tokens) are invisible and untouchable; password-manager and account-security sites are refused | extension |
 | No code, cookies, clipboard or network: the model only picks control ids from a snapshot the extension made; it never supplies selectors or scripts | extension |
 | 30 actions a minute at most; every command is logged (`[tab]` in workspace-api's log) | extension + workspace-api |
+| **The hand-off turn never sees the page:** `use_integrations` takes no input; the turn it starts gets the user's message and the tab's address from workspace-api (stored when the panel turn began), the chat's dialogue text, every integration except the tools that deliver messages — and no tab token, no Act flag, no resumed session. So a page can at most make the assistant hand off when it need not; what gets done comes from the user | `routes/tab.js` (`/internal/tab-handoff`), `lib/tab-handoff.js` |
 | **The Act turn gets an allow-list of tools:** the tab tools and read-only workspace access. No integrations (no mail, Drive, Shopify…), no server browser, no shell, no web fetch, no file or memory writes — whatever a page talks the assistant into, it cannot send anything out or plant instructions for later | `lib/claude.js` (`actTurn`) |
+
+## Hand-off to the integrations
+
+The Act turn has no integration tools (the table above), so on a page of a service the
+workspace has an integration for — a Google Calendar event, a Miro board, an email — clicking
+would be the only way. Instead it calls **`use_integrations`**, and workspace-api runs a
+second turn that has the integrations and never sees the page:
+
+```
+Act turn (reads the page, tab tools only) → use_integrations {}          (no input, by design)
+  → POST /api/internal/tab-handoff { turnToken }  (loopback; Act still on; one at a time, 2 per message, 120 s)
+  → lib/tab-handoff.js: runClaudeTurn with
+      the user's message as typed + the tab's URL/title as the panel reported them + the chat's dialogue text,
+      every integration minus the delivery tools, no tab token, no Act flag, a fresh session
+  → its tool calls appear in the panel chat as they run → its answer is the tool's result
+```
+
+The model that read the page decides only whether to hand off; the request is the user's own
+words. Consequential steps keep the usual rule: the hand-off turn says what it would do and
+asks, the question comes back through the panel, and the user's answer is in the dialogue the
+next hand-off gets. Switching Act off or the turn ending stops a running hand-off.
 
 Page text is framed as data both in the prompt and in every snapshot, and the assistant is
 told to work only toward what the user asked and to stop and ask when a page asks for
@@ -193,8 +215,9 @@ something else. That is the soft layer; the table above is what holds if it fail
 | `chrome-extension/background.js` | Opens the panel on toolbar click |
 | `chrome-extension/sidepanel.{html,css,js}` | Setup step, the frame, the postMessage bridge, sign-in, the Act executor and its limits |
 | `chrome-extension/vendor/jev-snapshot.js` | Page snapshot (browser-use/jev-ultrafast, MIT) |
-| `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, audit log |
-| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot` |
+| `ide-template/workspace-api/routes/tab.js` | The relay (`sendTabCommand`), Act mode, one-turn tokens, the hand-off route, audit log |
+| `ide-template/workspace-api/lib/tab-handoff.js` | The hand-off turn: what it is given, what it is denied, its bounds |
+| `ide-template/apps/workspace-api-mcp/index.js` | `tab_snapshot`, `tab_act`, `tab_screenshot`, `use_integrations` (Act turns only) |
 | `ide-template/frontend/src/components/workspace/views/BrowserAgentView.jsx` | The Browser agent page: how it works, with the install steps under it |
 | `ide-template/frontend/src/components/workspace/ExtensionChat.jsx` | The embed layout: the workspace's own `ChatPane` (header, history, chat) plus the tab chip and the Act switch |
 | `ide-template/frontend/src/lib/extensionEmbed.js` | Embed detection |
