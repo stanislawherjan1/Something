@@ -8,6 +8,7 @@
  *   extension → page   something:tab          { url, title, capturable }  (tab changed)
  *   extension → page   something:mode         { mode: 'look', reason }    (control switched itself off)
  *   extension → page   something:mode         { mode: 'act' }             (still on from before the panel closed)
+ *   extension → page   something:act-paused   { site }                    (the tab moved to another site by itself)
  *   page → extension   something:need-login                               (no session here)
  *   page → extension   something:selection    → { text }                  (selected text)
  *   page → extension   something:set-mode     { mode } → { site } | { error }
@@ -76,6 +77,7 @@ export default function ExtensionChat() {
   const [actSite, setActSite] = useState('');            // non-empty = Act is on, for this site
   const [notice, setNotice] = useState('');
   const [switching, setSwitching] = useState(false);
+  const [pausedSite, setPausedSite] = useState('');     // Act held: the tab moved to another site by itself
   const actRef = useRef(false);
 
   // Let the extension's own screens (address step, spinner) match the theme.
@@ -93,6 +95,7 @@ export default function ExtensionChat() {
   const actOff = useCallback((why = '') => {
     actRef.current = false;
     setActSite('');
+    setPausedSite('');
     window.parent.postMessage({ type: 'something:set-mode', mode: 'look' }, PARENT_ORIGIN);
     reportMode('look');
     if (why) setNotice(why);
@@ -106,6 +109,7 @@ export default function ExtensionChat() {
     if (!r.site) { setNotice(r.error || 'Could not take control of this tab.'); actOff(); return; }
     actRef.current = true;
     setActSite(r.site);
+    setPausedSite('');
     reportMode('act');
   }, [actOff]);
 
@@ -118,6 +122,8 @@ export default function ExtensionChat() {
         setIncludePage(true);
       } else if (e.data?.type === 'something:mode' && e.data.mode === 'look') {
         actOff(OFF_REASONS[e.data.reason] || '');
+      } else if (e.data?.type === 'something:act-paused') {
+        setPausedSite(String(e.data.site || 'another site'));
       } else if (e.data?.type === 'something:mode' && e.data.mode === 'act') {
         actRef.current = true;
         setActSite('on');
@@ -144,7 +150,9 @@ export default function ExtensionChat() {
       try { cmd = JSON.parse(ev.data); } catch { return; }
       // Looking is always allowed here; acting only while Act is on.
       if (cmd.op === 'act' && !actRef.current) return answer(cmd.id, { ok: false, error: 'Act is off.' });
-      const r = await rpc('something:tab-command', { command: { op: cmd.op, target: cmd.target, text: cmd.text, steps: cmd.steps } }, 18000);
+      // Passed on untouched, signature included: the extension checks it
+      // against a key this page never sees (routes/tab.js panelKeys).
+      const r = await rpc('something:tab-command', { command: { id: cmd.id, op: cmd.op, target: cmd.target, text: cmd.text, steps: cmd.steps, ts: cmd.ts, sig: cmd.sig } }, 18000);
       answer(cmd.id, r.ok ? { ok: true, result: r.result } : { ok: false, error: r.error || 'failed' });
     };
     const connect = () => {
@@ -182,6 +190,14 @@ export default function ExtensionChat() {
   const accessory = useMemo(() => (
     <div className="flex flex-col gap-1.5 px-4 pb-1.5">
       {notice && <div className="text-[11.5px] text-muted-foreground/85">{notice}</div>}
+      {pausedSite && (
+        <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground/85">
+          <span className="min-w-0 truncate">Act paused — the tab moved to {pausedSite} on its own.</span>
+          <button onClick={actOn} disabled={switching} className="shrink-0 rounded px-1.5 py-0.5 font-medium text-foreground/85 hover:bg-accent disabled:opacity-50">
+            Continue here
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-1.5">
         {tab ? (
           <span className={cn(
@@ -215,7 +231,7 @@ export default function ExtensionChat() {
         </div>
       </div>
     </div>
-  ), [tab, includePage, actSite, notice, switching, actOn, actOff]);
+  ), [tab, includePage, actSite, pausedSite, notice, switching, actOn, actOff]);
 
   if (isLoading || !session) {
     return (

@@ -15,6 +15,7 @@ export default [
         fetch: 'readonly', URL: 'readonly', URLSearchParams: 'readonly', performance: 'readonly',
         setTimeout: 'readonly', clearTimeout: 'readonly', console: 'readonly', getSelection: 'readonly',
         innerWidth: 'readonly', innerHeight: 'readonly', location: 'readonly',
+        atob: 'readonly', crypto: 'readonly', TextEncoder: 'readonly',
       },
     },
     rules: { 'no-undef': 'error', 'no-unused-vars': ['warn', { args: 'none' }] },

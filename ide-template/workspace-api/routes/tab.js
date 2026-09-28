@@ -26,7 +26,7 @@
  * (lib/tab-handoff.js), and its answer is the tool's result.
  */
 import { Router } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, createHmac } from 'node:crypto';
 import { getUser, list as teamList, primaryAdminSlug, getTeamMode } from '../lib/team.js';
 import { runClaudeTurn } from '../lib/claude.js';
 import { runHandoff } from '../lib/tab-handoff.js';
@@ -37,6 +37,28 @@ const modes = new Map();    // slug → 'act' (absent = look)
 const pending = new Map();  // id → { slug, resolve, timer }
 const turns = new Map();    // token → turn record (see openTabTurn)   turns started from the panel
 const MAX_HANDOFFS_PER_TURN = 2;
+
+// Every command sent to a panel is signed, and the extension runs only what
+// carries a valid signature. The key goes to the extension itself (GET
+// /api/tab/panel-key, answered only to a request whose Origin is the
+// extension), never to the framed workspace page — so a script in that page,
+// another extension's content script included, cannot make up commands; it
+// can only relay the ones the server issued. One key per user, kept in memory
+// (a restart makes the extension fetch a new one).
+const panelKeys = new Map();   // slug → key (base64url)
+const EXTENSION_ORIGINS = (process.env.EXTENSION_IDS ?? 'dfmejngohcofdhddpgkpgaedmjghpdbh')
+  .split(',').map((s) => s.trim()).filter((s) => /^[a-p]{32}$/.test(s)).map((id) => `chrome-extension://${id}`);
+function panelKey(slug) {
+  if (!panelKeys.has(slug)) panelKeys.set(slug, randomBytes(32).toString('base64url'));
+  return panelKeys.get(slug);
+}
+// What the signature covers — the extension builds the same string.
+export function commandSigningString({ id, op, target, text, steps, ts }) {
+  return JSON.stringify([id, op, target ?? null, text ?? null, steps ?? null, ts]);
+}
+function signCommand(slug, cmd) {
+  return createHmac('sha256', Buffer.from(panelKey(slug), 'base64url')).update(commandSigningString(cmd)).digest('base64url');
+}
 
 // Only a turn the user started FROM the panel may drive their tab — never a
 // Telegram message, a workspace chat, a reminder or a group turn, even while
@@ -121,7 +143,8 @@ function sendTabCommand(slug, turnToken, command) {
   const steps = Array.isArray(command.steps)
     ? command.steps.slice(0, 5).map((st) => ({ id: String(st?.id || ''), ...(typeof st?.text === 'string' ? { text: st.text } : {}) }))
     : undefined;
-  const frame = `event: command\ndata: ${JSON.stringify({ id, op: command.op, target: command.target, text: command.text, steps })}\n\n`;
+  const cmd = { id, op: command.op, target: command.target, text: command.text, steps, ts: Date.now() };
+  const frame = `event: command\ndata: ${JSON.stringify({ ...cmd, sig: signCommand(slug, cmd) })}\n\n`;
   for (const s of streams) { try { s.write(frame); } catch { /* closed */ } }
   // Audit trail: every command, who it was for, what it targeted.
   process.stderr.write(`[tab] ${slug}: ${command.op}${command.target ? ' ' + command.target : ''}${command.text != null ? ` (${String(command.text).length} chars)` : ''}${steps ? ` [${steps.map((st) => st.id).join(', ')}]` : ''}\n`);
@@ -175,6 +198,16 @@ export default function tabRouter() {
         cancelPending(slug, 'The browser panel was closed.');
       }
     });
+  });
+
+  // The extension's signing key (see panelKeys). Only for a request made by the
+  // extension itself: browsers set Origin, and page scripts cannot forge it.
+  router.get('/tab/panel-key', (req, res) => {
+    const slug = viewerSlug(req);
+    if (!slug) return res.status(401).json({ error: 'Unauthorized.' });
+    if (!EXTENSION_ORIGINS.includes(String(req.get('Origin') || ''))) return res.status(403).json({ error: 'Only the extension may fetch this.' });
+    res.set('Cache-Control', 'no-store');
+    return res.json({ key: panelKey(slug) });
   });
 
   // The panel reports the user's switch. Anything but "act" stops everything.

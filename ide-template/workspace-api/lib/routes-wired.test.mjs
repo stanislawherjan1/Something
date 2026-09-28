@@ -60,6 +60,8 @@ ok('undo is mounted', route(memory, 'post', '/memory/revert'));
 ok('use_integrations tool exists', /name: 'use_integrations'/.test(mcp));
 ok('...and something serves it', route(tab, 'post', '/internal/tab-handoff'));
 ok('...and a page turn is flagged so the tool is listed', /IDE_PAGE_TURN = '1'/.test(claude));
+ok('the extension\'s command key is served', route(tab, 'get', '/tab/panel-key'));
+ok('...and every command is signed with it', /sig: signCommand\(slug, cmd\)/.test(tab));
 ok('...and the panel turn hands it the user\'s message and the tab', /openTabTurn\(req\.chatActor, \{[\s\S]*?message,[\s\S]*?url:/.test(chat));
 
 console.log(`\n${pass} passed, ${fail} failed`);

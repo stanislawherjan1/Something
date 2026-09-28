@@ -212,7 +212,7 @@ async function throttle(stamps, max, what) {
   }
   stamps.push(now);
 }
-const act = { on: false, tabId: null, site: '', idleTimer: null, stamps: [], reads: [], lastSnapshot: null };
+const act = { on: false, tabId: null, site: '', paused: '', idleTimer: null, stamps: [], reads: [], lastSnapshot: null };
 // Survives the panel closing (chrome.storage.session: this browser session
 // only, never on disk): Act is on until this time.
 const ACT_KEY = 'actUntil';
@@ -301,7 +301,7 @@ const OFFSITE_JS = `(${offsiteNodeIds.toString()})()`;
 function actOff(reason) {
   const tabId = act.tabId;
   const wasOn = act.on;
-  act.on = false; act.tabId = null; act.site = ''; act.lastSnapshot = null; act.stamps = [];
+  act.on = false; act.tabId = null; act.site = ''; act.paused = ''; act.lastSnapshot = null; act.stamps = [];
   clearTimeout(act.idleTimer);
   chrome.storage.session.remove(ACT_KEY).catch(() => {});
   if (tabId != null) chrome.debugger.detach({ tabId }).catch(() => {});
@@ -317,6 +317,7 @@ async function actOn() {
   if (problem) return { error: problem };
   const attached = await follow(tab);
   if (attached) return { error: attached };
+  act.site = siteOf(tab.url); act.paused = '';   // switching on (or resuming) here is the user's say-so
   act.on = true; act.stamps = [];
   bumpIdle();
   return { site: act.site.replace(/^https?:\/\//, '') };
@@ -326,7 +327,7 @@ async function actOn() {
 // left). Returns an error message, or '' when attached.
 async function follow(tab) {
   if (act.tabId === tab.id) {
-    if (siteOf(tab.url) !== act.site) { act.site = siteOf(tab.url); act.lastSnapshot = null; }
+    if (act.site && siteOf(tab.url) !== act.site) pauseAct(siteOf(tab.url));
     return '';
   }
   release();
@@ -335,7 +336,8 @@ async function follow(tab) {
   } catch (err) {
     if (!/already attached/i.test(err.message)) return `Chrome did not allow control of this tab (${err.message}).`;
   }
-  act.tabId = tab.id; act.site = siteOf(tab.url); act.lastSnapshot = null;
+  // A tab the user switched to is theirs to be on: its site becomes the one.
+  act.tabId = tab.id; act.site = siteOf(tab.url); act.paused = ''; act.lastSnapshot = null;
   // The user's focus is in the side panel, not in the page; without focus
   // emulation menus and pickers close as soon as they open and animation
   // frames stall. jev-ultrafast sets the same for its own tab.
@@ -376,9 +378,21 @@ chrome.tabs.onActivated.addListener(({ tabId }) => { if (act.on && tabId !== act
 // drops it.
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (!act.on || tabId !== act.tabId || !info.url) return;
-  if (siteOf(info.url) !== act.site) act.lastSnapshot = null;
-  act.site = siteOf(info.url);
+  if (siteOf(info.url) !== act.site) pauseAct(siteOf(info.url));
 });
+
+// The tab went to another site by itself — a redirect, a script, a link the
+// page opened — not by the user switching tabs. Act holds (reading still works)
+// until the user resumes it in the panel: one click, and a page can never walk
+// the assistant somewhere the user did not choose.
+function pauseAct(site) {
+  act.lastSnapshot = null;
+  if (act.paused === site) return;
+  act.paused = site;
+  if (frame.contentWindow && origin) {
+    frame.contentWindow.postMessage({ type: 'something:act-paused', site: site.replace(/^https?:\/\//, '') }, origin);
+  }
+}
 chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === act.tabId) { act.tabId = null; act.lastSnapshot = null; } });
 // Cancelling Chrome's debugging bar is the user saying stop.
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
@@ -432,6 +446,9 @@ async function guard({ read = false } = {}) {
   if (problem) { if (tab.id === act.tabId) release(); throw new Error(problem); }
   const attached = await follow(tab);
   if (attached) throw new Error(attached);
+  if (!read && act.paused) {
+    throw new Error(`Act is paused: this tab moved to another site (${act.paused.replace(/^https?:\/\//, '')}) on its own. Tell the user; they can resume Act in the panel to continue there.`);
+  }
   if (read) await throttle(act.reads, MAX_READS_PER_MIN, 'reads');
   else await throttle(act.stamps, MAX_ACTIONS_PER_MIN, 'actions');
   bumpIdle();
@@ -807,6 +824,54 @@ async function runCommand({ op, target, text, steps }) {
   throw new Error(`Unknown command "${op}".`);
 }
 
+// ── Signed commands ──────────────────────────────────────────────────────────
+// A command to look at or act on the tab runs only if the workspace signed it
+// (workspace-api routes/tab.js). The key comes straight from the workspace to
+// this extension page — never through the framed page, where another
+// extension's content script could read it — so nothing running in that page
+// can make up a command; it can only pass on what the server issued.
+let panelKey = null;              // CryptoKey (HMAC-SHA-256, verify only)
+const seenCommands = new Map();   // id → ts, so a signed command runs once
+const COMMAND_MAX_AGE_MS = 5 * 60 * 1000;
+
+const bytesFromB64url = (s) => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((String(s).length + 3) % 4)), (c) => c.charCodeAt(0));
+
+async function fetchPanelKey() {
+  panelKey = null;
+  // The session is the workspace's cookie; send it as a Bearer too, in case
+  // Chrome does not attach it to a request from an extension page.
+  const headers = {};
+  try {
+    const cookies = await chrome.cookies.getAll({ url: `${origin}/` });
+    const session = cookies.find((c) => /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(c.value));
+    if (session) headers.Authorization = `Bearer ${session.value}`;
+  } catch { /* the cookie alone may do */ }
+  const res = await fetch(`${origin}/api/tab/panel-key`, { credentials: 'include', headers, cache: 'no-store' });
+  if (!res.ok) throw new Error(`The workspace did not hand out its command key (${res.status}).`);
+  const { key } = await res.json();
+  panelKey = await crypto.subtle.importKey('raw', bytesFromB64url(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+}
+
+async function signedByWorkspace(cmd) {
+  if (!panelKey) await fetchPanelKey();
+  const data = new TextEncoder().encode(JSON.stringify([cmd.id, cmd.op, cmd.target ?? null, cmd.text ?? null, cmd.steps ?? null, cmd.ts]));
+  return crypto.subtle.verify('HMAC', panelKey, bytesFromB64url(cmd.sig), data);
+}
+
+async function verifyCommand(cmd) {
+  const refuse = (why) => { throw new Error(`Refused: ${why}`); };
+  if (typeof cmd?.id !== 'string' || typeof cmd?.sig !== 'string' || !Number.isFinite(cmd?.ts)) refuse('the command did not come from the workspace.');
+  if (Math.abs(Date.now() - cmd.ts) > COMMAND_MAX_AGE_MS) refuse('the command is too old.');
+  if (seenCommands.has(cmd.id)) refuse('the command already ran.');
+  let good = false;
+  try { good = await signedByWorkspace(cmd); } catch { good = false; }
+  // The workspace may have restarted with a new key: fetch it once and retry.
+  if (!good) { try { await fetchPanelKey(); good = await signedByWorkspace(cmd); } catch { good = false; } }
+  if (!good) refuse('the command was not signed by the workspace.');
+  seenCommands.set(cmd.id, cmd.ts);
+  if (seenCommands.size > 500) for (const [id, ts] of seenCommands) if (Date.now() - ts > COMMAND_MAX_AGE_MS) seenCommands.delete(id);
+}
+
 // ── Messages from the framed chat ────────────────────────────────────────────
 window.addEventListener('message', async (e) => {
   if (!origin || e.origin !== origin || e.source !== frame.contentWindow) return;
@@ -817,7 +882,7 @@ window.addEventListener('message', async (e) => {
     else { actOff('switched off'); reply({ ok: true }); }
   }
   else if (type === 'something:tab-command') {
-    try { reply({ ok: true, result: await runCommand(e.data.command || {}) }); }
+    try { await verifyCommand(e.data.command); reply({ ok: true, result: await runCommand(e.data.command || {}) }); }
     catch (err) { reply({ ok: false, error: err.message }); }
   }
   else if (type === 'something:ready') { revealChat(); pushTab(); restoreAct(); }
