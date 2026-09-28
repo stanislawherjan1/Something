@@ -245,18 +245,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }));
 
-// The page as the assistant reads it, from the runner's raw observation.
-function renderPage(page) {
-  if (!page) return null;
-  const clip = (v) => (typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}…` : v);
-  return {
-    url: page.url, title: page.title, text: page.text,
-    controls: (page.actions || []).map(({ id, kind, role, label, value, checked, selected, expanded, current_value }) =>
-      ({ id, kind, role, label, value: clip(value), checked, selected, expanded, current_value })),
-    more_controls_not_listed: page.omitted_actions || undefined,
-  };
-}
-
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
