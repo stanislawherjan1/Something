@@ -152,7 +152,7 @@ try {
 
   await check('a click lands: the counter goes to 1', async () => {
     const a = find(page, /^Count$/, 'click');
-    const fresh = await evaluate(pageCode.freshExpression(a, SNAPSHOT));
+    const fresh = await evaluate(pageCode.freshExpression(a));
     assert(fresh === pageCode.expectedFresh(a, page), 'freshness guard does not match its own snapshot');
     const t = await target(a);
     assert(t && t.x, `target refused: ${JSON.stringify(t)}`);
@@ -221,10 +221,10 @@ try {
     const field = find(page, /^Search/, 'fill');
     const button = find(page, /^Search$/, 'click');   // the submit button, inside the form
     await evaluate(`document.getElementById('out').textContent = 'something else happened'`);
-    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) === pageCode.expectedFresh(field, page), 'fill went stale over text outside its form');
-    assert((await evaluate(pageCode.freshExpression(button, SNAPSHOT))) === pageCode.expectedFresh(button, page), 'click went stale over text outside its form');
+    assert((await evaluate(pageCode.freshExpression(field))) === pageCode.expectedFresh(field, page), 'fill went stale over text outside its form');
+    assert((await evaluate(pageCode.freshExpression(button))) === pageCode.expectedFresh(button, page), 'click went stale over text outside its form');
     await evaluate(`document.getElementById('q').value = 'typed by the user meanwhile'`);
-    assert((await evaluate(pageCode.freshExpression(field, SNAPSHOT))) !== pageCode.expectedFresh(field, page), 'fill still fresh after a form value changed');
+    assert((await evaluate(pageCode.freshExpression(field))) !== pageCode.expectedFresh(field, page), 'fill still fresh after a form value changed');
   });
 
   await check('a native select takes an allowed option, refuses a disabled one', async () => {
@@ -257,7 +257,7 @@ try {
     page = await observe();
     const a = find(page, /^Count$/, 'click');
     await evaluate(`document.querySelector('h1').textContent = 'Flights (updated)'; document.getElementById('counter').textContent = 'Count again'`);
-    const fresh = await evaluate(pageCode.freshExpression(a, SNAPSHOT));
+    const fresh = await evaluate(pageCode.freshExpression(a));
     assert(fresh !== pageCode.expectedFresh(a, page), 'guard still matches after the control changed');
   });
 

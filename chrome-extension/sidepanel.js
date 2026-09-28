@@ -541,37 +541,26 @@ function afterInputExpression(action) {
 }
 
 // Is the decision still about the page that was read? An action on a control
-// (click, select, fill) compares the document, URL, viewport, form values and
-// that control's own guard — its identity, state and surrounding form or row —
-// so unrelated content elsewhere may change (a live price, a carousel). A
-// scroll or wait compares the whole marker.
-function freshExpression(action, snapshot) {
-  if (['click', 'select', 'fill'].includes(action.kind)) {
-    return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))]) : null; })()`;
-  }
-  return `(() => { const s = ${snapshot}; return s ? JSON.stringify(s.marker) : null; })()`;
+// (click, select, fill) compares the document, URL, viewport, every form value
+// and that control's own guard — its identity, state and surrounding form or
+// row — so content elsewhere may change (a live price, a carousel).
+function freshExpression(action) {
+  return `(() => { const c = window.__jevFast; return c ? JSON.stringify([c.pageKey(), c.guard(c.nodes.get(${Number(action.node)}))]) : null; })()`;
 }
 function expectedFresh(action, snap) {
-  return JSON.stringify(['click', 'select', 'fill'].includes(action.kind) ? [snap.page_key, snap.guards[action.node]] : snap.marker);
+  return JSON.stringify([snap.page_key, snap.guards[action.node]]);
 }
 // Which part of a stale check changed, for the log: the refusal says why.
 function staleWhy(action, fresh, snap) {
   let now; try { now = JSON.parse(fresh); } catch { return 'unreadable'; }
-  const was = JSON.parse(expectedFresh(action, snap));
   if (!now) return 'no snapshot cache';
-  const names = ['click', 'select', 'fill'].includes(action.kind) ? ['page', 'control'] : ['load', 'url', 'scrollX', 'scrollY', 'width', 'height', 'title', 'text', 'controls', 'fields'];
-  const sub = ['load', 'url', 'scrollX', 'scrollY', 'width', 'height', 'fields'];
+  const was = JSON.parse(expectedFresh(action, snap));
+  const page = ['load', 'url', 'scrollX', 'scrollY', 'width', 'height', 'fields'];
+  const control = ['id', 'role', 'name', 'value', 'checked', 'index', 'readonly', 'disabled', 'aria-disabled', 'expanded', 'aria-checked', 'aria-selected', 'href', 'context'];
   const out = [];
-  now.forEach((v, i) => {
-    if (JSON.stringify(v) === JSON.stringify(was[i])) return;
-    if (['click', 'select', 'fill'].includes(action.kind) && i === 0) {
-      v.forEach((w, j) => { if (JSON.stringify(w) !== JSON.stringify(was[0][j])) out.push(sub[j]); });
-    } else if (['click', 'select', 'fill'].includes(action.kind) && i === 1) {
-      const parts = ['id', 'role', 'name', 'value', 'checked', 'index', 'readonly', 'disabled', 'aria-disabled', 'expanded', 'aria-checked', 'aria-selected', 'href', 'context'];
-      (v || []).forEach((w, j) => { if (JSON.stringify(w) !== JSON.stringify((was[1] || [])[j])) out.push(`control.${parts[j]}`); });
-      if (!v) out.push('control gone');
-    } else out.push(names[i]);
-  });
+  page.forEach((n, j) => { if (JSON.stringify(now[0][j]) !== JSON.stringify(was[0][j])) out.push(n); });
+  if (!now[1]) out.push('control gone');
+  else control.forEach((n, j) => { if (JSON.stringify(now[1][j]) !== JSON.stringify((was[1] || [])[j])) out.push(`control.${n}`); });
   return out.join(',') || 'unknown';
 }
 
@@ -710,9 +699,12 @@ async function actOnce(targetId, text, soft = false) {
   const t0 = performance.now();
 
   // Is the decision still about the page that was read? (jev-ultrafast's
-  // Browser.fresh, checked immediately before input.)
-  if (action.kind !== 'back') {
-    const fresh = await evaluate(freshExpression(action, await snapshotScript()));
+  // Browser.fresh, checked immediately before input.) Only for an action on a
+  // control: a scroll or a wait points at nothing, and on a page that keeps
+  // loading (results, live prices) the whole-page check never matches — a
+  // run then only ever refuses its own scrolls.
+  if (['click', 'select', 'fill'].includes(action.kind)) {
+    const fresh = await evaluate(freshExpression(action));
     if (fresh !== expectedFresh(action, snap)) {
       return refuse(tab, `The page changed since it was read (${staleWhy(action, fresh, snap)}), so that control may not be the one you picked. Take a new snapshot.`, soft);
     }
