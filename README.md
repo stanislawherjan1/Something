@@ -6,6 +6,8 @@
 
 <p align="center">
   <sub>
+    <a href="https://something.md">Website</a>
+    &nbsp;·&nbsp;
     <a href="#get-started">Get started</a>
     &nbsp;·&nbsp;
     <a href="#team">Team</a>
@@ -25,8 +27,8 @@
 </p>
 
 <p align="center">
-  A coworker that knows your context: your tools, your customers, your goals.<br/>
-  You reach it on Telegram or a private web workspace, and it acts on your behalf, not just answers.
+  Something lets you build a self-hosted AI coworker who knows your tools, your customers and your goals.<br/>
+  You reach them in a private web workspace, in Chrome's side panel or on Telegram, and they do the work.
 </p>
 
 <br/>
@@ -39,7 +41,7 @@ Everything you'd reach for to automate your work (markdown for context, skills f
 Your coworkers:
 
 - **Have a name and a personality.** Set once in the first-login wizard.
-- **Live on Telegram and the web.** Pick one or both; same memory either way.
+- **Live on the web, in Chrome and on Telegram.** Pick any; same memory everywhere.
 - **Remember between sessions.** Markdown notes, a knowledge graph, recent threads.
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups.
@@ -53,7 +55,7 @@ Your coworkers:
 
 - **Built for the whole team, not just engineers.** The power of a terminal AI agent, in a calm UI that non-technical people actually live in.
 - **It reasons, it doesn't just route.** Not if-this-then-that automation. It reads the situation, pulls from your tools, decides what to do, then asks before anything goes out.
-- **Your server, your data, full source.** Self-hosted on a box you control, one per business. You hand it your inbox, store, and ads, so everything it does with that access is public and auditable.
+- **Your server, full source.** Self-hosted on a box you control, one per business: your files, memory and credentials live there. Conversations are answered by Claude through your own plan, the same as when you use Claude directly. You hand it your inbox, store, and ads, so everything it does with that access is public and auditable.
 
 <br/>
 
@@ -92,7 +94,7 @@ Your coworker is one mind you reach from a few places: the **web workspace chat*
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
 - **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
 - **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
-- **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into — never barging in on its own.
+- **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into, never barging in on its own.
 
 It's all connected. What you said on Telegram is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 
@@ -152,12 +154,12 @@ It's a shared surface. You and your coworker edit the **same** files: write a la
 
 <br/>
 
-Tell your coworker what to keep an eye on, and it takes it from there — the standing things it handles for you without being asked: scan the inbox each hour, chase threads that have gone quiet, watch approaching deadlines, prep meeting materials the day before. Every morning it plans the day from these routines, together with your calendar, tasks, and open threads.
+Tell your coworker what to keep an eye on, and it takes it from there. These are the standing things it handles for you without being asked: scan the inbox each hour, chase threads that have gone quiet, watch approaching deadlines, prep meeting materials the day before. Every morning it plans the day from these routines, together with your calendar, tasks, and open threads.
 
 > **You:** From now on, each morning check Shopify for orders stuck unfulfilled over 48h and flag them.<br/>
 > **Coworker:** Added to my routines. I'll check every morning and flag anything stuck.
 
-Under the hood, routines run on **reminders** — a background scheduler that survives container restarts and fires on time (once, daily, weekly, or continuous), reaching you on Telegram, in the web app, or both. You rarely touch it directly: the coworker sets and prunes its own reminders as the routines demand.
+Under the hood, routines run on **reminders**: a background scheduler that survives container restarts and fires on time (once, daily, weekly, or continuous), reaching you on Telegram, in the web app, or both. You rarely touch it directly: the coworker sets and prunes its own reminders as the routines demand.
 
 <br/>
 
@@ -219,7 +221,7 @@ It is fenced in code, not in the prompt: it stays on the site you're on, never t
 
 ## Self-hosted, end-to-end
 
-Each client gets their own server. One per business, isolated by design: your data, your coworker, your tools, nobody else's. They live there 24/7 listening for Telegram messages; the web workspace runs at your own subdomain, gated by Google login and a team whitelist.
+Each business gets its own server, isolated by design: your coworker, your files, your tools, nobody else's. Conversations are answered by Claude through your own plan, and nothing passes through our servers. They live there 24/7 listening for Telegram messages; the web workspace runs at your own subdomain, gated by Google login and a team whitelist.
 
 Every line of code is public. You give your coworker access to your inbox, your store, your ads, so you should be able to see exactly what they do with that access. Architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), threat model in [docs/SECURITY.md](docs/SECURITY.md).
 
@@ -227,15 +229,9 @@ Every line of code is public. You give your coworker access to your inbox, your 
 
 ## Deploy your own
 
-Requires a Hetzner VPS (from ~€4.50/mo), a domain, and a paid Claude plan. Nothing runs locally; `deploy.sh` SSHs into the VPS and builds there.
+Requires a Linux server (a Hetzner VPS from ~€4.50/mo works well), a domain, and a paid Claude plan. Nothing runs locally; `deploy.sh` SSHs into the server and builds there.
 
-**The easy way**: the interactive installer (see [Get started](#get-started)):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/install.sh | bash
-```
-
-**The manual way**: once a client dir exists, deploy is a one-liner:
+The easiest way is the installer in [Get started](#get-started). Once a client dir exists, redeploying is a one-liner:
 
 ```bash
 cd clients/my-client && ./deploy.sh
@@ -255,9 +251,16 @@ Beginner walkthrough in [docs/QUICK_START.md](docs/QUICK_START.md). End-to-end m
 - [INTEGRATIONS.md](docs/INTEGRATIONS.md), the integration catalog, self-service activation, encrypted credentials
 - [SKILLS.md](docs/SKILLS.md), reusable Claude playbooks + dashboard editor
 - [MEMORY.md](docs/MEMORY.md), Karpathy-style LLM-wiki: cards, topics, rolling snapshots, reflect-bots
+- [ROUTINES.md](docs/ROUTINES.md), routines, the morning planner, and reminders and how they fire
 - [BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md), the Chrome side panel: Look, Act, the hand-off to integrations, every limit and where it is enforced
 - [TEAM_MODE.md](docs/TEAM_MODE.md), collaborative workspaces: roster & roles, Shared vs Personal files/memory, per-recipient reminders, task assignment, cross-surface relay
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md), system design and data flows (with a glossary up top)
 - [SECURITY.md](docs/SECURITY.md), threat model, auth layers, vulnerability reporting
 - [DEPLOY.md](docs/DEPLOY.md), production deployment & day-2 operations reference
 - [CONTRIBUTING.md](CONTRIBUTING.md), conventions, PR vs direct push
+
+<br/>
+
+## License
+
+Open source under [AGPL-3.0](LICENSE). Made by stan corp.
