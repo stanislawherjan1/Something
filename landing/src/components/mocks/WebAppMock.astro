@@ -1,0 +1,74 @@
+---
+// The web workspace at real size: Sidebar, editor, chat column.
+import { svg } from '../../lib/icons';
+import '../../styles/mocks.css';
+---
+<div class="mk">
+<div class="app">
+  <aside class="sb">
+    <div class="sb-head"><span class="sb-mark">N</span><span class="sb-name">Northwind Goods</span></div>
+    <div class="sb-line"></div>
+    <div class="sb-scroll">
+      <div class="sb-short">
+        <div class="row"><span class="ri" set:html={svg('search')} /><span class="rl">Search</span><kbd>⌘K</kbd></div>
+        <div class="row"><span class="ri dot" set:html={svg('inbox')} /><span class="rl">Notifications</span></div>
+        <div class="row"><span class="ri" set:html={svg('users')} /><span class="rl">Team</span></div>
+        <div class="row"><span class="ri" set:html={svg('kanban')} /><span class="rl">Tasks</span></div>
+      </div>
+      <div class="sec"><span set:html={svg('chev', 'open')} />Shared files</div>
+      <div class="tree">
+        <div class="tr" style="padding-left:10px"><span set:html={svg('chev', 'tc open')} /><span set:html={svg('folder', 'ti')} />Products</div>
+        <div class="tr sel" style="padding-left:22px"><span class="tsp"></span><span set:html={svg('file', 'ti')} />launch-plan.md</div>
+        <div class="tr" style="padding-left:22px"><span class="tsp"></span><span set:html={svg('file', 'ti')} />pricing.md</div>
+        <div class="tr" style="padding-left:10px"><span set:html={svg('chev', 'tc')} /><span set:html={svg('folderC', 'ti')} />Marketing</div>
+        <div class="tr" style="padding-left:10px"><span set:html={svg('chev', 'tc')} /><span set:html={svg('folderC', 'ti')} />Suppliers</div>
+        <div class="tr" style="padding-left:10px"><span set:html={svg('chev', 'tc')} /><span set:html={svg('folderC', 'ti')} />Reports</div>
+      </div>
+      <div class="sec"><span set:html={svg('chev', 'open')} />Your files</div>
+      <div class="tree">
+        <div class="tr" style="padding-left:22px"><span class="tsp"></span><span set:html={svg('file', 'ti')} />Notes.md</div>
+      </div>
+    </div>
+    <div class="sb-line"></div>
+    <div class="sb-nav">
+      <div class="row"><span class="ri" set:html={svg('hex')} /><span class="rl">AI Settings</span></div>
+      <div class="row"><span class="ri" set:html={svg('repeat')} /><span class="rl">Routines</span></div>
+      <div class="row"><span class="ri" set:html={svg('app')} /><span class="rl">Browser agent</span><span class="beta">Beta</span></div>
+    </div>
+    <div class="sb-user"><img src="/sam.png" alt="" /><span><b>Sam</b><i>sam@example.com</i></span><span set:html={svg('up', 'uc')} /></div>
+  </aside>
+
+  <main class="ed">
+    <div class="ed-head">
+      <span set:html={svg('file', 'eh-ico')} />
+      <span class="crumb"><span class="m">Products</span><span class="m">/</span><b>launch-plan</b><span class="m">.md</span></span>
+      <span class="ai-badge" set:html={svg('hex') + 'Updated by AI'} />
+      <span class="saved">Saved</span>
+    </div>
+    <div class="doc">
+      <h1>Product Launch Plan: Stoneware Mug Set</h1>
+      <p><b>Owner:</b> Sam · <b>Marketing:</b> Alex · <b>Target launch:</b> Jul 7 · <b>Status:</b> On track</p>
+      <h2>Before launch</h2>
+      <div class="ck done"><span class="box" set:html={svg('check')} /><span>Final glaze and PO confirmed with the supplier</span></div>
+      <div class="ck done"><span class="box" set:html={svg('check')} /><span>Product photography delivered</span></div>
+      <div class="ck"><span class="box"></span><span>Store page live (hidden), copy approved</span></div>
+      <div class="ck"><span class="box"></span><span>Email and ad creative ready</span></div>
+      <h2>Goals</h2>
+      <ul><li>300 units sold in the first 14 days</li><li>4.0× ROAS on the launch campaign</li></ul>
+    </div>
+  </main>
+
+  <aside class="chat">
+    <div class="ch-head">
+      <span class="av"><span class="ring"></span><span class="bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span></span><b>Aria</b>
+      <span class="ch-icons" set:html={svg('plus') + svg('hist')} />
+    </div>
+    <div class="ch-body">
+      <div class="u">Tick off what’s done in the launch plan</div>
+      <div class="sum" set:html={svg('chev') + '<span>Used 2 tools</span>'} />
+      <div class="b">Done. Glaze and photos are ticked off. The store page is still waiting on Alex’s copy, so I left it open and pinged Alex.</div>
+    </div>
+    <div class="comp"><span class="ph">Ask anything</span><span class="crow"><span class="att" set:html={svg('clip') + 'Attach'} /><span class="snd" set:html={svg('arrowUp')} /></span></div>
+  </aside>
+</div>
+</div>

@@ -1,0 +1,245 @@
+---
+import Base from '../layouts/Base.astro';
+import DemoChat from '../components/DemoChat.astro';
+import Routines from '../components/Routines.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import Surfaces from '../components/Surfaces.astro';
+import Team from '../components/Team.astro';
+import Hero from '../components/Hero.astro';
+import Memory from '../components/Memory.astro';
+
+
+const PROMPT = 'Install Something for me from github.com/stanislawherjan1/Something and walk me through each step.';
+const needs: [string, string][] = [
+  ['A Linux server from €4.50/mo', '<svg viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>'],
+  ['A domain', '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>'],
+  ['A Google account', '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>'],
+  ['Claude Pro or Max', '<img src="/integrations/claude.svg" alt="" />'],
+];
+const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/install.sh | bash';
+
+
+
+
+
+const faq = [
+  ['What is Something?', 'An AI coworker you run on your own server. They have a name, a memory and access to your tools, and you talk to them in a web app, in your browser or on Telegram.'],
+  ['How is it different from ChatGPT or Claude?', 'They keep working between chats. They remember your business, check on their responsibilities every day and act in your tools. And the agent, its memory and your files live on your server.'],
+  ['Do I need to be technical?', 'No. Someone sets it up once, ideally with Claude Code, Codex or Cursor doing the work. After that everyone just chats.'],
+  ['What does it cost?', 'The software is free and open source under AGPL-3.0. You pay for your server, from about €4.50 a month, and the Claude Pro or Max plan you already have.'],
+  ['Which tools does it work with?', 'Around fifty, including Google Workspace, Shopify, Notion, Stripe, Meta and Google Ads, Linear and GitHub. Most connect with one sign-in, no keys to paste.'],
+  ['Will it do things without asking?', 'They draft, check and prepare on their own, then ask before anything goes out to a customer, a supplier or your ad accounts.'],
+  ['Where does my data go?', 'Your files, memory and credentials stay on your server, with credentials encrypted. To answer, conversations go to Anthropic through your own Claude plan, the same as when you use Claude directly. Connected tools see what they always see. Nothing passes through our servers, and the code is public, so you can check.'],
+];
+---
+<Base title="Something · Build your own employee">
+  <Nav />
+
+  <Hero />
+
+  <div class="wrap">
+    <div class="stage fade-up" data-halftone data-abstract="wave" data-seed="sign-in" data-soft data-amp="0.22">
+      <DemoChat />
+    </div>
+  </div>
+
+  <Memory />
+
+  <Routines />
+
+  <Surfaces />
+
+  <hr class="sep" />
+
+  <Team />
+
+  <section id="start" class="band-hero">
+    <div class="wrap">
+      <div class="start-head fade-up">
+        <h2 class="h2">Up and running in about an hour.</h2>
+        <p class="lead">Pick the way you like to work. Need more details? <a class="inline-link" href="https://github.com/stanislawherjan1/Something/tree/main/docs" target="_blank" rel="noopener">Read the docs</a>.</p>
+      </div>
+
+      <div class="paths">
+        <div class="path rec fade-up">
+          <div class="path-top">
+            <span class="path-tag">Recommended</span>
+            <span class="tools"><img src="/integrations/claude.svg" alt="Claude Code" title="Claude Code" /><img src="/integrations/openai.svg" alt="Codex" title="Codex" /><span class="cursor-mark" title="Cursor">⌘</span></span>
+          </div>
+          <h3>With your AI coding tool</h3>
+          <p>Paste this into Claude Code, Codex or Cursor.</p>
+          <button class="copyline" data-copy={PROMPT} aria-label="Copy the prompt">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+            <span class="cl-text">{PROMPT}</span>
+            <span class="cl-btn">Copy</span>
+          </button>
+        </div>
+
+        <div class="path fade-up">
+          <div class="path-top"><span class="path-tag quiet">macOS or Linux</span></div>
+          <h3>In your terminal</h3>
+          <p>Run the installer yourself.</p>
+          <button class="copyline mono" data-copy={INSTALL} aria-label="Copy the install command">
+            <span class="cl-pr">$</span>
+            <span class="cl-text">{INSTALL}</span>
+            <span class="cl-btn">Copy</span>
+          </button>
+          <a class="readfirst" href="https://github.com/stanislawherjan1/Something/blob/main/install.sh" target="_blank" rel="noopener">Read install.sh first</a>
+        </div>
+      </div>
+
+      <div class="needs fade-up">
+        <span class="needs-label">You’ll need</span>
+        {needs.map(([t, icon]) => <span class="need"><span class="need-ico" set:html={icon} />{t}</span>)}
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap faq-wrap">
+      <div class="faq-head fade-up">
+        <h2>Good to know.</h2>
+        <p>Something else on your mind? <a class="inline-link" href="https://github.com/stanislawherjan1/Something/issues" target="_blank" rel="noopener">Ask on GitHub</a>.</p>
+      </div>
+      <div class="faq fade-up">
+        {faq.map(([q, a]) => (
+          <details>
+            <summary>{q}<span class="plus" aria-hidden="true"></span></summary>
+            <div class="answer"><p>{a}</p></div>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <Footer />
+</Base>
+
+<script>
+  import { mountHalftones } from '../scripts/halftone.js';
+  mountHalftones();
+
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -6% 0px' });
+  document.querySelectorAll('.fade-up').forEach((n) => io.observe(n));
+
+
+  document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(b.getAttribute('data-copy') || '');
+      const label = b.querySelector('.cl-btn') || b;
+      label.textContent = 'Copied';
+      setTimeout(() => (label.textContent = 'Copy'), 1600);
+    } catch {}
+  }));
+</script>
+
+<style>
+
+  .stage { border-radius: 8px; border: 1px solid var(--hair); padding: clamp(12px, 3vw, 32px); }
+
+
+  section { padding-top: 184px; }
+  .h2 { margin: 0 0 40px; text-align: center; font-size: clamp(26px, 3.4vw, 36px); }
+
+  .sep { margin: 168px 0 0; border: 0; border-top: 1px solid color-mix(in oklab, var(--foreground) 16%, transparent); }
+
+  /* Like the hero: the page colour, the banners' grid fading out from the middle. */
+  .band-hero {
+    position: relative; margin-top: 184px; padding: 120px 0 128px;
+    background: color-mix(in oklab, var(--foreground) 2.5%, var(--background));
+    border-top: 1px solid color-mix(in oklab, var(--foreground) 16%, transparent);
+    border-bottom: 1px solid var(--hair);
+  }
+  .band-hero::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 39.75h40M39.75 0v40' stroke='rgb(40,37,32)' stroke-opacity='.06' stroke-width='.5'/%3E%3Cpath d='M36.5 39.75h7M39.75 36.5v7M0 39.75h3.5M39.75 0v3.5' stroke='rgb(40,37,32)' stroke-opacity='.26' stroke-width='.5'/%3E%3C/svg%3E");
+    background-position: calc(50% + 20px) 0;
+    -webkit-mask-image: radial-gradient(ellipse 52% 60% at 50% 50%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(ellipse 52% 60% at 50% 50%, #000 30%, transparent 100%);
+  }
+  .band-hero > .wrap { position: relative; }
+  .start-head { text-align: center; margin-bottom: 40px; }
+  .start-head .h2 { margin-bottom: 0; }
+  .inline-link { color: var(--fg-90); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--foreground) 30%, transparent); text-underline-offset: 3px; }
+  .inline-link:hover { text-decoration-color: currentColor; }
+  .start-head .lead { max-width: 520px; margin: 12px auto 0; }
+  .paths { display: flex; flex-direction: column; gap: 12px; max-width: 680px; margin: 0 auto; }
+  .path { display: flex; flex-direction: column; padding: 22px; border-radius: 8px; border: 1px solid var(--border); background: var(--background); box-shadow: 0 18px 44px -28px rgba(0,0,0,.14); }
+  .path.rec { border-color: color-mix(in oklab, var(--foreground) 22%, transparent); }
+  .path-top { display: flex; align-items: center; gap: 10px; min-height: 22px; }
+  .path-tag { padding: 3px 7px; border-radius: 5px; background: var(--foreground); color: var(--background); font-size: 11px; font-weight: 600; line-height: 1.2; }
+  .path-tag.quiet { background: transparent; color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 14%, transparent); }
+  .tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .tools img { width: 18px; height: 18px; object-fit: contain; }
+  .cursor-mark { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--foreground); color: var(--background); font-size: 11px; line-height: 1; }
+  .path h3 { margin-top: 16px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
+  .path p { margin-top: 6px; font-size: 13.5px; line-height: 1.6; color: var(--mf-80); }
+  /* One-line copy pill: a short preview, fading out; the whole pill copies. */
+  .copyline {
+    margin-top: 18px; display: flex; align-items: center; gap: 10px; width: 100%; height: 42px; padding: 0 6px 0 12px;
+    border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklab, var(--foreground) 2.5%, var(--background)); cursor: pointer;
+    font: 13px var(--font); color: var(--fg-85); text-align: left; transition: border-color .15s;
+  }
+  .copyline:hover { border-color: color-mix(in oklab, var(--foreground) 28%, transparent); }
+  .copyline.mono { font-family: var(--mono); font-size: 12px; }
+  .copyline svg { width: 15px; height: 15px; flex-shrink: 0; fill: none; stroke: var(--muted-foreground); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .cl-pr { color: var(--muted-foreground); }
+  .cl-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent); }
+  .cl-btn { flex-shrink: 0; height: 30px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 5px; background: var(--foreground); color: var(--background); font: 500 12.5px var(--font); }
+  .readfirst { margin-top: 10px; font-size: 12.5px; color: var(--muted-foreground); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent); text-underline-offset: 3px; align-self: flex-start; }
+  .readfirst:hover { color: var(--foreground); }
+  .needs { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 26px; max-width: 1040px; margin: 26px auto 0; }
+  .needs-label { font-size: 12.5px; font-weight: 600; color: var(--fg-85); }
+  .need { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--mf-80); }
+  .need-ico { display: flex; }
+  .need-ico :global(svg) { width: 14px; height: 14px; fill: none; stroke: var(--muted-foreground); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .need-ico :global(img) { width: 14px; height: 14px; filter: grayscale(1); opacity: .75; }
+  .term { position: relative; border-radius: 6px; border: 1px solid var(--border); background: var(--card); }
+  .term pre { padding: 16px 84px 16px 16px; white-space: pre-wrap; word-break: break-all; font: 12.5px/1.6 var(--mono); color: var(--fg-85); }
+  .term .pr { color: var(--muted-foreground); margin-right: 6px; }
+  .copy {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    height: 28px; padding: 0 10px; border-radius: 5px; border: 1px solid var(--hair-strong);
+    background: var(--card); color: var(--fg-85); font: 500 12px var(--font); cursor: pointer;
+  }
+  .copy:hover { border-color: color-mix(in oklab, var(--foreground) 30%, transparent); }
+
+  /* FAQ: roomy rows, a plus that turns into a minus, answers that slide open. */
+  .faq-wrap { display: grid; grid-template-columns: 4fr 8fr; gap: 56px; align-items: start; }
+  @media (max-width: 860px) { .faq-wrap { grid-template-columns: 1fr; gap: 24px; } }
+  .faq-head { position: sticky; top: 96px; }
+  .faq-head h2 { font-size: clamp(26px, 3.4vw, 36px); line-height: 1.12; font-weight: 600; letter-spacing: -0.03em; color: var(--fg-90); }
+  .faq-head p { margin-top: 12px; font-size: 14.5px; line-height: 1.6; color: var(--mf-80); }
+  .faq { border-top: 1px solid var(--hair); }
+  details { border-bottom: 1px solid var(--hair); }
+  summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    padding: 20px 4px; font-size: 16px; font-weight: 500; letter-spacing: -0.005em; color: var(--fg-90); transition: color .15s;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { color: var(--foreground); }
+  .plus { position: relative; width: 12px; height: 12px; flex-shrink: 0; }
+  .plus::before, .plus::after { content: ''; position: absolute; left: 0; top: 5.5px; width: 12px; height: 1.5px; border-radius: 1px; background: var(--muted-foreground); transition: transform .25s ease, opacity .25s ease; }
+  .plus::after { transform: rotate(90deg); }
+  details[open] .plus::after { transform: rotate(90deg) scaleX(0); opacity: 0; }
+  .answer p { padding: 0 48px 22px 4px; font-size: 14.5px; line-height: 1.7; color: var(--muted-foreground); }
+  details[open] .answer { animation: answer .3s ease both; }
+  @keyframes answer { from { opacity: 0; transform: translateY(-4px); } }
+
+
+  /* Phones: same page, tighter rhythm. Desktop rules above stay untouched. */
+  @media (max-width: 620px) {
+    section { padding-top: 88px; }
+    .needs { flex-direction: column; align-items: flex-start; gap: 10px; max-width: 680px; }
+    .stage { padding: 10px; }
+    .band-hero { margin-top: 88px; padding: 64px 0 72px; }
+    .start-head, .start-head .h2 { text-align: left; }
+    .start-head { margin-bottom: 28px; }
+    .start-head .lead { margin-left: 0; }
+    .sep { margin-top: 72px; }
+    .faq-head { position: static; }
+    summary { font-size: 15px; padding: 16px 2px; }
+    .answer p { padding-right: 8px; }
+  }
+</style>

@@ -1,0 +1,184 @@
+---
+// Slides for the README: one per image the README already shows (same file
+// names), built from the site's components. Static, few words: the README
+// carries the text. Dev only: the build deletes this page.
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import Routines from '../components/Routines.astro';
+import Team from '../components/Team.astro';
+import '../styles/mocks.css';
+import ChromeMock from '../components/mocks/ChromeMock.astro';
+
+// Memory: what the coworker picked up, where from. [fact, source logo or glyph, source, pill, x, y]
+const memories: [string, string, string, string, number, number][] = [
+  ['Mara answers fastest on Telegram', 'telegram', 'Telegram', 'preference', -330, -150],
+  ['Never discount the mug set below €39', '@chat', 'Web chat', 'reviewed', 330, -165],
+  ['The café chain reorders every six weeks', 'shopify', 'Shopify', '', -370, 70],
+  ['Investor calls are on Thursdays', 'gcalendar', 'Calendar', '', 365, 60],
+  ['Free shipping stays at €50 and up', '@group', 'Team group', 'Shared', 0, 215],
+];
+const CHAT = '<svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
+const GROUP = '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+
+// Integrations: every mark we ship, as tiles.
+const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4','linear','github','airtable','miro','monday','todoist','calendly','calcom','paypal','mailchimp','cloudflare','atlassian','sentry','netlify','neon','supabase','webflow','canva','zapier','amplitude','wix','firecrawl','gdrive','gsheets','gdocs','gcalendar','email','trello','substack','x','openai','gemini','grok','clickup','deepl','tally','telegram'];
+---
+<Base title="README art · Something">
+  <div class="deck">
+    <p class="note">README art: one slide per image in the README, same file names. Not part of the site.</p>
+
+    <span class="label">assets/readme/hero.png</span>
+    <div class="slide s-hero"><Hero /></div>
+
+    <span class="label">assets/readme/team.png</span>
+    <div class="slide s-team"><Team /></div>
+
+    <span class="label">assets/readme/editor.png</span>
+    <div class="slide s-mock">
+      <div class="mk">
+        <div class="ed-card">
+          <main class="ed">
+            <div class="doc">
+              <h1>Launch plan: Stoneware Mug Set</h1>
+              <p><b>Owner:</b> Sam · <b>Target launch:</b> Jul 7 · <b>Status:</b> On track</p>
+              <h2>Before launch</h2>
+              <div class="ck done"><span class="box" set:html={'<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>'} /><span>Final glaze and PO confirmed with the supplier</span></div>
+              <div class="ck done"><span class="box" set:html={'<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>'} /><span>Product photography delivered</span></div>
+              <div class="ck"><span class="box"></span><span>Store page live, copy approved</span></div>
+              <h2>Timeline</h2>
+              <table>
+                <tr><th>Date</th><th>Milestone</th><th>Owner</th></tr>
+                <tr><td>Jun 23</td><td>Photography delivered</td><td>Alex</td></tr>
+                <tr><td>Jul 1</td><td>Stock received and checked</td><td>Jan</td></tr>
+                <tr><td>Jul 7</td><td><b>Launch</b>, newsletter and paid push</td><td>All</td></tr>
+              </table>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <span class="label">assets/readme/routines.png</span>
+    <div class="slide s-band"><Routines /></div>
+
+    <span class="label">assets/readme/memory.png</span>
+    <div class="slide">
+      <div class="mind">
+        <div class="mind-bg" data-halftone data-abstract="network" data-seed="memory"></div>
+        <svg class="mind-links" viewBox="0 0 1120 560" aria-hidden="true">
+          {memories.map(([, , , , x, y]) => <line x1="560" y1="280" x2={560 + x} y2={280 + y} />)}
+        </svg>
+        <div class="mind-core">
+          <span class="core-face" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+          <b>Aria</b><span>24 facts</span>
+        </div>
+        {memories.map(([fact, src, label, pill, x, y]) => (
+          <div class="fact" style={`left:${560 + x}px; top:${280 + y}px`}>
+            <p>{fact}</p>
+            <span class="fact-meta">
+              {src.startsWith('@') ? <span class="src-ico" set:html={src === '@chat' ? CHAT : GROUP} /> : <img src={`/integrations/${src}.svg`} alt="" />}
+              {label}
+              {pill && <span class={`pill ${pill === 'preference' ? 'violet' : pill === 'reviewed' ? 'emerald' : ''}`}>{pill}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <span class="label">assets/readme/integrations.png</span>
+    <div class="slide">
+      <div class="logo-field">
+        {logos.map((l) => <span class="lt"><img src={`/integrations/${l}.svg`} alt={l} /></span>)}
+      </div>
+    </div>
+
+    <span class="label">assets/readme/browser.png</span>
+    <div class="slide s-mock"><ChromeMock /></div>
+  </div>
+</Base>
+
+<script>
+  import { mountHalftones } from '../scripts/halftone.js';
+  mountHalftones();
+  document.querySelectorAll('.fade-up').forEach((e) => e.classList.add('in'));
+</script>
+
+<style>
+  .deck { min-width: 1500px; padding: 32px 0 96px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .note { font-size: 13px; color: var(--muted-foreground); margin-bottom: 24px; }
+  .label { width: 1440px; margin-top: 36px; font: 500 12px var(--mono); color: var(--muted-foreground); }
+
+  /* Static: nothing moves on these slides. */
+  .deck :global(*), .deck :global(*::before), .deck :global(*::after) { animation: none !important; transition: none !important; }
+
+  /* The frame every image shares: the hero's background, even padding. */
+  .slide {
+    position: relative; width: 1440px; padding: 88px 0; overflow: hidden;
+    background: var(--background); border: 1px solid var(--hair); border-radius: 4px;
+  }
+  .slide::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 39.75h40M39.75 0v40' stroke='rgb(40,37,32)' stroke-opacity='.05' stroke-width='.5'/%3E%3Cpath d='M36.5 39.75h7M39.75 36.5v7M0 39.75h3.5M39.75 0v3.5' stroke='rgb(40,37,32)' stroke-opacity='.22' stroke-width='.5'/%3E%3C/svg%3E");
+    background-position: calc(50% + 20px) 0;
+    -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
+  }
+  .slide > :global(*) { position: relative; }
+  .slide :global(section) { padding-top: 0 !important; margin-top: 0 !important; }
+  .slide :global(.fade-up) { opacity: 1 !important; transform: none !important; }
+
+  /* The README carries the words, so the slides keep only the visuals. */
+  .s-hero { padding: 150px 0; }
+  .s-hero :global(.hero) { padding-top: 0; padding-bottom: 0; }
+  .s-hero :global(.grid-bg), .s-hero :global(.cta), .s-hero :global(.hero-meta), .s-hero :global(.hero .lead) { display: none; }
+  .s-band :global(.band) { background-color: transparent !important; background-image: none !important; border: 0 !important; padding: 0 !important; }
+  .s-band :global(.band-head) { display: none; }
+  .s-memory :global(.mem-copy) { display: none; }
+  .s-memory :global(.mem) { display: flex; justify-content: center; }
+  .s-memory :global(.mv) { max-width: 600px; }
+  .s-memory :global(.mv-row) { opacity: 1 !important; transform: none !important; }
+  .s-team :global(.team-title), .s-team :global(.center .lead) { display: none; }
+  .s-team :global(.toggle) { margin-top: 0; }
+  .s-team :global(.tstage) { height: 560px; }
+  .s-team :global(.sw) { background: var(--foreground) !important; }
+  .s-team :global(.sw span) { left: 32px !important; }
+  .s-team :global(.face), .s-team :global(.bubble) { opacity: 1 !important; transform: none !important; }
+  .s-mock { display: flex; justify-content: center; }
+
+  /* Editor: the markdown editor alone. */
+  .ed-card { width: 920px; overflow: hidden; border-radius: 10px; border: 1px solid #e8e7e2; background: #f7f6f2; box-shadow: 0 30px 70px -32px rgba(0,0,0,.3); }
+  .ed-card :global(.doc) { padding: 40px 56px 44px; }
+  .ed-card table { width: 100%; margin-top: 8px; border-collapse: separate; border-spacing: 0; border: 1px solid #e8e7e2; border-radius: 6px; overflow: hidden; font-size: 13.5px; line-height: 1.5; }
+  .ed-card th { text-align: left; font-weight: 500; color: #6b6963; background: rgb(28 27 24 / .025); }
+  .ed-card th, .ed-card td { padding: 7px 12px; border-right: 1px solid #e8e7e2; border-bottom: 1px solid #e8e7e2; }
+  .ed-card tr > :last-child { border-right: 0; }
+  .ed-card tr:last-child td { border-bottom: 0; }
+
+  /* Memory: what they keep, around them, linked; a network underneath. */
+  .mind { position: relative; width: 1120px; height: 560px; margin: 0 auto; }
+  .mind-bg { position: absolute !important; inset: 0; border-radius: 8px; opacity: .55; background: transparent !important; -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); }
+  .mind-links { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .mind-links line { stroke: color-mix(in oklab, var(--foreground) 28%, transparent); stroke-width: 1; stroke-dasharray: 3 4; }
+  .mind-core { position: absolute; left: 560px; top: 280px; translate: -50% -50%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 18px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 18px 40px -22px rgba(0,0,0,.25); }
+  .core-face { width: 64px; height: 64px; border-radius: 99px; overflow: hidden; background: #efede7 !important; box-shadow: 0 0 0 1px var(--hair); }
+  .mind-core b { margin-top: 4px; font-size: 14px; font-weight: 600; }
+  .mind-core span:last-child { font-size: 11.5px; color: var(--muted-foreground); }
+  .fact { position: absolute; translate: -50% -50%; width: 250px; padding: 11px 14px; border-radius: 6px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 12px 28px -18px rgba(0,0,0,.22); }
+  .fact p { font-size: 13.5px; line-height: 1.45; color: var(--fg-90); }
+  .fact-meta { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
+  .fact-meta img, .src-ico :global(svg) { width: 13px; height: 13px; }
+  .src-ico { display: flex; }
+  .src-ico :global(svg) { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .fact-meta .pill { margin-left: auto; }
+  .pill { display: inline-flex; align-items: center; padding: 3px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 500; line-height: 1; color: color-mix(in oklab, var(--muted-foreground) 80%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 12%, transparent); }
+  .pill.violet { background: rgb(139 92 246 / .07); color: #6d28d9; box-shadow: inset 0 0 0 1px rgb(139 92 246 / .25); }
+  .pill.emerald { background: rgb(16 185 129 / .07); color: #047857; box-shadow: inset 0 0 0 1px rgb(16 185 129 / .25); }
+
+  /* Integrations: a field of tiles, fading out at the edges (there are more). */
+  .logo-field {
+    width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(11, 88px); justify-content: center; gap: 14px;
+    -webkit-mask-image: radial-gradient(ellipse 62% 75% at 50% 50%, #000 55%, transparent 100%); mask-image: radial-gradient(ellipse 62% 75% at 50% 50%, #000 55%, transparent 100%);
+  }
+  .lt { display: grid; place-items: center; width: 88px; height: 88px; border-radius: 12px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 8px 20px -14px rgba(0,0,0,.18); }
+  .lt img { width: 34px; height: 34px; object-fit: contain; }
+</style>

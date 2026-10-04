@@ -1,0 +1,92 @@
+---
+// Routines as the Routines screen shows them (ResponsibilitiesDashboard.jsx,
+// DutyTile): the routine's icon as a halftone on the left, the title with the
+// integrations it uses, the summary.
+
+// lucide icon bodies (24-unit grid), drawn into the halftone banner.
+const ICON = {
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  star: '<path d="M11.5 2.3a.5.5 0 0 1 1 0l2.3 4.7a2.1 2.1 0 0 0 1.6 1.2l5.2.7a.5.5 0 0 1 .3.9l-3.8 3.7a2.1 2.1 0 0 0-.6 1.9l.9 5.1a.5.5 0 0 1-.8.6l-4.6-2.4a2.1 2.1 0 0 0-2 0L6.4 21a.5.5 0 0 1-.8-.6l.9-5.1a2.1 2.1 0 0 0-.6-1.9L2.2 9.8a.5.5 0 0 1 .3-.9l5.1-.8a2.1 2.1 0 0 0 1.6-1.2z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12M3.3 7l7.7 4.7a2 2 0 0 0 2 0L20.7 7M7.5 4.27l9 5.15"/>',
+  trend: '<path d="M22 7l-8.5 8.5-5-5L2 17M16 7h6v6"/>',
+  risk: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/>',
+};
+const iconSrc = (k: keyof typeof ICON) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`)}`;
+
+// [icon, title, summary, integrations]
+const routines: [keyof typeof ICON, string, string, string[]][] = [
+  ['mail', 'Watch your inbox', 'About hourly in working hours. Tells you only when a mail needs you, with a draft ready.', ['email', 'gworkspace']],
+  ['star', 'Reply to new leads fast', 'New enquiry: who they are, what they want, and a draft reply within the hour.', ['email', 'notion']],
+  ['package', 'Stuck orders', 'Every morning: orders unfulfilled for over 48 hours, each with the reason.', ['shopify']],
+  ['trend', 'Weekly ads review', 'Monday: both ad accounts, what moved, and two budget moves worth making.', ['meta', 'google-ads', 'ga4']],
+  ['users', 'Meeting prep', 'Before calls with outside people: who they are, the last thread, open items.', ['gcalendar', 'gdrive']],
+  ['risk', 'Clients at risk', 'Monday: customers with failed payments, downgrades or cancellations.', ['stripe']],
+];
+---
+<section class="band" id="routines">
+  <div class="wrap">
+    <div class="band-head fade-up">
+      <h2 class="band-title">They know what they’re responsible for.</h2>
+      <p class="lead">The inbox, new leads, stuck orders, the ad budget. They check on each of them every day without being asked, and come to you with a draft, a flag or a decision to make.</p>
+    </div>
+    <div class="duties">
+      {routines.map(([icon, title, summary, tools]) => (
+        <div class="duty fade-up">
+          <div class="duty-art" data-halftone data-image={iconSrc(icon)} data-center data-soft data-scale="0.62" data-seed={title}></div>
+          <div class="duty-body">
+            <div class="duty-title">
+              <span>{title}</span>
+              {tools.map((t) => <img src={`/integrations/${t}.svg`} alt={t} title={t} width="14" height="14" />)}
+            </div>
+            <p>{summary}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  /* Full-width white band with the banners' hairline grid, set off from the
+     warm page by hairlines top and bottom. */
+  .band {
+    margin-top: 184px; padding: 120px 0 128px; background-color: var(--card);
+    border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 39.75h40M39.75 0v40' stroke='rgb(40,37,32)' stroke-opacity='.05' stroke-width='.5'/%3E%3Cpath d='M36.5 39.75h7M39.75 36.5v7M0 39.75h3.5M39.75 0v3.5' stroke='rgb(40,37,32)' stroke-opacity='.2' stroke-width='.5'/%3E%3C/svg%3E");
+    background-position: calc(50% + 20px) 0;
+  }
+  .band > .wrap { max-width: 1120px; }
+  .band-head { text-align: center; margin-bottom: 44px; }
+  .band-title { font-size: clamp(26px, 3.4vw, 36px); line-height: 1.12; font-weight: 600; letter-spacing: -0.03em; color: var(--fg-90); text-wrap: balance; }
+  .band-head .lead { max-width: 640px; margin: 14px auto 0; }
+
+  .duties { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 960px) { .duties { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 620px) { .duties { grid-template-columns: 1fr; } }
+
+  /* DutyTile */
+  .duty {
+    display: flex; min-height: 112px; overflow: hidden; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--background); transition: transform .15s, border-color .15s;
+  }
+  .duty:hover { transform: translateY(-2px); border-color: var(--hair-strong); }
+  .duty-art { width: 92px; flex-shrink: 0; background: var(--paper) !important; border-right: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+  .duty-body { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; }
+  .duty-title { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .duty-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--fg-90); }
+  .duty-title img { width: 14px; height: 14px; flex-shrink: 0; object-fit: contain; }
+  .duty-title span + img { margin-left: 2px; }
+  .duty-body p { margin-top: 4px; font-size: 12.5px; line-height: 1.6; color: var(--mf-80); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  @media (max-width: 620px) {
+    .band { margin-top: 88px; padding: 64px 0 72px; }
+    .band-head { margin-bottom: 28px; text-align: left; }
+    .band-head .lead { margin-left: 0; }
+    /* Phones: three routines, a slimmer picture. */
+    .duty:nth-child(n+4) { display: none; }
+    .duty { min-height: 0; }
+    .duty-art { width: 64px; }
+  }
+</style>

@@ -1,0 +1,27 @@
+---
+// The top bar, shared by every page.
+import GithubStars from './GithubStars.astro';
+---
+  <nav class="nav" id="nav">
+    <div class="wrap">
+      <a class="brand" href="/"><img src="/favicon.svg" alt="" />Something</a>
+      <div class="nav-cta">
+        <a class="nav-link" href="https://github.com/stanislawherjan1/Something/tree/main/docs" target="_blank" rel="noopener">Docs</a>
+        <GithubStars />
+        <a class="btn btn-primary btn-sm nav-btn" href="/#start">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+<script>
+  const nav = document.getElementById('nav');
+  addEventListener('scroll', () => nav?.classList.toggle('scrolled', scrollY > 8), { passive: true });
+</script>
+
+<style>
+  /* A plain link, same height and size as the ghost GitHub button next to it. */
+  .nav-link { display: inline-flex; align-items: center; height: 34px; padding: 0 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--fg-85); transition: background .15s, color .15s; }
+  .nav-link:hover { background: color-mix(in oklab, var(--foreground) 5%, transparent); color: var(--foreground); }
+  .nav-btn { height: 34px; padding: 0 14px; font-size: 13px; }
+  @media (max-width: 560px) { .nav-link { display: none; } }
+</style>

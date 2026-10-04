@@ -1,0 +1,123 @@
+---
+// The team section: one switch in the middle. When collaborative mode turns
+// on, the team appears around it, each face with what they just asked.
+// Bubbles are the chat's.
+
+// [photo, name, ask, x, y] — x/y: the face's offset from the switch, px.
+// Portraits: p* from Unsplash (Unsplash License); tom, lena generated (no real person).
+const people: [string, string, string, number, number][] = [
+  ['p1', 'Mara', 'Draft the newsletter from what we shipped', -335, -215],
+  ['p2', 'Leo', 'How did the launch campaign do?', 345, -225],
+  ['tom', 'Tom', 'What did the café chain order last time?', -355, 0],
+  ['p3', 'Ivy', 'Book the photographer for Thursday', 360, -5],
+  ['p4', 'Jonas', 'Chase the supplier about the invoice', -325, 215],
+  ['lena', 'Lena', 'Remind me about the stock count', 335, 210],
+];
+---
+<section id="team">
+  <div class="wrap">
+    <div class="tstage">
+      <div class="center">
+        <h2 class="team-title">
+          Set it up once.<br />
+          The whole team gets it.
+        </h2>
+        <p class="lead">You install it. Everyone else opens the app or writes on Telegram, and works with the same agent you’d run from a terminal, without ever seeing one.</p>
+        <div class="toggle" aria-hidden="true">
+          <span class="sw"><span></span></span>
+          <span class="tlabel">Collaborative mode</span>
+        </div>
+      </div>
+      {people.map(([n, name, ask, x, y], i) => (
+        <div class={`mate ${x < 0 ? 'left' : 'right'}`} style={`--x:${x}px; --y:${y}px; --d:${i}`} aria-hidden="true">
+          <img class="face" src={`/people/${n}.jpg`} alt="" width="48" height="48" loading="lazy" />
+          <span class="bubble"><b>{name}</b>{ask}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<script>
+  // Off, then on: the team appears one by one. Again after a pause.
+  for (const stage of document.querySelectorAll<HTMLElement>('.tstage')) {
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    async function play() {
+      if (reduced) { stage.classList.add('on'); return; }
+      for (;;) {
+        stage.classList.remove('on');
+        await wait(1500);
+        stage.classList.add('on');
+        await wait(7000);
+      }
+    }
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { io.disconnect(); play(); }
+    }, { threshold: 0.45 });
+    io.observe(stage);
+  }
+</script>
+
+<style>
+  #team { padding-top: 112px; }
+  .tstage { position: relative; height: 620px; max-width: 1200px; margin: 0 auto; }
+
+  /* The middle: title, lead, and the switch right under them. */
+  .center {
+    position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 2;
+    width: min(660px, 100%); display: flex; flex-direction: column; align-items: center; text-align: center;
+  }
+  .team-title { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.08; font-weight: 600; letter-spacing: -0.035em; color: var(--fg-90); text-wrap: balance; }
+  .center .lead { margin-top: 16px; font-size: 16px; max-width: 600px; }
+
+  .toggle {
+    margin-top: 28px;
+    display: flex; align-items: center; gap: 14px; padding: 14px 22px 14px 16px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--hair); box-shadow: 0 18px 44px -22px rgba(0,0,0,.22);
+  }
+  .sw { position: relative; display: inline-block; width: 64px; height: 36px; border-radius: 99px; background: color-mix(in oklab, var(--muted-foreground) 28%, transparent); transition: background .3s ease; }
+  .sw span { position: absolute; top: 4px; left: 4px; width: 28px; height: 28px; border-radius: 99px; background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: left .35s cubic-bezier(.3,.7,.3,1); }
+  .tstage.on .sw { background: var(--foreground); }
+  .tstage.on .sw span { left: 32px; }
+  .tlabel { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
+
+  /* Teammates: a face and the chat bubble with what they asked. */
+  .mate {
+    position: absolute; left: calc(50% + var(--x)); top: calc(50% + var(--y));
+    display: flex; align-items: center; gap: 10px; translate: -24px -24px;
+  }
+  .mate.left { flex-direction: row-reverse; translate: calc(-100% + 24px) -24px; }
+  .face {
+    width: 48px; height: 48px; flex-shrink: 0; border-radius: 99px; object-fit: cover; filter: saturate(.85) sepia(.06);
+    box-shadow: 0 0 0 1px var(--hair), 0 8px 20px -10px rgba(0,0,0,.25);
+    transform: scale(0); opacity: 0;
+    transition: transform .4s cubic-bezier(.3,1.5,.5,1), opacity .2s ease;
+  }
+  .bubble {
+    max-width: 190px; padding: 8px 12px; border-radius: 6px; background: var(--card); border: 1px solid var(--hair);
+    font-size: 13px; line-height: 1.45; color: var(--fg-85); box-shadow: 0 8px 20px -14px rgba(0,0,0,.2);
+    opacity: 0; transform: translateY(6px); transition: opacity .3s ease, transform .3s ease;
+  }
+  .bubble b { display: block; margin-bottom: 1px; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); }
+  .tstage.on .face { transform: none; opacity: 1; transition-delay: calc(.5s + var(--d) * .32s); }
+  .tstage.on .bubble { opacity: 1; transform: none; transition-delay: calc(.7s + var(--d) * .32s); }
+  /* Going back off: everything leaves at once. */
+  .tstage:not(.on) .face, .tstage:not(.on) .bubble { transition-delay: 0s; transition-duration: .25s; }
+
+  @media (max-width: 1100px) {
+    .tstage { height: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .center { position: static; translate: none; margin-bottom: 20px; }
+    .mate, .mate.left { position: static; translate: none; flex-direction: row; width: 100%; max-width: 360px; }
+  }
+  /* Phones: the switch, then the team as one row of faces popping in. */
+  @media (max-width: 620px) {
+    #team { padding-top: 72px; }
+    .tstage { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 0; }
+    .center { width: 100%; margin-bottom: 28px; align-items: flex-start; text-align: left; }
+    .mate, .mate.left { width: auto; max-width: none; gap: 0; }
+    .mate + .mate { margin-left: -10px; }
+    .bubble { display: none; }
+    .face { width: 46px; height: 46px; box-shadow: 0 0 0 2px var(--background), 0 6px 14px -8px rgba(0,0,0,.3); }
+  }
+</style>

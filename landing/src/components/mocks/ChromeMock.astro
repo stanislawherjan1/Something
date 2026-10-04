@@ -1,0 +1,43 @@
+---
+// The Browser agent mock: a page and the side-panel chat, at the web app's size.
+import { svg } from '../../lib/icons';
+import '../../styles/mocks.css';
+---
+<div class="mk">
+<div class="bm">
+  <div class="bm-bar">
+    <span class="bm-dots"><i></i><i></i><i></i></span>
+    <span class="bm-url">store.example.com/orders</span>
+  </div>
+  <div class="bm-body">
+    <div class="bm-page">
+      <div class="sk" style="height:18px;width:34%"></div>
+      <div class="sk" style="height:11px;width:78%"></div>
+      <div class="sk" style="height:11px;width:58%"></div>
+      <div class="bm-grid">
+        <div class="bm-card"></div>
+        <div class="bm-card hit"><span class="bm-ref">e7</span><span class="bm-cur" set:html={svg('pointer')} /></div>
+        <div class="bm-card"></div>
+        <div class="bm-card"></div>
+        <div class="bm-card"></div>
+        <div class="bm-card"></div>
+      </div>
+      <div class="sk" style="height:11px;width:70%"></div>
+      <div class="sk" style="height:11px;width:46%"></div>
+    </div>
+    <aside class="chat">
+      <div class="ch-head"><span class="av"><span class="ring"></span><span class="bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span></span><b>Aria</b></div>
+      <div class="ch-body">
+        <div class="u">Which orders are late?</div>
+        <div class="tl" set:html={svg('eye', 'tli') + '<span>Looking at the tab</span>' + svg('check', 'tlc')} />
+        <div class="b">Two are over 48 hours unfulfilled. I marked the one on hold, want me to message the warehouse?</div>
+      </div>
+      <div class="ctx">
+        <span class="chip" set:html={svg('file') + '<span>Orders</span>' + svg('x', 'cx')} />
+        <span class="act" set:html={svg('click') + '<span class="sw"><span></span></span>'} />
+      </div>
+      <div class="comp"><span class="ph">Ask anything</span><span class="crow"><span class="att" set:html={svg('clip') + 'Attach'} /><span class="snd" set:html={svg('arrowUp')} /></span></div>
+    </aside>
+  </div>
+</div>
+</div>
