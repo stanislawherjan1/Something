@@ -1,0 +1,409 @@
+---
+// The workspace chat, replayed: tabs of roles above one chat window. Each tab
+// plays a conversation the way the real panel shows it (ChatPanel.jsx /
+// ToolChip.jsx): "Thinking", one live tool line that rolls over to the next
+// tool, a "Used N tools" summary, then the reply streaming in.
+
+// Tool steps: [logo file | glyph name, label]. Logos are integration marks,
+// glyphs stand for the built-in tools (same labels as TOOL_DISPLAY).
+const scenarios = [
+  {
+    role: 'Founder',
+    ask: 'What needs me today?',
+    steps: [
+      [
+        ['gcalendar', 'Checking your calendar'],
+        ['email', 'Reading your inbox'],
+        ['@list', 'Checking the board'],
+        ['@bell', 'Checking reminders'],
+      ],
+    ],
+    reply: [
+      'Three things need you today:',
+      '<ol><li><b>10:00 investor call.</b> I put the numbers and last call’s open questions in <span class="file">investor-prep.md</span>.</li><li><b>A supplier invoice is 6 days overdue.</b> The reply is drafted, waiting for your yes.</li><li><b>Mara’s review is blocked</b> on your sign-off on the pricing page.</li></ol>',
+      'Everything else is handled or scheduled.',
+    ],
+  },
+  {
+    role: 'Store owner',
+    ask: 'Why did sales drop yesterday?',
+    steps: [
+      [
+        ['shopify', 'List orders'],
+        ['ga4', 'Run report'],
+        ['meta', 'Get campaign insights'],
+      ],
+      [['shopify', 'Get shipping rules']],
+    ],
+    between: ['Traffic looks normal, so it isn’t the ads. Checking the checkout…'],
+    reply: [
+      'Traffic held. The checkout didn’t.',
+      '<table><tr><th></th><th>Yesterday</th><th>Week avg</th></tr><tr><td>Sessions</td><td>4,812</td><td>4,950</td></tr><tr><td>Orders</td><td>142</td><td>198</td></tr><tr><td>Checkout conversion</td><td>1.9%</td><td>3.1%</td></tr></table>',
+      'A shipping rule changed at 14:20: orders under €50 now pay €9 instead of free shipping. Drop-offs start exactly then. Want me to roll it back?',
+    ],
+  },
+  {
+    role: 'Marketing',
+    ask: 'Draft this week’s newsletter from what we shipped.',
+    steps: [
+      [
+        ['@book', 'Using a skill'],
+        ['@search', 'Searching files'],
+        ['@file', 'Reading a file'],
+        ['@edit', 'Writing a file'],
+      ],
+    ],
+    reply: [
+      'Draft saved to <span class="file">newsletter-w41.md</span>, in our usual voice. Three stories: the new bundle, the restock and a customer photo from Thursday.',
+      'Subject line options:<ul><li>“Back in stock, and a new way to save”</li><li>“The mug set is back”</li></ul>',
+      'I’ll schedule it once you approve.',
+    ],
+  },
+  {
+    role: 'Sales',
+    ask: 'Follow up with everyone from Tuesday’s demo.',
+    steps: [
+      [
+        ['gcalendar', 'Find event'],
+        ['email', 'Search messages'],
+        ['notion', 'Read call notes'],
+      ],
+      [['email', 'Create drafts'], ['@bell', 'Setting a reminder']],
+    ],
+    between: ['Got the attendee list and your notes from the call. Drafting the follow-ups…'],
+    reply: [
+      'Four people were on the demo. One already wrote back asking about pricing, so I attached the price sheet to her draft.',
+      'The other <b>3 follow-ups are drafted</b> in your inbox, each one picking up on what they asked during the call.',
+      'If anyone stays quiet, I’ll remind you on Friday.',
+    ],
+  },
+  {
+    role: 'Team',
+    ask: 'Remind the team about Friday’s inventory count.',
+    steps: [
+      [['@users', 'Checking the team']],
+      [
+        ['@bell', 'Setting a reminder'],
+        ['@bell', 'Setting a reminder'],
+        ['@bell', 'Setting a reminder'],
+      ],
+    ],
+    between: ['Mara, Tom and Alex are on the count. Setting a reminder for each of them…'],
+    reply: [
+      'Done. Everyone gets a ping on Friday at 9:00: <b>Mara and Tom on Telegram</b>, <b>Alex in the workspace</b>, since that’s where each of them answers.',
+      'I’ll collect the counts in <span class="file">Inventory.md</span> as they come in.',
+    ],
+  },
+];
+---
+<div class="demo" data-scenarios={JSON.stringify(scenarios)}>
+  <div class="window">
+    <div class="bar">
+      <div class="tabs" role="tablist">
+        {scenarios.map((s, i) => (
+          <button role="tab" class={`tab ${i === 0 ? 'on' : ''}`} aria-selected={i === 0 ? 'true' : 'false'} data-i={i}>{s.role}</button>
+        ))}
+      </div>
+      <div class="pick" aria-hidden="true">
+        <button class="pick-btn prev" aria-label="Previous role"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+        <b class="pick-label">{scenarios[0].role}</b>
+        <button class="pick-btn next" aria-label="Next role"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+      </div>
+    </div>
+    <div class="list" aria-live="polite"><div class="list-inner"></div></div>
+    <div class="composer" aria-hidden="true">
+      <div class="field"><span class="ph">Ask anything</span><span class="typed"></span><span class="cursor"></span></div>
+      <div class="composer-row">
+        <span class="attach"><svg viewBox="0 0 24 24"><path d="m21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>Attach</span>
+        <span class="send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  type Step = [string, string];
+  type Scenario = { role: string; ask: string; steps: Step[][]; between?: string[]; reply: string[] };
+
+  // lucide glyphs for the built-in tools (Bell, ListChecks, BookOpen, Search, FileText, FilePen, Users).
+  const GLYPHS: Record<string, string> = {
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+    list: '<path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
+    book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 13h4M10 17h4"/>',
+    edit: '<path d="M12 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9l5 5v3"/><path d="M21.4 13.6a2 2 0 0 0-2.8-2.8L14 15.4V18h2.6z"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  };
+  const CHECK = '<svg class="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+  const CHEVRON = '<svg class="chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>';
+
+  const lead = (icon: string) =>
+    icon.startsWith('@')
+      ? `<svg class="glyph" viewBox="0 0 24 24">${GLYPHS[icon.slice(1)] || ''}</svg>`
+      : `<span class="logo"><img src="/integrations/${icon}.svg" alt="" /></span>`;
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  for (const demo of document.querySelectorAll<HTMLElement>('.demo')) {
+    const scenarios: Scenario[] = JSON.parse(demo.dataset.scenarios || '[]');
+    const list = demo.querySelector<HTMLElement>('.list')!;
+    const inner = demo.querySelector<HTMLElement>('.list-inner')!;
+    const tabs = [...demo.querySelectorAll<HTMLButtonElement>('.tab')];
+    const composer = demo.querySelector<HTMLElement>('.composer')!;
+    const pickLabel = demo.querySelector<HTMLElement>('.pick-label')!;
+    const typed = demo.querySelector<HTMLElement>('.typed')!;
+    const send = demo.querySelector<HTMLElement>('.send')!;
+    let run = 0;          // bumped on every switch, so a stale replay stops
+    let current = 0;
+    let userPicked = false;
+
+    const add = (html: string, cls: string) => {
+      const el = document.createElement('div');
+      el.className = cls;
+      el.innerHTML = html;
+      inner.appendChild(el);
+      list.scrollTop = list.scrollHeight;
+      return el;
+    };
+
+    // Stream one block into the reply, word by word; lists and tables land whole.
+    async function stream(bot: HTMLElement, block: string, alive: () => boolean) {
+      const el = document.createElement('div');
+      el.className = 'para';
+      bot.appendChild(el);
+      if (block.startsWith('<')) {
+        el.innerHTML = block;
+        el.classList.add('land');
+        list.scrollTop = list.scrollHeight;
+        await sleep(reduced ? 0 : 420);
+        return alive();
+      }
+      let html = '';
+      for (const w of block.split(/(\s+)/)) {
+        html += w;
+        // Never paint half a tag.
+        if ((html.match(/</g) || []).length === (html.match(/>/g) || []).length) el.innerHTML = html;
+        list.scrollTop = list.scrollHeight;
+        if (!reduced && w.trim()) await sleep(28);
+        if (!alive()) return false;
+      }
+      el.innerHTML = block;
+      await sleep(reduced ? 0 : 160);
+      return alive();
+    }
+
+    async function play(i: number) {
+      const me = ++run;
+      const alive = () => me === run;
+      const s = scenarios[i];
+      current = i;
+      tabs.forEach((t, k) => { t.classList.toggle('on', k === i); t.setAttribute('aria-selected', String(k === i)); });
+      pickLabel.textContent = s.role;
+      inner.innerHTML = '';
+      typed.textContent = '';
+      composer.classList.remove('typing');
+      send.classList.remove('on', 'press');
+
+      add('<span class="day">Today</span>', 'day-row');
+      // Typed into the composer first, then sent: the bubble rises into the chat.
+      await sleep(reduced ? 0 : 500); if (!alive()) return;
+      composer.classList.add('typing');
+      for (let k = 1; k <= s.ask.length; k++) {
+        typed.textContent = s.ask.slice(0, k);
+        if (!reduced) await sleep(s.ask[k - 1] === ' ' ? 55 : 32);
+        if (!alive()) return;
+      }
+      send.classList.add('on');
+      await sleep(reduced ? 0 : 420); if (!alive()) return;
+      send.classList.add('press');
+      await sleep(140); if (!alive()) return;
+      send.classList.remove('on', 'press');
+      composer.classList.remove('typing');
+      typed.textContent = '';
+      add(`<div class="bubble">${s.ask}</div>`, 'row-user');
+      const bot = add('', 'row-bot');
+      const think = document.createElement('div');
+      think.className = 'thinking';
+      think.innerHTML = '<span class="shimmer">Thinking</span>';
+      bot.appendChild(think);
+      await sleep(reduced ? 0 : 900); if (!alive()) return;
+      think.remove();
+
+      for (let g = 0; g < s.steps.length; g++) {
+        const group = s.steps[g];
+        const box = document.createElement('div');
+        box.className = 'tools';
+        bot.appendChild(box);
+        // One live line, replaced in place for each tool.
+        for (const [icon, label] of group) {
+          box.innerHTML = `<div class="tool-line"><div class="tool roll">${lead(icon)}<span class="shimmer">${label}</span></div></div>`;
+          list.scrollTop = list.scrollHeight;
+          await sleep(reduced ? 0 : 1100); if (!alive()) return;
+          const t = box.querySelector('.tool')!;
+          t.querySelector('.shimmer')!.classList.remove('shimmer');
+          t.insertAdjacentHTML('beforeend', CHECK);
+          await sleep(reduced ? 0 : 380); if (!alive()) return;
+        }
+        // The group settles into "Used N tools", which opens on click.
+        const n = group.length;
+        box.innerHTML = `<button class="summary">${CHEVRON}<span>Used ${n} tool${n === 1 ? '' : 's'}</span></button>
+          <div class="sum-list"><div>${group.map(([icon, label]) => `<span class="sum-item">${lead(icon)}<span>${label}</span></span>`).join('')}</div></div>`;
+        box.classList.add('land');
+        box.querySelector('.summary')!.addEventListener('click', () => box.classList.toggle('open'));
+        await sleep(reduced ? 0 : 300); if (!alive()) return;
+        const said = s.between?.[g];
+        if (said && !(await stream(bot, said, alive))) return;
+      }
+
+      // The reply streams in, block by block.
+      for (const block of s.reply) if (!(await stream(bot, block, alive))) return;
+
+      // Then on to the next role, unless the visitor took over.
+      if (userPicked) return;
+      await sleep(5200); if (!alive() || userPicked) return;
+      play((current + 1) % scenarios.length);
+    }
+
+    tabs.forEach((t) => t.addEventListener('click', () => { userPicked = true; play(Number(t.dataset.i)); }));
+    // Phones: the same choice as the tabs, one role at a time with arrows.
+    const step = (d: number) => { userPicked = true; play((current + d + scenarios.length) % scenarios.length); };
+    demo.querySelector('.pick-btn.prev')!.addEventListener('click', () => step(-1));
+    demo.querySelector('.pick-btn.next')!.addEventListener('click', () => step(1));
+
+    // Start when the demo scrolls into view.
+    const io = new IntersectionObserver((es) => {
+      if (es.some((e) => e.isIntersecting)) { io.disconnect(); play(0); }
+    }, { threshold: 0.35 });
+    io.observe(demo);
+  }
+</script>
+
+<style>
+  .demo { width: 100%; }
+
+  /* Role tabs: a quiet segmented control, in the window's top bar. */
+  .bar { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px; background: var(--background); border-bottom: 1px solid var(--hair); }
+  .tabs {
+    display: flex; gap: 2px; padding: 3px; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+    border-radius: 8px; border: 1px solid var(--hair); background: var(--card);
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    height: 30px; padding: 0 13px; border: 0; border-radius: 5px; background: transparent; cursor: pointer;
+    font: 500 13px var(--font); color: var(--muted-foreground); white-space: nowrap; transition: background .15s, color .15s;
+  }
+  .tab:hover { color: var(--foreground); }
+  .tab.on { background: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+
+  /* The chat column, as in ChatPane: list and composer on the sidebar tone (no header here). */
+  .window {
+    display: flex; flex-direction: column; height: 620px; overflow: hidden;
+    border-radius: 8px; border: 1px solid var(--hair); background: #f3f2ed;
+    box-shadow: 0 24px 60px -28px rgba(0,0,0,.22);
+  }
+
+  .list { flex: 1; overflow-y: auto; scrollbar-width: none; scroll-behavior: smooth; }
+  .list::-webkit-scrollbar { display: none; }
+  .list-inner { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; min-height: 100%; justify-content: flex-end; }
+  .list-inner :global(.day-row) { display: flex; justify-content: center; padding: 4px 0; }
+  .list-inner :global(.day) { font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; color: color-mix(in oklab, var(--muted-foreground) 50%, transparent); }
+
+  .list-inner :global(.row-user) { display: flex; justify-content: flex-end; animation: rise .32s cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom right; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+  .list-inner :global(.bubble) {
+    max-width: 82%; padding: 8px 14px; border-radius: 6px; background: var(--card);
+    border: 1px solid var(--hair); font-size: 14px; line-height: 1.55; color: color-mix(in oklab, var(--foreground) 88%, transparent);
+  }
+  .list-inner :global(.row-bot) { display: flex; flex-direction: column; gap: 6px; max-width: 92%; font-size: 14px; line-height: 1.65; color: var(--fg-85); }
+  .list-inner :global(.para b) { font-weight: 600; color: var(--foreground); }
+  .list-inner :global(.para ol), .list-inner :global(.para ul) { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+  .list-inner :global(.para li) { line-height: 1.6; }
+  .list-inner :global(.para table) { border-collapse: collapse; font-size: 13px; line-height: 1.45; font-variant-numeric: tabular-nums; margin: 4px 0; }
+  .list-inner :global(.para th) { text-align: left; font-weight: 600; color: var(--fg-85); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .list-inner :global(.para td) { padding: 6px 10px; border-bottom: 1px solid var(--hair); }
+  .list-inner :global(.para tr:last-child td) { border-bottom: 0; }
+  .list-inner :global(.para th:first-child), .list-inner :global(.para td:first-child) { padding-left: 0; }
+  .list-inner :global(.file) {
+    display: inline-flex; align-items: center; gap: 4px; margin: 0 2px; padding: 1px 6px; border-radius: 6px;
+    border: 1px solid color-mix(in oklab, var(--border) 40%, transparent); background: color-mix(in oklab, var(--foreground) 3%, transparent);
+    font-size: 12.5px; font-weight: 500; color: color-mix(in oklab, var(--foreground) 80%, transparent);
+  }
+  .list-inner :global(.file)::before {
+    content: ''; width: 12px; height: 12px; opacity: .6;
+    background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  /* Thinking + tools, as in ToolChip.jsx. */
+  .list-inner :global(.thinking) { padding: 2px 0; font-size: 13px; font-weight: 500; }
+  .list-inner :global(.shimmer) {
+    background: linear-gradient(90deg, rgba(0,0,0,.35) 0%, rgba(0,0,0,.35) 40%, rgba(0,0,0,.95) 50%, rgba(0,0,0,.35) 60%, rgba(0,0,0,.35) 100%);
+    background-size: 200% 100%; -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent; animation: shimmer 3.6s linear infinite;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 50%; } 100% { background-position: -200% 50%; } }
+  .list-inner :global(.tool-line) { position: relative; height: 22px; overflow: hidden; }
+  .list-inner :global(.tool), .list-inner :global(.summary), .list-inner :global(.sum-item) {
+    display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12.5px; line-height: 22px; color: var(--muted-foreground);
+  }
+  .list-inner :global(.roll) { animation: roll .2s ease-out both; }
+  @keyframes roll { from { transform: translateY(60%); opacity: 0; } }
+  .list-inner :global(.logo) { display: flex; align-items: center; justify-content: center; width: 15px; height: 15px; flex-shrink: 0; border-radius: 3px; background: #fff; outline: 1px solid rgba(0,0,0,.06); }
+  .list-inner :global(.logo img) { width: 11px; height: 11px; object-fit: contain; }
+  .list-inner :global(.glyph), .list-inner :global(.check), .list-inner :global(.chev) { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .list-inner :global(.glyph) { width: 13px; height: 13px; stroke-width: 1.75; opacity: .7; }
+  .list-inner :global(.check) { width: 12px; height: 12px; stroke-width: 2.25; opacity: .7; }
+  .list-inner :global(.chev) { width: 12px; height: 12px; stroke-width: 2; transition: rotate .2s; }
+  .list-inner :global(.summary) { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--font); }
+  .list-inner :global(.summary:hover) { color: var(--fg-85); }
+  .list-inner :global(.open .chev) { rotate: 90deg; }
+  .list-inner :global(.sum-list) { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease-out; }
+  .list-inner :global(.open .sum-list) { grid-template-rows: 1fr; }
+  .list-inner :global(.sum-list > div) { min-height: 0; overflow: hidden; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+  .list-inner :global(.sum-item) { font-size: 12px; opacity: 0; transform: translateY(-3px); transition: opacity .15s, transform .15s; }
+  .list-inner :global(.sum-item:first-child) { margin-top: 4px; }
+  .list-inner :global(.open .sum-item) { opacity: 1; transform: none; }
+  .list-inner :global(.land) { animation: land .22s ease-out both; }
+  @keyframes land { from { opacity: 0; } }
+
+  .composer { flex-shrink: 0; margin: 0 16px 16px; border-radius: 6px; border: 1px solid var(--hair); background: var(--card); }
+  .field { position: relative; padding: 10px 12px; font-size: 14px; line-height: 1.5; min-height: 41px; }
+  .ph { color: color-mix(in oklab, var(--muted-foreground) 45%, transparent); }
+  .typed { color: var(--fg-85); }
+  .cursor { display: none; width: 1.5px; height: 1.1em; margin-left: 1px; vertical-align: -0.18em; background: var(--foreground); animation: blink 1s steps(1) infinite; }
+  .typing .ph { display: none; }
+  .typing .cursor { display: inline-block; }
+  .typing { border-color: color-mix(in oklab, var(--foreground) 25%, transparent); }
+  @keyframes blink { 50% { opacity: 0; } }
+  .composer-row { display: flex; align-items: center; padding: 2px 12px 8px; }
+  .attach { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; color: color-mix(in oklab, var(--muted-foreground) 65%, transparent); }
+  .attach svg, .send svg { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+  .attach svg { width: 14px; height: 14px; stroke-width: 1.75; }
+  .send { margin-left: auto; width: 28px; height: 28px; border-radius: 5px; display: grid; place-items: center; background: color-mix(in oklab, var(--muted) 40%, transparent); color: color-mix(in oklab, var(--muted-foreground) 35%, transparent); }
+  .send svg { width: 14px; height: 14px; stroke-width: 2.25; }
+  .send { transition: background .15s, color .15s, transform .12s; }
+  .send.on { background: var(--foreground); color: var(--background); }
+  .send.press { transform: scale(.9); }
+  .composer { transition: border-color .15s; }
+
+  .pick { display: none; }
+  @media (max-width: 620px) {
+    .window { height: 480px; }
+    .tabs { display: none; }
+    .pick { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+    .pick-btn { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--hair); background: var(--card); cursor: pointer; color: var(--fg-85); }
+    .pick-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .pick-label { font-size: 14px; font-weight: 600; color: var(--fg-90); }
+    /* Smaller type in the conversation on phones. */
+    .list-inner { padding: 16px; gap: 12px; }
+    .list-inner :global(.bubble), .list-inner :global(.row-bot) { font-size: 13px; }
+    .list-inner :global(.tool), .list-inner :global(.summary) { font-size: 12px; }
+    .list-inner :global(.sum-item) { font-size: 11.5px; }
+    .list-inner :global(.para table) { font-size: 12px; }
+    .list-inner :global(.para th), .list-inner :global(.para td) { padding: 5px 8px; }
+    .list-inner :global(.file) { font-size: 11.5px; }
+    .field, .ph { font-size: 13px; }
+  }
+</style>

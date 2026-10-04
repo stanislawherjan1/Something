@@ -1,0 +1,27 @@
+---
+// A phone with the Telegram conversation, Telegram's own look.
+import { svg } from '../../lib/icons';
+import '../../styles/mocks.css';
+---
+<div class="mk">
+<div class="phone">
+  <div class="tg-status"><b>9:41</b><span class="island"></span><span class="tg-batt"></span></div>
+  <div class="tg-head">
+    <span class="tg-back" set:html={svg('back') + '<i>Chats</i>'} />
+    <span class="tg-who"><b>Aria</b><span>bot</span></span>
+    <span class="tg-av"><span class="bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span></span>
+  </div>
+  <div class="tg-wall">
+    <span class="tg-date">Today</span>
+    <div class="tg-msg out">Anything urgent today?<span class="tg-meta">9:02 <i>✓✓</i></span></div>
+    <div class="tg-msg in">Two things:<br />1. Your 10:00 call. Notes are in <u>investor-prep.md</u><br />2. A supplier invoice is 6 days overdue. Reply drafted, send it?<span class="tg-meta">9:02</span></div>
+    <div class="tg-msg out">Yes, send it<span class="tg-meta">9:03 <i>✓✓</i></span></div>
+    <div class="tg-msg in">Sent ✓ I’ll tell you when they reply.<span class="tg-meta">9:03</span></div>
+  </div>
+  <div class="tg-input">
+    <span set:html={svg('tgclip', 'tg-i')} />
+    <span class="tg-field">Message<span set:html={svg('smile', 'tg-i sm')} /></span>
+    <span set:html={svg('mic', 'tg-i')} />
+  </div>
+</div>
+</div>

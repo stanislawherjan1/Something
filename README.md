@@ -8,8 +8,6 @@
   <sub>
     <a href="#get-started">Get started</a>
     &nbsp;·&nbsp;
-    <a href="#demo">Demo</a>
-    &nbsp;·&nbsp;
     <a href="#team">Team</a>
     &nbsp;·&nbsp;
     <a href="#integrations">Integrations</a>
@@ -23,7 +21,7 @@
 <br/>
 
 <p align="center">
-  <img src="assets/hero.png" alt="The web workspace: file vault, markdown editor, embedded chat" width="820" />
+  <img src="assets/readme/hero.png" alt="Build your own employee: bot portraits above the headline, and the tools it works with" width="820" />
 </p>
 
 <p align="center">
@@ -87,18 +85,6 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 
 <br/>
 
-## Demo
-
-<p align="center">
- 
-
-https://github.com/user-attachments/assets/dbdf7444-ad67-4ff0-8a46-033cf2ce3271
-
-
-</p>
-
-<br/>
-
 ## Talk to them anywhere
 
 Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, the **team Telegram groups** it's part of, and **Chrome's side panel**, next to whatever page you're on. Same name, same memory, same context, whichever you reach for.
@@ -119,7 +105,7 @@ Proactive messages travel the same paths. When a job finishes or a reminder come
 ## One coworker, your whole team
 
 <p align="center">
-  <img src="assets/team.png" alt="Team dashboard, roster with roles and avatars, channel links, and the Shared / Your Files split" width="820" />
+  <img src="assets/readme/team.png" alt="Collaborative mode switched on, teammates around it, each asking the coworker for something" width="820" />
 </p>
 
 <br/>
@@ -147,7 +133,7 @@ Solo setups are untouched: team mode off means no roles, no split, no routing, j
 ## A real editor, your coworker writes to it too
 
 <p align="center">
-  <img src="assets/editor.png" alt="The native markdown editor, checklists, formatting toolbar, and clickable file paths" width="820" />
+  <img src="assets/readme/editor.png" alt="A markdown document in the editor: a launch plan with a checklist and a timeline table" width="820" />
 </p>
 
 <br/>
@@ -158,34 +144,10 @@ It's a shared surface. You and your coworker edit the **same** files: write a la
 
 <br/>
 
-## Skills
-
-<p align="center">
-  <img src="assets/skills.png" alt="Skills dashboard, reusable playbooks the coworker runs, each with its integration badge" width="820" />
-</p>
-
-<br/>
-
-A *Skill* is a markdown file that tells your coworker how to handle one recurring task, like a job description for a single responsibility.
-
-```markdown
----
-name: weekly-ads-review
-description: Every Monday, pull the last 7 days of Meta + Google Ads and post a one-pager.
----
-
-Compare ROAS to the previous week. Flag any campaign that dropped >20%.
-Surface 2-3 budget moves. Save to Reports/.
-```
-
-Create, edit, and delete skills from the dashboard. Integration-specific skills auto-install when the matching integration is activated. See [docs/SKILLS.md](docs/SKILLS.md).
-
-<br/>
-
 ## Routines
 
 <p align="center">
-  <img src="assets/routines.png" alt="Routines dashboard, the standing duties the coworker handles on its own, each with an icon and tags" width="820" />
+  <img src="assets/readme/routines.png" alt="Routines the coworker keeps on its own, each with the tools it uses" width="820" />
 </p>
 
 <br/>
@@ -202,7 +164,7 @@ Under the hood, routines run on **reminders** — a background scheduler that su
 ## Memory
 
 <p align="center">
-  <img src="assets/memory.png" alt="Memory dashboard, graph of cards, topics, and rolling snapshots" width="820" />
+  <img src="assets/readme/memory.png" alt="The coworker in the middle, the facts it remembers around it, each with where it came from" width="820" />
 </p>
 
 <br/>
@@ -218,7 +180,7 @@ Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914
 ## Integrations
 
 <p align="center">
-  <img src="assets/integrations.png" alt="Shopify · Notion · Stripe · GitHub · Linear · Google Workspace · Airtable · Miro · Cloudflare · Sentry, and many more" width="820" />
+  <img src="assets/readme/integrations.png" alt="Shopify, Notion, Stripe, Google Workspace, Meta Ads, Linear, GitHub and dozens more" width="820" />
 </p>
 
 <br/>
@@ -240,7 +202,7 @@ You activate each one from the Integrations dashboard, no redeploy, no `.env` ed
 ## Right next to your browser
 
 <p align="center">
-  <img src="assets/browser.png" alt="A browser window with the side panel open: the coworker reads the page, then works in it, one control picked out" width="820" />
+  <img src="assets/readme/browser.png" alt="A page open in the browser with the side-panel chat next to it, one element on the page picked out" width="820" />
 </p>
 
 <br/>

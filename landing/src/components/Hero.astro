@@ -1,0 +1,84 @@
+---
+// The hero: bot portraits, the headline, the call to action, the integrations strip.
+import GithubStars from './GithubStars.astro';
+
+// A row of bot portraits above the headline: stock avatars, each once, drawn
+// like BotPicture (plain halftone, cut out of their background).
+const faces = [10, 12, 7, 14, 2, 11, 4];   // the calmer, closed-mouth ones
+
+// The headline integrations, for the strip under the hero.
+const heroLogos = [
+  ['gworkspace', 'Google Workspace'], ['shopify', 'Shopify'], ['notion', 'Notion'], ['stripe', 'Stripe'],
+  ['meta', 'Meta Ads'], ['google-ads', 'Google Ads'], ['ga4', 'Google Analytics'], ['linear', 'Linear'],
+  ['github', 'GitHub'], ['airtable', 'Airtable'], ['telegram', 'Telegram'],
+];
+---
+<div class="hero-zone">
+<div class="grid-bg" aria-hidden="true"></div>
+<header class="hero wrap">
+  <div class="faces fade-up" aria-hidden="true">
+    {faces.map((n) => (
+      <div class="face" data-halftone data-image={`/avatars/${n}.png`} data-mode="dark" data-center data-plain data-cutout data-step="1.8" data-scale="1.1" data-seed={`bot-${n}`}></div>
+    ))}
+  </div>
+  <h1 class="fade-up">Build your own employee.</h1>
+  <p class="lead fade-up">Something lets you build a self-hosted AI coworker that helps you with your everyday challenges.</p>
+  <div class="cta fade-up">
+    <a class="btn btn-primary" href="#start">Deploy your own</a>
+    <GithubStars big />
+  </div>
+  <p class="hero-meta fade-up">Runs on your own server · from €4.50/mo</p>
+  <div class="works fade-up">
+    <span class="works-label">Works with</span>
+    <div class="works-logos">
+      {heroLogos.map(([f, name]) => <img src={`/integrations/${f}.svg`} alt={name} title={name} width="20" height="20" />)}
+    </div>
+    <span class="works-more"><span class="wm-long">+ 40 more</span><span class="wm-short">+40</span></span>
+  </div>
+</header>
+</div>
+
+<style>
+  .hero-zone { position: relative; overflow-x: clip; }
+  /* The banners' hairline grid with crosshairs, fading out from the middle. */
+  .grid-bg { position: absolute; inset: 0; pointer-events: none; }
+  .grid-bg {
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 39.75h40M39.75 0v40' stroke='rgb(40,37,32)' stroke-opacity='.06' stroke-width='.5'/%3E%3Cpath d='M36.5 39.75h7M39.75 36.5v7M0 39.75h3.5M39.75 0v3.5' stroke='rgb(40,37,32)' stroke-opacity='.26' stroke-width='.5'/%3E%3C/svg%3E");
+    background-position: calc(50% + 20px) 0;
+    -webkit-mask-image: radial-gradient(ellipse 52% 60% at 50% 46%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(ellipse 52% 60% at 50% 46%, #000 30%, transparent 100%);
+  }
+
+  .faces { display: flex; justify-content: center; gap: 4px; margin-bottom: 28px; }
+  .face { width: 56px; height: 56px; background: transparent !important; }
+  @media (max-width: 620px) { .face { width: 44px; height: 44px; } .face:nth-child(n+6) { display: none; } }
+  .hero { position: relative; padding-top: 112px; padding-bottom: 48px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+  h1 {
+    font-size: clamp(40px, 7vw, 76px); line-height: 1; font-weight: 600;
+    letter-spacing: -0.05em; color: var(--fg-90); text-wrap: balance;
+  }
+  .hero .lead { max-width: 480px; margin-top: 22px; font-size: 17px; }
+  .hero-meta { margin-top: 14px; font-size: 12.5px; color: var(--mf-80); }
+  .works {
+    display: inline-flex; align-items: center; gap: 14px; margin-top: 40px;
+    padding: 9px 14px; border-radius: 6px; border: 1px solid var(--hair); background: var(--card);
+  }
+  .works-label, .works-more { font-size: 12px; font-weight: 500; color: var(--muted-foreground); white-space: nowrap; }
+  .works-logos { display: flex; gap: 12px; align-items: center; }
+  .works-logos img { width: 20px; height: 20px; object-fit: contain; }
+  .wm-short { display: none; }
+  @media (max-width: 720px) { .works { flex-wrap: wrap; justify-content: center; } .works-logos { flex-wrap: wrap; justify-content: center; } }
+  .cta { display: flex; gap: 8px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
+  @media (max-width: 620px) {
+    .hero { padding-top: 56px; padding-bottom: 32px; }
+    .hero .lead { font-size: 16px; }
+    .works { margin-top: 28px; flex-wrap: nowrap; gap: 10px; padding: 8px 12px; max-width: 100%; }
+    .works-logos { flex-wrap: nowrap; gap: 9px; }
+    .works-logos img { width: 18px; height: 18px; }
+    .works-logos img:nth-child(n+7) { display: none; }
+    .works-label, .works-more { font-size: 11.5px; }
+    .wm-long { display: none; }
+    .wm-short { display: inline; }
+  }
+</style>

@@ -1,0 +1,28 @@
+---
+// The footer, shared by every page.
+import GithubStars from './GithubStars.astro';
+---
+  <footer class="foot">
+    <div class="wrap">
+      <span class="brand"><img src="/favicon.svg" alt="" />Something<span class="by">by stan corp</span></span>
+      <div class="foot-right">
+        <span class="foot-note">Self-hosted. Yours. <a href="https://github.com/stanislawherjan1/Something/blob/main/LICENSE" target="_blank" rel="noopener">Open source under AGPL-3.0</a>.</span>
+        <GithubStars />
+      </div>
+    </div>
+  </footer>
+
+<style>
+  .by { margin-left: 6px; font-size: inherit; font-weight: 400; letter-spacing: normal; color: color-mix(in oklab, var(--muted-foreground) 55%, transparent); }
+  .foot-note a { color: var(--fg-85); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--foreground) 25%, transparent); text-underline-offset: 3px; }
+  .foot-note a:hover { color: var(--foreground); }
+  .foot { margin-top: 184px; border-top: 1px solid var(--hair); padding: 24px 0 36px; }
+  .foot .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .foot-note { font-size: 12.5px; color: var(--mf-80); }
+  .foot-right { display: flex; align-items: center; gap: 16px; }
+  @media (max-width: 620px) {
+    .foot { margin-top: 88px; }
+    .foot .wrap { flex-direction: column; align-items: flex-start; gap: 14px; }
+    .foot-right { flex-wrap: wrap; gap: 12px; }
+  }
+</style>

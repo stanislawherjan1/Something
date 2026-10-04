@@ -1,0 +1,155 @@
+/* The product mocks (WebAppMock, ChromeMock, TelegramMock), shared by the
+   landing page and the README art. Everything sits under .mk. */
+.mk svg { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+/* ───────── Web app (light theme tokens, always) ───────── */
+.mk .app {
+  width: 1180px; height: 740px; display: grid; grid-template-columns: 280px 1fr 360px; overflow: hidden;
+  border-radius: 10px; border: 1px solid #e8e7e2; background: #f7f6f2; color: #1c1b18;
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,.35); font-family: var(--font); text-align: left;
+}
+.mk .sb { display: flex; flex-direction: column; min-height: 0; background: #f3f2ed; border-right: 1px solid #e8e7e2; }
+.mk .sb-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; }
+.mk .sb-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; background: #2f5d50; color: #fff; font-weight: 700; font-size: 15px; }
+.mk .sb-name { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.mk .sb-line { height: 1px; background: rgb(232 231 226 / .7); }
+.mk .sb-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 0 8px 12px; }
+.mk .sb-short { display: flex; flex-direction: column; gap: 2px; padding: 12px 0 4px; }
+.mk .row { position: relative; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px 0 12.5px; border-radius: 6px; font-size: 13.5px; color: rgb(28 27 24 / .75); }
+.mk .ri { position: relative; display: flex; color: rgb(28 27 24 / .55); }
+.mk .ri svg { width: 15px; height: 15px; }
+.mk .ri.dot::after { content: ''; position: absolute; right: -4px; top: -4px; width: 8px; height: 8px; border-radius: 99px; background: #ef4444; box-shadow: 0 0 0 2px #f3f2ed; }
+.mk .rl { flex: 1; }
+.mk .row kbd { border-radius: 4px; border: 1px solid rgb(232 231 226 / .55); background: rgb(240 239 234 / .4); padding: 2px 6px; font: 500 10px var(--font); color: rgb(107 105 99 / .6); }
+.mk .beta { border-radius: 99px; background: rgb(139 92 246 / .12); padding: 1px 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #7c3aed; }
+.mk .sec { display: flex; align-items: center; gap: 6px; height: 36px; margin-top: 12px; padding-left: 10px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .09em; color: rgb(107 105 99 / .65); }
+.mk .sec svg { width: 14px; height: 14px; stroke-width: 2; color: rgb(107 105 99 / .5); }
+.mk .sec svg.open, .mk .tree svg.open { rotate: 90deg; }
+.mk .tree { display: flex; flex-direction: column; }
+.mk .tr { position: relative; display: flex; align-items: center; gap: 6px; height: 28px; border-radius: 6px; font-size: 13px; color: rgb(28 27 24 / .82); }
+.mk .tr .tc { width: 12px; height: 12px; stroke-width: 2.25; color: rgb(107 105 99 / .55); }
+.mk .tr .ti { width: 14px; height: 14px; color: rgb(107 105 99 / .75); }
+.mk .tsp { width: 12px; flex-shrink: 0; }
+.mk .tr.sel { background: #ebe9e3; font-weight: 500; color: #1c1b18; }
+.mk .tr.sel::before { content: ''; position: absolute; top: 4px; bottom: 4px; left: 0; width: 2px; border-radius: 0 99px 99px 0; background: #1c1b18; }
+.mk .tr.sel .ti { color: rgb(28 27 24 / .85); }
+.mk .sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; }
+.mk .sb-user { display: flex; align-items: center; gap: 10px; height: 44px; margin: 8px; padding: 0 6px; border-radius: 6px; }
+.mk .sb-user img { width: 28px; height: 28px; border-radius: 99px; box-shadow: 0 0 0 1px #e8e7e2; background: #fff; }
+.mk .sb-user b { display: block; font-size: 13.5px; font-weight: 500; }
+.mk .sb-user i { display: block; font-style: normal; font-size: 11.5px; color: rgb(107 105 99 / .7); }
+.mk .sb-user > span:nth-child(2) { flex: 1; }
+.mk .sb-user .uc { width: 14px; height: 14px; stroke-width: 2; color: #6b6963; }
+
+.mk .ed { display: flex; flex-direction: column; min-width: 0; background: #f7f6f2; }
+.mk .ed-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 24px; }
+.mk .ed-head .eh-ico { width: 17px; height: 17px; color: rgb(107 105 99 / .75); }
+.mk .crumb { font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; }
+.mk .crumb .m { color: rgb(107 105 99 / .6); }
+.mk .crumb b { font-weight: 500; color: rgb(28 27 24 / .9); }
+.mk .ai-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 99px; background: rgb(16 185 129 / .1); padding: 2px 8px; font-size: 11px; font-weight: 500; color: #047857; }
+.mk .ai-badge svg { width: 12px; height: 12px; }
+.mk .saved { margin-left: auto; font-size: 12px; color: rgb(107 105 99 / .7); }
+.mk .doc { padding: 18px 48px; line-height: 1.65; }
+.mk .doc h1 { font-size: 21px; font-weight: 700; line-height: 1.3; letter-spacing: -0.02em; margin: 6px 0 8px; }
+.mk .doc h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; margin: 18px 0 4px; }
+.mk .doc p, .mk .doc li { font-size: 13.5px; }
+.mk .doc p b { font-weight: 600; }
+.mk .doc ul { margin: 0; padding-left: 22px; }
+.mk .ck { display: flex; align-items: flex-start; padding: 4px 0; font-size: 13.5px; }
+.mk .box { display: grid; place-items: center; width: 14px; height: 14px; margin: 4px 12px 0 0; flex-shrink: 0; border-radius: 4px; border: 1px solid rgb(28 27 24 / .28); }
+.mk .box svg { width: 11px; height: 11px; stroke: #fff; stroke-width: 3; }
+.mk .ck.done .box { background: #1c1b18; border-color: #1c1b18; }
+.mk .ck.done span:last-child { color: #6b6963; text-decoration: line-through; text-decoration-color: rgb(107 105 99 / .35); }
+
+.mk .chat, .mk .panel { display: flex; flex-direction: column; min-height: 0; background: #f3f2ed; border-left: 1px solid #e8e7e2; }
+.mk .ch-head { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 16px; background: #f7f6f2; flex-shrink: 0; }
+.mk .ch-head b { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.mk .av { position: relative; width: 36px; height: 36px; border-radius: 99px; flex-shrink: 0; }
+.mk .av .ring { position: absolute; inset: 0; border-radius: 99px; background: conic-gradient(from 0deg, transparent 60%, rgba(0,0,0,.18) 100%); }
+.mk .av .bot { position: absolute !important; inset: 2px; border-radius: 99px; overflow: hidden; background: #efede7 !important; }
+.mk .ch-icons { margin-left: auto; display: flex; gap: 4px; color: rgb(107 105 99 / .7); }
+.mk .ch-icons svg { width: 28px; height: 28px; padding: 6px; }
+.mk .ch-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px; padding: 20px; font-size: 14px; }
+.mk .u { align-self: flex-end; max-width: 82%; padding: 8px 14px; border-radius: 6px; background: #fff; border: 1px solid rgb(232 231 226 / .6); line-height: 1.55; color: rgb(28 27 24 / .88); }
+.mk .b { line-height: 1.65; color: rgb(28 27 24 / .85); }
+.mk .sum, .mk .tl { display: flex; align-items: center; gap: 6px; font-size: 12.5px; line-height: 22px; color: #6b6963; }
+.mk .sum svg { width: 12px; height: 12px; stroke-width: 2; }
+.mk .tl .tli { width: 13px; height: 13px; color: rgb(107 105 99 / .7); }
+.mk .tl .tlc { width: 12px; height: 12px; stroke-width: 2.25; opacity: .7; }
+.mk .comp { margin: 0 16px 16px; border-radius: 6px; border: 1px solid rgb(232 231 226 / .6); background: #fff; flex-shrink: 0; }
+.mk .ph { display: block; padding: 10px 12px; font-size: 14px; color: rgb(107 105 99 / .45); }
+.mk .crow { display: flex; align-items: center; padding: 2px 12px 8px; }
+.mk .att { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; color: rgb(107 105 99 / .65); }
+.mk .att svg { width: 14px; height: 14px; }
+.mk .snd { margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 5px; background: rgb(240 239 234 / .4); color: rgb(107 105 99 / .35); }
+.mk .snd svg { width: 14px; height: 14px; stroke-width: 2.25; }
+
+.mk .ctx { display: flex; align-items: center; gap: 6px; padding: 0 16px 8px; flex-shrink: 0; }
+.mk .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 5px; font-size: 11px; color: rgb(28 27 24 / .75); box-shadow: inset 0 0 0 1px rgb(28 27 24 / .12); }
+.mk .chip svg { width: 12px; height: 12px; opacity: .65; }
+.mk .chip .cx { opacity: .5; }
+.mk .act { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 6px; color: rgb(220 38 38 / .85); }
+.mk .act svg { width: 14px; height: 14px; }
+.mk .sw { position: relative; width: 24px; height: 14px; border-radius: 99px; background: rgb(220 38 38 / .8); }
+.mk .sw span { position: absolute; top: 2px; left: 12px; width: 10px; height: 10px; border-radius: 99px; background: #f7f6f2; }
+
+/* ───────── Telegram ───────── */
+.mk .phone {
+  position: relative; width: 390px; height: 780px; display: flex; flex-direction: column; overflow: hidden; border-radius: 54px;
+  border: 9px solid #0e0e0e; outline: 1.5px solid #3a3a3a; outline-offset: -1px; background: #fff;
+  box-shadow: 0 40px 80px -36px rgba(0,0,0,.45), 0 12px 24px -12px rgba(0,0,0,.18);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; color: #000; text-align: left;
+}
+.mk .tg-status { position: relative; display: flex; align-items: center; justify-content: space-between; height: 50px; padding: 0 30px; font-size: 15px; background: rgb(255 255 255 / .92); }
+.mk .island { position: absolute; left: 50%; top: 11px; translate: -50% 0; width: 112px; height: 32px; border-radius: 99px; background: #0e0e0e; }
+.mk .tg-batt { width: 24px; height: 11px; border-radius: 3px; border: 1.5px solid #000; position: relative; }
+.mk .tg-batt::after { content: ''; position: absolute; inset: 1px; right: 5px; border-radius: 1px; background: #000; }
+.mk .tg-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 2px 12px 10px; background: rgb(255 255 255 / .92); border-bottom: .5px solid rgb(0 0 0 / .12); }
+.mk .tg-back { display: flex; align-items: center; color: #2481cc; font-size: 17px; }
+.mk .tg-back svg { width: 24px; height: 24px; stroke-width: 2.2; }
+.mk .tg-back i { font-style: normal; }
+.mk .tg-who { text-align: center; display: flex; flex-direction: column; gap: 1px; }
+.mk .tg-who b { font-size: 16.5px; font-weight: 600; }
+.mk .tg-who span { font-size: 13px; color: #8e8e93; }
+.mk .tg-av { justify-self: end; position: relative; width: 38px; height: 38px; }
+.mk .tg-av .bot { position: absolute !important; inset: 0; border-radius: 99px; overflow: hidden; background: #efede7 !important; }
+/* Telegram's default wallpaper: a soft four-point pastel gradient. */
+.mk .tg-wall {
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 5px; padding: 10px 10px 136px;
+  background:
+    radial-gradient(60% 50% at 12% 18%, #dbddbb 0%, transparent 70%),
+    radial-gradient(55% 50% at 88% 30%, #8dc5a0 0%, transparent 70%),
+    radial-gradient(60% 55% at 20% 85%, #d5d88d 0%, transparent 70%),
+    radial-gradient(60% 55% at 85% 90%, #88b884 0%, transparent 70%),
+    #c4d7a8;
+}
+.mk .tg-date { align-self: center; margin-bottom: 8px; padding: 3px 10px; border-radius: 99px; background: rgb(0 0 0 / .14); color: #fff; font-size: 13px; font-weight: 500; }
+.mk .tg-msg { position: relative; max-width: 78%; padding: 7px 10px 8px; border-radius: 18px; font-size: 16px; line-height: 1.32; box-shadow: 0 1px .5px rgb(0 0 0 / .1); }
+.mk .tg-msg.in { align-self: flex-start; background: #fff; border-bottom-left-radius: 5px; }
+.mk .tg-msg.out { align-self: flex-end; background: #effedd; border-bottom-right-radius: 5px; }
+.mk .tg-msg u { color: #3a91e6; text-decoration: none; }
+.mk .tg-meta { float: right; margin: 8px -2px -4px 10px; font-size: 11.5px; color: #8e8e93; }
+.mk .tg-msg.out .tg-meta { color: #5fb05a; }
+.mk .tg-meta i { font-style: normal; letter-spacing: -3px; margin-left: 2px; }
+.mk .tg-input { display: flex; align-items: center; gap: 10px; padding: 8px 12px 28px; background: rgb(255 255 255 / .92); border-top: .5px solid rgb(0 0 0 / .12); }
+.mk .tg-input .tg-i { width: 26px; height: 26px; color: #8e8e93; flex-shrink: 0; }
+.mk .tg-field { flex: 1; display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 6px 0 14px; border-radius: 18px; border: .5px solid #d6d6d6; background: #fff; font-size: 16px; color: #8e8e93; }
+.mk .tg-field .sm { width: 22px; height: 22px; }
+
+/* ───────── Extension: BrowserMock, class for class ───────── */
+/* Extension: the Browser agent mock's page, at the web app's size. */
+.mk .bm { display: flex; flex-direction: column; width: 1180px; height: 740px; overflow: hidden; border-radius: 10px; border: 1px solid #e8e7e2; background: #fff; color: #1c1b18; font-family: var(--font); text-align: left; box-shadow: 0 30px 70px -30px rgba(0,0,0,.35); }
+.mk .bm-bar { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; border-bottom: 1px solid rgb(232 231 226 / .7); flex-shrink: 0; }
+.mk .bm-dots { display: flex; gap: 7px; }
+.mk .bm-dots i { width: 11px; height: 11px; border-radius: 99px; background: rgb(28 27 24 / .15); }
+.mk .bm-url { margin-left: 10px; flex: 1; max-width: 520px; height: 26px; display: flex; align-items: center; padding: 0 12px; border-radius: 5px; background: rgb(240 239 234 / .7); font: 12.5px var(--mono); color: rgb(107 105 99 / .75); }
+.mk .bm-body { display: grid; grid-template-columns: 1fr 360px; flex: 1; min-height: 0; }
+.mk .bm-page { display: flex; flex-direction: column; gap: 16px; padding: 32px 36px; }
+.mk .sk { border-radius: 4px; background: rgb(28 27 24 / .07); animation: skp 2s ease-in-out infinite; }
+@keyframes skp { 50% { opacity: .5; } }
+.mk .bm-grid { margin: 8px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.mk .bm-card { height: 112px; border-radius: 6px; border: 1px solid rgb(232 231 226 / .7); background: rgb(28 27 24 / .03); }
+.mk .bm-card.hit { position: relative; border: 2px solid rgb(220 38 38 / .6); background: rgb(220 38 38 / .05); }
+.mk .bm-ref { position: absolute; left: -7px; top: -10px; padding: 1px 5px; border-radius: 4px; background: rgb(220 38 38 / .85); font: 600 11px var(--mono); color: #f7f6f2; }
+.mk .bm-cur { position: absolute; right: 14px; bottom: 10px; }
+.mk .bm-cur svg { width: 26px; height: 26px; fill: rgb(220 38 38 / .8); color: rgb(220 38 38 / .8); stroke-width: 1.5; }
