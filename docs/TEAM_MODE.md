@@ -1,5 +1,27 @@
 # Team Mode
 
+## User guide
+
+Alone, the coworker is yours. Switch on **collaborative mode** in the Team
+settings and it becomes the team's while still knowing each of you: invite
+people by email, make them admins or members, and everyone signs in with
+their own Google account.
+
+From then on there are two spaces side by side. **Shared** holds the files,
+the task board and the memory the whole team works from. **Yours** holds your
+own files and your own memory, which no teammate can read, and which the
+coworker never reads on someone else's behalf. Admins manage the roster; they
+cannot look into what is yours. Ask "did Mara finish the report?" and it
+answers from the shared work, so collaboration is the default and privacy is
+the exception that holds.
+
+Each person links their own Telegram, so a message from you is from you. Add
+the coworker to a team group and it listens there as the team's, remembering
+the group's own conversation and never anyone's private memory. Reminders and
+tasks go to the person they are for.
+
+---
+
 Team mode turns a single-user workspace into a **collaborative** one: several
 people sign in with their Google accounts, each gets a private space alongside
 the shared one, and the assistant can route reminders, tasks, and messages to

@@ -1,5 +1,26 @@
 # Routines, the morning planner and reminders
 
+## User guide
+
+A **routine** is a standing job your coworker does for you without being asked
+each time: "check my inbox every hour", "send the team a recap on Fridays",
+"before each meeting, pull the notes from the last one". Say it in a
+conversation, or pick one from the **Marketplace** under **Routines** in the
+sidebar, where routines are offered for every service you have connected.
+
+Every morning the coworker plans its day: it reads your routines, your
+calendar, your tasks and the threads left open, and sets itself reminders for
+what to do and when. A reminder is work for the coworker, not a note it
+forwards to you: when the time comes it does the job and tells you what came
+of it, or stays quiet when there is nothing worth saying.
+
+The **Routines** view shows what it has taken on. Pause or remove a routine
+there, or just tell it. Times follow your own time zone from Settings. In a
+team workspace each person has their own routines, and the coworker does them
+as that person, with their calendar and their accounts.
+
+---
+
 **How the assistant does things for people without being asked each time.**
 
 ---

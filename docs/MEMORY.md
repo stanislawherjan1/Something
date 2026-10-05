@@ -50,10 +50,12 @@ stored, never by role: an admin cannot read a teammate's private memory, and
 the bot never reads one person's private memory on another's behalf. A
 Telegram group has a memory of its own, readable by its members.
 
-**Moving from the older memory.** A workspace set up before this memory keeps
-its cards until an admin moves it over from the banner on the Memory screen.
-Everyone can download their own memory before the move, and for 30 days after
-it the old memory can still be restored by the operator.
+**New and older workspaces.** A new workspace starts on this memory from day
+one. A workspace set up before it keeps its old notes until an admin moves it
+over from the banner on the Memory screen; until then the new memory already
+collects conversations in the background, so nothing from the waiting time is
+lost. Everyone can download their own memory before the move, and for 30 days
+after it the old memory can still be restored by the operator.
 
 ---
 
@@ -68,14 +70,18 @@ conversation, whole**, and hands each turn the few excerpts that matter to it.
 
 | Value | What happens |
 |---|---|
-| `off` (default) | v3 only. The kill switch: `off` wins over everything below. |
-| `shadow` | v3 as before; v4 files conversations into the ledger in the background. Admins see the upgrade bar. |
+| `off` | v3 only. The kill switch: `off` wins over everything below. |
+| `shadow` (default) | v3 as before; v4 files conversations into the ledger in the background. Admins see the upgrade bar. A fresh workspace — nothing but untouched seed templates in `memory/` — does not wait for anyone: boot applies the move itself and it is `on` from the first day. |
 | `read` | v4 prefix, recall block and tools; the v3 sweep still runs. For testing on the canary. |
 | `on` | v4 is the memory; the v3 sweep stands down. |
 
 Moving the old memory in (migration `0005`, from the upgrade bar) switches a
 `shadow` or `read` deployment to `on` for good (a stamp in `memory/_engine/`);
-only `MEMORY_V4=off` overrides it.
+only `MEMORY_V4=off` overrides it. The same migration runs by itself at boot
+when it is *trivial* for the deployment — nothing anyone wrote would move or
+go: a seed template nobody edited is a view, not content, and goes without a
+record. The moment a card or page carries a person's words (a filled-in
+duties card included), the move waits for an admin.
 
 ### The ledger — the ground truth
 
@@ -430,9 +436,12 @@ no longer loads) is kept as a record and becomes a fact through the facts store
 
 ### Moving a deployment to v4
 
-1. Deploy with `MEMORY_V4=shadow` (in the client's `.env`). Structural
+1. Update. `shadow` is the default, so nothing to set (an explicit
+   `MEMORY_V4=off` in the client's `.env` keeps it on v3). Structural
    migrations apply at boot (`0003` the ledger layout, `0004` routines.json next
-   to the untouched card). Let it collect conversations for a while.
+   to the untouched card). Let it collect conversations for a while. A
+   workspace with nothing but untouched seed templates skips the rest: boot
+   moves it over by itself.
 2. An admin sees **"A new memory is available"**, reviews, downloads a backup if
    they like, and starts the move (`0005`). Pages and cards become dated ledger
    records in the scope they were in (in solo mode, the owner's own scope); the

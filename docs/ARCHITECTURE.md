@@ -464,7 +464,7 @@ Web side (`workspace-api` → `runClaudeTurn`) and Telegram side (`bot.sh` → t
 
 Both paths end up with the SAME settings (hooks + `autoMemoryEnabled: false`) and the SAME memory prefix content — just plumbed through different files. The asymmetry exists because tmux's claude is interactive (no per-turn spawn) and CC's first-run code overwrites bot's settings.json (so the watchdog is required to keep hooks alive).
 
-### Memory v4 processes (behind `MEMORY_V4`)
+### Memory v4 processes (`MEMORY_V4=off` is the kill switch)
 
 Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger:
 

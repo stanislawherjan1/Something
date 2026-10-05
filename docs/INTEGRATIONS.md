@@ -1,5 +1,28 @@
 # Integrations — self-service activation
 
+## User guide
+
+Integrations are the services your coworker can read and act on: calendars,
+email, documents, task boards, meeting notes, shops, ads, payments and more.
+Open **Integrations** in the sidebar and pick one.
+
+Most connect with one click: you are sent to the service to sign in, you
+approve, and you are back. A few ask for an API key the service gives you;
+paste it and you are done. Either way, nothing to install, nothing to restart.
+The key is stored encrypted on your own server and never leaves it.
+
+Once a service is connected the coworker uses it when a conversation or a
+routine calls for it: "what's on my calendar tomorrow", "pull the notes from
+today's call", "create a task for Ola". Connecting a service also adds a
+how-to for it, so the coworker knows that service's habits, and offers
+ready-made routines built on it.
+
+You can rotate a key or disconnect a service any time from the same screen. In
+a team workspace each person connects their own accounts; a teammate's
+connection is never used on your behalf.
+
+---
+
 The workspace ships with an **Integrations** dashboard that lets the end user
 activate, rotate, and remove third-party API keys themselves — no `.env`
 edits, no SSH, no redeploys. This document covers the design, the admin

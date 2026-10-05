@@ -146,7 +146,7 @@ services:
       - IDE_TIMEZONE=${IDE_TIMEZONE:-UTC}
       # Memory v4: off | shadow | read | on (docs/MEMORY.md). Off by default;
       # the move from the upgrade bar switches a shadow deployment to on.
-      - MEMORY_V4=${MEMORY_V4:-off}
+      - MEMORY_V4=${MEMORY_V4:-shadow}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
       - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}

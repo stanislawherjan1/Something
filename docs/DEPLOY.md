@@ -64,7 +64,7 @@ defaults (`Workspace`/`bot`) are placeholders the user will replace.
 - `LEGACY_CONFIG=true` — branding read-only via UI; managed via `.env` + `overrides/public/` + redeploy. Used by legacy clients pre-migration
 - `IDE_TIMEZONE=<IANA zone>` (e.g. `Europe/Berlin`, default `UTC`) — the fallback workspace time zone. An admin's **Default time zone** in Settings overrides it, and each person's own zone (Settings, or told to the bot) overrides both for their morning planning, which runs at 06:00 in that zone and follows a change at once. It still sets other system rituals and the usage-limit notice ("… is back at HH:MM"). An unknown zone name logs a warning and falls back to UTC. Rituals other than the morning planning resolve their time only when first created, so on an existing workspace they keep their old hour until their `due` is corrected in `.reminders.json`.
 
-- `MEMORY_V4=off|shadow|read|on` (default `off`) — memory v4 ([MEMORY.md](MEMORY.md#how-it-works)). `shadow` files conversations into the new memory in the background and shows admins the upgrade bar; the move from that bar switches the deployment to v4. `off` always wins (kill switch). `read` is for testing on the canary.
+- `MEMORY_V4=off|shadow|read|on` (default `shadow`) — memory v4 ([MEMORY.md](MEMORY.md#how-it-works)). A fresh workspace switches itself to the new memory at first boot (nothing to move). A workspace with an older memory stays on `shadow`: conversations are filed into the new memory in the background and admins see the upgrade bar; the move from that bar switches it for good. `off` is the kill switch and always wins. `read` is for testing on the canary.
 
 ### Runtime secrets (Claude / Shopify / Meta / GA4 / Telegram / …)
 

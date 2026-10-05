@@ -18,6 +18,13 @@
  * of what they can read, and the operator keeps the full archive in the store for
  * 30 days (bin/migrate.mjs rollback). Applying it also switches the deployment to
  * v4 (the stamp below), unless MEMORY_V4=off.
+ *
+ * A seed template nobody edited (the cards and the two ABOUT pages the image
+ * copies into a new workspace, byte for byte) is a view, not content: it goes
+ * without a record. A workspace where nothing else would move — a fresh one —
+ * has no old memory to review, so boot applies this by itself (`trivial`) and
+ * the deployment starts on v4; the owner's decision is kept for workspaces
+ * that hold something someone wrote.
  */
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -31,6 +38,14 @@ export const STAMP = '_engine/.v4-migrated';
 const KEEP = new Set(['AGENT_IDENTITY.md', 'AGENT_TOOLS.md', 'RULES.md', 'CHANNELS.md', 'USER_PROFILE.md', 'USER_PREFERENCES.md', 'TEAM.md', 'MISSION.md']);
 const GENERATED = new Set(CARDS.filter(c => c.machine && !KEEP.has(c.file)).map(c => c.file));   // INDEX, RECENT_*
 const V4_DIRS = new Set(['_engine', 'ledger', 'views', 'groups']);
+const TEMPLATES_DIR = () => process.env.MEMORY_TEMPLATES_DIR || '/opt/ide/bootstrap/memory-cards-templates';
+
+/** Is this legacy file the shipped template, untouched? (users/<slug>/X.md is seeded from X.md.) */
+function untouchedTemplate(abs, rel, owner) {
+  const inTree = owner ? rel.split(sep).slice(3).join(sep) : rel.split(sep).slice(1).join(sep);   // memory/[users/<slug>/]…
+  const tpl = join(TEMPLATES_DIR(), inTree);
+  try { return existsSync(tpl) && readFileSync(tpl).equals(readFileSync(abs)); } catch { return false; }
+}
 const CLAIMS_PER_RECORD = 5;
 const DATE_RE = /\[Source:[^\]]*?(\d{4}-\d{2}-\d{2})[^\]]*\]/i;
 
@@ -58,6 +73,7 @@ function inventory(ctx) {
       let fate = 'migrate';
       if (top && KEEP.has(e.name)) fate = 'keep';
       else if (top && GENERATED.has(e.name)) fate = 'drop';
+      else if (untouchedTemplate(abs, relative(ctx.projectDir, abs), owner)) fate = 'drop';
       else if (top && e.name === 'RESPONSIBILITIES.md') {
         // Duties leave only once they live in routines.json (0004); otherwise the card stays.
         const who = owner || (ctx.teamMode ? null : 'default');
@@ -134,7 +150,11 @@ function planFor(ctx) {
   let records = 0;
   for (const f of inv) {
     if (f.fate === 'keep') continue;
-    if (f.fate === 'drop') { actions.push({ op: 'remove', path: f.rel, detail: 'generated view' }); continue; }
+    if (f.fate === 'drop') {
+      const detail = untouchedTemplate(f.abs, f.rel, f.owner) ? 'untouched template' : /RESPONSIBILITIES\.md$/.test(f.rel) ? 'duties live in routines.json' : 'generated view';
+      actions.push({ op: 'remove', path: f.rel, detail });
+      continue;
+    }
     const { records: recs } = pageRecords(readFileSync(f.abs, 'utf8'), { title: titleOf(f.rel), mtime: statSync(f.abs).mtimeMs });
     records += recs.length;
     actions.push({ op: 'move', path: f.rel, detail: `${recs.length} record(s) → ${scopeOf(ctx, f.owner)}` });
@@ -147,6 +167,10 @@ export default {
   title: 'The old memory moves into the new one',
   kind: 'content',
   enabled: (ctx) => ctx.flag !== 'off',
+  // Nothing anyone wrote would move or go — a fresh workspace: only untouched
+  // templates and generated views. Boot may apply it. A duties card someone
+  // filled in is theirs to let go of, even with its routines already moved.
+  trivial: (ctx) => !existsSync(join(ctx.memoryDir, STAMP)) && planFor(ctx).actions.every(a => a.op === 'remove' && a.detail !== 'duties live in routines.json'),
   // Everything under memory/: the legacy files leave it and the ledger grows.
   paths: () => ['memory'],
   inputs: (ctx) => planFor(ctx).inv.filter(f => f.fate !== 'keep').map(f => f.rel),

@@ -1,5 +1,20 @@
 # Claude Code Skills
 
+## User guide
+
+A **skill** is a how-to your coworker follows for a kind of task: how you like
+a weekly report written, the steps of your month-end close, what to check
+before an email goes to a client. Open **Skills** in the sidebar to see them,
+read one, change it, or write a new one in plain language. No installing,
+no restart: a skill takes effect as soon as it is saved.
+
+The coworker picks a skill up by itself when a task matches it, or you can ask
+for one by name. Connecting a service adds the skill for it, so the coworker
+knows that service's habits from day one, and the same skills are what its
+routines run on.
+
+---
+
 Skills are instruction files that tell Claude how to handle specific tasks. Unlike MCP servers (which provide tools), skills provide **behavioral guidelines** — rules, workflows, and constraints that shape how Claude acts when a particular topic comes up.
 
 | | Skills | MCP servers |

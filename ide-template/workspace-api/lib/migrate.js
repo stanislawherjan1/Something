@@ -14,6 +14,8 @@
  *     recognize(ctx) → bool       optional: a legacy stamp says it already ran
  *     check(ctx)     → { needed, summary }
  *     plan(ctx)      → { summary, actions: [{ op, path, detail }] }
+ *     trivial(ctx)   → bool       optional, content only: nothing people wrote would move
+ *                                 or go, so boot may apply it by itself (a fresh workspace)
  *     apply(ctx, plan) → { changed }        (plan = what plan() returned, stored; reuse its work)
  *   ctx.progress?.(done, total, label) reports inside a step; ctx.shouldStop?.() is
  *   a cancel the migration checks between units of work (before the backup it is
@@ -25,7 +27,10 @@
  * run by themselves at boot and are idempotent. CONTENT migrations (moving or
  * trimming what people wrote) never run by themselves: the operator reads the
  * plan, then applies it — from the CLI (bin/migrate.mjs) or the upgrade banner,
- * which call these same functions.
+ * which call these same functions. The one exception is a content migration
+ * that says, for this deployment, it would touch nothing anyone wrote
+ * (`trivial`): a fresh workspace has no old memory to review, so boot applies
+ * it the way it applies a structural one, backup and verify included.
  *
  * Every apply first tars the paths it may touch into the store; rollback restores
  * that archive and removes anything the migration created. State lives in the
@@ -188,11 +193,12 @@ export async function plan(id, opts = {}) {
 export async function apply(id, opts = {}) {
   const ctx = { ...(opts.ctx || await buildContext()), progress: opts.onProgress || null, shouldStop: opts.shouldStop || null };
   const m = await find(id, opts);
-  if (m.kind === 'content' && opts.auto) throw new Error(`${id} is a content migration: it never runs by itself`);
+  const trivial = m.kind === 'content' && opts.auto && !!(m.trivial && await m.trivial(ctx));
+  if (m.kind === 'content' && opts.auto && !trivial) throw new Error(`${id} is a content migration: it never runs by itself`);
   if (m.enabled && !m.enabled(ctx)) throw new Error(`${id} is not enabled on this deployment`);
   const sha = inputsSha(m.inputs ? m.inputs(ctx) : m.paths(ctx));
   let p;
-  if (m.kind === 'content') {
+  if (m.kind === 'content' && !trivial) {
     let stored;
     try { stored = JSON.parse(readFileSync(join(storeDir(), `${id}.plan.json`), 'utf8')); }
     catch { throw new Error(`${id}: no plan — run plan first and review it`); }
@@ -245,7 +251,9 @@ export async function rollback(id, opts = {}) {
 /**
  * Boot: record what legacy stamps say already ran, then apply every enabled
  * STRUCTURAL migration that is needed, in order. Content migrations are only
- * reported. Never throws — a failure is logged and leaves that migration pending.
+ * reported — unless one says it is trivial here (nothing anyone wrote would
+ * move or go), then it is applied too. Never throws — a failure is logged and
+ * leaves that migration pending.
  */
 export async function autoApply(opts = {}) {
   const ctx = opts.ctx || await buildContext();
@@ -263,7 +271,7 @@ export async function autoApply(opts = {}) {
       if (m.enabled && !m.enabled(ctx)) continue;
       const { needed } = await m.check(ctx);
       if (!needed) continue;
-      if (m.kind === 'content') { report.pendingContent.push(m.id); continue; }
+      if (m.kind === 'content' && !(m.trivial && await m.trivial(ctx))) { report.pendingContent.push(m.id); continue; }
       await apply(m.id, { ...opts, ctx, auto: true });
       report.applied.push(m.id);
     } catch (err) {

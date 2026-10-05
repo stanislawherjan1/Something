@@ -1,5 +1,29 @@
 # Something — Security Architecture
 
+## User guide
+
+Everything runs on your own server: the coworker, your files, your memory, the
+keys to your services. Nothing is sent through anyone else's servers to work.
+
+- **Who gets in.** People sign in with Google, and only the people an admin
+  has put on the roster can sign in at all.
+- **Your keys.** The API keys and sign-ins you connect are stored encrypted on
+  the server and are used only by the coworker, never shown back or shipped
+  out.
+- **Yours stays yours.** In a team workspace your private files and memory
+  are kept apart from the shared ones by where they are stored, and there is
+  no admin override that reaches them.
+- **What it reads is not what it obeys.** A web page, an email or a document
+  the coworker reads is treated as information, never as instructions, and
+  the server only talks to the services it has been connected to.
+- **Found a problem?** Report it privately through the repository's security
+  tab rather than in a public issue, and it will be handled quietly.
+
+The rest of this page is the full security design for people who run or
+audit the product.
+
+---
+
 Security model, threat analysis, attack vectors, and mitigations.
 
 ---
@@ -1159,7 +1183,7 @@ of the perms/groups setup is in the root-block at the top of
 
 ### 23. Memory v4 — what enters memory, who reads it, how it leaves
 
-Memory v4 (behind `MEMORY_V4`, [MEMORY.md](MEMORY.md#how-it-works)) stores whole
+Memory v4 ([MEMORY.md](MEMORY.md#how-it-works); `MEMORY_V4=off` is the kill switch) stores whole
 conversations, so its boundaries are about scope and injection rather than
 about which facts a model chose to keep.
 

@@ -1,5 +1,22 @@
 # Browser agent — the side-panel chat that can look at and work in your tab
 
+## User guide
+
+The Chrome extension puts the workspace chat in Chrome's side panel, next to
+whatever page you are on. Sign in once with the same Google account as the
+workspace; it is the same coworker with the same memory.
+
+It knows which page you have open and looks at it when that helps: "summarise
+this", "what does this form want", "find the price on this page". Switch on
+**Act** and it can click and type in the page for you, step by step, telling
+you what it is doing. For things that live in a service the workspace is
+connected to (a calendar event, a board, an email) it uses the integration
+rather than clicking around the site.
+
+It sees only the tab you are in, never your other tabs.
+
+---
+
 **The workspace chat in Chrome's side panel, next to any page. The assistant knows which
 page you are on, looks at it when that helps, and — when you switch Act on — clicks and
 types in it for you. For data that lives in a service the workspace is connected to (a

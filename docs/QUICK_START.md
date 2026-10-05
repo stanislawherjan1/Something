@@ -1,5 +1,29 @@
 # Quick Start
 
+## User guide
+
+You get your own AI coworker on a server that belongs to you. It answers in the
+web workspace, on Telegram and in Chrome, keeps your files and memory on that
+server, and connects to the tools you already use.
+
+Setting it up takes about an hour, most of it waiting:
+
+1. Rent a small Linux server (any provider; the installer tells you the size).
+2. Point a domain name at it, so you can open the workspace in a browser.
+3. Create a Google sign-in app, so you and your team log in with Google. The
+   page walks you through the clicks.
+4. Run the one install command on the server and answer its questions: the
+   domain, the Google app details, your email as the first admin.
+5. Open your domain, sign in with Google, and set up the Anthropic account the
+   coworker thinks with from the settings page.
+
+From there everything else is done inside the workspace: connect integrations,
+link Telegram, invite teammates, add routines. Nothing here needs you to come
+back to the server. If a step fails, the troubleshooting section at the end
+covers what people usually hit.
+
+---
+
 Go from nothing to a running workspace in about 45–60 minutes — most of it
 waiting for a server to boot, DNS to propagate, and the first build to run. No
 prior server experience needed; every step is spelled out.
