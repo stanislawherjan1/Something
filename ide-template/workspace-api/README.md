@@ -117,7 +117,7 @@ migrations/                  # NNNN-<name>.mjs, loaded by lib/migrate.js (struct
 bin/migrate.mjs              # the operator's CLI: status | plan | apply | verify | rollback
 ```
 
-Memory v4's endpoints are described in [docs/MEMORY.md](../../docs/MEMORY.md#memory-v4); all of
+Memory v4's endpoints are described in [docs/MEMORY.md](../../docs/MEMORY.md#how-it-works); all of
 them take the person from the session (the Memory screen) or from the turn token (the tools),
 and none has an admin exception.
 

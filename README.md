@@ -117,9 +117,9 @@ Flip on **collaborative mode** and your coworker stops being only *yours*; it be
 Now there's a shared workspace and a private one for each person, side by side:
 
 - **Shared**: the files, the task board, and the team-wide memory everyone works from.
-- **Yours**: your own files and your own memory cards, scoped to you. A teammate can't read them, and your coworker won't go digging through them on someone else's behalf.
+- **Yours**: your own files and your own memory, scoped to you. A teammate can't read them, and your coworker won't go digging through them on someone else's behalf.
 
-The default is collaboration, not secrecy: ask *"did Mara finish the report?"* and it answers from the shared work. Private cards are the exception, and they stay private.
+The default is collaboration, not secrecy: ask *"did Mara finish the report?"* and it answers from the shared work. Private memory is the exception, and it stays private.
 
 Because it knows the whole team, it routes work to the right person, and carries messages between you:
 
@@ -140,7 +140,7 @@ Solo setups are untouched: team mode off means no roles, no split, no routing, j
 
 <br/>
 
-Everything your coworker knows is plain markdown: notes, skills, memory, reports. The web app opens it in a clean, Notion-style editor (headings, checklists, tables, slash commands), but saves byte-for-byte markdown on disk, so git diffs and the bot's own edits stay clean.
+Everything your coworker works on is plain markdown: notes, skills, reports. The web app opens it in a clean, Notion-style editor (headings, checklists, tables, slash commands), but saves byte-for-byte markdown on disk, so git diffs and the bot's own edits stay clean.
 
 It's a shared surface. You and your coworker edit the **same** files: write a launch checklist and the bot ticks items off as it does the work; ask it to draft a report, then polish it yourself. When it changes a file you have open, the edit flashes in live, and file paths (in chat or in a note) are clickable: mention `Products/pricing.md` and it opens.
 
@@ -171,13 +171,22 @@ Under the hood, routines run on **reminders**: a background scheduler that survi
 
 <br/>
 
-Your coworker doesn't start from zero each conversation. A small markdown wiki under `project/memory/` holds the basics (who you are, your team, your hard rules, what each integration can do) plus rolling snapshots of recent web and Telegram exchanges. It loads into the system prompt every turn, so you never re-explain context. In a [team workspace](#team) it splits like the files do: shared cards everyone works from, private cards that are only yours.
+Your coworker doesn't start from zero each conversation. Every finished conversation is kept, dated, on your server, and from each one it takes the few things worth remembering: a meeting, a decision, a person, a preference. A fact is taken from **your** words, never from the bot's own replies, and it carries the conversation it came from, so you can always see why it believes something.
 
-Open **AI Settings → Memory** to see it as a graph: cards (facts), topic pages (long-form), and the rolling snapshots, all linked. Click a node to open the file, or search to highlight. The bot maintains it itself: writing new facts after each session, promoting overgrown sections to their own pages, and reminding itself of past mistakes before it repeats them.
+It keeps one fact per thing. Say something again and the fact gains a source. Change a detail and the fact gets a dated remark under it. Say something is no longer true and the old fact is struck through, with what replaced it. Before answering, it brings in the few excerpts that matter to your message instead of carrying everything in every turn.
 
-**A new memory is on its way** (behind the `MEMORY_V4` flag, see [MEMORY.md](docs/MEMORY.md#memory-v4)): your coworker keeps every finished conversation, dated, and brings the few that matter into each answer instead of carrying everything in every message. The Memory screen shows what it's keeping track of right now, facts with the conversation each came from, topics, your preferences and rules, and a Privacy tab where you decide what the team may see. Admins move a workspace over from a banner, with a backup to download; routines move to a list of their own.
+Open **AI Settings → Memory**:
 
-Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern, and built in collaboration with [@jandziew](https://github.com/jandziew). Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
+- **Short-term memory**: what's going on right now, meetings, trips, deadlines, things it is waiting on, and what it is keeping track of.
+- **Facts**: everything it remembers, each with the conversation it came from and its own timeline of earlier versions and corrections. Hide or erase any of them, or erase the whole conversation behind it.
+- **Topics**: the people, companies and projects that keep coming up, each with who they are to you and the facts about them over time.
+- **Preferences**: the standing rules you stated ("keep answers short", "never email a client without asking").
+- **Privacy** (team mode): what the team may see of yours, and the lines it asks you about before sharing.
+- **Changes**: a log of what memory did: remembered, corrected, merged, hidden, erased, restored.
+
+In a [team workspace](#team) memory splits like the files do: shared memory the team works from, private memory that is only yours. Privacy is enforced on the server by where a thing is stored, never by role: an admin cannot read a teammate's private memory, and the bot won't go digging through it on someone else's behalf.
+
+A workspace that started on the older card-based memory moves over from a banner on the Memory screen, with a backup to download first. Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
 
 <br/>
 
@@ -252,7 +261,7 @@ Beginner walkthrough in [docs/QUICK_START.md](docs/QUICK_START.md). End-to-end m
 **Reference**
 - [INTEGRATIONS.md](docs/INTEGRATIONS.md), the integration catalog, self-service activation, encrypted credentials
 - [SKILLS.md](docs/SKILLS.md), reusable Claude playbooks + dashboard editor
-- [MEMORY.md](docs/MEMORY.md), Karpathy-style LLM-wiki: cards, topics, rolling snapshots, reflect-bots
+- [MEMORY.md](docs/MEMORY.md), how memory works: conversations kept whole, one fact per thing, topics, privacy, the nightly run, moving an older workspace over
 - [ROUTINES.md](docs/ROUTINES.md), routines, the morning planner, and reminders and how they fire
 - [BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md), the Chrome side panel: Look, Act, the hand-off to integrations, every limit and where it is enforced
 - [TEAM_MODE.md](docs/TEAM_MODE.md), collaborative workspaces: roster & roles, Shared vs Personal files/memory, per-recipient reminders, task assignment, cross-surface relay

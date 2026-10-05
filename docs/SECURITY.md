@@ -1159,7 +1159,7 @@ of the perms/groups setup is in the root-block at the top of
 
 ### 23. Memory v4 — what enters memory, who reads it, how it leaves
 
-Memory v4 (behind `MEMORY_V4`, [MEMORY.md](MEMORY.md#memory-v4)) stores whole
+Memory v4 (behind `MEMORY_V4`, [MEMORY.md](MEMORY.md#how-it-works)) stores whole
 conversations, so its boundaries are about scope and injection rather than
 about which facts a model chose to keep.
 

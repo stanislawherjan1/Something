@@ -481,7 +481,7 @@ Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger
   `bin/migrate.mjs` (content); archives and state in `/var/wsapi-store/migrations/`.
 
 The Telegram brain (tmux) gets the v4 prefix through the same `GET /api/memory/prefix?raw=1`
-and the memory tools through the workspace-api MCP; see [MEMORY.md](MEMORY.md#memory-v4).
+and the memory tools through the workspace-api MCP; see [MEMORY.md](MEMORY.md#how-it-works).
 
 ## Telegram Bot Architecture
 

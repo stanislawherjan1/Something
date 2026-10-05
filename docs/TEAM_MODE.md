@@ -178,7 +178,7 @@ typically its own island.
 
 ### With memory v4
 
-Memory v4 ([MEMORY.md](MEMORY.md#memory-v4)) keeps whole conversations instead
+Memory v4 ([MEMORY.md](MEMORY.md#how-it-works)) keeps whole conversations instead
 of cards, split the same way by path: `memory/ledger/` (shared),
 `memory/users/<slug>/ledger/` (one person) and `memory/groups/<chatId>/ledger/`
 (one registered group).

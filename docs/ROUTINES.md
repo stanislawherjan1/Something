@@ -62,7 +62,7 @@ card changes (the memory wiki is watched — see ARCHITECTURE.md).
 
 ### With memory v4
 
-Once a deployment is on memory v4 ([MEMORY.md](MEMORY.md#memory-v4)), routines
+Once a deployment is on memory v4 ([MEMORY.md](MEMORY.md#how-it-works)), routines
 leave memory and become data of their own: `.team/users/<slug>/routines.json`
 (solo: `.team/users/default/routines.json`), private by path like the chat
 history next to it. Migration `0004` seeds it from the card (lines the grammar
