@@ -18,8 +18,8 @@ how-to for it, so the coworker knows that service's habits, and offers
 ready-made routines built on it.
 
 You can rotate a key or disconnect a service any time from the same screen. In
-a team workspace each person connects their own accounts; a teammate's
-connection is never used on your behalf.
+a team workspace an admin connects a service once for the whole workspace, and
+the coworker then uses it for whoever asks.
 
 ---
 
