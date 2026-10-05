@@ -1,6 +1,6 @@
 ---
 name: capability-tour
-description: Show the user what tools/MCPs are configured and what they can actually do for this business. Triggered manually by phrases "what can you do", "show me your tools", "show capabilities", "what tools do I have", "what's wired up". Also runs proactively after a new integration is activated. Diffs the active MCP set against CLAUDE.md "Context" section and offers to fill the gap.
+description: Show the user what tools/MCPs are configured and what they can actually do for this business. Use when someone asks what you can do or which tools are wired up, and proactively once after a new integration is activated. Diffs the active MCP set against the CLAUDE.md "Context" section and offers to fill the gap. Ends a tour with at most one fitting routine suggestion and a pointer that more is under Integrations.
 allowed-tools: Read, Bash, Write, Edit
 ---
 
@@ -21,7 +21,7 @@ for name in sorted(servers.keys()):
 "
 ```
 
-Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features. (`workspace-api` stays — `memory_grep` is a real capability.)
+Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features. (`workspace-api` stays — `memory_search` / `memory_timeline` are real capabilities.)
 
 ## Step 2 — read the user's own description
 
@@ -41,7 +41,9 @@ For each active MCP from Step 1, check if it's mentioned in the Context section:
 
 ## Step 4 — compose the tour
 
-Use the MCP → human-readable mappings + tour message format + infrastructure filter rules in [references/mcp-defaults.md](references/mcp-defaults.md). Override defaults with whatever the user wrote in their CLAUDE.md `## Context` section (per-MCP).
+Use the description sources + tour message format + infrastructure filter rules in [references/mcp-defaults.md](references/mcp-defaults.md). Override defaults with whatever the user wrote in their CLAUDE.md `## Context` section (per-MCP).
+
+End the tour with **at most one** routine suggestion that fits what they have wired up (e.g. a stale-tasks check when tasks are in use) — offered in a plain sentence, set up through the `routines` skill only on a yes — and one line that more integrations can be connected under Integrations.
 
 ## Step 5 — proactively surface gaps
 
@@ -51,13 +53,13 @@ If Step 3 found gaps (configured-but-undocumented or documented-but-deactivated)
 
 ## Triggering modes
 
-**Manual** — user asks "what can you do", "show me your tools", etc. Run full Step 1–5.
+**Manual** — the user asks what you can do or what is wired up. Run full Step 1–5.
 
 **Post-activation surfacing** — when you notice (during normal session work) that `/home/bot/.claude.json` mcpServers contains an entry that wasn't there last session AND isn't documented in CLAUDE.md Context, mention ONCE at a natural break in conversation:
 ```
 Heads up — I see <integration> was added today. If you want, I can run a mini-tour or help describe it in CLAUDE.md Context. Or skip it and continue what we were doing.
 ```
-Don't push if user moves on. Track in memory `capability-tour-state` so you don't repeat — in a team workspace key it **per user** (`capability-tour-state:<actor-slug>`) so one teammate's dismissal doesn't suppress the tour for everyone. Once-per-fortnight cap on proactive surfacing — see [references/gap-handling.md](references/gap-handling.md) for the throttle pattern.
+Don't push if user moves on. There is no state file: the conversation is filed automatically, so before surfacing again run `memory_search "capability tour"` and check what this person was already offered or declined (in a team, that search is scoped to them, so one teammate's dismissal doesn't suppress the tour for everyone). Once-per-fortnight cap on proactive surfacing — see [references/gap-handling.md](references/gap-handling.md).
 
 ## Why this exists
 

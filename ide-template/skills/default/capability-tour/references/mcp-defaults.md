@@ -1,6 +1,12 @@
-# MCP → human-readable mappings
+# MCP → human-readable descriptions
 
-Default descriptions to use when the user's project CLAUDE.md `## Context` section doesn't override. English baseline; translate to the user's working language.
+Where to get the one-line description of each active integration, in order:
+
+1. The user's project CLAUDE.md `## Context` section (always wins).
+2. The installed skill for that integration under `~/project/.claude/skills/<name>/` — its `description` says what it does. This covers every integration in the catalog, including ones missing from the table below.
+3. The fallback table below.
+
+English baseline; translate to the user's working language.
 
 | MCP | Human-readable (English baseline) |
 |---|---|
@@ -23,8 +29,7 @@ Default descriptions to use when the user's project CLAUDE.md `## Context` secti
 | `gslides` | Google Slides — decks, slides |
 | `gtasks` | Google Tasks — todo lists |
 | `x` / `x-mcp` | X (Twitter) — read tweets, search, profiles |
-| `substack` | Substack — newsletter posts, subscribers |
-| `workspace-api` | Workspace tools — memory search (`memory_grep`) |
+| `workspace-api` | Workspace tools — searching what we know and what happened (`memory_search`, `memory_timeline`) |
 
 ## Tour message format
 
@@ -41,10 +46,13 @@ Tools currently wired up for this workspace:
 ✅ Reminders — Telegram alerts at scheduled times
 
 Want me to demo any of these on a real example? Just say "show me X".
+More can be connected under Integrations.
 ```
+
+Add at most one fitting routine suggestion after this block (see SKILL.md Step 4).
 
 ## Filter rules
 
 Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features.
 
-`workspace-api` IS user-facing (memory_grep is the tool the model uses for "search what we know about X") — keep in the tour.
+`workspace-api` IS user-facing (`memory_search` / `memory_timeline` are how you answer "what do we know about X" and "what happened with X") — keep in the tour.

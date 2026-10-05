@@ -42,6 +42,8 @@ Still works. UI auto-splits on `\n`, ` — `, or `: `.
 - `"tomorrow at 10:00"` / `"tomorrow at 9am"`
 - ISO 8601: `"2026-04-17T15:00:00Z"` (always UTC)
 
+`"tomorrow at 10:00"` is read as UTC too — for a clock time the person gave, convert it yourself and pass ISO with `Z`.
+
 ## Recurrence
 
 Pick the simplest form that fits.
@@ -81,7 +83,9 @@ When a reminder fires in a skipped hour/day, it advances to the next non-skipped
 
 ## Timezone
 
-All times are UTC. **Tell the user this.** If they say "9am", clarify: "9am UTC, which is 11am Warsaw time — is that right?" When you confirm a *recurring* reminder, state **both** the recurrence and the next concrete fire in their local zone — e.g. "every Mon/Wed/Fri at 09:00 UTC (11:00 Warsaw), next this Friday."
+The tool stores UTC; the person thinks in their own zone. Their zone is in `MY_SETTINGS` (fresh via `memory_now`). A time they say ("9am") is in that zone: convert it to UTC yourself, don't ask them to. Confirm back in their **local** time only — e.g. "every Mon/Wed/Fri at 09:00, next this Friday."
+
+`recur.at` is UTC, so a recurring local time shifts by an hour across a DST change; when one falls inside the reminder's span, say so or adjust it after the change.
 
 ## Who it's for — `recipient` (team mode)
 
@@ -101,6 +105,13 @@ All times are UTC. **Tell the user this.** If they say "9am", clarify: "9am UTC,
 ```
 
 Resolve names to slugs from the team roster in your context; ask only when genuinely ambiguous — never guess a wrong target. **Permissions:** only an admin can target `"everyone"` or other people. If the tool refuses, relay that and offer to remind just the asker. **Omit entirely in a solo workspace.**
+
+## Delivery — `channel`, `chat`, `urgency`, `origin`
+
+- **`channel`** — `telegram` / `web` / `all`. Defaults to the surface the request came in on. Override when the person says otherwise ("ping me on Telegram tomorrow" while on the web).
+- **`chat`** — a Telegram **group** chat id (negative number, from the `CHANNELS` card) to deliver into that group instead of to a person: "remind us in the team chat on Friday", or a result you promised the group. You compose the message in the group when it fires and may stay silent if there's nothing worth saying. Leave it out for anything addressed to a person.
+- **`urgency`** — `now` (default: delivered the moment it fires) or `ambient` (held and woven into the next natural opening). Set by the morning planner per item; omit for ordinary reminders. Never `ambient` for a check that has to run.
+- **`origin`** — `"planner"` ONLY on reminders the morning planner places, so its next run can replace its own set without touching the person's. Omit for anything a person asked for directly.
 
 ## Other tools
 

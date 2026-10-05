@@ -1,6 +1,6 @@
 ---
 name: repo-audit
-description: Weekly project structure review. Identifies orphans (loose files in root), stale files (no edit 30+ days), duplicate folders, empty dirs, and files missing from the memory INDEX map. Auto-executes obvious safe cleanups (empty folders, twin-folder casing, .playwright-mcp wipe), asks for approval on judgment calls. Triggered weekly by reminder `[REPO_AUDIT_TRIGGER]`, or manually via "/audit", "weekly audit", "clean up repo", "tidy up the project".
+description: Weekly project structure review. Identifies orphans (loose files in root), stale files (no edit 30+ days), duplicate folders and empty dirs (never inside memory/, .team/, .routines/ or .group-watcher/). Auto-executes obvious safe cleanups (empty folders, twin-folder casing, .playwright-mcp wipe), asks for approval on judgment calls. Triggered weekly by reminder `[REPO_AUDIT_TRIGGER]`, or manually via "/audit", "weekly audit", "clean up repo", "tidy up the project".
 allowed-tools: Read, Bash, Write
 ---
 
@@ -54,16 +54,15 @@ Need your call:
 2. N related files in `<folder>/` — make a `<folder>/<subtopic>/` subfolder?
 3. `<filename>` from <month>, no recent activity — archive or keep?
 
-Reply with number + decision (e.g. "1 inbox, 2 yes, 3 keep") or "leave everything".
 ```
 
-Wait for response. Parse, execute, append to `Audit.md`.
+Ask in a plain sentence — they answer however they like ("move the first to Inbox, keep the rest"); no reply codes or forms. Wait for the answer, act on it, append to `Audit.md`.
 
-The audit record lives in `~/project/${BOT_NAME}/<today>/Audit.md` (Step 3) — that is the durable log. Do NOT write a run summary into `memory/concepts/` or `memory/topics/`: the memory graph is for knowledge about the user's world, not the bot's own housekeeping logs, and a self-referential audit-log node just clutters it.
+The audit record lives in `~/project/${BOT_NAME}/<today>/Audit.md` (Step 3) — that is the durable log. Do NOT write a run summary into memory: memory is for knowledge about the user's world, not the bot's own housekeeping logs.
 
 ## Edge cases
 
-- **No findings** → still send a short message: "Weekly audit — clean, nothing to do 👍". Builds trust the system is alive.
+- **No findings** → send nothing (on the trigger, end with `[[SILENT]]`). A "nothing to report" message is noise.
 - **20+ findings** → cap report at top 5 by priority (orphans > stale > clusters), mention the rest are in `Audit.md`.
 - **Disk-full / permission errors** → don't auto-execute the rest; surface as critical: "Audit aborted: write error in X. Check disk space."
 - **User says "leave everything"** → respect, log "all declined" to Audit.md, move on.

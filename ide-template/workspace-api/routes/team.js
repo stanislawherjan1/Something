@@ -19,7 +19,9 @@
 import { Router } from 'express';
 import express from 'express';
 import * as team from '../lib/team.js';
+import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
+import { restoreDefaultMemory } from '../lib/memory-loader.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
 import { listUnregistered } from '../lib/integrations/group-watcher.js';
@@ -111,7 +113,23 @@ export default function teamRouter() {
       const slug = team.slugFor(req.actor);
       if (slug) merged = mergePersonalToWorkspace(slug);
     }
-    res.json({ ok: true, teamMode: team.setTeamMode(enabled, req.actor), merged });
+    const teamMode = team.setTeamMode(enabled, req.actor);
+    // Solo mode reads the one person's cards flat: bring the admin's back
+    // (enabling adopts them under users/<admin> at the next boot).
+    if (!teamMode) restoreDefaultMemory(team.primaryAdminSlug());
+    res.json({ ok: true, teamMode, merged });
+  });
+
+  // The workspace's default time zone (people without their own use it).
+  // Changing it moves the morning planning of everyone who follows it.
+  router.put('/team/default-timezone', requireAdmin, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
+    try {
+      const tz = team.setDefaultTimezone(String(req.body?.timezone || ''), req.actor);
+      for (const m of team.list()) if (!m.timezone && m.slug) { try { reschedulePlanFor(m.slug); } catch { /* best effort */ } }
+      res.json({ ok: true, defaultTimezone: tz });
+    } catch (err) {
+      res.status(400).json({ ok: false, error: err.message });
+    }
   });
 
   router.post('/team', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {

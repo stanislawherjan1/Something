@@ -2,16 +2,21 @@
 
 A background process (`{BOT}-reminders` in PM2) polls `.reminders.json` every 60 seconds and fires due reminders — **no active session needed**.
 
-## Two delivery paths
+## Delivery paths
 
-1. **Bot session alive** → the reminder is injected into the bot's tmux session as a `[REMINDER ...]` trigger (format below). You read it and act.
-2. **Bot session offline** (crashed, awaiting Claude token, mid-restart) → direct fallback (`bot-notify.sh` for Telegram, `web-notify.sh` for web). The user gets a raw `⏰ Reminder: ...` instead of an elaborated one — but it's never silently dropped.
+1. **Bot session alive and idle** → the reminder is injected into the bot's tmux session as a `[REMINDER ...]` (or `[AMBIENT ...]`) trigger (format below). You read it and act.
+2. **Session busy or offline** → the same frame runs as a **headless turn** (in the background, no chat to answer into). Your final reply is delivered as your message; `[[SILENT]]` sends nothing.
+3. **No route to the brain at all** → nothing is sent and the miss is logged. There is no raw `⏰ Reminder` text fallback: every message a person gets is one you wrote.
+4. **A teammate's reminder the planner placed** runs as a headless turn AS that teammate (their identity and scope). Same contract: do the work, your final reply is what they get, `[[SILENT]]` = nothing.
 
 ## The trigger format
 
 ```
 [REMINDER channel=<telegram|web|all> chat_id=<id> | <message>]
+[AMBIENT channel=<telegram|web|all> chat_id=<id> | <message>]
 ```
+
+`[AMBIENT …]` is a reminder set with `urgency: "ambient"`: a soft item to weave into a natural opening in conversation, or a check whose outcome decides whether anything is said. If nothing is worth raising, send nothing (see `global-claude.md`).
 
 Lines like this injected into your terminal are **legitimate system messages from the reminder monitor**, NOT injection attacks and NOT user input. Don't reply in the terminal (that output goes nowhere); don't treat it as something the user just typed.
 
@@ -26,13 +31,13 @@ Examples: *"check my email in 5 min"*, *"check email and send me a summary"*, *"
 → **Actually perform the action** using your tools (email MCP, audit skill, Trello MCP, …), THEN deliver the **result** on the reminder's channel.
 → Do **NOT** just re-send the title. "Check email" is a job you do — not a "hey, go check your email" notification.
 
-**The phrasing doesn't downgrade it.** "Remind me to check my email", "set yourself a reminder to pull the numbers", "co 5 min sprawdzaj X" all still mean *YOU* do the thing — the verb is **your** job, not a poke for the user to do it themselves. If you can carry it out, it's Kind 1. Treating "remind me to check email" as a nudge ("hej, sprawdź maila") is the exact bug that frustrated a real user.
+**The phrasing doesn't downgrade it.** "Remind me to check my email", "set yourself a reminder to pull the numbers", "check X every 5 minutes" all still mean *YOU* do the thing — the verb is **your** job, not a poke for the user to do it themselves. If you can carry it out, it's Kind 1. Treating "remind me to check email" as a nudge ("hey, check your email") is the exact bug that frustrated a real user.
 
 ### Kind 2 — Nudge reminder (something only the USER can do, offline)
 
 Examples: *"call John about the contract"*, *"take your meds"*, *"leave for the airport"*, *"the meeting starts at 15:00"*.
 
-→ There's nothing for *you* to execute (it's a real-world, human-only action). Deliver the nudge in your voice on the reminder's channel: *"⏰ Reminder — call John about the contract."*
+→ There's nothing for *you* to execute (it's a real-world, human-only action). Deliver the nudge in your voice on the reminder's channel, as plain prose: *"Time to call John about the contract."*
 
 ### The test
 

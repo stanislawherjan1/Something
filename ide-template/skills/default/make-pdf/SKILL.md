@@ -40,12 +40,15 @@ yourself reaching for `import struct` to make a PDF, **stop** and use
    especially when asked to "check it visually" before sending. If something is
    off, fix the markdown (or the house stylesheet) and re-render.
 4. **Deliver it.**
-   - Over the **web / a 1:1 Telegram DM**: use the Telegram `sendDocument` tool
-     with the file path.
+   - In a **1:1 Telegram DM**: send it with the Telegram `reply` tool, passing
+     the absolute PDF path in its `files` array.
+   - On the **web**: name the file as a backticked workspace-relative path
+     (`Documents/proposal.pdf`) — the UI turns it into a clickable link.
    - In a **Telegram GROUP**: your text can't carry an attachment — emit the
      marker `[[SEND_FILE <absolute path>]]` on its own line; the system uploads
      that file to the group. **Never claim you sent a file unless you actually
-     used `sendDocument` or a `[[SEND_FILE ...]]` marker.**
+     attached it via `reply`'s `files`, gave the web path, or emitted a
+     `[[SEND_FILE ...]]` marker.**
 
 ## Changing the look — use the `style` knobs, nothing else
 

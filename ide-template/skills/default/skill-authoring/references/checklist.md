@@ -43,17 +43,17 @@ Run through every box before committing. If any fails, fix before the skill ship
 
 ## Discovery + behaviour test
 
-Skills are auto-discovered at every CC session start, and a fresh session starts on every Telegram message / web chat turn. **No bot restart needed** for the bot to see a new skill — just send the next message.
+Skills are auto-discovered at session start. A web chat turn sees a new skill on the next message; the Telegram brain is one long-running session and may need `/restart` first.
 
 - [ ] Ask the bot in a fresh message: *"when would you use the `<skill-name>` skill?"* — answer quotes your description back
 - [ ] Send a trigger phrase from your description — skill loads and acts as expected
 - [ ] Send a clearly unrelated message — skill does NOT load (no over-triggering)
 - [ ] If skill overlaps with another, verify each loads when its specific trigger fires (not the other)
 
-(Bot restart IS needed for: MCP server changes, `.claude/settings.json` edits, `global-claude.md` updates — those are loaded at bot startup, not CC session start. Pure SKILL.md additions don't qualify.)
+(Bot restart IS needed for: MCP server changes, `.claude/settings.json` edits, `global-claude.md` updates — those are loaded at bot startup, not CC session start. On the web, pure SKILL.md additions don't need one.)
 
 ## Documentation handoff
 
 - [ ] Told the user: skill name, trigger phrases, one example query to test
-- [ ] If skill is integration-specific, noted which `requires:` env var it needs
+- [ ] If skill is integration-specific, noted which integration its `requires:` names (catalog id or MCP server name)
 - [ ] If skill ships in `ide-template` (system skill, not project skill), updated `skills/README.md` if relevant

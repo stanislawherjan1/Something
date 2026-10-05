@@ -46,7 +46,7 @@ function when(ts) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-export default function MemoryChanges({ onClose, onReverted }) {
+export default function MemoryChanges({ onClose, onReverted, inline = false }) {
   const [state, setState] = useState({ status: 'loading', changes: [] });
   const [busy, setBusy] = useState(null);
   const [failed, setFailed] = useState(null);
@@ -84,8 +84,10 @@ export default function MemoryChanges({ onClose, onReverted }) {
   };
 
   return (
-    <div className="absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-border/55 bg-background shadow-xl">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/45 px-4 py-3">
+    <div className={inline
+      ? 'flex flex-col overflow-hidden rounded-[6px] border border-border/60 bg-card'
+      : 'absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-border/55 bg-background shadow-xl'}>
+      {!inline && <div className="flex shrink-0 items-center justify-between border-b border-border/45 px-4 py-3">
         <div className="flex items-center gap-2">
           <History className="size-4 text-muted-foreground/70" strokeWidth={1.75} />
           <span className="text-[13px] font-semibold text-foreground/90">What I saved</span>
@@ -93,12 +95,12 @@ export default function MemoryChanges({ onClose, onReverted }) {
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="rounded-[6px] p-1 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
           aria-label="Close"
         >
           <X className="size-4" strokeWidth={1.75} />
         </button>
-      </div>
+      </div>}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {state.status === 'loading' && (
@@ -108,7 +110,7 @@ export default function MemoryChanges({ onClose, onReverted }) {
         )}
 
         {state.status === 'error' && (
-          <div className="m-4 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive">
+          <div className="m-4 flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive">
             <AlertCircle className="mt-px size-3.5 shrink-0" strokeWidth={1.75} />
             <span>Couldn't load the memory log: {state.error}</span>
           </div>
@@ -161,7 +163,7 @@ export default function MemoryChanges({ onClose, onReverted }) {
                     type="button"
                     onClick={() => revert(c.id)}
                     disabled={busy === c.id}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md border border-border/55 px-2 py-0.5 text-[11.5px] font-medium text-foreground/75 transition-colors hover:bg-muted/60 disabled:opacity-50"
+                    className="ml-auto inline-flex items-center gap-1 rounded-[6px] border border-border/55 px-2 py-0.5 text-[11.5px] font-medium text-foreground/75 transition-colors hover:bg-muted/60 disabled:opacity-50"
                   >
                     {busy === c.id
                       ? <Loader2 className="size-3 animate-spin" strokeWidth={2} />

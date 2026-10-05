@@ -29,21 +29,23 @@ find ~/project -type f -mtime +30 \
   ! -path '*/.git/*' ! -path '*/.playwright-mcp/*' \
   ! -path '*/.chat/*' ! -path '*/.claude/sessions/*' \
   ! -path '*/inbox/*' \
-  ! -path '*/memory/users/*' \
+  ! -path '*/memory/*' ! -path '*/.team/*' \
+  ! -path '*/.routines/*' ! -path '*/.group-watcher/*' \
   | head -50
 ```
 
-> `! -path '*/memory/users/*'` keeps per-user **private** memory (team mode) out of the audit entirely — a teammate's stale private note must never be flagged by filename into the shared report.
+> These excludes keep memory (including per-user **private** memory in team mode), team state, routine state and group transcripts out of the audit entirely — none of it is project content, and a teammate's private note must never be flagged by filename into the shared report.
 
 ## Empty folders (14+ days old, no children)
 
 ```bash
 find ~/project -type d -empty -mtime +14 \
   ! -path '*/.git*' ! -path '*/.playwright-mcp*' \
-  ! -path '*/memory/users/*'
+  ! -path '*/memory/*' ! -path '*/.team/*' \
+  ! -path '*/.routines/*' ! -path '*/.group-watcher/*'
 ```
 
-> The exclusion also stops the rmdir step from deleting a freshly-bootstrapped-but-not-yet-written `memory/users/<slug>/` dir.
+> The exclusion also stops the rmdir step from deleting a freshly-bootstrapped-but-not-yet-written dir the server expects to exist.
 
 ## Twin folders (case differences) — common typo source
 

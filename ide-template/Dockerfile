@@ -71,6 +71,9 @@ RUN groupadd -g 1100 workspace && \
 
 # === LAYER 1: System packages (Node.js 22, rclone, tmux, socat) ===
 # build-essential added so the setuid wrappers compile in LAYER 1b.
+# tzdata-legacy: the old zone names (Asia/Calcutta, Europe/Kiev…)
+# moved out of tzdata in Debian trixie; without them `TZ=Asia/Calcutta date`
+# prints UTC — the morning planner once thought it was 23:00 and planned nothing.
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -81,6 +84,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     unzip \
     xclip \
     tmux \
+    tzdata-legacy \
     build-essential \
     python3 \
     python3-pip \
@@ -209,8 +213,10 @@ RUN npm install -g \
     @modelcontextprotocol/server-memory \
     --prefix /home/coder/.npm-global
 
+# Pinned: an unpinned third-party pip package is code we haven't read changing
+# under us between builds (CLAUDE.md "pin what you pull in").
 RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
-    google-analytics-mcp
+    google-analytics-mcp==2.11.5
 
 # PDF toolchain for pdf-mcp: python-markdown → weasyprint. The one supported
 # way to make PDFs (apps/pdf-mcp). System libs (pango/harfbuzz/ffi) + fonts +
@@ -270,6 +276,19 @@ RUN cd /opt/ide/apps/miniapp-mcp && npm install --production
 
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
 RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
+
+# Memory v4 embedder: a worker workspace-api forks (lib/embedder-client.js),
+# with the model deploy.sh fetched into models/ (pinned revision + sha256).
+# ONNXRUNTIME_NODE_INSTALL=skip: no CUDA download from NuGet during the build.
+# Only this platform's runtime binaries are kept (the package ships all of
+# them, ~480 MB); onnxruntime-web is the browser runtime, unused under Node.
+COPY apps/embedder /opt/ide/apps/embedder
+RUN cd /opt/ide/apps/embedder && ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev --no-audit --no-fund && \
+    ARCH="$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" && \
+    rm -rf node_modules/onnxruntime-web node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32 && \
+    find node_modules/onnxruntime-node/bin -mindepth 3 -maxdepth 3 -type d ! -name "$ARCH" -exec rm -rf {} + && \
+    test -d "node_modules/onnxruntime-node/bin/napi-v6/linux/$ARCH"
+COPY models /opt/ide/models
 
 COPY apps/web-channel-mcp /opt/ide/apps/web-channel-mcp
 RUN cd /opt/ide/apps/web-channel-mcp && npm install --production
@@ -337,9 +356,6 @@ RUN cd /opt/ide/apps/gtasks-mcp && npm install --production
 
 COPY apps/x-mcp /opt/ide/apps/x-mcp
 RUN cd /opt/ide/apps/x-mcp && npm install --production
-
-COPY apps/substack-mcp /opt/ide/apps/substack-mcp
-RUN cd /opt/ide/apps/substack-mcp && npm install --production
 
 # === LAYER 2f: workspace-api (web chat backend) ===
 # Express server that wraps `claude -p` with SSE streaming for the React workspace.

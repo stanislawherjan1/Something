@@ -122,7 +122,7 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-export default function MemoryDashboard({ sidebarOpen, onSelect }) {
+export default function MemoryDashboard({ sidebarOpen, onSelect, notice = null }) {
   const { botDisplayName } = useBranding();
   const [graph, setGraph] = useState(null);
   const [error, setError] = useState(null);
@@ -611,7 +611,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
   }, [displayed]);
 
   const scopeFilterControl = hasYours && (
-    <div className="inline-flex items-center overflow-hidden rounded-md border border-border/55 text-[11.5px] font-medium">
+    <div className="inline-flex items-center overflow-hidden rounded-[6px] border border-border/55 text-[11.5px] font-medium">
       {[['all', 'All'], ['shared', 'Shared'], ['yours', 'Yours']].map(([s, label]) => (
         <button
           key={s}
@@ -640,7 +640,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search memory"
-          className="h-7 w-56 rounded-md border border-border/55 bg-background pl-7 pr-2 text-[12.5px] text-foreground outline-none transition-colors focus:border-foreground/40"
+          className="h-7 w-56 rounded-[6px] border border-border/55 bg-background pl-7 pr-2 text-[12.5px] text-foreground outline-none transition-colors focus:border-foreground/40"
         />
       </div>
     </div>
@@ -654,10 +654,11 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
         meta={searchInput}
         sidebarOpen={sidebarOpen}
       />
+      {notice}
 
       <div ref={containerRef} className="relative flex-1 min-h-0 overflow-hidden bg-muted/20">
         {error && (
-          <div className="absolute inset-x-4 top-4 z-10 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive shadow-sm">
+          <div className="absolute inset-x-4 top-4 z-10 flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/[0.06] px-3 py-2 text-[12.5px] text-destructive shadow-sm">
             <AlertCircle className="mt-px size-3.5 shrink-0" strokeWidth={1.75} />
             <span>Couldn't load memory graph: {error}</span>
           </div>
@@ -739,7 +740,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
             onClick={() => setShowBare(s => !s)}
             title={showBare ? 'Hide bare-name links (only [[wiki]] edges)' : 'Show bare-name links'}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors',
+              'inline-flex items-center gap-1.5 rounded-[6px] border px-2 py-1 text-[11.5px] font-medium transition-colors',
               showBare
                 ? 'border-border/55 bg-card/70 text-foreground/85 hover:bg-card'
                 : 'border-border/55 bg-foreground/8 text-foreground hover:bg-foreground/12',
@@ -753,7 +754,7 @@ export default function MemoryDashboard({ sidebarOpen, onSelect }) {
             onClick={() => setShowChanges(v => !v)}
             title="What the bot has written to memory lately, with one-tap undo"
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors',
+              'inline-flex items-center gap-1.5 rounded-[6px] border px-2 py-1 text-[11.5px] font-medium transition-colors',
               showChanges
                 ? 'border-border/55 bg-foreground/8 text-foreground hover:bg-foreground/12'
                 : 'border-border/55 bg-card/70 text-foreground/85 hover:bg-card',
@@ -869,7 +870,7 @@ function HoverPreview({ node }) {
   // modal header so users see the same label in both surfaces.
   const cleaned = describeNode(node);
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 max-w-sm rounded-md border border-border/55 bg-popover/95 px-4 py-3 text-popover-foreground shadow-lg backdrop-blur-sm">
+    <div className="pointer-events-none absolute bottom-3 left-3 max-w-sm rounded-[6px] border border-border/55 bg-popover/95 px-4 py-3 text-popover-foreground shadow-lg backdrop-blur-sm">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className="size-3.5 shrink-0 text-muted-foreground/65" strokeWidth={1.75} />
@@ -939,10 +940,10 @@ function MemoryCardModal({ node, onClose }) {
       role="dialog"
       aria-modal="true"
       aria-label={`Memory: ${node.name || node.id}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="relative flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-md bg-background shadow-2xl">
+      <div className="relative flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden modal-panel">
         {/* Header — icon + name + kind pill + close */}
         <div className="flex items-center gap-3 border-b border-border/40 px-6 py-3.5">
           <Icon className="size-4 shrink-0 text-muted-foreground/70" strokeWidth={1.75} />
@@ -963,7 +964,7 @@ function MemoryCardModal({ node, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
+            className="rounded-[6px] p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />
@@ -979,7 +980,7 @@ function MemoryCardModal({ node, onClose }) {
           )}
           {status === 'error' && (
             <div className="flex h-full items-center justify-center px-8 py-16 text-center">
-              <div className="flex max-w-md items-start gap-2 rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12.5px] text-destructive">
+              <div className="flex max-w-md items-start gap-2 rounded-[6px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12.5px] text-destructive">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
                 <span>{error}</span>
               </div>
@@ -987,7 +988,7 @@ function MemoryCardModal({ node, onClose }) {
           )}
           {status === 'emerging' && (
             <div className="mx-auto min-h-full w-full max-w-2xl px-8 py-10">
-              <div className="rounded-lg border border-dashed border-border/60 px-6 py-6">
+              <div className="rounded-[6px] border border-dashed border-border/60 px-6 py-6">
                 <div className="text-[14px] font-semibold text-foreground/90">No page for this entry</div>
                 <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/85">
                   Nothing is stored under this name. Refresh the graph — it may have been renamed or removed since this view loaded.
@@ -998,7 +999,7 @@ function MemoryCardModal({ node, onClose }) {
           {status === 'ok' && (
             <div className="mx-auto min-h-full w-full max-w-3xl px-8 py-7">
               {isAutoMaintained && (
-                <div className="mb-5 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3.5 py-2 text-[12px] text-muted-foreground/85">
+                <div className="mb-5 flex items-start gap-2 rounded-[6px] border border-border/50 bg-muted/30 px-3.5 py-2 text-[12px] text-muted-foreground/85">
                   <Lock className="mt-0.5 size-3 shrink-0 text-muted-foreground/60" strokeWidth={2} />
                   <span>Auto-maintained: refreshed by workspace-api on idle and chat reset. Hand-edits get overwritten on the next snapshot tick.</span>
                 </div>
@@ -1008,7 +1009,7 @@ function MemoryCardModal({ node, onClose }) {
                   {stripFrontmatter(content)}
                 </MarkdownView>
               ) : (
-                <div className="rounded-md border border-dashed border-border/55 bg-muted/15 px-5 py-6 text-[12.5px] leading-relaxed text-muted-foreground/80">
+                <div className="rounded-[6px] border border-dashed border-border/55 bg-muted/15 px-5 py-6 text-[12.5px] leading-relaxed text-muted-foreground/80">
                   <div className="font-medium text-foreground/80">Card body is empty.</div>
                   <div className="mt-1">
                     The file at <span className="font-mono text-[11.5px]">{node.relPath}</span> contains nothing past its frontmatter, or the read returned no content.

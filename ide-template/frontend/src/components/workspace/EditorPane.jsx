@@ -1,8 +1,8 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { Menu, Folder, FileText } from 'lucide-react';
+import { Menu, Folder, FileText, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { SkeletonEditorHeader, SkeletonLine, SkeletonFolderGrid } from './SkeletonLoader.jsx';
+import { SkeletonEditorHeader, SkeletonLine } from './SkeletonLoader.jsx';
 import { FUNCTIONAL_PATHS } from './FileTree.jsx';
 import { useBranding } from './identity.jsx';
 import FileViewer         from './FileViewer.jsx';
@@ -17,8 +17,12 @@ import ResponsibilitiesDashboard from './views/ResponsibilitiesDashboard.jsx';
 import RemindersDashboard from './views/RemindersDashboard.jsx';
 import TeamDashboard      from './views/TeamDashboard.jsx';
 import MemoryDashboard    from './views/MemoryDashboard.jsx';
+import MemoryV4View       from './views/MemoryV4View.jsx';
+import { LegacyMemoryNotice } from './MemoryMigration.jsx';
+import { useMemoryStatus } from './useMemoryStatus.js';
 import TelegramDashboard  from './views/TelegramDashboard.jsx';
 import NotificationsView  from './views/NotificationsView.jsx';
+import SettingsView       from './views/SettingsView.jsx';
 import BrowserAgentView   from './views/BrowserAgentView.jsx';
 
 // BlockNote is heavy (~500 KB gzip) — lazy-load so the initial bundle stays
@@ -96,6 +100,21 @@ export default function EditorPane({ selected, fileEventNonce, sidebarOpen, onEx
   );
 }
 
+/**
+ * Memory: the new view once memory v4 is on (after the move), the old graph
+ * before it — with a note when the move is available. Nothing until the status
+ * is known, so neither flashes before the other.
+ */
+function MemoryView({ fileEventNonce, sidebarOpen, onSelect }) {
+  const { loaded, mode } = useMemoryStatus();
+  if (!loaded) return <div className="h-full" />;
+  if (mode === 'on') return <MemoryV4View sidebarOpen={sidebarOpen} />;
+  return (
+    <MemoryDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect}
+      notice={<LegacyMemoryNotice onReview={() => window.dispatchEvent(new Event('memory-migration:review'))} />} />
+  );
+}
+
 function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (!selected) return <EmptyState />;
   const { path, type } = selected;
@@ -107,9 +126,10 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'responsibilities')                       return <ResponsibilitiesDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'reminders')                              return <RemindersDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'team')                                   return <TeamDashboard sidebarOpen={sidebarOpen} />;
-  if (type === 'memory')                                 return <MemoryDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
+  if (type === 'memory')                                 return <MemoryView fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'telegram')                               return <TelegramDashboard sidebarOpen={sidebarOpen} onSelect={onSelect} />;
   if (type === 'notifications')                          return <NotificationsView sidebarOpen={sidebarOpen} />;
+  if (type === 'settings')                               return <SettingsView sidebarOpen={sidebarOpen} />;
   if (type === 'miniapp')                                return (
     <Suspense fallback={<LoadingState />}>
       <MiniAppView id={path} fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />
@@ -194,8 +214,8 @@ function EmptyState() {
   return (
     <div className="flex h-full items-center justify-center px-12 py-16">
       <div className="flex max-w-md flex-col items-center gap-5 text-center">
-        <div className="flex size-16 items-center justify-center rounded-2xl border border-border/55 bg-muted/35 text-muted-foreground/55 shadow-xs">
-          <FileText className="size-7" strokeWidth={1.4} />
+        <div className="flex size-14 items-center justify-center rounded-[6px] border border-border/60 text-muted-foreground/55">
+          <FileText className="size-6" strokeWidth={1.5} />
         </div>
         {fresh !== null && (
           <div className="flex flex-col gap-2">
@@ -253,8 +273,12 @@ function FolderView({ path, fileEventNonce, onSelect, sidebarOpen }) {
   if (state.status === 'loading') return (
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Folder} title={`${path}/`} sidebarOpen={sidebarOpen} />
-      <div className="flex-1 overflow-auto px-4 py-6">
-        <SkeletonFolderGrid />
+      <div className="flex-1 overflow-auto px-6 pb-12 pt-5">
+        <ul className="flex flex-col divide-y divide-border/60 border-y border-border/60">
+          {[0, 1, 2, 3].map((i) => (
+            <li key={i} className="flex items-center gap-3 px-2 py-3"><SkeletonLine width={`${40 + i * 9}%`} height="13px" /></li>
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -266,37 +290,32 @@ function FolderView({ path, fileEventNonce, onSelect, sidebarOpen }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Folder} title={`${path}/`} sidebarOpen={sidebarOpen} />
-      <div className="flex-1 overflow-auto px-4 py-6">
+      {/* One list on hairlines, like Tasks and Notifications: folders first. */}
+      <div className="flex-1 overflow-auto px-6 pb-12 pt-5">
         {isEmpty ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground/70">
-            Folder is empty
+          <div className="rounded-[6px] border border-dashed border-border/70 px-4 py-4 text-[12.5px] text-muted-foreground/65">
+            This folder is empty.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {entries.map(entry => {
+          <ul className="flex flex-col divide-y divide-border/60 border-y border-border/60">
+            {[...entries].sort((x, y) => (x.type === 'dir') === (y.type === 'dir') ? 0 : x.type === 'dir' ? -1 : 1).map(entry => {
               const entryPath = entry.path || (path ? `${path}/${entry.name}` : entry.name);
+              const Icon = entry.type === 'dir' ? Folder : FileText;
               return (
-              <button
-                key={entry.name}
-                onClick={() => onSelect({ path: entryPath, type: entry.type })}
-                className={cn(
-                  'flex flex-col items-center gap-2 rounded-lg p-3',
-                  'border border-border/50 hover:bg-muted/30 transition-colors',
-                  entry.type === 'dir' ? 'cursor-pointer' : 'cursor-pointer'
-                )}
-              >
-                {entry.type === 'dir' ? (
-                  <Folder className="size-6 text-muted-foreground/70" strokeWidth={1.75} />
-                ) : (
-                  <FileText className="size-6 text-muted-foreground/70" strokeWidth={1.75} />
-                )}
-                <span className="truncate text-[12px] text-foreground/80 text-center w-full">
-                  {entry.name}
-                </span>
-              </button>
-            );
+                <li key={entry.name}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect({ path: entryPath, type: entry.type })}
+                    className="group flex w-full items-center gap-3 px-2 py-2.5 text-left transition-colors hover:bg-muted/30"
+                  >
+                    <Icon className="size-4 shrink-0 text-muted-foreground/65" strokeWidth={1.75} />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-foreground/85">{entry.name}</span>
+                    {entry.type === 'dir' && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground/70" strokeWidth={2} />}
+                  </button>
+                </li>
+              );
             })}
-          </div>
+          </ul>
         )}
       </div>
     </div>

@@ -56,9 +56,8 @@ export default function WelcomeScreen({ onSend, sidebarOpen, onExpandSidebar }) 
         </div>
 
         <div className={cn(
-          'flex flex-col rounded-xl border border-border/60 bg-card/70',
-          'shadow-[0_2px_12px_rgba(0,0,0,0.06)]',
-          'transition-all duration-150 focus-within:border-border focus-within:bg-card/90 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.09)]',
+          'flex flex-col rounded-[6px] border border-border/60 bg-card',
+          'transition-colors duration-150 focus-within:border-foreground/25',
         )}>
           <textarea
             ref={textareaRef}
@@ -80,7 +79,7 @@ export default function WelcomeScreen({ onSend, sidebarOpen, onExpandSidebar }) 
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title="Add attachment"
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground/85"
+              className="flex shrink-0 items-center gap-1.5 rounded-[5px] px-2 py-1 text-[12.5px] text-muted-foreground/70 transition-colors hover:bg-muted/40 hover:text-foreground/85"
             >
               <Paperclip className="size-3.5" strokeWidth={1.75} />
               Attach
@@ -113,7 +112,7 @@ export default function WelcomeScreen({ onSend, sidebarOpen, onExpandSidebar }) 
               onClick={submit}
               disabled={!canSend}
               className={cn(
-                'ml-auto flex shrink-0 size-8 items-center justify-center rounded-lg transition-all duration-150',
+                'ml-auto flex shrink-0 size-8 items-center justify-center rounded-[5px] transition-all duration-150',
                 canSend
                   ? 'bg-foreground text-background hover:opacity-90 active:scale-95'
                   : 'bg-muted text-muted-foreground/40 cursor-not-allowed',

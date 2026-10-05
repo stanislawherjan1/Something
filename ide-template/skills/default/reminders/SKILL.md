@@ -1,6 +1,6 @@
 ---
 name: reminders
-description: Use this when the user wants to set a timed reminder, list pending reminders, or cancel one. Reminders fire on Telegram, the web UI, or both — even when no session is active — and can repeat on a schedule (hourly/daily/weekly/monthly or a custom interval, with an optional end date or fire count).
+description: Use this when the user wants to set a timed reminder, list pending reminders, or cancel one. Reminders fire on Telegram, the web UI, or both — even when no session is active — and can repeat on a schedule (hourly/daily/weekly/monthly or a custom interval, with an optional end date or fire count). Not for a standing duty the person wants you to take on ongoing ("check my inbox every morning", "keep an eye on X") — that is a routine: use the routines skill.
 allowed-tools: mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
 ---
 
@@ -42,11 +42,11 @@ Infer the recipient from wording, exactly like a relay. Default = the asker → 
 
 ## Delivery model
 
-Reminders fire via a PM2 background process that polls `.reminders.json` every 60s — even when the bot session is dead.
+Reminders fire via a PM2 background process that polls `.reminders.json` every 60s — even when the bot session is busy or offline (then the reminder runs as a headless turn).
 
 **When a reminder fires, it's a trigger for YOU, not a message to forward.** If the reminder text describes an action ("check email and summarize", "run the audit and report"), *perform it with your tools and deliver the result* — do not just re-send the title. If it's a plain nudge ("call John at 3"), relay it in your voice. Reply on the reminder's `channel=` (telegram / web / all).
 
-Full trigger format, the action-vs-nudge test, channel routing, and the two delivery paths (live session vs offline fallback) → `references/delivery.md`. **Read it before handling a `[REMINDER ...]` trigger.**
+Full trigger format, the action-vs-nudge test, channel routing, and the two delivery paths (live session vs headless turn) → `references/delivery.md`. **Read it before handling a `[REMINDER ...]` trigger.**
 
 ## After setting — confirm clearly (and in the right frame)
 

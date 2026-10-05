@@ -14,7 +14,7 @@
  *
  * Run: node lib/routes-wired.test.mjs   (wired into `npm test`)
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {
@@ -29,6 +29,11 @@ const mcp      = readFileSync(new URL('../../apps/workspace-api-mcp/index.js', i
 const tab      = readFileSync(new URL('../routes/tab.js', import.meta.url), 'utf8');
 const claude   = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
 const chat     = readFileSync(new URL('../routes/chat.js', import.meta.url), 'utf8');
+const memV4    = readFileSync(new URL('../routes/memory-v4.js', import.meta.url), 'utf8');
+const deploySh = readFileSync(new URL('../../deploy.sh', import.meta.url), 'utf8');
+const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+const index    = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+const migRoutes = readFileSync(new URL('../routes/migrations.js', import.meta.url), 'utf8');
 
 const route = (file, method, path) =>
   new RegExp(`router\\.${method}\\('${path.replace(/\//g, '\\/')}'`).test(file);
@@ -43,6 +48,32 @@ ok('...and something serves it', route(internal, 'get', '/internal/memory-log'))
 ok('the sweep is mounted', route(internal, 'post', '/internal/memory-sweep'));
 ok('...and the monitor actually pokes it', /internal\/memory-sweep/.test(monitor));
 ok('...and the module it calls exists', /from '\.\.\/lib\/memory-sweep\.js'/.test(internal));
+ok('the v4 consolidator is mounted', route(internal, 'post', '/internal/memory/consolidate'));
+ok('...and the monitor pokes it too', /internal\/memory\/consolidate/.test(monitor));
+
+// Memory v4 tools: each one listed, served, and hidden until v4 reading is on.
+for (const [tool, method, path] of [['memory_search', 'get', '/internal/memory/v4/search'], ['memory_timeline', 'get', '/internal/memory/v4/timeline'], ['memory_note', 'post', '/internal/memory/v4/note'], ['memory_forget', 'post', '/internal/memory/v4/forget']]) {
+  ok(`${tool} tool exists`, new RegExp(`name: '${tool}'`).test(mcp));
+  ok(`...and something serves it`, route(memV4, method, path));
+}
+ok('the v4 router is mounted', /app\.use\('\/api', memoryV4Router\(\)\)/.test(index));
+for (const [method, path] of [['get', '/memory/v4/changes'], ['get', '/memory/v4/topics/:key/timeline'], ['post', '/memory/v4/topics/:key/who']]) {
+  ok(`memory screen: ${method.toUpperCase()} ${path} is served`, route(memV4, method, path));
+}
+// What the image needs and deploy.sh must upload — a missing directory here
+// boots an image with no migrations and no embedder, and nothing says so.
+ok('deploy.sh uploads the migrations', /mirror_dir workspace-api\/migrations/.test(deploySh));
+ok('deploy.sh uploads the migrate CLI', /mirror_dir workspace-api\/bin/.test(deploySh));
+ok('deploy.sh uploads the embedder worker', /apps\/embedder\/worker\.mjs/.test(deploySh));
+ok('the image installs the embedder and its model', /COPY apps\/embedder/.test(dockerfile) && /COPY models \/opt\/ide\/models/.test(dockerfile));
+ok('the migrations router is mounted', /app\.use\('\/api', migrationsRouter\(\)\)/.test(index));
+for (const [method, path] of [['get', '/migrations/status'], ['post', '/migrations/:id/start'], ['get', '/migrations/:id/job'], ['get', '/memory/backup']]) {
+  ok(`migrations: ${method.toUpperCase()} ${path} is served`, route(migRoutes, method, path));
+}
+ok('the Routines screen can place an unparsed line', route(memV4, 'post', '/routines/unparsed'));
+ok('the card sort migration ships', existsSync(new URL('../migrations/0006-cards-v4.mjs', import.meta.url)));
+ok('memory v4 maintenance is started at boot', /startMemoryMaintenance\(\)/.test(index));
+ok('the v4 tools are offered only with MEMORY_V4=read|on', /MEMORY_V4_TOOLS && !PAGE_TURN \? V4_TOOLS/.test(mcp));
 
 // Group outbound + self-repair: reachable, or the bot still cannot speak first
 // or clean up after itself.

@@ -411,3 +411,77 @@
 .bn-color-picker-dropdown [role="group"] + [role="group"] {
   margin-top: 6px;
 }
+
+/* ───────── Workspace style: hairlines, ink, 6px radii (matches the tiles). */
+
+/* Links read as ink with a quiet underline, not browser blue. */
+.bn-shadcn .bn-editor a,
+.bn-default-styles a {
+  color: var(--foreground) !important;
+  text-decoration: underline !important;
+  text-decoration-color: color-mix(in srgb, var(--foreground) 30%, transparent) !important;
+  text-underline-offset: 3px;
+}
+.bn-default-styles a:hover { text-decoration-color: var(--foreground) !important; }
+
+/* Tables: hairline grid inside a 6px frame, a quiet header row. */
+.bn-editor [data-content-type="table"] table {
+  border-collapse: separate !important;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.bn-editor [data-content-type="table"] th,
+.bn-editor [data-content-type="table"] td {
+  border: 0 !important;
+  border-right: 1px solid var(--border) !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 6px 12px !important;
+  font-size: 0.875rem;
+}
+.bn-editor [data-content-type="table"] tr > :last-child { border-right: 0 !important; }
+.bn-editor [data-content-type="table"] tr:last-child > * { border-bottom: 0 !important; }
+.bn-editor [data-content-type="table"] th {
+  font-weight: 500 !important;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--foreground) 2.5%, transparent);
+}
+/* Row/column grips and the + widgets: muted, smaller, ink on hover. */
+.bn-table-handle,
+.bn-extend-button-add-remove-rows,
+.bn-extend-button-add-remove-columns {
+  color: var(--muted-foreground) !important;
+  opacity: 0.7;
+}
+.bn-table-handle:hover,
+.bn-extend-button-add-remove-rows:hover,
+.bn-extend-button-add-remove-columns:hover { color: var(--foreground) !important; opacity: 1; }
+.bn-table-handle svg { width: 14px; height: 14px; }
+
+/* Checkboxes: our hairline box, ink when ticked. */
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] > div > input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--foreground) 28%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] > div > input:hover {
+  border-color: var(--foreground);
+}
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"] > div > input:checked {
+  background: var(--foreground) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 11px no-repeat;
+  border-color: var(--foreground);
+}
+.dark .bn-default-styles .bn-block-content[data-content-type="checkListItem"] > div > input:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+}
+.bn-default-styles .bn-block-content[data-content-type="checkListItem"][data-checked="true"] .bn-inline-content {
+  color: var(--muted-foreground);
+  text-decoration-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+/* The wrapper's left padding holds the row grips; pull it back so the
+ * table's edge lines up with the text above and below. */
+.bn-editor [data-content-type="table"] .tableWrapper { margin-left: calc(-1 * var(--bn-table-handle-size)); }

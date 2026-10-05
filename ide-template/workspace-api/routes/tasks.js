@@ -4,12 +4,14 @@
  *   GET   /api/tasks         → { ok, teamMode, me, people: {slug→{name,avatar}}, tasks }
  *   POST  /api/tasks         → create { title, description?, status?, owner?, priority?, deadline? }
  *   PATCH /api/tasks/:id     → update any of { title, description, status, owner, priority, deadline, order }
+ *   DELETE /api/tasks/:id    → remove a task for good (mistakes, tests, duplicates)
  *
  * The board is shared team work, so there's no per-user scoping — every
  * authenticated member reads and mutates the same list (auth on /api/* already
  * gates access). `owner` is a roster slug in team mode (resolved to a profile
  * for the UI), a free-text name in solo. Moving a task to `done` stamps
- * `completed`; moving it back clears it. No deletes — tasks move to Done.
+ * `completed`; moving it back clears it. Finished work moves to Done; DELETE is
+ * for what should never have been on the board.
  */
 
 import express, { Router } from 'express';
@@ -110,6 +112,25 @@ export default function tasksRouter() {
       return res.json({ ok: true, task: t });
     } catch (err) {
       process.stderr.write(`[tasks] update failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Remove a task for good. The rest of its column closes up (order renumbered)
+  // so a drag right after a delete lands where it looks like it will.
+  router.delete('/tasks/:id', (req, res) => {
+    try {
+      const tasks = readTasks();
+      const i = tasks.findIndex(x => x.id === req.params.id);
+      if (i < 0) return res.status(404).json({ ok: false, error: 'task not found' });
+      const [gone] = tasks.splice(i, 1);
+      tasks.filter(t => t.status === gone.status)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .forEach((t, n) => { t.order = n; });
+      writeTasks(tasks);
+      return res.json({ ok: true, deleted: gone.id });
+    } catch (err) {
+      process.stderr.write(`[tasks] delete failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });

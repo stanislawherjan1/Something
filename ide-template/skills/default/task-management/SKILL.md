@@ -1,6 +1,6 @@
 ---
 name: task-management
-description: Use this when the user wants to add, update, move, assign, or review tasks. Tasks live on a structured board (Backlog / In Progress / Done) served by the workspace API over HTTP at http://localhost:3001/api/tasks — read and write it with the Bash tool (curl). There are no mcp__tasks__* tools; don't look for them. Each task can be assigned to a teammate.
+description: Use this when the user wants to add, update, move, assign, delete, or review tasks. Tasks live on a structured board (Backlog / In Progress / Done) served by the workspace API over HTTP at http://localhost:3001/api/tasks — read and write it with the Bash tool (curl). There are no mcp__tasks__* tools; don't look for them. Each task can be assigned to a teammate.
 allowed-tools: Bash, Read, mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
 ---
 
@@ -19,6 +19,7 @@ the workspace API on loopback with the **Bash tool (`curl`)**:
 | **List** | `curl -s http://localhost:3001/api/tasks` |
 | **Add** | `curl -s -X POST http://localhost:3001/api/tasks -H 'Content-Type: application/json' -d '{"title":"…"}'` |
 | **Update / move** | `curl -s -X PATCH http://localhost:3001/api/tasks/<id> -H 'Content-Type: application/json' -d '{"status":"done"}'` |
+| **Delete** | `curl -s -X DELETE http://localhost:3001/api/tasks/<id>` |
 
 - **List returns** `{ ok, teamMode, me, people: {slug→{name,avatar}}, tasks: [...] }`.
   **Always list before adding or changing** — find an existing task to update
@@ -28,7 +29,10 @@ the workspace API on loopback with the **Bash tool (`curl`)**:
   `{ ok, task }` with the new `id`.
 - **Update / move** — PATCH only the fields that change. Changing columns = PATCH
   `status`. Returns the updated task.
-- **No delete** — tasks move to `done`, they are never removed.
+- **Delete** — removes a task for good. For what should never have been on the
+  board: a mistake, a test, a duplicate — or when the user asks to delete one.
+  Finished work goes to `done`, not here. Say which task you are deleting
+  before you do it. Returns `{ ok, deleted }`; 404 if the id is gone.
 
 **Loopback, no auth, no file edits.** `localhost:3001` is reachable from inside
 the workspace without a login — don't add auth headers. Never `Read`/`Write`
@@ -44,7 +48,7 @@ pre-migration leftover — ignore it; the board is the API.
 `completed` (auto-stamped when status → `done`, cleared when moved back — **never
 set it yourself**). Full field + writing guidance → `references/templates.md`.
 
-**Talk about tasks by the board, not the tool.** The MCP calls, the task `id`s, and the status tokens (`in_progress`) are internal. Say *"moved it to In Progress and gave it to Jan"* or *"added it to the backlog"* — never *"PATCHed the task"*, *"called move_task"*, an id, or an endpoint. The user thinks in the board's plain columns.
+**Talk about tasks by the board, not the tool.** The API calls, the task `id`s, and the status tokens (`in_progress`) are internal. Say *"moved it to In Progress and gave it to Jan"* or *"added it to the backlog"* — never *"PATCHed the task"*, *"called move_task"*, an id, or an endpoint. The user thinks in the board's plain columns.
 
 ## Tasks vs Reminders
 
@@ -80,7 +84,7 @@ a reminder with a recipient, separate from the board. Full rules →
 
 - **Backlog → In Progress**: work has started → `PATCH {"status":"in_progress"}`. Check + offer a deadline reminder per `references/reminder-rules.md`.
 - **In Progress → Done**: `PATCH {"status":"done"}` — the completion date is stamped for you. Cancel any deadline reminder for the task.
-- **Never delete tasks** — move them to Done.
+- **Finished work → Done**, never deleted. Delete only a mistake, a test or a duplicate, or when the user asks (see Delete above).
 
 ## Updating a task
 
@@ -95,13 +99,13 @@ field changes don't need reminder updates.
 
 **Don't add when:** vague ideas with no owner or action · timed alerts the bot should send (set a reminder instead) · completed work with no follow-up.
 
-## Weekly board review
+## Regular board upkeep — suggest a routine
 
-When the first In Progress task is added: offer to set a weekly board-review reminder. Full rule in `references/reminder-rules.md` (don't double-offer, respect prior declines).
+Don't set your own weekly-review or overdue-scan reminders. When the board starts being used for real (the first In Progress task) and it fits the conversation, suggest one Marketplace routine via the `routines` skill: `stale-tasks` (sweep stuck tasks), `weekly-plan` (plan the week), or `deadline-at-risk` (warn ahead of deadlines). Once, in plain words; if they let it pass, don't offer again (`memory_search` before offering — earlier conversations are filed).
 
-## Overdue check — on session start
+## Overdue check — at session start
 
-After reading session notes, list the board (`curl -s http://localhost:3001/api/tasks`) and scan for tasks whose `deadline` has passed while status is still `backlog` or `in_progress`. If any — flag immediately:
+Unless they have the `deadline-at-risk` routine, at session start list the board (`curl -s http://localhost:3001/api/tasks`) and scan for tasks whose `deadline` has passed while status is still `backlog` or `in_progress`. If any — flag immediately:
 > "Overdue: [task title] — deadline was [date]. Still relevant?"
 
 ## Summarizing the board

@@ -100,7 +100,7 @@ export default function EditorToolbar() {
   };
 
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+    <div className="flex items-center gap-0.5 menu-panel">
       {/* Block type */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -149,7 +149,7 @@ export default function EditorToolbar() {
           <Popover.Content
             align="start"
             sideOffset={8}
-            className="z-50 w-72 overflow-hidden rounded-xl border border-border/60 bg-popover text-popover-foreground shadow-xl outline-none"
+            className="z-50 w-72 overflow-hidden rounded-[6px] border border-border/60 bg-popover text-popover-foreground shadow-xl outline-none"
           >
             <form onSubmit={submitLink}>
               <div className="flex items-center gap-2.5 px-3.5">
@@ -169,6 +169,7 @@ export default function EditorToolbar() {
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
+
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import BotPicture from './BotPicture.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from './identity';
 
 export default function SpinningAvatar({ size, className }) {
@@ -17,12 +18,7 @@ export default function SpinningAvatar({ size, className }) {
         <div className="size-full rounded-full bg-background" />
       </div>
       <div className="absolute inset-[2px] overflow-hidden rounded-full bg-muted">
-        <BrandedImage
-          src={botAvatarUrl}
-          fallback={BOT_FALLBACK}
-          alt=""
-          className="size-full object-cover"
-        />
+        <BotPicture className="size-full" />
       </div>
     </div>
   );

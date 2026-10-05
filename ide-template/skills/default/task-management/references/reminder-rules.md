@@ -6,7 +6,7 @@ If deadline is set (not TBD):
 
 | Distance | Action |
 |---|---|
-| ≤14 days | **Silently** `set_reminder` for the day before: `"Deadline tomorrow: [task title]"`. No confirmation needed. |
+| ≤14 days | **Silently** `set_reminder` for the day before, at a working-hours time in the person's zone (`MY_SETTINGS`, converted to UTC): title `"Deadline tomorrow: [task title]"`, description telling you to check the task first and stay silent if it's already Done. No confirmation needed. |
 | >14 days | **Ask once**: "Set a reminder a week before the deadline?" |
 
 If the task has a blocker: ask "When should I remind you about this blocker?" then `set_reminder` with that time.
@@ -21,7 +21,7 @@ If the task has a blocker: ask "When should I remind you about this blocker?" th
 
 1. `PATCH /api/tasks/<id> -d '{"status":"done"}'` — the completion date is stamped automatically.
 2. `list_reminders` → find any reminder whose message contains the task title → `cancel_reminder`.
-3. Never delete the task — `done` is the archive.
+3. Don't delete finished work — `done` is the archive. Deleting is only for mistakes, tests, duplicates, or when the user asks.
 
 ## When updating an existing task
 
@@ -33,11 +33,9 @@ Only the deadline change matters for reminders:
 
 Owner, priority, blocker text changes don't need reminder updates.
 
-## Weekly board review reminder
+## Regular board review — a routine, not a reminder
 
-When the first In Progress task is added in a project:
+Don't set a weekly board-review reminder yourself. When the first In Progress task is added, you may suggest a Marketplace routine via the `routines` skill (`stale-tasks`, `weekly-plan`, or `deadline-at-risk`), once, in plain words.
 
-1. `list_reminders` → check for an existing weekly board-review reminder.
-2. If none — offer once: "Want a weekly reminder to review the task board? (e.g. Mondays at 9:00)"
-3. If user accepts: `set_reminder` with `repeat: weekly`.
-4. Don't offer again if one exists (or the user already declined — log that decline to memory so future runs respect it).
+- Skip it if they already have one (`ROUTINES` / `memory_now`).
+- A decline needs no logging: the conversation is filed automatically. `memory_search` before offering again, and don't if they said no.

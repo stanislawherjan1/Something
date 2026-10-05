@@ -154,6 +154,9 @@ function isStale(stamp) {
  * Best-effort: never throws into the caller.
  */
 export function rebuildScopeIndex(scopeRoot, indexPath, { title, intro }) {
+  // After the move to memory v4 there is no wiki to map: an INDEX kept
+  // reappearing next to the emptied trees and read as a working wiki.
+  if (existsSync(join(memoryDir(), '_engine', '.v4-migrated'))) return false;
   try {
     const cards = [];
     const topics = [];

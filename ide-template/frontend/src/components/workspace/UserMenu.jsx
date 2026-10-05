@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { LogOut, ChevronUp, Sun, Moon, Monitor, Check, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import PersonInitial from './PersonInitial.jsx';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import useMe from './useMe.js';
-import UserSettingsModal from './UserSettingsModal.jsx';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * UserMenu — avatar + display name at the bottom of the sidebar. Click opens
@@ -15,14 +16,14 @@ import UserSettingsModal from './UserSettingsModal.jsx';
  * AuthProvider returns `user: null`, so we render nothing — no fake "Sign in"
  * button to confuse the dev loop.
  */
-export default function UserMenu() {
+export default function UserMenu({ collapsed = false }) {
   const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { me } = useMe();
   // All hooks must run before any early return — `user` populates async, so a
   // conditional hook below would change hook order between renders.
   const [open, setOpen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const navigate = useNavigate();
 
   // Dev mode: show placeholder if user is null
   const displayUser = user || (import.meta.env.DEV ? {
@@ -45,13 +46,16 @@ export default function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        title={collapsed ? name : undefined}
         className={cn(
-          'group flex h-11 w-full items-center gap-2.5 rounded-md px-2 text-left',
+          // px-1.5 puts the avatar's centre on the rail's 28 px axis in both states.
+          'group flex h-11 w-full items-center gap-2.5 rounded-md px-1.5 text-left',
           'transition-colors duration-150 hover:bg-sidebar-accent/55',
           'outline-none focus-visible:ring-0',
         )}
       >
-        <Avatar src={avatar} initial={initial} />
+        <Avatar src={avatar} initial={initial} seed={displayUser.email} />
+        {!collapsed && <>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-[13.5px] font-medium leading-tight text-foreground">
@@ -63,6 +67,7 @@ export default function UserMenu() {
           </div>
         </div>
         <ChevronUp className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-180')} strokeWidth={2} />
+        </>}
       </button>
 
       {open && (
@@ -71,39 +76,40 @@ export default function UserMenu() {
             className="fixed inset-0 z-40"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute bottom-full left-0 mb-2 z-50 w-[calc(100vw-32px)] md:w-full rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+          <div className={cn(
+            'menu-panel absolute z-50',
+            // In the rail the menu opens to the right of the avatar, at the
+            // open sidebar's width; otherwise above it, as wide as the sidebar.
+            collapsed ? 'bottom-0 left-full ml-4 w-[264px]' : 'bottom-full left-0 mb-2 w-[calc(100vw-32px)] md:w-full',
+          )}>
             <button
-              onClick={() => { setShowSettings(true); setOpen(false); }}
-              className="w-full flex gap-2.5 items-center rounded-md px-3 py-2 text-[13px] text-foreground/85 hover:bg-muted/40 transition-colors text-left"
+              onClick={() => { navigate('/settings'); setOpen(false); }}
+              className="menu-item"
             >
               <Settings className="size-4 shrink-0 text-muted-foreground/65" strokeWidth={1.75} />
-              User settings
+              Settings
             </button>
-            <div className="my-1 border-t border-border/40" />
-            <div className="px-3 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="menu-sep" />
+            <div className="menu-label">
               Theme
             </div>
             <ThemeOption icon={Sun}     label="Light"  value="light"  current={theme} onChoose={setTheme} />
             <ThemeOption icon={Moon}    label="Dark"   value="dark"   current={theme} onChoose={setTheme} />
             <ThemeOption icon={Monitor} label="System" value="system" current={theme} onChoose={setTheme} />
 
-            <div className="my-1 border-t border-border/40" />
+            <div className="menu-sep" />
             <button
               onClick={() => {
                 signOut();
                 setOpen(false);
               }}
-              className="w-full flex gap-2.5 items-center rounded-md px-3 py-2 text-[13px] text-destructive hover:bg-destructive/10 transition-colors text-left"
+              className="menu-item hover:!text-destructive/90 [&:hover_svg]:!text-destructive/80"
             >
               <LogOut className="size-4 shrink-0" strokeWidth={1.75} />
               Sign out
             </button>
           </div>
         </>
-      )}
-
-      {showSettings && me && (
-        <UserSettingsModal me={me} onClose={() => setShowSettings(false)} />
       )}
     </div>
   );
@@ -115,7 +121,7 @@ function ThemeOption({ icon: Icon, label, value, current, onChoose }) {
     <button
       type="button"
       onClick={() => onChoose(value)}
-      className="w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-foreground/85 hover:bg-muted/40 transition-colors text-left"
+      className="menu-item"
     >
       <Icon className="size-4 text-muted-foreground/65 shrink-0" strokeWidth={1.75} />
       <span className="flex-1">{label}</span>
@@ -124,37 +130,12 @@ function ThemeOption({ icon: Icon, label, value, current, onChoose }) {
   );
 }
 
-function Avatar({ src, initial }) {
-  // Pastel cream gradient palettes — more vibrant and visible
-  const gradients = [
-    'from-yellow-200 to-amber-300',
-    'from-amber-200 to-orange-300',
-    'from-orange-200 to-amber-300',
-    'from-yellow-200 to-orange-300',
-    'from-amber-300 to-yellow-300',
-  ];
-
-  // Deterministic gradient based on initial
-  const gradientIdx = (initial?.charCodeAt(0) || 0) % gradients.length;
-  const gradient = gradients[gradientIdx];
-
+function Avatar({ src, initial, seed }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) return <PersonInitial initial={initial} seed={seed} className="size-7 text-[11.5px]" />;
   return (
-    <div className={cn(
-      'flex size-7 shrink-0 items-center justify-center overflow-hidden',
-      'rounded-full bg-gradient-to-br text-foreground text-[11px] font-semibold',
-      'ring-1 ring-[--color-sidebar-border]',
-      gradient,
-    )}>
-      {src ? (
-        <img
-          src={src}
-          alt=""
-          className="size-full object-cover"
-          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-        />
-      ) : (
-        <span>{initial}</span>
-      )}
+    <div className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-[--color-sidebar-border]">
+      <img src={src} alt="" className="size-full object-cover" onError={() => setBroken(true)} />
     </div>
   );
 }

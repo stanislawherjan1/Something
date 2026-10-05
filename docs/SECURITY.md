@@ -730,6 +730,7 @@ proxy_set_header X-IDE-User $ide_user;   # nginx — overwrites with auth-servic
 
 ✅ **`X-IDE-Actor` is trusted only from loopback**
 - In-container helpers (`workspace-api-mcp`) identify the turn's user by sending its `IDE_ACTOR_SLUG` as `X-IDE-Actor` — on `POST /api/internal/memory-write` and on `GET /api/memory/grep`, which scopes the search to that user's private memory tree.
+- `POST /api/internal/me/settings` (the bot's `set_my_settings`) changes only the turn's own person's time zone or reply language: loopback-only, the person comes from the verified turn token (solo: the primary admin), a group turn is refused, and a setting the person locked in Settings is refused. It can't touch name, role, Telegram link or anyone else's entry.
 - Neither Caddy nor nginx strips this header, and `/api/memory/*` is reachable through nginx. So workspace-api accepts it only when the TCP peer is `127.0.0.1` / `::1` (a browser request always arrives from the nginx container's address), and only if it is a well-formed slug. `/api/internal/*` is loopback-only as a whole; `/api/memory/grep` applies the same test inline, prefers the cookie actor when there is one, and ignores the header from any non-loopback peer.
 - Without that test any signed-in member could name a teammate's slug and read their private memory. Any new route that reads `X-IDE-Actor` must apply the same loopback rule.
 
@@ -1153,6 +1154,61 @@ of the perms/groups setup is in the root-block at the top of
 **Code**: [ide-template/workspace-api/routes/setup.js](../ide-template/workspace-api/routes/setup.js)
 
 **Result**: A coordinated flood requires rotating IPs every 10 hits AND a valid admin cookie — expensive and visible in logs.
+
+---
+
+### 23. Memory v4 — what enters memory, who reads it, how it leaves
+
+Memory v4 (behind `MEMORY_V4`, [MEMORY.md](MEMORY.md#memory-v4)) stores whole
+conversations, so its boundaries are about scope and injection rather than
+about which facts a model chose to keep.
+
+- **Scope by path, identity by token.** Each scope is its own tree
+  (`memory/ledger`, `memory/users/<slug>/ledger`, `memory/groups/<chatId>/ledger`).
+  Which scopes a turn reads comes from its turn token (`lib/turn-identity.js`,
+  now also carrying the group id), never from the model's arguments: a person
+  reads their own scope, shared and their groups; a group turn reads shared and
+  that group. No admin bypass anywhere — not in the tools, the Memory screen
+  API, the backup download, or the file rule.
+- **The file rule** (`lib/scope-rule.js`, used by the tools' scope guard and the
+  file API) treats `.team/users/<slug>/` (chat history, routines) like the other
+  private trees, and lets no raw path reach `memory/groups/` for anyone — group
+  memory is read through the tools, which check membership.
+- **After the move, memory is reached only through the tools.** Once the
+  migration stamp is there, the scope guard (`hooks/scope-guard.mjs`) refuses
+  every raw read or listing of `memory/` (Read, Grep, Glob, and `memory/`
+  paths in Bash, best effort as for the other Bash checks), for every actor
+  including the solo brain; the MCP stops offering `memory_grep`/`memory_log`
+  and the skill fence the wiki's skills. The cards reach the bot through its
+  prefix only. `0007` archives the leftovers to the store; the nightly run
+  archives user trees whose slug left the roster.
+- **Filing is decided by code.** The owner of a conversation comes from where it
+  was held (web user, the roster owner of a Telegram chat — a stranger's chat is
+  filed under nobody — or a registered group). The router model only picks lines
+  to *also* share; every shared line must be word-for-word in the conversation,
+  so an invented or injected line cannot reach shared memory. Quoted
+  emails/documents asking to be "filed as shared" go to a question for the
+  owner instead. A router failure shares nothing.
+- **Recalled text is data.** The recall block and the tools' output are fenced
+  (`<<<MEMORY … <<<END MEMORY>>>`), the fence strings are removed from the
+  excerpts, and the block goes into the user message. Page turns (the browser
+  panel) get no memory at all. The always-loaded STANDING_RULES card holds only
+  rules people stated themselves (never from quoted content), and the digest is
+  rendered by code from fixed fields, so a poisoned record cannot put free text
+  into every turn.
+- **Erasure is real.** Erase removes the record from its month file, its vector
+  from `_vectors.json`, and leaves a tombstone of content hashes (per record and
+  per line) so no re-read of a raw log brings it back; the log keeps ids and
+  counts only. `memory_forget` from a turn only *hides* (30 days, then erased) —
+  a prompt-injected "forget everything" stays reversible. Only the owner (or the
+  sharer, for what they shared) can hide or erase.
+- **The embedder** is a worker forked by workspace-api with a minimal
+  environment (no keys, no session secret), IPC only, no network (the model is
+  local; `allowRemoteModels=false`). A crash ends the worker, not the API.
+- **Backups.** Each migration archive stays in the store (outside `memory/`)
+  for 30 days, then is pruned nightly. A person's backup download contains only
+  what they may read — never another person's tree, never `memory/_engine/`.
+  Starts of the move and downloads are audit-logged in the store.
 
 ---
 

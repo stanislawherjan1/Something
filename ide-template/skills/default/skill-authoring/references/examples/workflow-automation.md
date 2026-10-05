@@ -9,7 +9,7 @@ Example: a weekly report generator, a content audit, a deployment runbook.
 ```markdown
 ---
 name: weekly-ads-report
-description: Pull last 7 days of Meta + Google Ads, compare to prior week, flag campaigns with ROAS drop >20%, save a 1-page report to documents/reports/. Use when user says "weekly ads report", "ads recap", "campaign review", or fires automatically every Monday via the [WEEKLY_ADS_TRIGGER] reminder.
+description: Pull last 7 days of Meta + Google Ads, compare to prior week, flag campaigns with ROAS drop >20%, save a 1-page report to documents/reports/. Use when user says "weekly ads report", "ads recap", "campaign review", or when a weekly routine asks for it.
 allowed-tools: Read, Write, Edit, Bash(jq:*), mcp__meta-ads__*, mcp__google-ads__*
 ---
 
@@ -18,7 +18,7 @@ allowed-tools: Read, Write, Edit, Bash(jq:*), mcp__meta-ads__*, mcp__google-ads_
 ## When to use
 
 - User says "weekly ads report" / "ads recap" / "campaign review for last week"
-- Monday morning trigger phrase `[WEEKLY_ADS_TRIGGER]` arrives (system-injected via reminder)
+- A Monday routine asks for it (recurring work is a routine — added on the Routines screen or through the `routines` skill, never a custom trigger reminder)
 
 ## Steps
 
@@ -45,7 +45,7 @@ Use the template at [references/report-template.md](references/report-template.m
 - 2-3 recommended budget moves
 
 ### Step 5: Save + notify
-Write to `documents/reports/YYYY-MM-DD_weekly-ads-report.md`. Notify user on Telegram with the file path + TL;DR section pasted inline.
+Write to `documents/reports/YYYY-MM-DD_weekly-ads-report.md`. Reply with the file path + TL;DR section pasted inline.
 
 ## Examples
 
@@ -54,9 +54,9 @@ Write to `documents/reports/YYYY-MM-DD_weekly-ads-report.md`. Notify user on Tel
 2. Calculate deltas (Step 3) → 2 campaigns flagged
 3. Draft report (Step 4)
 4. Save to `documents/reports/2026-05-25_weekly-ads-report.md`
-5. Telegram: "Report saved → documents/reports/2026-05-25_weekly-ads-report.md. TL;DR: ROAS down 18% week-over-week, 2 campaigns flagged (Spring Sale, Brand Awareness), recommended cuts in flagged section."
+5. Reply: "Report saved → documents/reports/2026-05-25_weekly-ads-report.md. TL;DR: ROAS down 18% week-over-week, 2 campaigns flagged (Spring Sale, Brand Awareness), recommended cuts in flagged section."
 
-### [WEEKLY_ADS_TRIGGER] (auto-fired Monday)
+### The Monday routine runs it
 Same flow. User gets the report unprompted.
 
 ## Troubleshooting
@@ -77,5 +77,5 @@ Skip the deltas section. Report only this week's absolute numbers. Note "first r
 - `allowed-tools:` scopes to exactly what's needed (Read/Write/Edit for the report file, jq for parsing, specific MCPs only)
 - Each step has a verifiable output ("Expected: arrays...")
 - Calculation rules and templates extracted to `references/` — body stays focused on flow
-- Examples include both manual and auto-triggered scenarios
+- Examples include both manual and routine-run scenarios
 - Troubleshooting covers 3 known failure modes with concrete recovery actions

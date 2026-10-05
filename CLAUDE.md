@@ -79,6 +79,27 @@ merge: `scripts/check-docs-impact.sh origin/main HEAD`.
 When a plan in `docs/future-plans/` ships, move its content into the right doc and delete
 the plan file.
 
+## Bot instructions before deploy (required)
+
+Code changes what the bot can do; its skills and `ide-template/global-claude.md` tell it
+how. Before every deploy, check whether the change affects what the bot is told — a tool
+added, renamed or removed, a path or format it relies on, a new screen or setting it
+should point people to, a rule it must follow — and update those files in the same
+change. A stale skill fails silently: the bot follows it into a blocked path or a tool
+that no longer exists.
+
+| You changed… | Check |
+|---|---|
+| A tool in an MCP (`apps/*-mcp`) — added, renamed, removed, new arguments | every skill whose `allowed-tools` or body names it; `global-claude.md` |
+| Memory (engine, tools, what the prefix carries) | `global-claude.md`, `skills/default/morning-planner`, `routines`, any skill that reads or writes memory |
+| Routines, the planner, reminders | `morning-planner`, `routines`, `reminders`; regenerate `routines/references/catalog.md` (`node workspace-api/lib/routines-reference.js`) |
+| An integration or its catalog entry | its skill in `skills/optional/<id>/` (`requires:` = catalog id or MCP server name) |
+| A UI screen or setting the bot should point people to | the skill that covers that job; `global-claude.md` if it applies everywhere |
+| Hooks (`ide-template/hooks/`) that block or allow something | skills that would now hit the block |
+
+Search before deploying: `grep -rn "<old name or path>" ide-template/skills ide-template/global-claude.md`.
+Skills and `global-claude.md` are English only, with no trigger phrases in any language.
+
 ## How to make changes
 
 1. **Branch first.** Anything beyond a one-line fix goes on a branch

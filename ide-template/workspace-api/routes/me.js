@@ -22,7 +22,8 @@ import { resolve } from 'node:path';
 import { PROJECT_DIR } from '../lib/config.js';
 import { requireActor } from '../lib/auth.js';
 import { actorScope, USERS_DIR } from '../lib/file-scope.js';
-import { getTeamMode, setProfile, setTelegram, find as findMember } from '../lib/team.js';
+import { getTeamMode, setProfile, setTelegram, setPreferences, getDefaultTimezone, find as findMember } from '../lib/team.js';
+import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { syncTelegramAllowedIds } from '../lib/integrations/telegram-sync.js';
 import * as userAvatars from '../lib/user-avatars.js';
 
@@ -68,6 +69,15 @@ function meEnvelope(req) {
     telegramChatId:   member?.telegramChatId || null,
     preferredSurface: member?.preferredSurface || null,
     preferredLanguage: member?.preferredLanguage || null,
+    languageLocked:   !!member?.languageLocked,
+    // Time zone: their own (or null), whether the bot may change it, where it
+    // came from, and what applies right now (their own, else the default).
+    timezone:          member?.timezone || null,
+    timezoneLocked:    !!member?.timezoneLocked,
+    timezoneFrom:      member?.timezoneFrom || null,
+    timezoneSetAt:     member?.timezoneSetAt || null,
+    defaultTimezone:   getDefaultTimezone(),
+    effectiveTimezone: member?.timezone || getDefaultTimezone(),
   };
 }
 
@@ -94,7 +104,7 @@ export default function meRouter() {
   // and/or their own cross-surface contact (Telegram chat id + preferred
   // surface), so a teammate can self-link without an admin.
   router.patch('/me', requireActor, express.json({ limit: '2kb' }), (req, res) => {
-    const { displayName, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
+    const { displayName, telegramChatId, preferredSurface, preferredLanguage, languageLocked, timezone, timezoneLocked } = req.body || {};
     try {
       let touched = false;
       if (displayName !== undefined) {
@@ -104,14 +114,20 @@ export default function meRouter() {
         setProfile(req.actor, { displayName });
         touched = true;
       }
-      if (telegramChatId !== undefined || preferredSurface !== undefined || preferredLanguage !== undefined) {
-        setTelegram(req.actor, { chatId: telegramChatId, preferredSurface, preferredLanguage }, req.actor);
+      if (preferredLanguage !== undefined || languageLocked !== undefined || timezone !== undefined || timezoneLocked !== undefined) {
+        const r = setPreferences(req.actor, { preferredLanguage, languageLocked, timezone, timezoneLocked }, { by: 'user', actor: req.actor });
+        // A new zone moves their next morning planning to 06:00 there.
+        if (r.changed.includes('timezone')) { try { reschedulePlanFor(r.user?.slug); } catch { /* best effort */ } }
+        touched = true;
+      }
+      if (telegramChatId !== undefined || preferredSurface !== undefined) {
+        setTelegram(req.actor, { chatId: telegramChatId, preferredSurface }, req.actor);
         // Self-link changes who may DM the bot — refresh the allow-list (bg).
         if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
         touched = true;
       }
       if (!touched) {
-        return res.status(400).json({ error: 'Nothing to update (displayName, telegramChatId, preferredSurface, preferredLanguage).' });
+        return res.status(400).json({ error: 'Nothing to update (displayName, telegramChatId, preferredSurface, preferredLanguage, languageLocked, timezone, timezoneLocked).' });
       }
       res.json(meEnvelope(req));
     } catch (err) {

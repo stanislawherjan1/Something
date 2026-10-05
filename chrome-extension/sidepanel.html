@@ -7,14 +7,16 @@
   <link rel="stylesheet" href="sidepanel.css" />
 </head>
 <body>
-  <!-- Step 1: which workspace. Mirrors the workspace login page (LoginPage.jsx). -->
+  <!-- Step 1: which workspace. Mirrors the workspace sign-in tile (LoginPage.jsx):
+       the halftone banner, the logo on its edge, left-aligned text, one quiet button. -->
   <section id="setup" hidden>
-    <div class="login">
-      <div class="card">
+    <div class="card">
+      <div class="banner" aria-hidden="true"></div>
+      <div class="body">
         <img class="logo" src="icons/icon-128.png" alt="" />
         <div class="heading">
           <h1>Connect your workspace</h1>
-          <p>The address you open your workspace at.</p>
+          <p>The address you open your workspace at. Chrome will then ask to let it see the page you are on.</p>
         </div>
         <div id="setup-error" class="error-banner" hidden>
           <svg class="error-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
@@ -25,7 +27,6 @@
           <button type="submit" class="btn">Continue</button>
         </form>
       </div>
-      <p class="footnote">Chrome will ask to let it see the page you are on.</p>
     </div>
   </section>
 

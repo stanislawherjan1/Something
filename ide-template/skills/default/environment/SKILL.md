@@ -32,16 +32,17 @@ OR you're drafting a Bash command containing: `install`, `download`, `clone`, `w
 
 When an MCP tool returns "not available" / "browser not reachable" / "ENETUNREACH" / "not connected" / "misconfigured":
 
-1. State the exact error to the operator on Telegram (verbatim — don't paraphrase as "needs permission").
+1. Say what failed following the altitude rule in `global-claude.md`: the exact error (verbatim — don't paraphrase as "needs permission") for the operator or a dev; plain words and an offer to retry for a non-technical teammate.
 2. **Do not improvise a fix.** The fix lives outside this session — the operator updates the image / config / allow-list.
-3. **Continue the task without that tool if possible:** ask the user to paste the data, use a different MCP (Grok web search instead of Playwright browse, screenshots pasted manually, etc.).
+3. **Continue the task without that tool if possible:** ask the user to paste the data, use a different tool (web search — Parallel's `web_search`/`web_fetch` when connected, otherwise the built-in one — instead of Playwright browse, screenshots pasted manually, etc.).
 
 ## Your own workspace files vs system dotfiles
 
 These ARE yours to edit freely (per File Operations in `~/.claude/CLAUDE.md`):
 - `~/project/.claude/CLAUDE.md`
 - `~/project/.claude/skills/`
-- `~/project/memory/`
+
+Memory is not a folder you edit: changes go through `memory_write` / `memory_note` only.
 
 These are NOT yours — system dotfiles owned by the operator:
 - `~/.claude/settings.json`

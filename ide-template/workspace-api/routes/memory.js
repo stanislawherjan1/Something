@@ -27,6 +27,8 @@ import { readLog, revert as revertEvent } from '../lib/memory-engine.js';
 import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
 import { getTeamMode, primaryAdminSlug, getUser, isAdmin } from '../lib/team.js';
 import { resolveTurnToken } from '../lib/turn-identity.js';
+import { buildTurnPrefix } from '../lib/claude.js';
+import { v4Mode } from '../lib/memory-ledger.js';
 
 export default function memoryRouter() {
   const router = Router();
@@ -114,6 +116,17 @@ export default function memoryRouter() {
       if (ip !== '127.0.0.1' && ip !== '::1' && ip !== '::ffff:127.0.0.1') {
         return res.status(403).json({ error: 'loopback only' });
       }
+      // Loopback alone is not the operator: every turn's Bash is on loopback,
+      // including a teammate's. In team mode the raw block holds the primary
+      // admin's private cards, so it goes only to the caller holding the bot's
+      // own token (written at boot, readable by the bot user only).
+      if (getTeamMode()) {
+        const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+        const turn = resolveTurnToken(hdr('x-ide-turn'));
+        if (!turn || turn.source !== 'bot') {
+          return res.status(403).json({ error: 'the raw prefix is only served to the operator\'s brain' });
+        }
+      }
     }
     try {
       // This endpoint has no per-user identity (it's the bot/Telegram surface
@@ -123,7 +136,11 @@ export default function memoryRouter() {
       // so resolve the actor to that admin, or the bot would read the now-empty
       // flat cards. Solo → undefined → flat load, unchanged.
       const actor = getTeamMode() ? primaryAdminSlug() : undefined;
-      const result = buildCachedPrefix({ actor });
+      // Memory v4 reading: the operator brain gets the small v4 prefix, built by
+      // the same function as every other turn's.
+      const result = ['read', 'on'].includes(v4Mode())
+        ? buildTurnPrefix({ actor: primaryAdminSlug(), isTgOperator: true })
+        : buildCachedPrefix({ actor });
       if (isRaw) {
         res.type('text/plain').send(result.block || '');
         return;
@@ -193,8 +210,9 @@ export default function memoryRouter() {
   // file the snapshot-monitor maintains on disk (refreshed every 60s
   // when idle).
   //
-  // The wrapper mcp__workspace-api__recent_messages calls this; see also
-  // the `recent-context` skill which trains the model when to reach for it.
+  // The wrapper mcp__workspace-api__recent_messages calls this; the memory
+  // section of global-claude.md says when to reach for it (memory_search
+  // covers anything older).
   router.get('/memory/recent/:channel', (req, res) => {
     try {
       const channel = String(req.params.channel || '').toLowerCase();
@@ -218,7 +236,16 @@ export default function memoryRouter() {
       // read it — a non-operator asking for the Telegram tail gets nothing (don't
       // hand the operator's DMs to another teammate through this tool).
       let path;
-      const me = getTeamMode() ? (getUser(req.actor)?.slug || null) : null;
+      // A browser call carries a session (req.actor). The MCP call from inside a
+      // turn carries neither — it proves itself with the turn token instead, and
+      // only over loopback (same rule as /memory/grep). A group turn gets no one's
+      // private tail.
+      const ip = req.socket?.remoteAddress || '';
+      const fromLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+      const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+      const turn = fromLoopback ? resolveTurnToken(hdr('x-ide-turn'), hdr('x-ide-actor')) : null;
+      const turnActor = turn && !turn.group ? turn.actor : null;
+      const me = getTeamMode() ? (getUser(req.actor)?.slug || turnActor || null) : null;
       if (channel === 'telegram' && getTeamMode()) {
         const adminSlug = primaryAdminSlug();
         if (!me || me !== adminSlug) {

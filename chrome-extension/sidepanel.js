@@ -98,7 +98,10 @@ async function openChat() {
   if (verified !== origin && await check) return;
   frame.classList.add('pending');
   frame.hidden = false;
-  frame.src = `${origin}/app/?embed=extension`;
+  // A fresh address each time: Chrome keeps a separate HTTP cache for pages an
+  // extension frames, and it held on to the previous release's page (old chat,
+  // old avatar) long after the workspace itself showed the new one.
+  frame.src = `${origin}/app/?embed=extension&v=${Date.now()}`;
   clearTimeout(readyTimer);
   readyTimer = setTimeout(() => showSetup(`Couldn't open the chat.`), LOAD_TIMEOUT_MS);
 }

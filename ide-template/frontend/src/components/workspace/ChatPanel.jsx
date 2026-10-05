@@ -738,7 +738,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
       {/* Drag and Drop Overlay */}
       {isDragging && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/40 backdrop-blur-[2px] pointer-events-none">
-          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-foreground/20 bg-card/90 p-8 shadow-2xl transition-all animate-in zoom-in-95 duration-200">
+          <div className="flex flex-col items-center gap-3 rounded-[6px] border border-dashed border-foreground/30 bg-card p-8 shadow-[0_10px_28px_-12px_rgba(0,0,0,0.18)] transition-all animate-in zoom-in-95 duration-200">
              <div className="size-12 rounded-full bg-foreground/5 flex items-center justify-center">
                <Paperclip className="size-6 text-foreground/40" strokeWidth={1.75} />
              </div>
@@ -875,9 +875,8 @@ function ChatBubble({ message, onRetry, onFileSelect }) {
         <div
           className={cn(
             'chat-bubble max-w-[82%] break-words text-[14px] leading-[1.55]',
-            'rounded-[16px] px-4 py-2.5',
-            'bg-card/80 border border-border/60 text-foreground/88',
-            'shadow-[0_1px_3px_rgba(0,0,0,0.05)]',
+            'rounded-[6px] px-3.5 py-2',
+            'bg-card border border-border/60 text-foreground/88',
             '[&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0',
           )}
         >
@@ -1367,7 +1366,7 @@ function ErrorBubble({ message, onRetry }) {
   const waiting = tone === 'waiting';
   return (
     <div className={cn(
-      'rounded-lg border px-3.5 py-2.5',
+      'rounded-[6px] border px-3.5 py-2.5',
       waiting ? 'border-border/60 bg-muted/30' : 'border-destructive/25 bg-destructive/[0.04]',
     )}>
       <div className="flex items-start gap-2.5">
@@ -1503,11 +1502,11 @@ function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-start justify-center px-10 pb-12">
       <div className="relative z-10 mb-3.5 flex flex-col items-start">
-        <div className="relative rounded-[20px] border border-border/50 bg-card px-5 py-3.5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] text-left max-w-[280px]">
+        <div className="relative rounded-[6px] border border-border/60 bg-card px-4 py-3 text-left max-w-[280px]">
           <h3 className="text-[13.5px] font-medium text-foreground/90 leading-relaxed">
             {greeting}
           </h3>
-          <div className="absolute -bottom-[6px] left-9 size-3 rotate-45 border-b border-r border-border/50 bg-card rounded-br-[2px]" />
+          <div className="absolute -bottom-[6px] left-9 size-3 rotate-45 border-b border-r border-border/60 bg-card" />
         </div>
       </div>
       
@@ -1549,13 +1548,13 @@ function UnreadOtherSessionsBanner({ currentSessionId }) {
           }));
         }}
         className={cn(
-          'flex w-full items-center gap-2.5 rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-left',
-          'text-[12.5px] text-foreground/85 transition-colors hover:bg-muted',
+          'flex w-full items-center gap-2.5 rounded-[6px] border border-border/60 px-3 py-2 text-left',
+          'text-[12.5px] text-foreground/85 transition-colors hover:bg-foreground/[0.03]',
         )}
       >
         <span className="size-1.5 shrink-0 rounded-full bg-red-500" aria-hidden />
         <span className="truncate flex-1">{label}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground/70">Open ▸</span>
+        <span className="shrink-0 text-[12px] text-muted-foreground/70">Open</span>
       </button>
     </div>
   );
@@ -1571,9 +1570,9 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
     <div className="px-4 pb-4 pt-0">
       <div
         className={cn(
-          'flex flex-col rounded-lg border border-border/50 bg-card/60',
-          'transition-all duration-150',
-          'focus-within:border-border/80 focus-within:bg-card/80',
+          'flex flex-col rounded-[6px] border border-border/60 bg-card',
+          'transition-colors duration-150',
+          'focus-within:border-foreground/25',
         )}
       >
         {/* Textarea section */}
@@ -1609,13 +1608,13 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
         />
 
         {/* Footer bar: attach + chips on left, send on right */}
-        <div className="flex items-center gap-2 border-t border-border/30 px-3 py-2">
+        <div className="flex items-center gap-2 px-3 pb-2 pt-0.5">
           <button
             type="button"
             onClick={onAttachmentClick}
             title="Add attachment"
             className={cn(
-              'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px]',
+              'flex shrink-0 items-center gap-1.5 rounded-[5px] px-2 py-1 text-[12px]',
               'transition-colors duration-150',
               'text-muted-foreground/65 hover:bg-muted/30 hover:text-foreground/75',
             )}
@@ -1654,7 +1653,7 @@ function Composer({ value, onChange, onSend, onStop, onKeyDown, busy, attachment
             // composer was mislabelled "Stop" for screen readers.
             aria-label={canSend ? 'Send' : busy ? 'Stop' : 'Send'}
             className={cn(
-              'ml-auto flex shrink-0 size-7 items-center justify-center rounded-md',
+              'ml-auto flex shrink-0 size-7 items-center justify-center rounded-[5px]',
               'transition-all duration-150',
               (canSend || busy)
                 ? 'bg-foreground text-background hover:opacity-85 active:scale-90'

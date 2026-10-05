@@ -35,6 +35,8 @@ import teamRouter          from './routes/team.js';
 import brandingRouter      from './routes/branding.js';
 import setupRouter         from './routes/setup.js';
 import memoryRouter        from './routes/memory.js';
+import memoryV4Router      from './routes/memory-v4.js';
+import migrationsRouter    from './routes/migrations.js';
 import botRouter           from './routes/bot.js';
 import internalRouter      from './routes/internal.js';
 import notificationsRouter from './routes/notifications.js';
@@ -51,6 +53,8 @@ import { migrateDefaultMemory } from './lib/memory-loader.js';
 import { writeRecentSnapshot } from './lib/recent-snapshot.js';
 import { reindexAll, pruneEngineStore } from './lib/memory-engine.js';
 import { migrateToEngine } from './lib/memory-migrate.js';
+import { autoApply as migrateAutoApply } from './lib/migrate.js';
+import { startMaintenance as startMemoryMaintenance } from './lib/memory-maintenance.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -61,6 +65,7 @@ import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-s
 import { startBroker } from './lib/integrations/broker.js';
 import { decryptFor } from './lib/integrations/store.js';
 import { get as getCatalog } from './lib/integrations/catalog.js';
+import { realignAllPlans } from './lib/planner-schedule.js';
 
 const app = express();
 // One proxy hop (nginx in the frontend service). Without this, req.ip resolves
@@ -123,6 +128,8 @@ app.use('/api', teamRouter());
 app.use('/api', brandingRouter());
 app.use('/api', setupRouter());
 app.use('/api', memoryRouter());
+app.use('/api', memoryV4Router());
+app.use('/api', migrationsRouter());
 app.use('/api', botRouter());
 app.use('/api', internalRouter());
 app.use('/api', notificationsRouter());
@@ -271,6 +278,26 @@ try {
   process.stderr.write(`[workspace-api] memory migration failed: ${err.message}\n`);
 }
 
+// Versioned migrations (migrations/NNNN-*.mjs, lib/migrate.js). Structural ones
+// apply themselves here, in order, idempotent, each backed up first; content ones
+// are only reported — the operator reviews and applies them (bin/migrate.mjs or
+// the upgrade banner). Never blocks boot.
+migrateAutoApply()
+  .then((r) => {
+    const parts = [
+      r.applied.length && `applied ${r.applied.join(', ')}`,
+      r.recorded.length && `recorded ${r.recorded.join(', ')}`,
+      r.pendingContent.length && `awaiting review: ${r.pendingContent.join(', ')}`,
+      r.failed.length && `FAILED ${r.failed.map(f => f.id).join(', ')}`,
+    ].filter(Boolean);
+    if (parts.length) process.stdout.write(`[workspace-api] migrations: ${parts.join('; ')}\n`);
+  })
+  .catch((err) => process.stderr.write(`[workspace-api] migrations failed: ${err.message}\n`));
+
+// Memory v4 nightly jobs (lib/memory-maintenance.js) — only when MEMORY_V4 is
+// not off. Checks every 10 minutes, runs once per local day after 04:00.
+if (startMemoryMaintenance()) process.stdout.write('[workspace-api] memory v4 maintenance scheduled\n');
+
 // Seed the egress allowlist file on every boot — covers the cold-start
 // case (no integrations yet) where the host script would otherwise read a
 // non-existent file and apply an empty allowlist (which still lets the
@@ -322,6 +349,10 @@ app.use((err, _req, res, _next) => {
 
 const server = app.listen(PORT, async () => {
   process.stdout.write(`[workspace-api] listening on :${PORT}, project=${PROJECT_DIR}\n`);
+
+  // Each person's morning planning stays at 06:00 in their own zone, across DST.
+  try { realignAllPlans(); } catch { /* next pass */ }
+  setInterval(() => { try { realignAllPlans(); } catch { /* next pass */ } }, 60 * 60 * 1000).unref();
 
   // Auto-heal the docs-comments persistent browser. ONLY here, in the listen
   // success callback, so it runs solely on the instance that actually bound the

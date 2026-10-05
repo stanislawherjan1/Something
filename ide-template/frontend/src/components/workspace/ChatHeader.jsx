@@ -227,7 +227,7 @@ function ThemeButton() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 w-44 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+          <div className="absolute right-0 top-full mt-1 z-50 w-44 menu-panel">
             <ThemeMenuSection />
           </div>
         </>

@@ -49,8 +49,8 @@ function useRows(dataKey) {
 }
 
 function Placeholder({ loading, error, children }) {
-  if (error) return <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">{String(error)}</div>;
-  if (loading) return <div className="h-16 animate-pulse rounded-md bg-muted/40" />;
+  if (error) return <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">{String(error)}</div>;
+  if (loading) return <div className="h-16 animate-pulse rounded-[6px] bg-muted/40" />;
   return children;
 }
 
@@ -79,7 +79,7 @@ const Card = defineComponent({
     children: z.array(z.any()).optional().describe('Card content'),
   }),
   component: ({ props: p, renderNode }) => (
-    <section className="rounded-xl border border-border/60 bg-card p-4 shadow-xs">
+    <section className="rounded-[6px] border border-border/60 bg-card p-4">
       {p.title && <h3 className="mb-3 text-[13px] font-semibold tracking-tight text-foreground/85">{p.title}</h3>}
       <div className="flex flex-col gap-3">{renderNode(p.children)}</div>
     </section>
@@ -127,16 +127,16 @@ function TabsImpl({ labels, items, renderNode }) {
   const [active, setActive] = useState(0);
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex w-fit items-center gap-0.5 rounded-lg border border-border/55 bg-muted/30 p-0.5">
+      <div className="flex w-fit items-center gap-0.5 rounded-[6px] border border-border/55 bg-muted/30 p-0.5">
         {labels.map((label, i) => (
           <button
             key={i}
             type="button"
             onClick={() => setActive(i)}
             className={cn(
-              'rounded-md px-3 py-1 text-[12.5px] font-medium transition-colors',
+              'rounded-[5px] px-3 py-1 text-[12.5px] font-medium transition-colors',
               i === active
-                ? 'bg-background text-foreground shadow-xs'
+                ? 'bg-card text-foreground'
                 : 'text-muted-foreground/70 hover:text-foreground/85',
             )}
           >
@@ -176,7 +176,7 @@ function ButtonImpl({ label, say }) {
       onClick={onClick}
       disabled={!sendToBot}
       className={cn(
-        'w-fit rounded-md border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+        'w-fit rounded-[6px] border px-3 py-1.5 text-[12.5px] font-medium transition-colors',
         sent
           ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
           : 'border-border/60 bg-background text-foreground/85 hover:bg-sidebar-accent/40',
@@ -241,7 +241,7 @@ function FormImpl({ stateKey, fields, submitLabel, notify }) {
             value={values[f.name] ?? ''}
             onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
             className={cn(
-              'h-8 w-36 rounded-md border border-border/60 bg-background px-2 text-[12.5px]',
+              'h-8 w-36 rounded-[6px] border border-border/60 bg-card px-2 text-[12.5px]',
               'outline-none transition-colors focus:border-[--color-ring]',
             )}
           />
@@ -251,7 +251,7 @@ function FormImpl({ stateKey, fields, submitLabel, notify }) {
         type="submit"
         disabled={!appendState || busy}
         className={cn(
-          'h-8 rounded-md bg-[--color-ring] px-3 text-[12.5px] font-medium text-white transition-opacity',
+          'h-8 rounded-[6px] bg-foreground px-3 text-[12.5px] font-medium text-background transition-opacity',
           (!appendState || busy) && 'opacity-50',
         )}
       >
@@ -288,12 +288,12 @@ const Badge = defineComponent({
 function renderBadge(label, tone) {
   return (
     <span className={cn(
-      'inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
-      tone === 'neutral' && 'border-border/60 bg-muted/40 text-foreground/70',
-      tone === 'success' && 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-      tone === 'warning' && 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      tone === 'danger'  && 'border-destructive/25 bg-destructive/10 text-destructive',
-    )}>{label}</span>
+      // One neutral hairline tag; the tone is a small dot, like StatusTag.
+      'inline-flex w-fit items-center gap-1.5 rounded-[5px] px-1.5 py-[3px] text-[11px] font-medium leading-none text-foreground/75 ring-1 ring-inset ring-foreground/[0.12]',
+    )}>
+      {tone !== 'neutral' && <span className={cn('size-1.5 shrink-0 rounded-full', tone === 'success' ? 'bg-emerald-500' : tone === 'warning' ? 'bg-amber-500' : 'bg-red-500')} aria-hidden />}
+      {label}
+    </span>
   );
 }
 
@@ -312,8 +312,8 @@ const Stat = defineComponent({
 function renderStat({ label, value, delta, hint }) {
     const negative = typeof delta === 'string' && delta.trim().startsWith('-');
     return (
-      <div className="rounded-lg border border-border/55 bg-background px-3.5 py-3">
-        <div className="text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground/65">{label}</div>
+      <div className="rounded-[6px] border border-border/60 bg-card px-3.5 py-3">
+        <div className="text-[12px] text-muted-foreground/70">{label}</div>
         <div className="mt-1 flex items-baseline gap-2">
           <span className="text-[22px] font-semibold tracking-tight text-foreground">{value}</span>
           {delta && (
@@ -352,7 +352,7 @@ function DataTableImpl({ dataKey, columns, empty }) {
         {!rows?.length ? (
           <div className="py-6 text-center text-[12.5px] text-muted-foreground/60">{empty || 'No data'}</div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border/55">
+          <div className="overflow-x-auto rounded-[6px] border border-border/55">
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-border/55 bg-muted/30 text-left">
@@ -397,7 +397,7 @@ function ListImpl({ dataKey, titleKey, subtitleKey, badgeKey, empty }) {
         {!rows?.length ? (
           <div className="py-6 text-center text-[12.5px] text-muted-foreground/60">{empty || 'Nothing here'}</div>
         ) : (
-          <ul className="flex flex-col divide-y divide-border/40 rounded-lg border border-border/55">
+          <ul className="flex flex-col divide-y divide-border/40 rounded-[6px] border border-border/55">
             {rows.map((row, i) => (
               <li key={i} className="flex items-center gap-3 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -405,7 +405,7 @@ function ListImpl({ dataKey, titleKey, subtitleKey, badgeKey, empty }) {
                   {subtitleKey && <div className="truncate text-[11.5px] text-muted-foreground/65">{formatCell(row?.[subtitleKey])}</div>}
                 </div>
                 {badgeKey && row?.[badgeKey] != null && (
-                  <span className="shrink-0 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/70">
+                  <span className="shrink-0 rounded-[5px] px-1.5 py-[3px] text-[11px] font-medium leading-none text-foreground/70 ring-1 ring-inset ring-foreground/[0.12]">
                     {formatCell(row[badgeKey])}
                   </span>
                 )}

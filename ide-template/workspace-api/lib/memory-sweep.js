@@ -35,9 +35,10 @@ import { tmpdir } from 'node:os';
 
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
-import { getTeamMode, primaryAdminSlug, isAllowedGroup } from './team.js';
+import { getTeamMode, isAllowedGroup, dmOwnerSlug } from './team.js';
 import { remember, readLog } from './memory-engine.js';
 import { CARDS } from './memory-registry.js';
+import { v4Mode } from './memory-ledger.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 
@@ -49,6 +50,8 @@ const MAX_PER_TICK  = num('MEMORY_SWEEP_MAX_PER_TICK', 3);
 const MAX_FACTS     = num('MEMORY_SWEEP_MAX_FACTS', 5);
 const TIMEOUT_MS    = num('MEMORY_SWEEP_TIMEOUT_MS', 90000);
 const TRANSCRIPT_MAX = num('MEMORY_SWEEP_TRANSCRIPT_CHARS', 12000);
+// The Telegram log interleaves every DM; read deeper so a quieter chat's tail is still there.
+const DM_SCAN_LINES = num('MEMORY_SWEEP_DM_SCAN_LINES', 3000);
 
 const TELEGRAM_LOG = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
 
@@ -121,14 +124,33 @@ export function idleSources({ now = Date.now(), idleSeconds = IDLE_SECONDS } = {
     }
   } catch { /* no web sessions yet */ }
 
-  // TELEGRAM DM — one flat log; it is the operator's own conversation.
+  // TELEGRAM DMs — one flat log holds EVERY direct chat the bot has: the
+  // operator's and, in team mode, each linked teammate's (group lines too, which
+  // are swept from their own history below). It used to be swept as one source
+  // owned by the primary admin, which filed teammates' DMs into the operator's
+  // private memory. One source per chat now, owned by whoever that chat id
+  // belongs to in the roster; a chat nobody owns is never filed under anyone.
   try {
     const st = statSync(TELEGRAM_LOG);
-    const admin = getTeamMode() ? primaryAdminSlug() : null;
-    consider({
-      id: `dm:${Math.floor(st.mtimeMs / 1000)}`, kind: 'dm', path: TELEGRAM_LOG, mtime: st.mtimeMs,
-      owner: admin, label: 'the Telegram DM',
-    });
+    const team = getTeamMode();
+    const lastByChat = new Map();
+    for (const m of readJsonl(TELEGRAM_LOG, DM_SCAN_LINES)) {
+      const chat = m.chat_id == null ? '' : String(m.chat_id);
+      if (chat.startsWith('-')) continue;
+      const t = Date.parse(m.ts || '') || st.mtimeMs;
+      lastByChat.set(chat, Math.max(lastByChat.get(chat) || 0, t));
+    }
+    for (const [chat, last] of lastByChat) {
+      let owner = null;
+      if (team) {
+        owner = chat ? dmOwnerSlug(chat) : null;
+        if (!owner) continue;
+      }
+      consider({
+        id: `dm:${chat || 'unknown'}`, kind: 'dm', path: TELEGRAM_LOG, chatId: chat, mtime: last,
+        owner, label: owner ? `${owner}'s Telegram DM` : 'the Telegram DM',
+      });
+    }
   } catch { /* no telegram log */ }
 
   // GROUPS — the case the live model structurally cannot cover, because the bot
@@ -162,9 +184,10 @@ export function idleSources({ now = Date.now(), idleSeconds = IDLE_SECONDS } = {
 
 /** The tail of one source, rendered with attribution. */
 function renderTail(src) {
-  const msgs = readJsonl(src.path);
+  const msgs = readJsonl(src.path, src.kind === 'dm' ? DM_SCAN_LINES : undefined);
   const lines = [];
   for (const m of msgs) {
+    if (src.kind === 'dm' && (m.chat_id == null ? '' : String(m.chat_id)) !== src.chatId) continue;
     const text = String(m.text ?? m.content ?? '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
     if (src.kind === 'group') {
@@ -180,7 +203,12 @@ function renderTail(src) {
 
 /** What the engine already wrote while this conversation was happening. */
 function alreadySaved(src, sinceMs) {
+  // Only what this conversation's owner could read themselves: shared writes and
+  // their own private tree. The list goes into a prompt — another teammate's
+  // private lines have no business there.
+  const own = src.owner ? `memory/users/${src.owner}/` : null;
   return readLog({ limit: 200, since: sinceMs })
+    .filter(e => { const t = String(e.target || ''); return !t.startsWith('memory/users/') || (own && t.startsWith(own)); })
     .flatMap(e => (e.added || []).map(a => a.line))
     .filter(Boolean)
     .slice(-40);
@@ -301,6 +329,8 @@ export async function sweepSource(src) {
  */
 export async function sweepIdle({ force = false } = {}) {
   if (!ENABLED && !force) return { ok: true, skipped: 'disabled' };
+  // Once memory v4 is the memory, the consolidator files conversations instead.
+  if (v4Mode() === 'on') return { ok: true, skipped: 'memory v4' };
   if (_sweeping) return { ok: true, skipped: 'in-progress' };
   _sweeping = true;
   try {
@@ -321,3 +351,6 @@ export async function sweepIdle({ force = false } = {}) {
     _sweeping = false;
   }
 }
+
+// For the privacy tests: the two pure pieces that decide what a sweep sees.
+export { renderTail as _renderTailForTests, alreadySaved as _alreadySavedForTests };

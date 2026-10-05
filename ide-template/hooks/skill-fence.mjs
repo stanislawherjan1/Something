@@ -53,4 +53,22 @@ if (CLOUD_SCHEDULERS.has(bare)) {
   process.exit(2);
 }
 
+// Skills of the old memory, once a workspace has moved to memory v4 (the
+// stamp): one explains the wiki's cards and pages, the other reads the
+// patterns/ trees — both describe a memory this workspace no longer has.
+const LEGACY_MEMORY_SKILLS = new Set(['memory-cards', 'taste-recall']);
+if (LEGACY_MEMORY_SKILLS.has(bare)) {
+  const { existsSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  if (existsSync(join(process.env.PROJECT_DIR || '/home/coder/project', 'memory', '_engine', '.v4-migrated'))) {
+    process.stderr.write(
+      `Blocked: \`${bare}\` describes the old memory wiki, and this workspace has moved to the new memory. `
+      + 'What you remember is handed to you (the <<<MEMORY>>> block, WHAT_IS_GOING_ON, your cards) and '
+      + 'searched with memory_search / memory_timeline; the person manages it on the Memory screen. '
+      + 'There is nothing to load — carry on without the skill.',
+    );
+    process.exit(2);
+  }
+}
+
 process.exit(0);

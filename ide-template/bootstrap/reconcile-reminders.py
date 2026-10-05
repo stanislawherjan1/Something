@@ -64,14 +64,14 @@ def _zone(name):
         return datetime.timezone.utc
 
 
-def compute_due(placeholder, now):
+def compute_due(placeholder, now, tz_name=None):
     # _LOCAL is the workspace's timezone; _UTC is kept meaning UTC so anything
     # that deliberately schedules in UTC keeps doing so.
     m = re.match(r"BOOTSTRAP_NEXT_([A-Z]+)_(\d{1,2})_(UTC|LOCAL)", placeholder or "")
     if not m:
         return now + datetime.timedelta(days=1)
     day, hh, basis = m.group(1), int(m.group(2)), m.group(3)
-    tz = _zone(WORKSPACE_TZ) if basis == "LOCAL" else datetime.timezone.utc
+    tz = _zone(tz_name or WORKSPACE_TZ) if basis == "LOCAL" else datetime.timezone.utc
     local_now = now.astimezone(tz)
     due = local_now.replace(hour=hh, minute=0, second=0, microsecond=0)
     if day == "DAILY":
@@ -150,13 +150,22 @@ slugs = [r.get("slug") for r in roster if isinstance(r, dict) and r.get("slug")]
 team_mode = bool(read_json(CONFIG, {}).get("teamMode")) or len(slugs) > 1
 
 
-def sync_entry(rid, tmpl_e, schedule_src):
+# The admin's default in Settings outranks IDE_TIMEZONE; a person's own zone
+# (Settings, or set by the bot in auto mode) outranks both for their planner.
+WORKSPACE_TZ = (read_json(CONFIG, {}).get("defaultTimezone") or "").strip() or WORKSPACE_TZ
+tz_by_slug = {r.get("slug"): r.get("timezone") for r in roster
+              if isinstance(r, dict) and r.get("slug") and isinstance(r.get("timezone"), str)}
+primary = next((r.get("slug") for r in roster if isinstance(r, dict) and r.get("role") == "admin"),
+               slugs[0] if slugs else None)
+
+
+def sync_entry(rid, tmpl_e, schedule_src, tz_name=None):
     """Add rid if missing (due from schedule_src's placeholder), else sync text."""
     cur = by_id.get(rid)
     if cur is None:
         e = dict(tmpl_e)
         e["id"] = rid
-        e["due"] = compute_due(schedule_src.get("due"), now).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        e["due"] = compute_due(schedule_src.get("due"), now, tz_name).strftime("%Y-%m-%dT%H:%M:%S.000Z")
         e["created"] = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         e["status"] = "pending"
         live.append(e)
@@ -177,7 +186,7 @@ for t in rituals:
         continue
     if rid == PLAN_BASE_ID and team_mode:
         continue
-    sync_entry(rid, t, t)
+    sync_entry(rid, t, t, tz_by_slug.get(primary) if rid == PLAN_BASE_ID else None)
 
 # 2) Per-user plan-day triggers.
 base = next((t for t in rituals if t.get("id") == PLAN_BASE_ID), None)
@@ -185,7 +194,7 @@ if team_mode and slugs and base:
     for slug in slugs:
         rid = f"{PLAN_BASE_ID}__{slug}"
         desired.add(rid)
-        sync_entry(rid, per_user_tmpl(slug, base), base)
+        sync_entry(rid, per_user_tmpl(slug, base), base, tz_by_slug.get(slug))
     # Prune per-user triggers for departed members + retire the generic one.
     for r in list(live):
         rid = r.get("id", "")

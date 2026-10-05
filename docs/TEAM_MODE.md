@@ -31,6 +31,20 @@ decision (the UI's "disable" modal):
   workspace (collision-renamed). Never touches anyone else's files.
 - **Hide** — leave personal files in place but stop surfacing the split.
 
+The admin's **memory cards** follow the mode either way: enabling adopts the
+flat `USER_*` cards under `memory/users/<admin>/` at the next boot
+(`migrateDefaultMemory`); disabling moves them back flat at once
+(`restoreDefaultMemory`), because solo mode reads the one person's cards from
+`memory/` — without that the Preferences screen said "Nothing yet" and the bot
+lost the profile from its prefix. A flat card that already exists is never
+overwritten.
+
+**Routines** follow the same switch: team mode keeps the admin's list under
+`.team/users/<admin>/routines.json`, solo mode reads `.team/users/default/`. The
+side not in use is folded into the current one the next time routines are read
+(`moveRoutines`, merged by title, never overwritten), so flipping the switch —
+either way — never leaves the Routines screen empty.
+
 The Team dashboard renders the mode card (the "Collaborative workspace"
 toggle); `/api/me` and `/api/team` echo the current flag so the sidebar,
 role badges, and recipient pickers react live.
@@ -79,7 +93,14 @@ Each teammate gets a path-safe **slug** (derived from their email, e.g.
 `users/<slug>/`) plus a `displayName` and an avatar. The slug is the stable key
 used everywhere a person is referenced: file scope, reminder recipients, task
 owners, relay routing. `GET /api/me` returns the caller's
-`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface }`.
+`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface, preferredLanguage, languageLocked, timezone, timezoneLocked, timezoneFrom, timezoneSetAt, defaultTimezone, effectiveTimezone }`.
+
+Each person edits their own profile on the **Settings** page (user menu →
+Settings): picture, name, reply language and time zone, and their Telegram link
+when Telegram is on. The bot changes the language or zone when that person asks
+(`set_my_settings`, never from a group), unless they locked it with the padlock.
+Their morning planning runs at 06:00 in their zone; admins set the workspace
+default zone for people without one. See [ROUTINES.md](ROUTINES.md#time-zone-and-language).
 
 `personalRoot` is `users/<slug>` in team mode (null in solo) — the root of the
 caller's private space.
@@ -155,6 +176,27 @@ server-side). The Memory dashboard's graph mirrors all this — a **Shared /
 Yours** filter, a loop around each cluster, and a teammate's private memory
 typically its own island.
 
+### With memory v4
+
+Memory v4 ([MEMORY.md](MEMORY.md#memory-v4)) keeps whole conversations instead
+of cards, split the same way by path: `memory/ledger/` (shared),
+`memory/users/<slug>/ledger/` (one person) and `memory/groups/<chatId>/ledger/`
+(one registered group).
+
+- A **1:1 conversation** is filed whole in its owner's scope — a Telegram DM
+  under the roster person whose chat it is. A small model then picks lines the
+  team may also read (word-for-word only) into shared memory; borderline
+  business lines wait on the owner's **Privacy** screen ("Share with team?") and
+  are shared only if they say yes. What was shared from someone's private chats
+  in the last two weeks is listed for them, with **Make private**.
+- A **group conversation** is filed in that group's scope. A member reads it
+  from their own 1:1 turns; a group turn reads shared + its own group — never
+  anyone's private scope, not even the sender's.
+- **Solo is a team of one**: the owner's conversations are their own scope, so
+  switching team mode on later exposes nothing they did not share.
+- No admin reads another person's memory — not in the tools, the Memory screen,
+  the backup download, or by file path.
+
 ---
 
 ## 6. Reminders — per-recipient
@@ -195,6 +237,13 @@ reminder recipient; the asker is the default owner.
 **Assigning a task does NOT notify the teammate** — it only records ownership.
 If they should be pinged, that's a relay or a `set_reminder` with `recipient`,
 separate from the board. (See [the task board section in ARCHITECTURE](ARCHITECTURE.md) for the store + MCP.)
+
+The owner only shows on the board in team mode; a solo workspace hides it (the
+field is kept, and shows again when team mode is switched on).
+
+**Deleting.** Finished work moves to Done. A task that should never have been on
+the board — a mistake, a test, a duplicate — can be deleted for good: ask the
+bot, or `DELETE /api/tasks/:id`. The workspace UI has no delete control.
 
 ---
 
@@ -277,6 +326,10 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    reaction, two people clearly talking to each other); when unsure, it passes. A
    direct address — `@mention`, a reply to the bot, or the bot's **name** (incl.
    inflected forms) — bypasses the gate outright.
+   The durable history each group keeps (`.group-watcher/<chatId>-history.jsonl`)
+   names a sender as the roster names them when their Telegram id is on it, and
+   by their Telegram profile otherwise — it is what memory files a group from,
+   and a profile called "s" once filed the operator's own words under "s".
 2. **The brain** — on a pass, the **full assistant** answers via the same engine as
    web/1:1 (`runClaudeTurn`), as `actor='team'`. It has the complete 1:1 toolset —
    shared files, shared memory, skills, integrations, reminders — and may act. It
@@ -357,15 +410,17 @@ and excluded from Drive sync.
 
 | Path | Notes |
 |------|-------|
-| `GET /api/me` | Caller identity + mode. |
+| `GET /api/me`, `PATCH /api/me` | Caller identity + mode; the caller's own name, language, time zone (+ locks), Telegram link. |
+| `PUT /api/team/default-timezone` | Admin — the workspace default time zone. |
 | `GET/POST/PATCH/DELETE /api/team`, `PUT /api/team/mode` | Roster + mode (admin-gated writes). |
 | `GET/POST/DELETE /api/team/telegram-groups` | Registered Telegram groups (admin-gated). |
 | `GET /api/reminders`, `POST /api/reminders/cancel` | Actor-scoped reminder board. |
-| `GET/POST/PATCH /api/tasks` | Shared task board. |
+| `GET/POST/PATCH/DELETE /api/tasks` | Shared task board (DELETE removes a task for good; finished work moves to Done). |
 | `GET /internal/roster` | Loopback — roster for the reminder/tasks MCP name→slug resolution. |
 | `POST /internal/reminder-deliver` | Loopback — fan-out of a fired reminder to teammates. |
 | `POST /internal/group-message` | Loopback — a diverted group message into the relevance watcher. |
 | `POST /internal/group-joined` | Loopback — bot added to a group → roster-gated auto-register. |
+| `POST /internal/me/settings` | Loopback — the bot's `set_my_settings` (turn identity; refused in groups and on locked settings). |
 
 ### Related skills
 

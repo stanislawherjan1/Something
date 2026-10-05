@@ -5,7 +5,10 @@ import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
+import TileBanner from './TileBanner.jsx';
+import StatusTag from './StatusTag.jsx';
 import EditorHeader from '../EditorHeader.jsx';
+import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
@@ -35,7 +38,7 @@ function interpolate(text, vars) {
  */
 function StepBody({ body }) {
   return (
-    <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/90 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-foreground/95">
+    <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/90 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:font-medium [&_strong]:text-foreground/80">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -53,7 +56,7 @@ function StepBody({ body }) {
             inline ? <CopyableCode>{String(children).replace(/\n$/, '')}</CopyableCode>
                    : <code className="font-mono text-[12px]">{children}</code>
           ),
-          pre: ({ children }) => <pre className="my-2 overflow-x-auto rounded-md border border-border/50 bg-muted/40 px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground/90">{children}</pre>,
+          pre: ({ children }) => <pre className="my-2 overflow-x-auto rounded-[6px] border border-border/50 bg-muted/40 px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground/90">{children}</pre>,
         }}
       >
         {body}
@@ -100,29 +103,18 @@ function CopyableCode({ children }) {
 // machine-readable values (`ai`, `marketing`, …); the UI gets a Capital-
 // case display string. Keep this in sync with the categories actually
 // used by integrations.catalog.json.
-// Remote-MCP OAuth integrations (catalog `mcp.type: "http"` + a
-// remote-mcp-oauth field) activate via a provider consent popup instead of
-// the credentials modal. Open remote servers (http type, no oauth field,
-// e.g. Microsoft Learn) activate through the normal zero-field modal.
-const isRemoteMcpOauth = (integration) =>
-  (integration?.fields || []).some(f => f.type === 'remote-mcp-oauth');
-
 // Anything served by a provider-hosted MCP — OAuth or open — is "one-click"
 // in the marketplace: nothing to paste either way.
 const isOneClick = (integration) => integration?.mcp?.type === 'http';
-
-// Open (no-auth) MCP servers: hosted, no OAuth, no fields — activate directly.
-const isOpenServer = (integration) =>
-  integration?.mcp?.type === 'http' &&
-  !isRemoteMcpOauth(integration) &&
-  !((integration?.fields || []).length);
 
 const CATEGORY_LABELS = {
   ai:           'AI',
   commerce:     'Commerce',
   finance:      'Finance',
   marketing:    'Marketing',
+  meetings:     'Meetings',
   productivity: 'Productivity',
+  tasks:        'Tasks & projects',
   messaging:    'Messaging',
   content:      'Content',
   dev:          'Dev',
@@ -230,21 +222,11 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     // (routes/integrations.js). The popup must open synchronously inside
     // this click handler or popup blockers eat it.
     if (isRemoteMcpOauth(integration)) {
-      const popup = window.open(
-        `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start`,
-        `oauth-${integration.id}`,
-        'popup,width=560,height=720',
-      );
       // The popup postMessages us on success (handled below). As a fallback for
       // when it can't reach the opener, revalidate once when it closes — a
       // single scoped refetch, NOT a blanket focus listener (that caused the
       // page to refresh on every tab switch).
-      if (popup) {
-        const timer = setInterval(() => {
-          if (popup.closed) { clearInterval(timer); reload(); }
-        }, 700);
-        setTimeout(() => clearInterval(timer), 300_000);
-      }
+      openOAuthPopup(integration, reload);
       return;
     }
     // Open (no-auth) MCP servers have nothing to configure — activate directly,
@@ -380,25 +362,22 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
-          <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
-            Connect external services so the assistant can use them on your behalf. In case of any questions, message {botDisplayName}.
-          </p>
           {!isAdmin && (
-            <div className="flex max-w-2xl items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-4 py-2.5 text-[12.5px] text-muted-foreground/80">
+            <div className="flex max-w-2xl items-center gap-2 rounded-[6px] border border-border/50 bg-muted/20 px-4 py-2.5 text-[12.5px] text-muted-foreground/80">
               <Lock className="size-3.5 shrink-0" strokeWidth={1.75} />
               Read-only: your workspace admins manage integrations.
             </div>
           )}
-          {isInitialLoad && <SkeletonCardGrid count={6} />}
+          {isInitialLoad && <SkeletonCardGrid count={6} width={320} banner />}
 
           {error && !data && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
+            <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
               Couldn't load integrations: {error}
             </div>
           )}
 
           {data && !ready && (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3.5">
+            <div className="flex items-start gap-3 rounded-[6px] border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3.5">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" strokeWidth={1.75} />
               <div className="text-[13px] text-foreground/85">
                 <div className="font-medium">Integrations are not configured on this server.</div>
@@ -426,7 +405,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
 
               <div className={cn(tab !== 'active' && 'hidden')}>
                 {active.length > 0 ? (
-                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,320px)] max-sm:grid-cols-1">
                     {active.map((integration) => (
                       <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
                         <IntegrationTile
@@ -441,7 +420,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-6 py-12 text-center">
+                  <div className="flex flex-col items-center gap-2 rounded-[6px] border border-border/40 bg-muted/15 px-6 py-12 text-center">
                     <Plug className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
                     <div className="text-[13.5px] font-medium text-foreground/85">No active integrations yet</div>
                     <p className="max-w-sm text-[12.5px] text-muted-foreground/75">
@@ -450,7 +429,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                     <button
                       type="button"
                       onClick={() => setTab('marketplace')}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-opacity hover:opacity-95"
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-opacity hover:opacity-95"
                     >
                       Open Marketplace
                       <ArrowRight className="size-3.5" strokeWidth={2} />
@@ -513,7 +492,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       {/* Dev-only toast simulator — top so it never covers the marketplace.
           Stripped from production builds via import.meta.env.DEV. */}
       {import.meta.env.DEV && (
-        <div className="fixed left-3 top-3 z-[80] flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-1.5 rounded-lg border border-border/60 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
+        <div className="fixed left-3 top-3 z-[80] flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center gap-1.5 rounded-[6px] border border-border/60 bg-card/95 px-2 py-1.5 shadow-lg backdrop-blur">
           <span className="px-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground/55">Toast preview · dev</span>
           {[
             ['install bar', () => pushActivationToast({ logo: '/integrations/notion.svg', label: 'Notion' }, true, 'install')],
@@ -526,7 +505,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               key={label}
               type="button"
               onClick={fn}
-              className="rounded-md border border-border/60 bg-background px-2 py-1 text-[11px] font-medium text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40"
+              className="rounded-[6px] border border-border/60 bg-background px-2 py-1 text-[11px] font-medium text-foreground/75 transition-colors hover:border-foreground/30 hover:bg-muted/40"
             >
               {label}
             </button>
@@ -548,7 +527,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 24, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="pointer-events-auto relative w-[calc(100%-1rem)] max-w-3xl overflow-hidden rounded-xl border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur sm:w-[75%] lg:w-[60%]"
+              className="pointer-events-auto relative w-[calc(100%-1rem)] max-w-3xl overflow-hidden rounded-[6px] border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur sm:w-[75%] lg:w-[60%]"
             >
               {t.kind === 'activation' ? (
                 <div className="flex w-full items-center justify-between gap-2.5 px-3.5 py-2.5 sm:gap-4 sm:px-5 sm:py-3">
@@ -610,7 +589,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
  */
 export function Tabs({ value, onChange, items }) {
   return (
-    <div role="tablist" className="inline-flex items-center gap-1 self-start rounded-lg border border-border/55 bg-muted/40 p-1">
+    <div role="tablist" className="inline-flex items-center gap-1 self-start rounded-[6px] border border-border/55 bg-muted/40 p-1">
       {items.map((it) => {
         const isActive = it.id === value;
         return (
@@ -621,7 +600,7 @@ export function Tabs({ value, onChange, items }) {
             aria-selected={isActive}
             onClick={() => onChange(it.id)}
             className={cn(
-              'inline-flex items-center gap-2 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors',
+              'inline-flex items-center gap-2 rounded-[6px] px-3.5 py-1.5 text-[13px] font-medium transition-colors',
               isActive
                 ? 'bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.05)]'
                 : 'text-muted-foreground/80 hover:text-foreground/90',
@@ -643,71 +622,77 @@ export function Tabs({ value, onChange, items }) {
   );
 }
 
+// ─── Search field (shared with the Routines Marketplace) ──────────────────
+
+/** The marketplace search box: icon, text, a clear button. Focus uses the
+ *  foreground ring like the rest of the workspace inputs. */
+export function SearchField({ value, onChange, placeholder, label }) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/55" strokeWidth={1.75} />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={label}
+        className="w-full rounded-[6px] border border-border/60 bg-background py-2.5 pl-9 pr-9 text-[13.5px] text-foreground outline-none transition-colors focus:border-foreground/40 focus:ring-2 focus:ring-foreground/10"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          title="Clear search"
+          aria-label="Clear search"
+          className="absolute right-2.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-[6px] text-muted-foreground/55 transition-colors hover:bg-muted/40 hover:text-foreground/80"
+        >
+          <X className="size-3.5" strokeWidth={1.75} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Marketplace (Available section: search + category chips + grid) ─────
 
 function Marketplace({
   facets, query, onQuery,
   items, ready, canManage, onActivate, onRemove,
 }) {
+  // One grid with the Active tab's 306 px columns: the search field and the
+  // category headers span it, so both tabs share the same right edge.
   return (
-    <div className="flex flex-col gap-4">
-      {/* Search input — keyboard-focus highlight via foreground ring so it
-          matches the rest of the workspace inputs (no brand-accent ring). */}
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/55" strokeWidth={1.75} />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search integrations…"
-          aria-label="Search integrations"
-          className="w-full rounded-lg border border-border/60 bg-background py-2.5 pl-9 pr-9 text-[13.5px] text-foreground outline-none transition-colors focus:border-foreground/40 focus:ring-2 focus:ring-foreground/10"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => onQuery('')}
-            title="Clear search"
-            aria-label="Clear search"
-            className="absolute right-2.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted/40 hover:text-foreground/80"
-          >
-            <X className="size-3.5" strokeWidth={1.75} />
-          </button>
-        )}
+    <div className="grid gap-x-3 gap-y-2.5 grid-cols-[repeat(auto-fill,320px)] max-sm:grid-cols-1">
+      <div className="col-span-full mb-1.5">
+        <SearchField value={query} onChange={onQuery} placeholder="Search integrations…" label="Search integrations" />
       </div>
 
       {/* Grouped into category sections (header + 2-col grid), ordered by the
           facet order. Replaces the top filter chips — you scroll by category. */}
       {items.length > 0 ? (
-        <div className="flex flex-col gap-6">
-          {facets.filter(f => f.id !== 'all').map((f) => {
-            const group = items.filter(i => (i.category || 'other') === f.id);
-            if (!group.length) return null;
-            return (
-              <div key={f.id} className="flex flex-col gap-2.5">
-                <div className="flex items-center gap-2 px-0.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{f.label}</span>
-                  <span className="text-[10.5px] tabular-nums text-muted-foreground/45">{group.length}</span>
-                </div>
-                <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
-                  {group.map((integration) => (
-                    <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
-                      <CompactTile
-                        integration={integration}
-                        ready={ready}
-                        canManage={canManage}
-                        onActivate={() => onActivate(integration)}
-                        onRemove={() => onRemove(integration)}
-                      />
-                    </motion.div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        facets.filter(f => f.id !== 'all').map((f, idx) => {
+          const group = items.filter(i => (i.category || 'other') === f.id);
+          if (!group.length) return null;
+          return [
+            <div key={`h-${f.id}`} className={cn('col-span-full flex items-center gap-2 px-0.5', idx > 0 && 'mt-3.5')}>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{f.label}</span>
+              <span className="text-[10.5px] tabular-nums text-muted-foreground/45">{group.length}</span>
+            </div>,
+            ...group.map((integration) => (
+              <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                <CompactTile
+                  integration={integration}
+                  ready={ready}
+                  canManage={canManage}
+                  onActivate={() => onActivate(integration)}
+                  onRemove={() => onRemove(integration)}
+                />
+              </motion.div>
+            )),
+          ];
+        })
       ) : (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-border/40 bg-muted/15 px-6 py-10 text-center">
+        <div className="col-span-full flex flex-col items-center gap-2 rounded-[6px] border border-border/40 bg-muted/15 px-6 py-10 text-center">
           <Search className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
           <div className="text-[13.5px] font-medium text-foreground/85">
             {query.trim() ? <>No integrations match "{query.trim()}"</> : 'Nothing in the marketplace yet'}
@@ -716,7 +701,7 @@ function Marketplace({
             <button
               type="button"
               onClick={() => onQuery('')}
-              className="mt-1 inline-flex items-center gap-1 rounded-md border border-border/55 bg-background px-3 py-1.5 text-[12.5px] text-foreground/80 transition-colors hover:bg-muted/40"
+              className="mt-1 inline-flex items-center gap-1 rounded-[6px] border border-border/55 bg-background px-3 py-1.5 text-[12.5px] text-foreground/80 transition-colors hover:bg-muted/40"
             >
               Clear search
             </button>
@@ -736,13 +721,14 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
-  const isBeta       = isOneClick(integration) && integration.beta !== false;
   const desc         = integration.tagline || integration.description;
-  const btn = 'flex size-8 shrink-0 items-center justify-center rounded-md border transition-colors';
+  // Same quiet button as the tiles' footers, shrunk to fit a row.
+  const btn = 'inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-[6px] px-2.5 text-[12px] font-medium transition-colors';
+  const idle = 'inline-flex size-7 shrink-0 items-center justify-center text-muted-foreground/40';
 
   return (
     <div className={cn(
-      'group flex items-center gap-3 rounded-lg border bg-card px-3.5 py-2.5 transition-colors',
+      'group flex items-center gap-3 rounded-[6px] border bg-card px-3.5 py-2.5 transition-colors',
       (isComingSoon || cantActivate) ? 'border-border/40' : 'border-border/50 hover:border-border',
     )}>
       <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
@@ -750,35 +736,29 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[13.5px] font-semibold text-foreground/90">{integration.label}</span>
-          {isBeta && !isComingSoon && !isActive && (
-            <span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
-          )}
           {integration.experimental && <ExperimentalTag />}
-          {isActive && (
-            <span className="shrink-0 rounded-full bg-emerald-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Active</span>
-          )}
-          {isComingSoon && (
-            <span className="shrink-0 rounded-full bg-muted/70 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80">Soon</span>
-          )}
+          {isComingSoon && <StatusTag tone="soon" className="shrink-0">Soon</StatusTag>}
         </div>
         <div className="truncate text-[12px] leading-snug text-muted-foreground/80">
           {isComingSoon ? (integration.comingSoonReason || desc) : desc}
         </div>
       </div>
 
-      {!canManage   ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')}><Lock className="size-3.5" strokeWidth={1.75} /></span>
-       : isComingSoon ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')}><Clock className="size-3.5" strokeWidth={1.75} /></span>
-       : cantActivate ? <span className={cn(btn, 'border-border/40 text-muted-foreground/40')} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
+      {!canManage   ? <span className={idle}><Lock className="size-3.5" strokeWidth={1.75} /></span>
+       : isComingSoon ? <span className={idle}><Clock className="size-3.5" strokeWidth={1.75} /></span>
+       : cantActivate ? <span className={idle} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
        : isActive     ? (
-          <button type="button" onClick={onRemove} title="Remove" aria-label="Remove"
-            className={cn(btn, 'border-border/50 text-foreground/50 hover:bg-muted/50 hover:text-foreground/70')}>
-            <CheckCircle2 className="size-4 group-hover:hidden" strokeWidth={1.9} />
-            <Trash2 className="hidden size-3.5 group-hover:block" strokeWidth={1.75} />
+          // "Added" at rest; on hover the same button offers to remove it.
+          <button type="button" onClick={onRemove} aria-label={`Remove ${integration.label}`}
+            className={cn(btn, 'group/act text-emerald-700 hover:bg-destructive/[0.08] hover:text-destructive dark:text-emerald-400')}>
+            <CheckIcon className="size-3.5 group-hover/act:hidden" strokeWidth={2.25} />
+            <span className="group-hover/act:hidden">Added</span>
+            <span className="hidden group-hover/act:inline">Remove</span>
           </button>
         ) : (
-          <button type="button" onClick={onActivate} title={isOneClick(integration) ? 'Connect' : 'Add'} aria-label="Add"
-            className={cn(btn, 'border-border/50 text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground/70')}>
-            <PlusIcon className="size-4" strokeWidth={1.9} />
+          <button type="button" onClick={onActivate}
+            className={cn(btn, 'bg-muted/40 text-muted-foreground/80 hover:bg-muted/55 hover:text-foreground/90')}>
+            Add
           </button>
         )}
     </div>
@@ -791,41 +771,40 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
   const hasSettings  = isActive && (integration.fields || []).some(f => f.globalForMulti);
-  const isBeta       = isOneClick(integration) && integration.beta !== false;   // provider-hosted MCP — still in beta
 
   return (
     <div className={cn(
-      'group relative flex flex-col rounded-xl border bg-card transition-all duration-150',
+      'group relative flex flex-col overflow-hidden rounded-[6px] border bg-card transition-all duration-150',
       isActive       ? 'border-border/60 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]' :
       isComingSoon   ? 'border-border/40' :
       cantActivate   ? 'border-border/40' :
                        'border-border/60 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]',
     )}>
-      {/* Header — logo + status pill */}
-      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
-        <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
-        <div className="flex items-center gap-1.5">
-          {isBeta && !isComingSoon && (
-            <span className="inline-flex items-center rounded-full bg-violet-500/12 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
-              Beta
-            </span>
-          )}
+      {/* Header — logo + status pills. An active integration gets the same
+          technical banner as the AI Settings tiles (a halftone of its own
+          logo), with the real logo in its box on top of it. */}
+      <div className={cn(
+        'relative flex items-start justify-between gap-3 px-4',
+        isActive ? 'h-24 items-center pt-0 pb-0' : 'pt-4 pb-3',
+      )}>
+        {isActive && (
+          <TileBanner image={logoUrl(integration.logo)} mode="dark" seed={integration.id} soft className="!absolute inset-0 h-full" />
+        )}
+        <div className="relative">
+          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
+        </div>
+        <div className={cn('relative flex items-center gap-1.5', isActive && 'self-start pt-3')}>
           {integration.experimental && <ExperimentalTag />}
           {isActive && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
-              Active
-            </span>
+            <StatusTag tone="active">Active</StatusTag>
           )}
           {isComingSoon && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-              <Clock className="size-2.5" strokeWidth={2.5} />
-              Soon
-            </span>
+            <StatusTag tone="soon">Soon</StatusTag>
           )}
         </div>
       </div>
 
+      {isActive && <div className="h-3.5" />}
       {/* Body */}
       <div className="flex flex-1 flex-col px-4">
         <div className="text-[14.5px] font-semibold text-foreground/90">{integration.label}</div>
@@ -834,7 +813,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
         </div>
 
         {isActive && showStatus && (
-          <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+          <div className="mt-3 flex items-center gap-2 rounded-[6px] bg-muted/40 px-2.5 py-1.5">
             {integration.multi ? (
               <span className="text-[11.5px] text-foreground/75">
                 {(integration.itemCount ?? 0)} {(integration.itemLabel || 'item').toLowerCase()}{(integration.itemCount ?? 0) === 1 ? '' : 's'}
@@ -857,7 +836,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
         {!canManage ? (
           <button
             type="button" disabled
-            className="inline-flex w-full cursor-default items-center justify-center gap-1.5 rounded-md border border-border/40 bg-muted/20 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
+            className="inline-flex w-full cursor-default items-center justify-center gap-1.5 rounded-[6px] border border-border/40 bg-muted/20 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
           >
             <Lock className="size-3.5" strokeWidth={1.75} />
             {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
@@ -867,7 +846,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           <button
             type="button"
             onClick={() => navigate('/browser-agent')}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
           >
             Manage on Browser agent
             <ArrowRight className="size-3.5" strokeWidth={2} />
@@ -880,7 +859,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
                 onClick={onSettings}
                 title="Settings"
                 aria-label="Settings"
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/40 text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-muted/40 text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
               >
                 <SettingsIcon className="size-3.5" strokeWidth={1.75} />
               </button>
@@ -888,7 +867,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             <button
               type="button"
               onClick={onRemove}
-              className="inline-flex flex-1 items-center justify-center rounded-md bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+              className="inline-flex flex-1 items-center justify-center rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
             >
               Remove
             </button>
@@ -897,7 +876,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           <button
             type="button"
             disabled
-            className="inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
+            className="inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-[6px] border border-border/40 bg-muted/30 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
           >
             Coming soon
           </button>
@@ -905,7 +884,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           <button
             type="button"
             disabled
-            className="inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
+            className="inline-flex w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-[6px] border border-border/40 bg-muted/30 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
           >
             <Lock className="size-3.5" strokeWidth={1.75} />
             Encryption not configured
@@ -914,7 +893,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           <button
             type="button"
             onClick={onActivate}
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
             {isOneClick(integration) ? 'One-click connect' : 'Activate'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
@@ -928,7 +907,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
 // Catalog returns paths like "/integrations/grok.svg". The frontend is served
 // from import.meta.env.BASE_URL ("/app/" in this app), so absolute paths from
 // the catalog need to be re-rooted to that base, otherwise we 404.
-function logoUrl(src) {
+export function logoUrl(src) {
   if (!src) return null;
   if (/^https?:/.test(src)) return src;
   const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
@@ -947,7 +926,7 @@ function Logo({ src, alt, dim, fill = false, size = 'size-12', imgSize = 'size-7
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
         size,
         dim && 'opacity-50 grayscale',
       )}
@@ -1127,13 +1106,13 @@ function StorageStateField({ field, value, onChange, disabled, inputId }) {
         )}
       </div>
       {isError && (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">
+        <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
           <span>{parsed}</span>
         </div>
       )}
       {isOk && (
-        <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/[0.05] px-3 py-2 text-[12px] text-emerald-700 dark:text-emerald-300">
+        <div className="flex items-start gap-2 rounded-[6px] border border-emerald-500/30 bg-emerald-500/[0.05] px-3 py-2 text-[12px] text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
           <span>
             Parsed: {parsed.cookies} cookie{parsed.cookies === 1 ? '' : 's'}, {parsed.origins} origin{parsed.origins === 1 ? '' : 's'}. Backend will filter to the allowed-domain set before saving.
@@ -1281,8 +1260,8 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
       )}
 
       {open && vncUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
-          <div className="flex h-[88vh] w-[92vw] max-w-[1400px] flex-col overflow-hidden rounded-lg border border-border/40 bg-background shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4">
+          <div className="flex h-[88vh] w-[92vw] max-w-[1400px] flex-col overflow-hidden modal-panel">
             <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/40 px-4 py-3">
               <div>
                 <div className="text-[13px] font-medium text-foreground/85">Sign in to Google</div>
@@ -1475,7 +1454,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`Activate ${integration.label}`}>
-      <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-background shadow-2xl">
+      <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden modal-panel">
         {/* Header — logo + title only, no description */}
         <div className="flex items-center gap-3.5 border-b border-border/50 px-8 py-5">
           <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} />
@@ -1485,7 +1464,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
+            className="rounded-[6px] p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />
@@ -1504,15 +1483,13 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
                 {integration.steps.map((step, i) => {
                   const isLast = i === integration.steps.length - 1;
                   return (
-                    <li key={i} className="relative flex gap-4 pb-6 last:pb-0">
-                      {!isLast && (
-                        <span className="absolute left-3 top-7 bottom-0 w-px bg-border/70" aria-hidden />
-                      )}
-                      <div className="z-10 flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[11px] font-semibold text-background ring-4 ring-muted/20">
-                        {i + 1}
+                    <li key={i} className={cn('flex gap-3 py-3.5', !isLast && 'border-b border-border/50', i === 0 && 'pt-0')}>
+                      {/* A quiet step number — the title carries the step, not a black badge. */}
+                      <div className="w-5 shrink-0 pt-px text-[13px] font-medium tabular-nums text-muted-foreground/55">
+                        {i + 1}.
                       </div>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <div className="text-[14px] font-medium text-foreground/90">{interpolate(step.title, stepVars)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13.5px] font-medium text-foreground/90">{interpolate(step.title, stepVars)}</div>
                         <StepBody body={interpolate(step.body, stepVars)} />
                         {Array.isArray(step.downloads) && step.downloads.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -1524,7 +1501,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
                                   key={j}
                                   href={url}
                                   download={filename || true}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99]"
+                                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99]"
                                 >
                                   <Download className="size-3.5" strokeWidth={1.75} />
                                   {interpolate(d.label, stepVars)}
@@ -1563,7 +1540,7 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                   window.dispatchEvent(new CustomEvent('ide:chat-prefill', { detail: { text: prompt } }));
                   onClose();
                 }}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border/60 bg-background px-3 py-2.5 text-[12.5px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 active:scale-[0.99]"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[6px] border border-border/60 bg-background px-3 py-2.5 text-[12.5px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 active:scale-[0.99]"
               >
                 <HelpCircle className="size-3.5" strokeWidth={1.75} />
                 Ask {branding.botDisplayName} for help
@@ -1795,7 +1772,7 @@ export function SettingsModal({ integration, onClose, onSuccess }) {
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`${integration.label} settings`}>
-      <form onSubmit={save} className="flex w-full max-w-lg flex-col overflow-hidden rounded-lg bg-background shadow-2xl">
+      <form onSubmit={save} className="flex w-full max-w-lg flex-col overflow-hidden modal-panel">
         <div className="flex items-center gap-3.5 border-b border-border/50 px-7 py-5">
           <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} />
           <div className="min-w-0 flex-1 text-[16px] font-semibold text-foreground">
@@ -1804,7 +1781,7 @@ export function SettingsModal({ integration, onClose, onSuccess }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
+            className="rounded-[6px] p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />
@@ -1879,7 +1856,7 @@ export function SettingsModal({ integration, onClose, onSuccess }) {
  */
 function PermissionsPanel({ fields, values, onChange, disabled }) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border/50 bg-muted/15 px-4 py-3.5">
+    <div className="flex flex-col gap-3 rounded-[6px] border border-border/50 bg-muted/15 px-4 py-3.5">
       <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         Permissions
       </div>
@@ -1976,14 +1953,14 @@ export function RemoveDialog({ integration, onClose, onSuccess, title, body, con
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`Remove ${integration.label}`}>
-      <div className="w-full max-w-md overflow-hidden rounded-lg border border-border/60 bg-background shadow-xl">
+      <div className="w-full max-w-md overflow-hidden modal-panel">
         <div className="px-6 py-5">
           <div className="text-[15px] font-semibold text-foreground">{title || `Remove ${integration.label}?`}</div>
           <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/80">
             {body || "This deactivates the integration and erases its stored credentials. You can reconnect it any time."}
           </div>
           {error && (
-            <div className="mt-3 rounded-md border border-destructive/25 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">
+            <div className="mt-3 rounded-[6px] border border-destructive/25 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">
               {error}
             </div>
           )}
@@ -1993,7 +1970,7 @@ export function RemoveDialog({ integration, onClose, onSuccess, title, body, con
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-md px-3.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50"
+            className="rounded-[6px] px-3.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -2001,7 +1978,7 @@ export function RemoveDialog({ integration, onClose, onSuccess, title, body, con
             type="button"
             onClick={remove}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md border border-destructive/25 bg-destructive/10 px-3.5 py-1.5 text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/[0.16] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-destructive/25 bg-destructive/10 px-3.5 py-1.5 text-[13px] font-medium text-destructive transition-colors hover:bg-destructive/[0.16] disabled:opacity-50"
           >
             {busy && <Loader2 className="size-3.5 animate-spin" />}
             {busy ? (busyLabel || 'Removing…') : (confirmLabel || 'Remove')}
@@ -2041,7 +2018,7 @@ export function ModalShell({ children, onClose, ariaLabel }) {
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {children}

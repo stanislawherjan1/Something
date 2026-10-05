@@ -45,7 +45,7 @@ export default function EditorSlashMenu({ items, selectedIndex, onItemClick, loa
   }, [selectedIndex]);
 
   const card =
-    'max-h-[min(60vh,340px)] w-80 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10';
+    'menu-panel max-h-[min(60vh,340px)] w-80 overflow-y-auto';
 
   if (loadingState === 'loading-initial' && items.length === 0) {
     return <div className={card}><Empty>Loading…</Empty></div>;

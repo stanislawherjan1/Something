@@ -186,7 +186,7 @@ Optional, but set it now if the team is not on UTC:
 IDE_TIMEZONE=Europe/Berlin        # IANA zone; default UTC
 ```
 
-System rituals (e.g. the 06:00 morning planning) fire in this timezone, and the usage-limit notice shows the reset time in it. Rituals resolve their time only when first created, so setting it after the first deploy leaves the already-scheduled ones at their old hour (see [DEPLOY.md → Optional flags](DEPLOY.md#optional-flags)).
+This is the fallback zone: an admin can set the workspace default in **Settings**, and each person's own zone (Settings, or told to the bot) decides when their 06:00 morning planning runs. Other system rituals fire in it, and the usage-limit notice shows the reset time in it. Rituals resolve their time only when first created, so setting it after the first deploy leaves the already-scheduled ones at their old hour (see [DEPLOY.md → Optional flags](DEPLOY.md#optional-flags)).
 
 > **Don't pre-fill branding.** Workspace title, bot name, avatar, personality go through the first-login wizard. Don't set `VITE_APP_TITLE="Acme"` or `BOT_NAME=aria` here — that defeats the wizard.
 

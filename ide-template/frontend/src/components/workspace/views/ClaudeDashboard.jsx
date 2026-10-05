@@ -1,27 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Hexagon, Save, Check, Loader2,
+  Hexagon, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Brain, Lock, Clock, Upload, Wrench, Plug,
+  Lock, Upload, Brain, Clock, Wrench, Compass, Unplug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import TileBanner from './TileBanner.jsx';
+import AvatarTile, { PRESET_AVATARS } from './AvatarTile.jsx';
+import StatusTag from './StatusTag.jsx';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
 import { useApi } from '@/lib/useApi';
 import useMe from '../useMe.js';
-import { Skeleton, SkeletonTile } from '@/components/ui/Skeleton';
+import { useMemoryStatus } from '../useMemoryStatus.js';
+import { Skeleton, SkeletonBannerTile } from '@/components/ui/Skeleton';
 import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases } from '../RestartBanners';
 import { ActivateModal } from './IntegrationsDashboard.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-// 1..16 minus the ones withdrawn from the picker. The files stay in public/ —
-// a bot already wearing a withdrawn picture keeps it rather than 404ing.
-const WITHDRAWN_AVATARS = new Set(['6']);
-
-const PRESET_AVATARS = Array.from({ length: 16 }, (_, i) => ({
-  id: String(i + 1),
-  url: `${BASE}/avatars/${i + 1}.png`,
-})).filter((a) => !WITHDRAWN_AVATARS.has(a.id));
 
 const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
 const inputCls = cn(
@@ -59,6 +55,8 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   // Memory preview — how many of the 7 cards are seeded + cache floor state.
   // Cheap call (loader builds the prefix from disk; ≤ 30 KB markdown).
   const memory = useApi('/api/memory/prefix');
+  const memoryStatus = useMemoryStatus();
+  const v4Facts = useApi(memoryStatus.mode === 'on' ? '/api/memory/v4/facts?limit=1' : null);
 
   // Telegram — connection state (from the integrations catalog) + group count.
   const tg = useApi('/api/team/telegram-groups');
@@ -82,7 +80,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
 
   const botTile = {
     id: 'bot',
-    logo: <BotLogo src={avatarUrl} />,
+    logo: <TileBanner image={avatarUrl} mode="dark" lineArt seed="bot" />,
     label: botName || 'Bot',
     description: 'Avatar and display name for your assistant.',
     active: !!botName,
@@ -92,7 +90,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   };
   const instructionsTile = {
     id: 'instructions',
-    logo: <IconLogo icon={BookOpen} />,
+    logo: <TileBanner icon={Compass} seed="Compass" soft />,
     label: 'Instructions',
     description: 'Behaviour rules and persona defined in CLAUDE.md.',
     active: true,
@@ -102,7 +100,8 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   };
   const claudeTile = {
     id: 'claude',
-    logo: <AnthropicLogoBox />,
+    mark: `${BASE}/integrations/claude.svg`,
+    logo: <TileBanner image={`${BASE}/integrations/claude.svg`} seed="claude" soft />,
     label: 'Claude',
     description: 'Anthropic API token for the Claude Code CLI.',
     active: hasToken,
@@ -110,18 +109,28 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     activatedAt: tokenDate,
   };
 
-  // Memory preview — count seeded cards + show cache-floor status.
+  // Memory preview. Before memory v4 it counts the seeded cards and the cache
+  // floor of the v3 prefix; with v4 collecting in the background it says so; on
+  // v4 the prefix is small by design (the floor was a v3 measure — it is cached
+  // together with the CLI's own system prompt) so the line counts what is
+  // remembered instead.
   const memorySources = memory.data?.sources || [];
   const cardsPresent = memorySources.filter(s => s.present).length;
   const cardsTotal = memorySources.length;
   const tokensApprox = memory.data?.approxTokens || 0;
   const cacheReady = !!memory.data?.meetsCacheFloor;
-  const memoryDescription = cardsTotal
+  const memoryMode = memoryStatus.mode;
+  const v3Line = cardsTotal
     ? `${cardsPresent}/${cardsTotal} cards · ~${tokensApprox.toLocaleString()} tokens · cache ${cacheReady ? 'ready' : 'below floor'}`
     : 'Knowledge cards, topics, and patterns: your bot\'s long-term memory.';
+  const memoryDescription = memoryMode === 'on'
+    ? `New memory · ${(v4Facts.data?.total ?? 0).toLocaleString()} facts from your conversations · ~${(Math.round(tokensApprox / 100) / 10).toLocaleString()}k tokens always loaded`
+    : memoryMode === 'shadow'
+      ? `${v3Line} · new memory collecting in the background`
+      : v3Line;
   const memoryTile = {
     id: 'memory',
-    logo: <IconLogo icon={Brain} />,
+    logo: <TileBanner icon={Brain} seed="Brain" soft />,
     label: 'Memory',
     description: memoryDescription,
     active: true,
@@ -133,7 +142,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   // Reminders — timed nudges + the bot's daily rituals. Sits next to Memory.
   const remindersTile = {
     id: 'reminders',
-    logo: <IconLogo icon={Clock} />,
+    logo: <TileBanner icon={Clock} seed="Clock" soft />,
     label: 'Reminders',
     description: 'Timed nudges plus the bot\'s daily rituals: planning, reflection, backups.',
     active: true,
@@ -146,7 +155,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   const skillCount = skills.data?.skills?.length || 0;
   const skillsTile = {
     id: 'skills',
-    logo: <IconLogo icon={Wrench} />,
+    logo: <TileBanner icon={Wrench} seed="Wrench" soft />,
     label: 'Skills',
     description: skillCount ? `${skillCount} playbooks for recurring tasks` : 'Playbooks for recurring tasks.',
     active: true,
@@ -157,7 +166,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   const activeIntegrations = (integrations.data?.integrations || []).filter(i => i.active).length;
   const integrationsTile = {
     id: 'integrations',
-    logo: <IconLogo icon={Plug} />,
+    logo: <TileBanner icon={Unplug} seed="Unplug" soft />,
     label: 'Integrations',
     description: activeIntegrations ? `${activeIntegrations} connected` : 'Connect the tools your assistant works with.',
     active: true,
@@ -172,7 +181,8 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
   const tgConnected = !!tgIntegration?.active;
   const telegramTile = {
     id: 'telegram',
-    logo: <TelegramLogoBox />,
+    mark: `${BASE}/integrations/telegram.svg`,
+    logo: <TileBanner image={`${BASE}/integrations/telegram.svg`} mode="dark" seed="telegram" soft />,
     label: 'Telegram',
     description: tgConnected
       ? (tgCount ? `Active in ${tgCount} group${tgCount > 1 ? 's' : ''} · per-user links` : 'Channel connected · groups & per-user links')
@@ -195,10 +205,10 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
             // First-ever mount, no cache yet — show skeletons rather than
             // a faked "Aria + stock avatar" placeholder.
             <>
-              <SkeletonTile />
-              <SkeletonTile />
-              <SkeletonTile />
-              <SkeletonTile />
+              <SkeletonBannerTile />
+              <SkeletonBannerTile />
+              <SkeletonBannerTile />
+              <SkeletonBannerTile />
             </>
           ) : (
             <>
@@ -260,7 +270,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
 /* ─── Tile — mirrors IntegrationTile exactly ────────────────────────────── */
 
 function SettingTile({ tile, onOpen, canEdit = true }) {
-  const { logo, label, description, active, credential, activatedAt, alwaysOn } = tile;
+  const { logo, mark, label, description, active, credential, activatedAt, alwaysOn } = tile;
   // Only Claude + Telegram can be "not set up" (no token / not connected). The rest
   // are default-on: no active pill, and the button always reads "Configure".
   const configured = alwaysOn || active;
@@ -272,28 +282,30 @@ function SettingTile({ tile, onOpen, canEdit = true }) {
 
   return (
     <div className={cn(
-      'group relative flex flex-col rounded-xl border bg-card transition-all duration-150',
+      'group relative flex flex-col overflow-hidden rounded-[6px] border bg-card transition-all duration-150',
       'border-border/60 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]',
     )}>
-      {/* Header — logo + status pill */}
-      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
+      {/* Header — a full-width banner picturing the setting; status pill on it */}
+      <div className="relative">
         {logo}
         {showPill && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-            <CheckCircle2 className="size-2.5" strokeWidth={2.5} />
-            Active
-          </span>
+          <StatusTag tone="active" className="absolute right-3 top-3">Active</StatusTag>
         )}
       </div>
+      <div className="h-3.5" />
 
       {/* Body */}
       <div className="flex flex-1 flex-col px-4">
-        <div className="text-[14.5px] font-semibold text-foreground/90">{label}</div>
+        <div className="flex items-center gap-2">
+          {/* A brand's own mark next to its name (Claude, Telegram). */}
+          <span className="text-[14.5px] font-semibold text-foreground/90">{label}</span>
+          {mark && <img src={mark} alt="" className="size-4 shrink-0 object-contain" />}
+        </div>
         <div className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">
           {description}
         </div>
         {active && credential && (
-          <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5">
+          <div className="mt-3 flex items-center gap-2 rounded-[6px] bg-muted/40 px-2.5 py-1.5">
             <span className="font-mono text-[11.5px] text-foreground/70">{credential}</span>
             {activatedAt && (
               <>
@@ -313,7 +325,7 @@ function SettingTile({ tile, onOpen, canEdit = true }) {
           type="button"
           onClick={onOpen}
           className={cn(
-            'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all active:scale-[0.98]',
+            'inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium transition-all active:scale-[0.98]',
             needsSetup
               ? 'bg-foreground text-background hover:opacity-95'
               : 'bg-muted/40 text-muted-foreground/75 hover:bg-muted/55 hover:text-foreground/90',
@@ -328,42 +340,6 @@ function SettingTile({ tile, onOpen, canEdit = true }) {
 }
 
 /* ─── Logo components ───────────────────────────────────────────────────── */
-
-function BotLogo({ src }) {
-  const [errored, setErrored] = useState(false);
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-      {errored
-        ? <Bot className="size-6 text-muted-foreground/50" strokeWidth={1.5} />
-        : <img src={src} alt="" onError={() => setErrored(true)} className="size-full object-cover" />
-      }
-    </div>
-  );
-}
-
-function IconLogo({ icon: Icon }) {
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-      <Icon className="size-6 text-muted-foreground/55" strokeWidth={1.5} />
-    </div>
-  );
-}
-
-function AnthropicLogoBox() {
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-      <img src={`${BASE}/integrations/claude.svg`} alt="" className="size-7 object-contain" />
-    </div>
-  );
-}
-
-function TelegramLogoBox() {
-  return (
-    <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-      <img src={`${BASE}/integrations/telegram.svg`} alt="" className="size-7 object-contain" />
-    </div>
-  );
-}
 
 function AnthropicMark({ className }) {
   return (
@@ -390,7 +366,7 @@ function ModalShell({ children, onClose, ariaLabel }) {
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {children}
@@ -428,25 +404,8 @@ async function apiWrite(url, opts = {}) {
 // opacity. A border swap would shift the image a pixel on every click along a
 // row; dimming what isn't chosen makes the chosen one obvious without a heavy
 // outline fighting the pictures.
-function Tile({ src, selected, onClick, label }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      aria-pressed={selected}
-      className={cn(
-        'relative aspect-square overflow-hidden rounded-lg transition-all duration-150',
-        selected
-          ? 'opacity-100 ring-2 ring-ring ring-offset-2 ring-offset-background'
-          : 'opacity-60 ring-1 ring-border/60 hover:opacity-100 hover:ring-foreground/25',
-      )}
-    >
-      <img src={src} alt="" className="size-full object-cover" />
-    </button>
-  );
-}
+// `halftone`: show the picture as the same dot-grid halftone as the AI
+// Settings banners — the presets read as one set, in the screens' style.
 
 /* ─── Bot modal ─────────────────────────────────────────────────────────── */
 
@@ -554,13 +513,12 @@ function BotModal({ branding, onClose, canEdit = true }) {
 
   return (
     <ModalShell onClose={onClose} ariaLabel="Bot settings">
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <Bot className="size-4 text-foreground/75" strokeWidth={1.75} />
             <h2 className="text-[14px] font-semibold text-foreground/90">Bot</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+          <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
             <X className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
@@ -592,7 +550,7 @@ function BotModal({ branding, onClose, canEdit = true }) {
                 title="Upload a picture"
                 aria-label="Upload a picture"
                 className={cn(
-                  'flex aspect-square items-center justify-center rounded-lg border border-dashed transition-all duration-150',
+                  'flex aspect-square items-center justify-center rounded-[6px] border border-dashed transition-all duration-150',
                   'border-border text-muted-foreground/55 hover:border-foreground/30 hover:bg-muted/40 hover:text-foreground/70',
                 )}
               >
@@ -602,7 +560,7 @@ function BotModal({ branding, onClose, canEdit = true }) {
               {/* The bot's own picture, when it isn't one of the presets: an
                   upload, either already saved or chosen a moment ago. */}
               {ownPictureUrl && (
-                <Tile
+                <AvatarTile
                   src={ownPictureUrl}
                   selected={selected === 'own'}
                   onClick={() => setPick(pickedFile ? pick : null)}
@@ -611,12 +569,13 @@ function BotModal({ branding, onClose, canEdit = true }) {
               )}
 
               {PRESET_AVATARS.map((a, i) => (
-                <Tile
+                <AvatarTile
                   key={a.id}
                   src={a.url}
                   selected={selected === i}
                   onClick={() => setPick({ kind: 'preset', idx: i })}
                   label={`Picture ${i + 1}`}
+                  halftone
                 />
               ))}
 
@@ -634,13 +593,14 @@ function BotModal({ branding, onClose, canEdit = true }) {
 
         <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
           <button type="button" onClick={onClose} disabled={busy}
-            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">
+            className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">
             Cancel
           </button>
           {canEdit ? (
             <button type="button" onClick={save} disabled={busy || !botName.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5" strokeWidth={2.5} /> : <Save className="size-3.5" strokeWidth={2} />}
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : saved ? <Check className="size-3.5" strokeWidth={2.5} />
+                : null}
               {busy ? 'Saving…' : saved ? 'Saved' : 'Save'}
             </button>
           ) : <ReadOnlyNote />}
@@ -708,13 +668,12 @@ function InstructionsModal({ fileEventNonce, onClose, canEdit = true }) {
   return (
     <ModalShell onClose={onClose} ariaLabel="Edit instructions">
       <div
-        className="flex w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
+        className="flex w-full max-w-2xl flex-col overflow-hidden modal-panel"
         style={{ height: '70vh' }}
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <BookOpen className="size-4 text-foreground/75" strokeWidth={1.75} />
             <div>
               <h2 className="text-[14px] font-semibold text-foreground/90">Instructions</h2>
               <div className="font-mono text-[11px] text-muted-foreground/55">{path}</div>
@@ -722,7 +681,7 @@ function InstructionsModal({ fileEventNonce, onClose, canEdit = true }) {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {dirty && <span className="text-[11.5px] text-muted-foreground/55">Unsaved</span>}
-            <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+            <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
               <X className="size-3.5" strokeWidth={1.75} />
             </button>
           </div>
@@ -759,13 +718,14 @@ function InstructionsModal({ fileEventNonce, onClose, canEdit = true }) {
           </span>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose}
-              className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
+              className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
               Close
             </button>
             {canEdit ? (
               <button type="button" onClick={save} disabled={!dirty || saving}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" strokeWidth={2} />}
+                className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+                {saving ? <Loader2 className="size-3.5 animate-spin" />
+                : null}
                 {saving ? 'Saving…' : 'Save'}
               </button>
             ) : <ReadOnlyNote />}
@@ -848,13 +808,12 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
 
   return (
     <ModalShell onClose={onClose} ariaLabel="Claude token">
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <AnthropicMark className="size-4" />
             <h2 className="text-[14px] font-semibold text-foreground/90">Claude</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+          <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
             <X className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
@@ -862,7 +821,7 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
         {showView ? (
           /* ─── ACTIVE VIEW: status card + Replace/Remove ─── */
           <div className="flex flex-col gap-4 px-5 py-5">
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
+            <div className="flex items-center gap-3 rounded-[6px] border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
               <CheckCircle2 className="size-4 shrink-0 text-emerald-600" strokeWidth={2} />
               <div className="flex-1">
                 <div className="text-[13px] font-medium text-foreground/90">Token active</div>
@@ -892,7 +851,7 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
           /* ─── EDIT VIEW: form + how-to ─── */
           <div className="flex flex-col gap-5 px-5 py-5">
             {isActive && phase === 'idle' && (
-              <div className="flex items-center gap-2 rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[12.5px] text-amber-700 dark:text-amber-400">
+              <div className="flex items-center gap-2 rounded-[6px] border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[12.5px] text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="size-3.5 shrink-0" strokeWidth={2} />
                 <span>Replacing will overwrite the current token.</span>
               </div>
@@ -934,19 +893,19 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
           <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
             {canEdit ? (
               <button type="button" onClick={remove} disabled={busy}
-                className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
                 {busy ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" strokeWidth={2} />}
                 Remove
               </button>
             ) : <ReadOnlyNote />}
             <div className="flex items-center gap-2">
               <button type="button" onClick={onClose}
-                className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
+                className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
                 Close
               </button>
               {canEdit && (
                 <button type="button" onClick={() => setMode('edit')}
-                  className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
+                  className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
                   Replace
                 </button>
               )}
@@ -955,17 +914,17 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
         ) : (
           <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
             <button type="button" onClick={isActive ? () => setMode('view') : onClose}
-              className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
+              className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">
               Cancel
             </button>
             {canEdit ? (
               <button type="button" onClick={save} disabled={busy || !token.trim()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
                 {phase === 'saving' || phase === 'restarting'
                   ? <Loader2 className="size-3.5 animate-spin" />
                   : phase === 'done'
                     ? <Check className="size-3.5" strokeWidth={2.5} />
-                    : <Save className="size-3.5" strokeWidth={2} />}
+                : null}
                 {phase === 'saving'
                   ? 'Saving…'
                   : phase === 'restarting'
@@ -986,7 +945,7 @@ function ClaudeModal({ initialStatus, onClose, canEdit = true }) {
 
 function ErrorRow({ children }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+    <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
       <span>{children}</span>
     </div>

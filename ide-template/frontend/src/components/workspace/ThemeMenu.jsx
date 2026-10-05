@@ -10,7 +10,7 @@ export function ThemeMenuSection() {
   const { theme, setTheme } = useTheme();
   return (
     <>
-      <div className="px-3 pt-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+      <div className="menu-label">
         Theme
       </div>
       <ThemeOption icon={Sun}     label="Light"  value="light"  current={theme} onChoose={setTheme} />
@@ -27,7 +27,7 @@ function ThemeOption({ icon, label, value, current, onChoose }) {
     <button
       type="button"
       onClick={() => onChoose(value)}
-      className="w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-foreground/85 hover:bg-muted/40 transition-colors text-left"
+      className="menu-item"
     >
       <Icon className="size-4 text-muted-foreground/65 shrink-0" strokeWidth={1.75} />
       <span className="flex-1">{label}</span>

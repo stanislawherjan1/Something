@@ -1,6 +1,6 @@
 ---
 name: playwright-protocol
-description: Rules for browser automation with Playwright — screenshots, navigation, mobile views
+description: Rules for browser automation with Playwright — screenshots, navigation, mobile views. Use when you need to open and drive a website yourself (screenshot a URL, check a mobile view, click through a public page). Not for the page the person has open in Chrome — in a side-panel conversation use the tab_* tools (tab_snapshot, tab_screenshot, tab_act) instead.
 allowed-tools: mcp__playwright__*
 ---
 
@@ -23,7 +23,7 @@ Container egress only allows the explicit integration hostnames. Browser CDNs ar
 If `mcp__playwright__browser_navigate` (or any playwright tool) returns "browser not available" or a launch error:
 1. **Do not improvise.** Don't try `npx`, don't try to install, don't try to find the binary yourself.
 2. Tell the operator: "Playwright is misconfigured — Chromium isn't reachable from my uid. Need a container fix; using comment-based workarounds for now."
-3. Continue the task without Playwright if possible (e.g. ask the user for a screenshot, work from QA comments, use Grok web search as a substitute for browse-style lookups).
+3. Continue the task without Playwright if possible (e.g. ask the user for a screenshot, work from QA comments, use web search — Parallel's `web_search`/`web_fetch` when connected, otherwise the built-in one — as a substitute for browse-style lookups).
 
 ## Screenshots — default: `/tmp/`, delete after use
 Always save screenshots to `/tmp/`, never into the project directory.

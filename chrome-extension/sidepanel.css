@@ -1,9 +1,11 @@
 /* Only the address step is drawn here; after it the panel shows the
-   workspace's own chat page. The step is a copy of the workspace login page
-   (ide-template/frontend/src/components/LoginPage.jsx) — same card, radii,
-   borders, shadows, type and error banner — and the tokens mirror
-   ide-template/frontend/src/index.css. Change them together. */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+   workspace's own chat page. The step is a copy of the workspace sign-in tile
+   (ide-template/frontend/src/components/LoginPage.jsx) — same banner, radii,
+   hairlines, type and error banner — and the tokens mirror
+   ide-template/frontend/src/index.css. Change them together.
+   icons/banner-{light,dark}.png are that page's halftone wave (TileBanner,
+   abstract="wave" soft, seed "sign-in"), rendered once at 384×112 @2x. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap');
 
 :root {
   --background: #f7f6f2;
@@ -12,7 +14,8 @@
   --muted-foreground: #6b6963;
   --border: #e8e7e2;
   --destructive: #dc2626;
-  --radius-md: 6px;            /* tailwind rounded-md, as on the login card */
+  --radius-md: 6px;            /* the workspace's 6px radius */
+  --banner: url('icons/banner-light.png');
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -23,6 +26,7 @@
     --muted-foreground: #a8a8a7;
     --border: #303030;
     --destructive: #ef4444;
+    --banner: url('icons/banner-dark.png');
     color-scheme: dark;
   }
 }
@@ -34,6 +38,7 @@
   --muted-foreground: #a8a8a7;
   --border: #303030;
   --destructive: #ef4444;
+  --banner: url('icons/banner-dark.png');
   color-scheme: dark;
 }
 
@@ -52,7 +57,7 @@
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--background); color: var(--foreground);
-  font: 14px/1.5 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font: 14px/1.5 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -65,59 +70,56 @@ body {
 #loading { height: 100%; display: flex; flex-direction: column; }
 #loading[hidden] { display: none; }
 .sk { display: block; border-radius: 4px; background: color-mix(in srgb, var(--foreground) 7%, transparent); animation: pulse 2s ease-in-out infinite; }
-.sk-header { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--border); }
-.sk-avatar { width: 24px; height: 24px; border-radius: 50%; }
+.sk-header { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 16px; }
+.sk-avatar { width: 28px; height: 28px; border-radius: 50%; }
 .sk-line { height: 8px; }
 .sk-thread { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 20px 16px; justify-content: flex-end; }
-.sk-bubble { align-self: flex-end; width: 55%; height: 30px; border-radius: 12px; margin-bottom: 8px; }
-.sk-composer { margin: 0 16px 16px; height: 76px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.sk-bubble { align-self: flex-end; width: 55%; height: 34px; border-radius: var(--radius-md); margin-bottom: 8px; }
+.sk-composer { margin: 0 16px 16px; height: 76px; border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius: var(--radius-md); background: var(--card); }
 @keyframes pulse { 50% { opacity: .5; } }
 
-/* ── Address step = LoginPage ────────────────────────────── */
+/* ── Address step = the sign-in tile ─────────────────────── */
 #setup { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
 #setup[hidden] { display: none; }
-.login { width: 100%; max-width: 384px; display: flex; flex-direction: column; }
 .card {
-  display: flex; flex-direction: column; gap: 20px;
+  width: 100%; max-width: 380px; overflow: hidden;
   background: var(--card);
-  border: 1px solid var(--fg-15);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   border-radius: var(--radius-md);
-  padding: 32px 24px;
-  box-shadow: 0 1px 2px rgba(0,0,0,.05);
 }
+.banner { height: 112px; background: var(--banner) left center / cover no-repeat; }
+.body { display: flex; flex-direction: column; gap: 20px; padding: 0 28px 28px; }
 .logo {
-  display: block; margin: 0 auto; width: 64px; height: 64px;
-  border-radius: var(--radius-md); object-fit: cover;
-  box-shadow: 0 0 0 1px var(--fg-8), 0 1px 3px rgba(0,0,0,.08);
+  position: relative; display: block; margin-top: -28px; width: 56px; height: 56px;
+  border-radius: var(--radius-md); object-fit: cover; background: var(--card);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
 }
-.heading { display: flex; flex-direction: column; gap: 6px; text-align: center; }
-.heading h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
-.heading p { margin: 0; font-size: 13px; line-height: 1.625; color: var(--muted-85); }
+.heading { display: flex; flex-direction: column; gap: 4px; }
+.heading h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
+.heading p { margin: 0; font-size: 13px; line-height: 1.625; color: color-mix(in srgb, var(--muted-foreground) 80%, transparent); }
 
 #setup-form { display: flex; flex-direction: column; gap: 10px; }
 .field {
   width: 100%; font: inherit; font-size: 13.5px; color: var(--fg-85);
-  background: var(--background);
-  border: 1px solid var(--border-70); border-radius: var(--radius-md);
-  padding: 10px 12px; outline: none;
-  box-shadow: 0 1px 1px rgba(0,0,0,.02);
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius: var(--radius-md);
+  padding: 9px 12px; outline: none;
   transition: border-color .15s;
 }
 .field::placeholder { color: var(--muted-55); }
-.field:focus { border-color: var(--fg-15); box-shadow: 0 0 0 3px var(--fg-8); }
+.field:focus { border-color: color-mix(in srgb, var(--foreground) 35%, transparent); }
 .field.invalid { border-color: color-mix(in srgb, var(--destructive) 45%, transparent); }
 
-/* Same as the login page's Google button */
+/* Same as the sign-in page's Google button: white, hairline, darker on hover */
 .btn {
   display: inline-flex; width: 100%; align-items: center; justify-content: center; gap: 10px;
   font: inherit; font-size: 13.5px; font-weight: 500; color: var(--fg-85); cursor: pointer;
-  background: var(--background);
+  background: var(--card);
   border: 1px solid var(--border-70); border-radius: var(--radius-md);
   padding: 10px 16px;
-  box-shadow: 0 1px 1px rgba(0,0,0,.03);
-  transition: background-color .15s, border-color .15s;
+  transition: border-color .15s, color .15s;
 }
-.btn:hover { background: color-mix(in srgb, var(--foreground) 4%, var(--background)); border-color: var(--fg-15); }
+.btn:hover { border-color: color-mix(in srgb, var(--foreground) 30%, transparent); color: var(--foreground); }
 .btn:disabled { opacity: .6; cursor: default; }
 
 /* Same as the login page's ErrorBanner */
@@ -135,4 +137,3 @@ body {
   stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
 }
 
-.footnote { margin: 28px 0 0; text-align: center; font-size: 11.5px; color: var(--muted-55); }

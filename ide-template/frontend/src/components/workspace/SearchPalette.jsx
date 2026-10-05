@@ -70,17 +70,17 @@ export default function SearchPalette({ onClose, onSelect }) {
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/40 px-4 pt-[12vh] backdrop-blur-[2px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/20 px-4 pt-[12vh] animate-[fade-in_0.12s_ease-out]"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search files"
-        className="w-full max-w-xl overflow-hidden rounded-xl border border-border/60 bg-popover text-popover-foreground shadow-2xl"
+        className="menu-panel w-full max-w-xl overflow-hidden !p-0"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2.5 border-b border-border/50 px-4">
+        <div className="flex items-center gap-2.5 px-3.5">
           <Search className="size-4 shrink-0 text-muted-foreground/55" strokeWidth={1.75} />
           <input
             ref={inputRef}
@@ -88,13 +88,14 @@ export default function SearchPalette({ onClose, onSelect }) {
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search files by name or content…"
-            className="h-12 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground/50"
+            className="h-11 w-full bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground/50"
           />
           {loading && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/50" />}
-          <kbd className="shrink-0 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70">esc</kbd>
+          <kbd className="shrink-0 px-1 text-[10.5px] font-medium text-muted-foreground/55">esc</kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1.5">
+        <div className="menu-sep !mx-0 !my-0" />
+        <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-1">
           {term.length < 2 ? (
             <Hint>Type at least 2 characters to search.</Hint>
           ) : loading && results.length === 0 ? (
@@ -116,7 +117,7 @@ export default function SearchPalette({ onClose, onSelect }) {
         </div>
 
         {results.length > 0 && (
-          <div className="flex items-center gap-3 border-t border-border/50 px-4 py-2 text-[10.5px] text-muted-foreground/60">
+          <div className="flex items-center gap-3 border-t border-foreground/[0.07] px-3.5 py-2 text-[10.5px] text-muted-foreground/60">
             <span className="inline-flex items-center gap-1"><CornerDownLeft className="size-3" strokeWidth={1.75} /> open</span>
             <span>↑↓ navigate</span>
             <span className="ml-auto">{results.length} result{results.length === 1 ? '' : 's'}</span>
@@ -128,7 +129,7 @@ export default function SearchPalette({ onClose, onSelect }) {
 }
 
 function Hint({ children }) {
-  return <div className="px-4 py-8 text-center text-[12.5px] text-muted-foreground/60">{children}</div>;
+  return <div className="px-4 py-6 text-center text-[12.5px] text-muted-foreground/60">{children}</div>;
 }
 
 function ResultRow({ result, idx, active, onMouseEnter, onClick }) {
@@ -140,8 +141,8 @@ function ResultRow({ result, idx, active, onMouseEnter, onClick }) {
       onMouseEnter={onMouseEnter}
       onClick={onClick}
       className={cn(
-        'flex w-full items-start gap-2.5 px-4 py-2 text-left transition-colors',
-        active ? 'bg-foreground/[0.06]' : 'hover:bg-foreground/[0.035]',
+        'flex w-full items-start gap-2.5 rounded-[5px] px-2.5 py-2 text-left transition-colors',
+        active ? 'bg-foreground/[0.05]' : 'hover:bg-foreground/[0.035]',
       )}
     >
       <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground/55" strokeWidth={1.75} />

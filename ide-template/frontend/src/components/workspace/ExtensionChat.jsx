@@ -193,7 +193,7 @@ export default function ExtensionChat() {
       {pausedSite && (
         <div className="flex items-center gap-2 text-[11.5px] text-muted-foreground/85">
           <span className="min-w-0 truncate">Act paused — the tab moved to {pausedSite} on its own.</span>
-          <button onClick={actOn} disabled={switching} className="shrink-0 rounded px-1.5 py-0.5 font-medium text-foreground/85 hover:bg-accent disabled:opacity-50">
+          <button onClick={actOn} disabled={switching} className="shrink-0 rounded-[5px] px-1.5 py-0.5 font-medium text-foreground/85 hover:bg-foreground/[0.05] disabled:opacity-50">
             Continue here
           </button>
         </div>
@@ -201,7 +201,7 @@ export default function ExtensionChat() {
       <div className="flex items-center gap-1.5">
         {tab ? (
           <span className={cn(
-            'inline-flex min-w-0 items-center gap-1 rounded bg-muted/50 px-1.5 py-0.5 text-[11px] text-foreground/75',
+            'inline-flex min-w-0 items-center gap-1 rounded-[5px] px-1.5 py-[3px] text-[11px] leading-none text-foreground/75 ring-1 ring-inset ring-foreground/[0.12]',
             !includePage && 'line-through opacity-50',
           )}>
             <FileText className="size-3 shrink-0 opacity-65" strokeWidth={1.75} />
@@ -221,7 +221,7 @@ export default function ExtensionChat() {
             title={actSite
               ? 'The assistant can click and type on the tab you are on. Switch off to stop it at once.'
               : 'Let the assistant click and type on the tab you are on'}
-            className="inline-flex items-center rounded-md p-1.5 hover:bg-accent disabled:opacity-35"
+            className="inline-flex items-center rounded-[5px] p-1.5 hover:bg-foreground/[0.05] disabled:opacity-35"
           >
             <MousePointerClick className={cn('mr-1 size-3.5', actSite ? 'text-destructive/85' : 'text-muted-foreground/75')} strokeWidth={1.75} />
             <span className={cn('relative h-3.5 w-6 rounded-full transition-colors', actSite ? 'bg-destructive/80' : 'bg-muted-foreground/30')}>

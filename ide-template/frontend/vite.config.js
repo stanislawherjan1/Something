@@ -23,9 +23,26 @@ if (useMock) {
   }
 }
 
+// Icons: every 'lucide-react' import resolves to src/lib/icons/akar.jsx (Akar
+// icons under lucide's names, falling back to lucide for the rest). The AI
+// Settings banners keep lucide: they draw an icon's lines as a halftone, and
+// Akar's shapes break up into scattered dots there.
+const akarIcons = {
+  name: 'akar-icons',
+  enforce: 'pre',
+  async resolveId(source, importer, options) {
+    if (source !== 'lucide-react') return null
+    if (importer && /ClaudeDashboard\.jsx$/.test(importer)) {
+      return this.resolve('lucide-react/dist/esm/lucide-react.mjs', importer, { ...options, skipSelf: true })
+    }
+    return path.resolve(__dirname, './src/lib/icons/akar.jsx')
+  },
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    akarIcons,
     react(),
     tailwindcss(),
     memoryMockPlugin ? memoryMockPlugin() : null,

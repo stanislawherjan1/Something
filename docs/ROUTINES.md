@@ -8,7 +8,8 @@
 
 - A **routine** is a standing duty the assistant has toward one person ("check my inbox
   every hour", "send the team recap on Fridays"). The sidebar's **Routines** view shows
-  them; they live in that person's `RESPONSIBILITIES` memory card.
+  them; with memory v4 they live in that person's `routines.json` (before v4, in their
+  `RESPONSIBILITIES` card — see [With memory v4](#with-memory-v4)).
 - The **morning-planner** skill turns routines — together with the calendar, tasks and
   open threads — into the day's **reminders**. A reminder is an instruction for the
   assistant to *do* something at that moment, not a note for a human.
@@ -16,7 +17,7 @@
   reports only what is worth reporting.
 
 ```
-RESPONSIBILITIES card ──► morning-planner (daily, per person) ──► .reminders.json ──► reminder-monitor ──► the assistant runs it
+routines.json ──────────► morning-planner (daily, per person) ──► .reminders.json ──► reminder-monitor ──► the assistant runs it
    (the routines)         + calendar, tasks, open threads           (today's plan)      (every 60 s)          and reports the outcome
 ```
 
@@ -24,15 +25,11 @@ RESPONSIBILITIES card ──► morning-planner (daily, per person) ──► .r
 
 ## Routines
 
-Where they live:
-
-| Mode | File |
-|---|---|
-| Solo | `memory/RESPONSIBILITIES.md` |
-| Team | `memory/users/<slug>/RESPONSIBILITIES.md` (private to that person) |
-
-The card is prefix-loaded, so the assistant knows its duties on every turn. It is one
-flat list; each entry reads:
+Where they live: with memory v4, `.team/users/<slug>/routines.json` (solo:
+`.team/users/default/routines.json`); before v4, the `RESPONSIBILITIES` card
+(`memory/RESPONSIBILITIES.md`, team: `memory/users/<slug>/RESPONSIBILITIES.md`). Either
+way they reach the assistant on every turn (the `ROUTINES` block, fresh via
+`memory_now`). The bot writes one as a line in the duty grammar:
 
 ```
 - {mail} **Inbox watch** — every hour, flag anything a customer is waiting on. #email
@@ -63,14 +60,111 @@ reads the card and renders one tile per entry. It accepts an entry with or witho
 parse is shown as-is in a warning rather than dropped. The view updates live when the
 card changes (the memory wiki is watched — see ARCHITECTURE.md).
 
+### With memory v4
+
+Once a deployment is on memory v4 ([MEMORY.md](MEMORY.md#memory-v4)), routines
+leave memory and become data of their own: `.team/users/<slug>/routines.json`
+(solo: `.team/users/default/routines.json`), private by path like the chat
+history next to it. Migration `0004` seeds it from the card (lines the grammar
+cannot read are kept as `unparsed`, never dropped; a duty written outside the
+card's sections still counts), and the move (`0005`) removes the card once
+routines.json holds its duties.
+
+Nothing changes for the model: `memory_write` into `RESPONSIBILITIES` lands in
+routines.json (the same duty again, or a correction, updates that routine;
+retiring it retires the routine), and the prefix carries a `ROUTINES` block in
+place of the card. The Routines view reads `GET /api/routines`.
+
+People change their routines on the screen too: **New routine** (a title and what
+to do are required — the planner works from that instruction; an icon and tags are
+optional), and in a routine's detail **Edit** and **Delete**. Any routine can be
+edited, a Marketplace one included; an edited catalog routine keeps its
+`catalogId` (still shown as Added) and drops the catalog's one-line summary, which
+would describe the old version. Delete retires it — the planner stops scheduling
+it, the history stays. The bot does the same in conversation through
+`memory_write` (remember / supersede / retire).
+
+| Endpoint | Does |
+|---|---|
+| `POST /api/routines` | `{ title, description, icon?, tags? }` → a new routine (`source: "ui"`); 400 without a title or description |
+| `PATCH /api/routines/:id` | Edits the viewer's own routine (any of the same fields) |
+| `DELETE /api/routines/:id` | Retires it |
+
+### Marketplace
+
+Routines has a **Your routines · Marketplace** switch (v4 only). The Marketplace
+offers ready-made routines from `workspace-api/routines.catalog.json` (an optional,
+gitignored `routines.catalog.local.json` merges on top for one client): an
+**Everyday** section for routines that need no integration, then one section per
+**connected** integration — an entry's `requires` is an any-of list of
+integration ids, and entries whose integrations aren't connected and usable are
+not shown. **Add** writes an ordinary routine into the person's list
+(`source: "catalog"`, `catalogId`); the planner runs it like any other, so a
+catalog entry states its cadence and its "only tell me when…" condition in prose
+— a routine is the bot's duty, which may prepare its own reminders, never a
+reminder for a person. **Remove** retires it.
+
+| Endpoint | Does |
+|---|---|
+| `GET /api/routines/catalog` | `{ groups: [{ id, label, logo, routines: [{ id, title, description, icon, tags, added }] }] }` for the viewer |
+| `POST /api/routines/catalog/:id` | Adds it to the viewer's routines; idempotent; 409 until its integration is connected |
+| `DELETE /api/routines/catalog/:id` | Retires the viewer's routine that came from it |
+
+Each entry has a `summary` (the one line people read on a tile) and a
+`description` — the full instruction the bot works from: which source to read
+(the task board, the mailbox tools, the calendar, which integration), how often,
+the exact threshold for speaking up, and where the output goes. `requires` is
+any-of; `requiresAll` lists integrations that must all be connected (a
+"where is my order" routine needs the mailbox *and* Shopify). Entries for
+integrations that aren't connected are listed too, greyed, with **Connect**: it
+opens that integration's install modal right there (admins; others see that an
+admin connects it). When any of several integrations would do, Connect first lays
+them out under the routine to pick one.
+The Marketplace has one search over titles, text, tags and integration names, and
+a filter list: All / Ready to add / Added, categories, integrations.
+
+The rules every routine run follows (stay silent unless it changes what the
+person does; keep working notes in `.routines/<routine>.md`; never report the
+same item twice; ask once for what only the person knows; never send, post,
+archive, pay or change anything without a yes; stop if a source isn't
+connected; the default "off" threshold) are stated once, at the top of the
+ROUTINES block in the bot's prefix (`ROUTINE_RULES` in `lib/claude.js`), not
+repeated in every routine. That block carries each routine's full instruction.
+
+The catalog is validated at load (unique ids, a known category, a summary, every
+`requires`/`requiresAll` id exists in the integrations catalog).
+
+**Everyday life** is the casual category: weather, good news, a fact about a chosen
+topic, a word of the day, weekend events, dinner ideas, birthdays, a Friday list of
+wins. Routines that only search the web (these, and the research ones that don't
+scrape a specific page) need no integration: they use Parallel's tools when it is
+connected and the bot's built-in web search otherwise.
+
+**The bot suggests them.** The `routines` skill carries the whole catalog in
+`references/catalog.md` (generated from the catalog by `lib/routines-reference.js`;
+run it after editing the catalog — a test fails while it is stale). When a routine
+fits what the person said — a recurring need, a newly connected integration, "what
+can you do?" — the bot suggests it in plain words, one at a time, and adds it with
+the `add_routine` tool after a yes (`POST /api/internal/routines/catalog/:id`:
+loopback, the turn's own person, refused in groups and until its integration is
+connected; idempotent). The added routine is the same as one added with the button.
+
 ## The morning planner
 
 `skills/default/morning-planner/SKILL.md`. It runs:
 
-- from the `[PLAN_DAY_TRIGGER]` system reminder — daily at **06:00 in the workspace
-  timezone** (`IDE_TIMEZONE`, default UTC);
+- from the `[PLAN_DAY_TRIGGER]` system reminder — daily at **06:00 in the person's own
+  time zone** (Settings → Time zone; without one, the workspace default an admin sets in
+  Settings, else `IDE_TIMEZONE`, else UTC). See [Time zone and language](#time-zone-and-language);
 - on demand ("/plan", "plan my day");
 - right after a routine is added or changed.
+
+Every run starts with `memory_now` — fresh "Right now", "What I'm keeping track
+of", settings and routines (the Telegram brain's prefix can be days old) — then
+the live sources (calendar, mail, tasks), and `memory_search` for any detail it
+needs. A tracked thread with a date today or tomorrow becomes a reminder for the
+bot (a flight → check-in and the route the day before); a status reshapes the day
+(travelling → their zone, no office items).
 
 In team mode each member has their own trigger (`r_system_plan_day__<slug>`, created by
 `bootstrap/reconcile-reminders.py`) that runs the planner **as that member**, so it can
@@ -78,11 +172,11 @@ read their private cards and plans only them.
 
 What a run does:
 
-1. **Refresh** — runs the `context-refresh` skill: reads the live sources (email,
-   calendar, tasks, the org's integrations), reconciles memory and writes
-   `memory/users/<slug>/CONTEXT_BRIEF.md`.
-2. **Read** — the brief, the person's `RESPONSIBILITIES`, `USER_PROFILE`,
-   `USER_PREFERENCES`, calendar and tasks, and the reminders already set.
+1. **Refresh** — `memory_now` for the person's fresh routines, settings, "Right
+   now" and "What I'm keeping track of".
+2. **Read** — the live sources (calendar, mail, tasks, the org's integrations),
+   `USER_PROFILE` and `USER_PREFERENCES`, `memory_search` for any detail, and the
+   reminders already set.
 3. **Decide** — for each duty, whether it applies today and when: the time of day that
    fits the work and the person's chronotype, around meetings and focus blocks, with
    slack left in the day; condition-based duties only when the condition holds; up to
@@ -96,6 +190,23 @@ with one line. The planner only reads context and sets reminders; anything exter
 
 Each run replaces the planner's own previous reminders (`origin: "planner"`); the user's
 own reminders and system rituals are never touched.
+
+## Time zone and language
+
+Each person sets their **time zone** and **reply language** in **Settings** (the
+user menu → Settings, a page at `/settings`). The bot changes them when the person
+asks, or plainly says they are now somewhere else, with the `set_my_settings` tool;
+a padlock next to each setting stops the bot from changing it (only the person
+can, in Settings). The bot's prefix carries both in a `MY_SETTINGS` block, and the
+morning planner places the day's reminders in that zone. Admins also set the
+workspace **Default time zone**, used by everyone who hasn't set their own (it
+overrides `IDE_TIMEZONE`).
+
+| Endpoint | Does |
+|---|---|
+| `PATCH /api/me` | `timezone`, `timezoneLocked`, `preferredLanguage`, `languageLocked` (plus name and Telegram fields); a new zone moves the next morning planning |
+| `PUT /api/team/default-timezone` | Admin: `{ timezone }`; moves the planning of everyone without their own zone |
+| `POST /api/internal/me/settings` | The bot's `set_my_settings` (loopback, turn identity); refused in groups and on a locked setting |
 
 ## Reminders
 
@@ -119,7 +230,7 @@ history.
 
 | Trigger | Skill | When |
 |---|---|---|
-| `[PLAN_DAY_TRIGGER]` | `morning-planner` | Daily 06:00, workspace timezone |
+| `[PLAN_DAY_TRIGGER]` | `morning-planner` | Daily 06:00, the person's time zone |
 | `[REPO_AUDIT_TRIGGER]` | `repo-audit` | Monday 09:00 UTC |
 | `[BACKUP_TRIGGER]` | `project-backup` | Friday 14:00 UTC |
 
@@ -154,7 +265,8 @@ Tracked for the next iteration of this system:
 
 - The planner's replace step cancels its previous reminders before placing new ones; a
   run interrupted in between leaves the day without them.
-- Recurrence is UTC-only, so a fixed local time drifts by an hour at DST changes.
+- Recurrence is UTC-only, so a fixed local time drifts by an hour at DST changes. The
+  morning planning is pulled back to 06:00 local by an hourly pass; other rituals are not.
 - `/api/internal/invoke-turn` is team-mode only; a solo workspace with a busy session
   has no headless fallback.
 - Nothing records what a run *found* — only whether it was delivered.

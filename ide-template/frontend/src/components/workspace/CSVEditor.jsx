@@ -302,7 +302,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
       >
         {status.kind !== 'error' && status.kind !== 'loading' && (
           <div className="px-4 py-4">
-            <div className="inline-block min-w-full rounded-md border border-border/60 bg-card">
+            <div className="inline-block min-w-full rounded-[6px] border border-border/60 bg-card">
               <table className="border-collapse text-[13px] tabular-nums">
                 <thead className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm">
                   {table.getHeaderGroups().map(headerGroup => (
@@ -374,7 +374,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
                       <button
                         type="button"
                         onClick={addRow}
-                        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground/85"
+                        className="inline-flex items-center gap-1.5 rounded-[5px] px-2 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground/85"
                       >
                         <Plus className="size-3.5" strokeWidth={2} />
                         Add row
@@ -478,7 +478,7 @@ function BodyCell({ value, isEditing, onStartEdit, onCommit, onCancel }) {
 
 function UpdatedBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+    <span className="inline-flex items-center gap-1 rounded-[5px] px-1.5 py-[3px] text-[11px] font-medium leading-none text-foreground/75 ring-1 ring-inset ring-foreground/[0.12]">
       <Hexagon className="size-3" strokeWidth={2} />
       Updated by AI
     </span>

@@ -31,7 +31,8 @@ import useMe from './useMe.js';
 export default function Sidebar({
   selected, onSelect, onHome,
   showHidden, onToggleHidden,
-  onCollapseSidebar,
+  onCollapseSidebar, onExpandSidebar,
+  collapsed = false,
   fileEventNonce,
   className
 }) {
@@ -149,15 +150,18 @@ export default function Sidebar({
 
   return (
     <aside className={cn("flex min-h-0 flex-col bg-sidebar text-sidebar-foreground border-r border-[--color-sidebar-border] overflow-visible", className)}>
-      <WorkspaceHeader onCollapseSidebar={onCollapseSidebar} onHome={onHome} />
+      <WorkspaceHeader onCollapseSidebar={onCollapseSidebar} onExpandSidebar={onExpandSidebar} collapsed={collapsed} onHome={onHome} />
       <div className="h-px bg-[--color-sidebar-border]/70" />
-      <Shortcuts selected={selected} onSelect={onSelect} />
-      {opError && (
+      <Shortcuts selected={selected} onSelect={onSelect} collapsed={collapsed} />
+      {opError && !collapsed && (
         <div className="mx-3 mb-1 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] leading-relaxed text-destructive">
           {opError}
         </div>
       )}
+      {/* In the rail the file tree is hidden but its box keeps flex-1, so the
+          shortcuts above and the group below sit exactly where they sit open. */}
       <div className="scrollbar-hidden flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
+        <div className={cn(collapsed && 'hidden')}>
         {/* AI-built mini apps — first section, above all file groups. Always
             mounted (the list drives miniAppCount, so a freshly built first
             app can reveal the section live), but header/body only show once
@@ -241,83 +245,30 @@ export default function Sidebar({
             )}
           </>
         )}
+        </div>
       </div>
       <div className="h-px bg-[--color-sidebar-border]/70" />
       <div className="flex flex-col gap-0.5 px-2 py-2">
-        <button
-          type="button"
+        <NavRow
+          icon={Hexagon} label="AI Settings" collapsed={collapsed}
+          active={selected?.type === 'dashboard'}
           onClick={() => onSelect({ path: '.claude', type: 'dashboard' })}
-          className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
-            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'dashboard'
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
-          )}
-        >
-          {selected?.type === 'dashboard' && (
-            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
-          )}
-          <Hexagon
-            className={cn(
-              'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'dashboard' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
-            )}
-            strokeWidth={1.75}
-          />
-          <span>AI Settings</span>
-        </button>
-        <button
-          type="button"
+        />
+        <NavRow
+          icon={Repeat} label="Routines" collapsed={collapsed}
+          active={selected?.type === 'responsibilities'}
           onClick={() => onSelect({ path: '.claude/responsibilities', type: 'responsibilities' })}
-          className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
-            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'responsibilities'
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
-          )}
-        >
-          {selected?.type === 'responsibilities' && (
-            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
-          )}
-          <Repeat
-            className={cn(
-              'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'responsibilities' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
-            )}
-            strokeWidth={1.75}
-          />
-          <span>Routines</span>
-        </button>
+        />
         {/* Skills and Integrations live in AI Settings now. */}
-        <button
-          type="button"
+        <NavRow
+          icon={AppWindow} label="Browser agent" collapsed={collapsed}
+          active={selected?.type === 'browser-agent'}
           onClick={() => onSelect({ path: '.claude/browser-agent', type: 'browser-agent' })}
-          className={cn(
-            'group relative flex w-full items-center gap-2.5 rounded-md pl-2.5 pr-9 transition-colors duration-150',
-            'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
-            selected?.type === 'browser-agent'
-              ? 'bg-sidebar-accent font-medium text-foreground'
-              : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
-          )}
-        >
-          {selected?.type === 'browser-agent' && (
-            <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
-          )}
-          <AppWindow
-            className={cn(
-              'size-[15px] shrink-0 transition-colors',
-              selected?.type === 'browser-agent' ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
-            )}
-            strokeWidth={1.75}
-          />
-          <span>Browser agent</span>
-          <span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>
-        </button>
+          badge={<span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>}
+        />
       </div>
       <div className="p-2">
-        <UserMenu />
+        <UserMenu collapsed={collapsed} />
       </div>
 
       <DeleteConfirm
@@ -370,7 +321,7 @@ const SHORTCUTS = [
   // },
 ];
 
-function Shortcuts({ selected, onSelect }) {
+function Shortcuts({ selected, onSelect, collapsed }) {
   const { notifications } = useNotifications();
   const { isRead } = useNotificationReadState();
   const hasUnread = notifications.some((n) => !isRead(n.id));
@@ -385,11 +336,16 @@ function Shortcuts({ selected, onSelect }) {
           <button
             key={item.key}
             type="button"
+            title={collapsed ? item.label : undefined}
+            aria-label={item.label}
             onClick={() => item.action === 'search'
               ? window.dispatchEvent(new CustomEvent('ide:open-search'))
               : onSelect(item.target)}
             className={cn(
-              'group relative flex items-center gap-2.5 rounded-md pl-2.5 pr-3 transition-colors duration-150',
+              // Icon centre sits on the rail's axis (28 px) open or closed,
+              // so collapsing never moves an icon sideways.
+              'group relative flex items-center gap-2.5 rounded-md pl-[12.5px] transition-colors duration-150',
+              collapsed ? 'pr-0' : 'pr-3',
               'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
               item.groupBreak && 'mt-3',
               active
@@ -397,7 +353,7 @@ function Shortcuts({ selected, onSelect }) {
                 : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
             )}
           >
-            {active && (
+            {active && !collapsed && (
               <span className="absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
             )}
             <span className="relative shrink-0">
@@ -415,14 +371,50 @@ function Shortcuts({ selected, onSelect }) {
                 />
               )}
             </span>
-            <span className="flex-1 text-left">{item.label}</span>
-            {item.action === 'search' && (
+            {!collapsed && <span className="flex-1 text-left">{item.label}</span>}
+            {item.action === 'search' && !collapsed && (
               <kbd className="hidden rounded border border-border/55 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/60 md:inline-block">⌘K</kbd>
             )}
           </button>
         );
       })}
     </div>
+  );
+}
+
+/* ─── Bottom navigation row ─────────────────────────────────────────────── */
+
+// One row of the bottom group. In the rail it is the same height with only
+// the icon, centred; the label moves to the tooltip.
+function NavRow({ icon: Icon, label, active, onClick, collapsed, badge }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={collapsed ? label : undefined}
+      aria-label={label}
+      className={cn(
+        'group relative flex w-full items-center gap-2.5 rounded-md pl-[12.5px] transition-colors duration-150',
+        collapsed ? 'pr-0' : 'pr-9',
+        'h-10 md:h-8 text-[14.5px] md:text-[13.5px]',
+        active
+          ? 'bg-sidebar-accent font-medium text-foreground'
+          : 'text-foreground/75 hover:bg-sidebar-accent/55 hover:text-foreground',
+      )}
+    >
+      {active && !collapsed && (
+        <span className="pointer-events-none absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-[--color-ring]" />
+      )}
+      <Icon
+        className={cn(
+          'size-[15px] shrink-0 transition-colors',
+          active ? 'text-[--color-ring]' : 'text-foreground/55 group-hover:text-foreground/75',
+        )}
+        strokeWidth={1.75}
+      />
+      {!collapsed && <span>{label}</span>}
+      {!collapsed && badge}
+    </button>
   );
 }
 

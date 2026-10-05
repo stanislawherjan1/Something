@@ -24,6 +24,9 @@
  * stderr back to the model and skips the tool.
  */
 
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 const PROJECT_DIR = process.env.PROJECT_DIR || '/home/coder/project';
 
 // Normalise an absolute-or-relative path to a project-relative POSIX path.
@@ -91,6 +94,10 @@ function pathsFromTool(toolName, input) {
       const cmd = typeof input.command === 'string' ? input.command : '';
       const re = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?(?:memory\/)?users\/[A-Za-z0-9._-]+)/g;
       let m; while ((m = re.exec(cmd))) out.push(m[1]);
+      // Any reference to memory/ itself (ls memory, cat memory/RULES.md), for
+      // the post-move fence below.
+      const mem = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?memory)(?:\/[^\s'"<>;&|`]*)?(?=$|[\s'"<>;&|`)])/g;
+      while ((m = mem.exec(cmd))) out.push(`${m[1]}/`);
       break;
     }
     default: break;
@@ -105,6 +112,18 @@ function pathsFromTool(toolName, input) {
 // markdown edit is how a "correction" used to land BESIDE the claim it was
 // meant to replace. Blocked with a message that names the tool to use instead.
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+// After the move to memory v4, memory/ is not a directory the bot reads at
+// all: the cards it needs are in its prefix, everything else is reached with
+// the memory tools. Listing the tree led it to narrate "structure" (folders of
+// people who were never users, an empty wiki) instead of answering.
+const LEGACY_MEMORY_RE = /^memory(\/|$)/;
+const LEGACY_MEMORY_DENIAL =
+  'Blocked: this workspace has moved to the new memory, and memory/ is not a directory to read or list. '
+  + 'Your cards are already in your prefix; everything remembered is reached with memory_search and '
+  + 'memory_timeline, or handed to you in the <<<MEMORY>>> block and WHAT_IS_GOING_ON; the person sees '
+  + 'and edits it on the Memory screen. Questions about how memory is organised are answered from the '
+  + 'rules (private by default; shared only what was shared or judged team-relevant; the person decides '
+  + 'on the Privacy tab), never from folders. Nothing here is damage to report or restore.';
 const MEMORY_WRITE_DENIAL =
   'Blocked: memory/ is written through the memory_write tool, not by editing files. '
   + 'Use memory_write with op "remember" for a new fact, "supersede" when a fact CHANGED '
@@ -149,6 +168,27 @@ async function main() {
       if (rel != null && (rel === 'memory' || rel.startsWith('memory/'))) {
         process.stderr.write(MEMORY_WRITE_DENIAL);
         process.exit(2);
+      }
+    }
+  }
+
+  // Once a workspace has moved to memory v4 (the stamp), what the old wiki
+  // left behind is not the bot's to read: the engine's undo snapshots, the
+  // ledger and views (reached through the memory tools, never as files), the
+  // emptied topics/concepts/patterns trees, the INDEX maps. Asked "why don't
+  // you remember X?", the bot dug through old card versions in _engine/undo
+  // and offered to restore them — the move read as damage. Every turn, every
+  // actor; the cards v4 still loads stay readable.
+  {
+    const toolName = data.tool_name || data.toolName || '';
+    const input = data.tool_input || data.toolInput || {};
+    if (existsSync(join(PROJECT_DIR, 'memory', '_engine', '.v4-migrated'))) {
+      for (const p of pathsFromTool(toolName, input)) {
+        const rel = relInProject(p);
+        if (rel != null && LEGACY_MEMORY_RE.test(rel)) {
+          process.stderr.write(LEGACY_MEMORY_DENIAL);
+          process.exit(2);
+        }
       }
     }
   }

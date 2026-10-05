@@ -1,6 +1,7 @@
 ---
 name: research-twitter-account
 description: Research a Twitter/X account and the network around it. Triggers when the user asks to "research @handle", "analyze the X account", "kogo obserwują w sektorze X", "find similar accounts to @handle", "build a profile for @handle". Queries Grok for similar accounts the target frequently interacts with, then drafts a folder of bio + posting-style profiles for each.
+requires: grok
 allowed-tools: Read, Bash, Write, mcp__grok__ask_grok
 ---
 

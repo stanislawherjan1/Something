@@ -134,7 +134,7 @@ export default function MiniAppView({ id, fileEventNonce, sidebarOpen }) {
       onClick={() => { reload(); fetchLive(); }}
       disabled={live.fetching}
       className={cn(
-        'flex items-center gap-1.5 rounded-md border border-border/55 bg-background px-2.5 py-1.5',
+        'flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-2.5 py-1.5',
         'text-[12px] font-medium text-muted-foreground/75 transition-colors',
         'hover:bg-sidebar-accent/40 hover:text-foreground/85 disabled:opacity-50',
       )}
@@ -168,10 +168,10 @@ function MiniAppSkeleton({ sidebarOpen }) {
       <EditorHeader icon={LayoutGrid} title="…" sidebarOpen={sidebarOpen} />
       <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-8 sm:px-8">
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-20 animate-pulse rounded-lg bg-muted/40" />
-          <div className="h-20 animate-pulse rounded-lg bg-muted/40" />
+          <div className="h-20 animate-pulse rounded-[6px] bg-muted/40" />
+          <div className="h-20 animate-pulse rounded-[6px] bg-muted/40" />
         </div>
-        <div className="mt-4 h-52 animate-pulse rounded-xl bg-muted/30" />
+        <div className="mt-4 h-52 animate-pulse rounded-[6px] bg-muted/30" />
         <div className="mt-4 space-y-2.5">
           <SkeletonLine width="100%" height="13px" />
           <SkeletonLine width="92%" height="13px" />
@@ -195,7 +195,7 @@ class RenderBoundary extends ReactComponent {
   render() {
     if (this.state.error) {
       return (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
+        <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
           This app's layout failed to render. Ask the assistant to rebuild it.
           <div className="mt-1 font-mono text-[11px] opacity-70">{String(this.state.error?.message || this.state.error)}</div>
         </div>

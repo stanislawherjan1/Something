@@ -19,9 +19,14 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
 import { hasClaudeToken, readClaudeToken } from './setup.js';
-import { buildCachedPrefix, buildTeamPrefix } from './memory-loader.js';
+import { buildCachedPrefix, buildTeamPrefix, buildCachedPrefixV4 } from './memory-loader.js';
+import { v4Mode, readableScopes } from './memory-ledger.js';
+import { rulesCard, now as liveStatuses, readDigest } from './memory-views.js';
+import { readRoutines } from './routines-store.js';
+import { routinesOwner } from './memory-v4-writes.js';
 import { syncMcpServers } from './integrations/runtime.js';
-import { primaryAdminSlug } from './team.js';
+import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone } from './team.js';
+import { buildRecallBlock, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
 import { issueTurnToken, revokeTurnToken } from './turn-identity.js';
@@ -68,8 +73,27 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *        for THAT person; loading it into another teammate's prefix would leak
  *        the operator's private chats — so it is included only for the operator.
  */
-export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExcludeIds, memoryDir } = {}) {
+export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOperator, callerExcludeIds, memoryDir } = {}) {
   const caller = Array.isArray(callerExcludeIds) ? callerExcludeIds : [];
+  // Memory v4 reading: a small prefix — the product rules, identity cards, the
+  // person's routines and the standing rules they stated. What they said before
+  // arrives per turn with the message (lib/memory-recall.js), not in here.
+  if (['read', 'on'].includes(v4Mode())) {
+    if (groupContext) {
+      const gid = /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null;
+      return buildCachedPrefixV4({ memoryDir, extraCards: [
+        { id: 'STANDING_RULES', body: gid ? rulesCard([`group:${gid}`]) : '' },
+        { id: 'WHAT_IS_GOING_ON', body: gid ? groupGoingOnCard(gid) : '' },
+      ] });
+    }
+    const me = actor && actor !== 'default' ? actor : primaryAdminSlug();
+    return buildCachedPrefixV4({ memoryDir, actor: me, flatPersonal: !getTeamMode(), extraCards: [
+      { id: 'MY_SETTINGS', body: settingsCard(me) },
+      { id: 'ROUTINES', body: routinesCard(me) },
+      { id: 'STANDING_RULES', body: rulesCard([`user:${me}`]) },
+      { id: 'WHAT_IS_GOING_ON', body: goingOnCard(me) },
+    ] });
+  }
   if (groupContext) {
     // buildTeamPrefix adds every USER_TIER id itself, derived from the card
     // registry — so a new private card is fenced out of groups the day it is
@@ -80,6 +104,93 @@ export function buildTurnPrefix({ actor, groupContext, isTgOperator, callerExclu
     ? ['RECENT_WEB', ...caller]
     : ['RECENT_WEB', 'RECENT_TELEGRAM', ...caller];
   return buildCachedPrefix({ memoryDir, excludeIds, actor });
+}
+
+/**
+ * The person's time zone and reply language, from Settings. The bot changes
+ * them (set_my_settings) when the person asks or plainly says they are now
+ * somewhere else — unless they locked it in Settings.
+ */
+/** " (it was <weekday, date, time> there when this was written)" — so a run never has to guess the hour. */
+function localNow(tz) {
+  try {
+    return ` (it was ${new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date())} there when this was written)`;
+  } catch { return ''; }
+}
+
+export function settingsCard(slug) {
+  try {
+    const m = teamList().find(x => x.slug === slug);
+    const tz = m?.timezone || getDefaultTimezone();
+    const lock = (on) => (on ? ' Locked by the person — you can\'t change it; they can in Settings.' : '');
+    return [
+      `Time zone: ${tz}${m?.timezone ? '' : ' (the workspace default — they haven\'t set their own)'}.${lock(m?.timezoneLocked)}`,
+      `Reply language: ${m?.preferredLanguage || 'the language of each message'}.${lock(m?.languageLocked)}`,
+      `Times you say, plan or schedule are in this time zone; get the local time with \`TZ=${tz} date\`${localNow(tz)}.`,
+      'When they ask you to change either, or plainly say they are now in another time zone, call set_my_settings with a short why.',
+    ].join('\n');
+  } catch { return ''; }
+}
+
+/**
+ * What is going on for this person — the Memory screen's Short-term memory as
+ * the bot sees it: statuses still in force, then the digest (one line per
+ * thing they are keeping track of, with its state). Without it the bot could
+ * not answer "what am I keeping track of?" although the screen showed it.
+ * Last of the extra cards: it changes nightly, the ones before it rarely.
+ */
+export function goingOnCard(slug) {
+  let scopes = [`user:${slug}`, 'shared'];
+  try { scopes = readableScopes({ actor: slug, memberGroups: memberGroupsOf(slug) }); } catch { /* the two above */ }
+  return goingOnFor({ key: `user:${slug}`, scopes, whose: 'this person (their Short-term memory on the Memory screen)', they: 'they' });
+}
+/**
+ * The same for a group turn: the group's own digest (rendered nightly from
+ * shared + that group, never anyone's private memory) and the live statuses
+ * in those two scopes. Without it the group brain answered "is X dead?" from
+ * old shared pages while the group's digest said "closed on the 29th".
+ */
+function groupGoingOnCard(gid) {
+  return goingOnFor({ key: `group:${gid}`, scopes: ['shared', `group:${gid}`], whose: 'this group (its shared memory)', they: 'the team' });
+}
+function goingOnFor({ key, scopes, whose, they }) {
+  const lines = [];
+  try {
+    const live = liveStatuses(scopes);
+    if (live.length) lines.push('Right now:', ...live.map(s => `- ${s.text}${s.expires ? ` (until ${s.expires})` : ''}`));
+    const d = readDigest(key);
+    if (d.items?.length) lines.push(`What ${they} are keeping track of${d.at ? ` (as of ${String(d.at).slice(0, 10)})` : ''}:`, ...d.items.map(i => `- ${i.name} (${i.state || 'active'}): ${i.line}`));
+  } catch { return ''; }
+  if (!lines.length) return '';
+  return [`What is going on for ${whose}:`, ...lines].join('\n');
+}
+
+/**
+ * How to run any routine — said once here instead of in every routine's text.
+ * A routine is the bot's duty: the planner turns it into reminders FOR THE BOT,
+ * and each run follows the routine's full instruction plus these rules.
+ */
+const ROUTINE_RULES = [
+  'The list below IS the person\'s routines (their Routines page, Marketplace ones included). Reminders are not routines: a reminder is one firing the planner set, and a routine without a reminder today is still a routine. Before saying a routine does not exist or offering to add one, read this list (memory_now has the current copy).',
+  'How to run them (every routine, every run):',
+  '- Silence: message the person only if the result would change what they do; otherwise send nothing — never "nothing to report".',
+  '- State: keep each routine\'s working notes (snapshots of the board, baselines, ids already reported, the person\'s one-time answers) in the workspace file `.routines/<routine title in kebab-case>.md` (team mode: under the person\'s own folder). Read it at the start of a run, update it at the end.',
+  '- Never report the same item twice unless it changed.',
+  '- If a routine needs something only the person knows (which people, pages, competitors…), look in its notes first; if missing, ask once in a normal message, save the answer, and skip this run.',
+  '- No side effects on your own: never send, post, publish, archive, delete, pay, refund, pause, change budgets or trigger a platform\'s reminders. Prepare a draft (create_draft for mail, otherwise in the chat or a workspace file) and say where it is; act only after the person says yes, only on what you showed.',
+  '- If a source the routine needs isn\'t connected or errors, tell the person once and stop; don\'t guess.',
+  '- "Off" / "unusual" means more than 30% from the same-weekday average of the last 4 weeks (at least 10 events), unless the routine says otherwise; build that baseline in the notes when a tool can\'t return history.',
+  '- When two routines would report the same item, report it once.',
+].join('\n');
+
+/** The person's routines (routines.json) as a card: what the bot does for them. */
+export function routinesCard(slug) {
+  let list = [];
+  try { list = readRoutines(routinesOwner(slug)).routines.filter(r => !r.retired); } catch { return ''; }
+  if (!list.length) return '';
+  return ['Your standing duties toward this person (they manage these on their Routines page).',
+    ROUTINE_RULES,
+    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}`)].join('\n');
 }
 
 // The model every web turn runs on: the one the bot is pinned to
@@ -103,7 +214,7 @@ function turnModel() {
 // overrides it.
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -182,6 +293,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const prefix = buildTurnPrefix({
       actor,
       groupContext,
+      groupId,
       isTgOperator: actor === primaryAdminSlug(),
       callerExcludeIds,
       memoryDir: join(PROJECT_DIR, 'memory'),
@@ -280,6 +392,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // This covers the self-service wizard path: token saved via /api/setup/token,
   // decrypted on-demand here so it never has to sit in process.env at boot.
   const childEnv = { ...process.env };
+  // The CLI's own auto-memory (~/.claude/projects/*/memory/MEMORY.md) is a
+  // second memory beside this product's, and it answered "what do you remember"
+  // with notes from months ago. settings.json switches it off for the bot's
+  // home, but a web turn runs under wsapi's home, which has no settings file;
+  // the env var holds whatever the home.
+  childEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
   if (!childEnv.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
     try { childEnv.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); }
     catch (err) { process.stderr.write(`[claude] token decrypt failed: ${err.message}\n`); }
@@ -302,7 +420,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
   // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
   // they take the actor and group flag from this token, never from a header.
-  const turnId = issueTurnToken({ actor, group: !!groupContext });
+  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId });
   childEnv.IDE_TURN_ID = turnId;
   // A turn started from the browser extension's panel carries a one-turn token
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
@@ -334,8 +452,30 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
-  proc.stdin.write(message);
-  proc.stdin.end();
+  // Memory v4 (MEMORY_V4=read|on): the most relevant past excerpts go in FRONT
+  // of the message — the user message, not the system prompt, which would void
+  // the cached prefix. The CLI is already starting while the search runs; stdin
+  // is written when it answers, within the recall budget. Group turns read
+  // shared + that group only; page turns get nothing (lib/memory-recall.js).
+  proc.stdin.on('error', () => { /* the CLI died first — its exit is reported below */ });
+  (async () => {
+    let recall = { block: null };
+    try {
+      const me = actor && actor !== 'default' ? actor : primaryAdminSlug();
+      recall = await buildRecallBlock({
+        actor: groupContext ? null : me,
+        groupId: groupContext ? groupId : null,
+        memberGroups: groupContext ? [] : memberGroupsOf(me),
+        pageTurn,
+        sessionKey: webSessionId || sessionId || null,
+        message: recallQuery ?? message,   // the person's own words when the caller wrapped them
+        history: recallHistory,
+      });
+    } catch (err) {
+      process.stderr.write(`[claude/recall] ${err.message}\n`);
+    }
+    try { proc.stdin.write(withRecall(recall.block, message)); proc.stdin.end(); } catch { /* gone */ }
+  })();
 
   let buffer = '';
   let capturedSessionId = sessionId || null;

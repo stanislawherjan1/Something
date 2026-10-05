@@ -448,7 +448,7 @@ coverage matrix is in `SECURITY.md` "Encryption scope" section.
 |---|---|---|
 | `hooks/verify-denials.sh` | Stop | Scans the assistant's last text for absence-claim patterns ("nie mam X", "doesn't exist", "I don't see Y in my tools", …) and, if the model didn't run any lookup tool (Read/Bash/Glob/Grep/memory_grep) that turn, blocks the response and pushes a feedback string asking it to verify before claiming absence. Appends the offending quote to `memory/patterns/verification-failures.md` so `taste-recall` can show it back next session. |
 | `hooks/verify-telegram-reply.sh` | Stop | Detects Telegram-channel turns by `transcript_path` prefix (`/home/bot/*` = bot tmux, `/home/wsapi/*` = web). For Telegram turns, scans the current turn for any `mcp__plugin_telegram_telegram__*` tool use. If none, blocks the response and forces the model to reply via the Telegram MCP — closes the silent-failure mode where the response landed in the IDE transcript only and the operator saw nothing. Whitelists internal triggers (`[REMINDER]`, `[REPO_AUDIT_TRIGGER]`, etc.). Deliberate silence is declared by the model, not guessed from keywords: when the sender asked for no reply (in any language or wording), `global-claude.md` tells the model to end the turn with `[[SILENT]]` on its own line, and the hook lets a turn through if that marker appears in the assistant's text since the last trigger. |
-| `hooks/scope-guard.mjs` | PreToolUse (file tools + Bash) | In team mode, denies a non-admin turn access to another teammate's private files (`users/<slug>/`) and private memory (`memory/users/<slug>/`), using the same scope rule as the file API. Fails open on its own errors. |
+| `hooks/scope-guard.mjs` | PreToolUse (file tools + Bash) | In team mode, denies a turn access to another teammate's private files (`users/<slug>/`), private memory (`memory/users/<slug>/`) and app data (`.team/users/<slug>/` — chats, routines), and every turn raw access to group memory (`memory/groups/`), using the same scope rule as the file API — the same for admins. Fails open on its own errors. |
 | `hooks/skill-fence.mjs` | PreToolUse (Skill) | Blocks the CLI's built-in cloud-scheduling skills (`schedule` and similar), which cannot work from a self-hosted box and collide with the product's own "routines" vocabulary. |
 
 Both Stop hooks log to `/tmp/verify-{denials,telegram-reply}.log` for live observability — operator can `tail -f` to see when they fire. The hooks exit 0 unless they're blocking; blocking sends stderr back to the model as system feedback and CC re-prompts the model with `stop_hook_active=true` so the hook can't loop.
@@ -463,6 +463,25 @@ Web side (`workspace-api` → `runClaudeTurn`) and Telegram side (`bot.sh` → t
 - Telegram spawns a single long-lived interactive `claude --channels plugin:telegram@...` inside tmux. There's no per-turn spawn → no opportunity to inject `--append-system-prompt` per turn. Instead, `bot.sh` curls `GET /api/memory/prefix?raw=1` into `$BOT_HOME/.claude/memory-prefix.txt` at tmux startup and passes `--append-system-prompt-file <path>`. claude reads settings from `/home/bot/.claude/settings.json`, which CC overwrites at startup down to a 120-byte stub — bot.sh runs a background `merge_bot_settings()` watchdog that jq-merges `bootstrap/claude-settings.json` back on top, replacing `hooks` wholesale (first 30 s at 5 s intervals, then every 5 min).
 
 Both paths end up with the SAME settings (hooks + `autoMemoryEnabled: false`) and the SAME memory prefix content — just plumbed through different files. The asymmetry exists because tmux's claude is interactive (no per-turn spawn) and CC's first-run code overwrites bot's settings.json (so the watchdog is required to keep hooks alive).
+
+### Memory v4 processes (behind `MEMORY_V4`)
+
+Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger:
+
+- **The consolidator** — `POST /api/internal/memory/consolidate`, poked every tick by
+  `bot/recent-snapshot-monitor.sh`. Files quiet conversations (web chats, the Telegram log
+  split per chat, registered group histories) into the ledger, with one routing and one
+  notes call (`claude -p`, no tools, structured output) per conversation.
+- **The recall block** — built in `runClaudeTurn` while the CLI starts (no added latency;
+  a search slower than 400 ms is dropped) and written in front of the message on stdin.
+- **The embedder worker** — `apps/embedder/worker.mjs`, forked on first use with a minimal
+  environment and an IPC channel; its own process, so an OOM there ends only the worker.
+- **The nightly run** — a timer in workspace-api, once a day after 04:00 local.
+- **Migrations** — `lib/migrate.js` at boot (structural) and from the upgrade bar or
+  `bin/migrate.mjs` (content); archives and state in `/var/wsapi-store/migrations/`.
+
+The Telegram brain (tmux) gets the v4 prefix through the same `GET /api/memory/prefix?raw=1`
+and the memory tools through the workspace-api MCP; see [MEMORY.md](MEMORY.md#memory-v4).
 
 ## Telegram Bot Architecture
 
@@ -698,7 +717,7 @@ bot/reminder-monitor.sh             ← PM2 process `${BOT_NAME}-reminders`
     - One-shots — status flipped to 'sent', then garbage-collected on the next tick
 ```
 
-**System rituals and timezone:** built-in recurring reminders (e.g. the daily morning planning) are seeded from `bootstrap/reminders.json` by `bootstrap/reconcile-reminders.py`. Their `due` placeholders are `BOOTSTRAP_NEXT_<DAILY|weekday>_<HH>_LOCAL` (hour in the workspace timezone, `IDE_TIMEZONE`, default `UTC`) or `…_UTC` (hour in UTC). The morning planning uses `BOOTSTRAP_NEXT_DAILY_06_LOCAL`, so it fires at 06:00 in `IDE_TIMEZONE`. An unknown zone name logs a warning and falls back to UTC. The placeholder is resolved only when a row is first created; an existing reminder keeps the `due` already in the live file, so changing `IDE_TIMEZONE` does not move rituals that are already scheduled.
+**System rituals and timezone:** built-in recurring reminders (e.g. the daily morning planning) are seeded from `bootstrap/reminders.json` by `bootstrap/reconcile-reminders.py`. Their `due` placeholders are `BOOTSTRAP_NEXT_<DAILY|weekday>_<HH>_LOCAL` (hour in the workspace timezone, `IDE_TIMEZONE`, default `UTC`) or `…_UTC` (hour in UTC). The morning planning is the exception: it runs at 06:00 in **each person's own time zone**. A person's zone lives on their roster entry (`timezone`, set in **Settings** or by the bot through `set_my_settings`); without one, the workspace default applies — set by an admin in Settings (`defaultTimezone` in `.team-config.json`), else `IDE_TIMEZONE`, else UTC. The reconcile creates each plan row at 06:00 in that zone, a change of zone moves the person's next run at once (`lib/planner-schedule.js`), and an hourly pass in workspace-api pulls every plan row back to 06:00 local, because the reminder monitor re-arms daily rows by 24 h in UTC and would otherwise drift an hour across a DST change (a row already due is left to fire). An unknown zone name logs a warning and falls back to UTC. Other rituals resolve their placeholder only when a row is first created; an existing reminder keeps the `due` already in the live file, so changing `IDE_TIMEZONE` does not move them.
 
 **Persistence:**
 - `.reminders.json` lives at `~/project/.reminders.json` — survives container restarts (project volume on server-only clients, Drive sync on legacy clients)

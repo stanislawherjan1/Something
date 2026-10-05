@@ -125,7 +125,7 @@ export default function RemindersView({ sidebarOpen }) {
 
 function TelegramBanner() {
   return (
-    <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+    <div className="rounded-[6px] border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
       <div className="flex items-start gap-2.5">
         <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" strokeWidth={1.75} />
         <div className="flex-1">
@@ -135,7 +135,7 @@ function TelegramBanner() {
           </div>
           <a
             href="?view=integrations"
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground"
           >
             <Settings className="size-3" strokeWidth={2} />
             Set up Telegram
@@ -171,7 +171,7 @@ function Card({ reminder, faded }) {
   const overdue = reminder.status === 'pending' && due < new Date();
   return (
     <div className={cn(
-      'rounded-md border bg-background p-3 text-sm shadow-xs',
+      'rounded-[6px] border bg-background p-3 text-sm shadow-xs',
       faded && 'opacity-65',
     )}>
       <div className="flex items-start gap-2">
@@ -218,7 +218,7 @@ function formatDue(d) {
 
 function Hint({ children }) {
   return (
-    <div className="rounded-md border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground/80">
+    <div className="rounded-[6px] border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground/80">
       {children}
     </div>
   );
@@ -226,7 +226,7 @@ function Hint({ children }) {
 
 function ErrorBox({ children }) {
   return (
-    <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+    <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
       {children}
     </div>
   );
@@ -235,7 +235,7 @@ function ErrorBox({ children }) {
 function Skeleton() {
   return (
     <div className="flex flex-col gap-2">
-      {[0, 1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-md bg-muted/40" />)}
+      {[0, 1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-[6px] bg-muted/40" />)}
     </div>
   );
 }

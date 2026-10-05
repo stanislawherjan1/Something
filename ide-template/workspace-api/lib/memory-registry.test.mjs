@@ -87,7 +87,7 @@ writeFileSync(join(memoryDir, 'CHANNELS.md'), '# CHANNELS\n- team group\n');
 // One distinctive marker per private card, so a leak names itself.
 const PRIVATE = {
   RESPONSIBILITIES: 'PRIVATE-MARKER-RESPONSIBILITIES watch his personal bank alerts',
-  USER_PROFILE: 'PRIVATE-MARKER-PROFILE lives in Krakow',
+  USER_PROFILE: 'PRIVATE-MARKER-PROFILE lives in Porto',
   USER_PREFERENCES: 'PRIVATE-MARKER-PREFERENCES prefers terse replies',
   RECENT_WEB: 'PRIVATE-MARKER-RECENTWEB yesterday we discussed salaries',
   RECENT_TELEGRAM: 'PRIVATE-MARKER-RECENTTG operator DM tail',
@@ -137,6 +137,20 @@ ok('migration adopts the profile', existsSync(join(root2, 'memory', 'users', 'st
 ok('migration adopts relationships (was left teammate-readable)',
   existsSync(join(root2, 'memory', 'users', 'stan', 'USER_RELATIONSHIPS.md'))
   && !existsSync(join(root2, 'memory', 'USER_RELATIONSHIPS.md')));
+
+// ─── (e2) switching team mode OFF brings the admin's cards back flat ─────────
+// On the canary the switch left the cards under users/<admin>: the screen
+// said "Nothing yet" and the bot lost its profile.
+const { restoreDefaultMemory } = await import('./memory-loader.js');
+writeFileSync(join(root2, 'memory', 'users', 'stan', 'RECENT_WEB.md'), '# recent\n');
+writeFileSync(join(root2, 'memory', 'RECENT_TELEGRAM.md'), '# flat tail already here\n');
+writeFileSync(join(root2, 'memory', 'users', 'stan', 'RECENT_TELEGRAM.md'), '# private tail\n');
+const back = restoreDefaultMemory('stan');
+ok('restore moves the adopted cards back flat', back.includes('USER_PROFILE.md') && back.includes('USER_RELATIONSHIPS.md') && back.includes('RECENT_WEB.md')
+  && readFileSync(join(root2, 'memory', 'USER_PROFILE.md'), 'utf8').includes('solo-era fact') && !existsSync(join(root2, 'memory', 'users', 'stan', 'USER_PROFILE.md')), back);
+ok('restore never overwrites a flat card that exists', !back.includes('RECENT_TELEGRAM.md') && readFileSync(join(root2, 'memory', 'RECENT_TELEGRAM.md'), 'utf8').includes('already here') && existsSync(join(root2, 'memory', 'users', 'stan', 'RECENT_TELEGRAM.md')));
+ok('restore leaves the private INDEX alone', existsSync(join(root2, 'memory', 'users', 'stan', 'INDEX.md')));
+ok('a second restore moves nothing', restoreDefaultMemory('stan').length === 0);
 
 // ─── (f) snapshots: unchanged content must not rewrite the prefix bytes ──────
 const root3 = SNAP_ROOT;

@@ -8,7 +8,7 @@ allowed-tools: Read, Bash(rclone:*)
 
 ## When this skill applies
 
-The workspace's `AGENT_TOOLS.md` lists `LEGACY_DRIVE_SYNC: true` OR the operator has explicitly mentioned rclone-backed Drive sync is active.
+The AGENT_TOOLS card in your prefix lists `LEGACY_DRIVE_SYNC: true` OR the operator has explicitly mentioned rclone-backed Drive sync is active.
 
 If the workspace is on the new model (volume-only storage), **skip this skill entirely**. The reliability problems below don't exist in the new model.
 
@@ -35,7 +35,7 @@ For deletes / moves: same protocol — verify the source is gone and the destina
 ## Recovery from drift
 
 If you detect a stale read mid-conversation:
-- Inform the user: "Wykryłem rozjazd Drive sync — re-aplikuję."
+- Tell the user, in their language, that the Drive copy drifted and you're re-applying the edit.
 - Re-apply the most recent edit.
 - Verify both locally AND via `rclone ls` against the Drive mount path.
 

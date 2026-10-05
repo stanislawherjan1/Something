@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
-import { PanelLeftClose, Settings, X, Loader2, Save, Check, Upload, Building2, AlertTriangle } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Settings, X, Loader2, Check, Upload, Building2, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBranding, BrandedImage } from './identity';
 
 /**
  * Sidebar header — workspace mark + brand name. On hover surfaces a gear
- * (workspace settings: title + logo) and a collapse button.
+ * (workspace settings: title + logo) and a collapse button. In the collapsed
+ * rail only the mark is left, centred at the same height; hovering it turns
+ * it into the "show sidebar" button.
  */
-export default function WorkspaceHeader({ onCollapseSidebar, onHome }) {
+export default function WorkspaceHeader({ onCollapseSidebar, onExpandSidebar, collapsed = false, onHome }) {
   const branding = useBranding();
   const [showSettings, setShowSettings] = useState(false);
   // Gear is always available — even in legacy mode the user can override
@@ -15,21 +17,33 @@ export default function WorkspaceHeader({ onCollapseSidebar, onHome }) {
   // is kept on the resolved branding so the modal can show an info banner.
   const showGear = true;
 
+  // One tree for both states: the mark is the same element open or in the
+  // rail (a remount reloads the logo and makes it flicker), at the same left
+  // inset (not centred — the sidebar's 1 px border would put it half a pixel
+  // off). In the rail the mark expands the sidebar, and hovering it says so.
   return (
     <div className="group flex h-14 shrink-0 items-center gap-2.5 px-3.5">
-      <div 
-        onClick={onHome}
+      <div
+        onClick={collapsed ? onExpandSidebar : onHome}
+        title={collapsed ? 'Show sidebar' : undefined}
+        role={collapsed ? 'button' : undefined}
+        aria-label={collapsed ? 'Show sidebar' : undefined}
         className={cn(
-          'flex size-7 shrink-0 items-center justify-center overflow-hidden cursor-pointer hover:opacity-75 transition-opacity',
+          'group/mark relative flex size-7 shrink-0 items-center justify-center overflow-hidden cursor-pointer transition-opacity',
           'rounded-sm border border-[--color-sidebar-border] bg-background',
+          !collapsed && 'hover:opacity-75',
         )}
       >
         <BrandedImage
           src={branding.iconUrl}
           alt=""
-          className="size-full object-contain"
+          className={cn('size-full object-contain transition-opacity', collapsed && 'group-hover/mark:opacity-0')}
         />
+        {collapsed && (
+          <PanelLeftOpen className="absolute size-[15px] text-foreground/75 opacity-0 transition-opacity group-hover/mark:opacity-100" strokeWidth={1.75} />
+        )}
       </div>
+      {!collapsed && <>
       <div 
         onClick={onHome}
         className="min-w-0 flex-1 cursor-pointer hover:opacity-75 transition-opacity"
@@ -44,7 +58,7 @@ export default function WorkspaceHeader({ onCollapseSidebar, onHome }) {
           onClick={() => setShowSettings(true)}
           title="Workspace settings"
           className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-md',
+            'flex size-7 shrink-0 items-center justify-center rounded-[6px]',
             'text-muted-foreground/60 opacity-0 transition-all duration-150',
             'hover:bg-sidebar-accent/60 hover:text-foreground/80',
             'group-hover:opacity-100 focus-visible:opacity-100',
@@ -59,7 +73,7 @@ export default function WorkspaceHeader({ onCollapseSidebar, onHome }) {
           onClick={onCollapseSidebar}
           title="Hide sidebar"
           className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-md',
+            'flex size-7 shrink-0 items-center justify-center rounded-[6px]',
             'text-muted-foreground/60 opacity-0 transition-all duration-150',
             'hover:bg-sidebar-accent/60 hover:text-foreground/80',
             'group-hover:opacity-100 focus-visible:opacity-100',
@@ -68,6 +82,7 @@ export default function WorkspaceHeader({ onCollapseSidebar, onHome }) {
           <PanelLeftClose className="size-[15px]" strokeWidth={1.75} />
         </button>
       )}
+      </>}
       {showSettings && (
         <WorkspaceSettingsModal
           branding={branding}
@@ -160,22 +175,21 @@ function WorkspaceSettingsModal({ branding, onClose }) {
       role="dialog"
       aria-modal="true"
       aria-label="Workspace settings"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
+        className="flex w-full max-w-md flex-col overflow-hidden modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex items-center gap-2">
-            <Settings className="size-4 text-foreground/75" strokeWidth={1.75} />
             <h2 className="text-[14px] font-semibold text-foreground/90">Workspace settings</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85"
+            className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85"
           >
             <X className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -193,7 +207,7 @@ function WorkspaceSettingsModal({ branding, onClose }) {
               placeholder="Acme · Globex · Initech"
               spellCheck={false}
               autoComplete="off"
-              className="w-full rounded-md border border-border/60 bg-background px-3 py-2 text-[13.5px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10"
+              className="w-full rounded-[6px] border border-border/60 bg-background px-3 py-2 text-[13.5px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10"
             />
           </label>
 
@@ -204,13 +218,13 @@ function WorkspaceSettingsModal({ branding, onClose }) {
             <div
               onClick={() => logoInputRef.current?.click()}
               className={cn(
-                'group flex cursor-pointer items-center gap-3 rounded-md border border-dashed px-3.5 py-3 transition-all',
+                'group flex cursor-pointer items-center gap-3 rounded-[6px] border border-dashed px-3.5 py-3 transition-all',
                 logoFile
                   ? 'border-[--color-ring]/50 bg-[--color-ring]/5'
                   : 'border-border hover:border-foreground/25 hover:bg-muted/40',
               )}
             >
-              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/60 bg-background">
+              <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-border/60 bg-background">
                 {currentLogo
                   ? <BrandedImage src={currentLogo} alt="" className="size-full object-contain p-0.5" />
                   : <Building2 className="size-4 text-muted-foreground" strokeWidth={1.75} />
@@ -245,7 +259,7 @@ function WorkspaceSettingsModal({ branding, onClose }) {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+            <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
               <span>{error}</span>
             </div>
@@ -256,7 +270,7 @@ function WorkspaceSettingsModal({ branding, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90"
+            className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90"
           >
             Close
           </button>
@@ -264,13 +278,13 @@ function WorkspaceSettingsModal({ branding, onClose }) {
             type="button"
             onClick={save}
             disabled={!dirty || busy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50"
           >
             {busy
               ? <Loader2 className="size-3.5 animate-spin" />
               : saved
                 ? <Check className="size-3.5" strokeWidth={2.5} />
-                : <Save className="size-3.5" strokeWidth={2} />}
+                : null}
             {busy ? 'Saving…' : saved ? 'Saved' : 'Save'}
           </button>
         </div>

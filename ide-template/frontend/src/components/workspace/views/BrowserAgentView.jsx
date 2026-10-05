@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import BotPicture from '../BotPicture.jsx';
 import {
   AppWindow, Eye, MousePointerClick, MousePointer2, FileText, Download, Copy, Check,
 } from 'lucide-react';
@@ -51,7 +52,7 @@ export default function BrowserAgentView({ sidebarOpen }) {
                 <a
                   href={ZIP_URL}
                   download
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-background px-3 py-1.5 text-[12.5px] font-medium text-foreground/85 shadow-[0_1px_1px_rgba(0,0,0,0.03)] hover:bg-muted/40"
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12.5px] font-medium text-foreground/85 hover:bg-muted/40"
                 >
                   <Download className="size-3.5" strokeWidth={1.75} />
                   Download
@@ -81,7 +82,7 @@ export default function BrowserAgentView({ sidebarOpen }) {
 }
 
 function SectionTitle({ children }) {
-  return <h2 className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">{children}</h2>;
+  return <h2 className="text-[13.5px] font-semibold leading-snug text-foreground/90">{children}</h2>;
 }
 
 // An illustration, not a screenshot: a browser window whose page is a
@@ -90,7 +91,7 @@ function SectionTitle({ children }) {
 function BrowserMock({ bot, avatar }) {
   const bar = 'rounded bg-foreground/[0.07] animate-pulse';
   return (
-    <div className="overflow-hidden rounded-lg border border-border/70 bg-card shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
+    <div className="overflow-hidden rounded-[6px] border border-border/70 bg-card ">
       {/* window chrome */}
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <span className="flex gap-1.5">
@@ -109,12 +110,12 @@ function BrowserMock({ bot, avatar }) {
           <div className={cn(bar, 'h-2 w-4/5')} />
           <div className={cn(bar, 'h-2 w-3/5')} />
           <div className="mt-1 grid grid-cols-3 gap-2.5">
-            <div className="h-16 rounded-md border border-border/60 bg-foreground/[0.03]" />
-            <div className="relative h-16 rounded-md border-2 border-destructive/60 bg-destructive/[0.05]">
+            <div className="h-16 rounded-[6px] border border-border/60 bg-foreground/[0.03]" />
+            <div className="relative h-16 rounded-[6px] border-2 border-destructive/60 bg-destructive/[0.05]">
               <span className="absolute -left-1.5 -top-2 rounded bg-destructive/85 px-1 font-mono text-[9px] font-semibold text-background">e7</span>
               <MousePointer2 className="absolute bottom-1 right-2 size-5 fill-destructive/80 text-destructive/80" strokeWidth={1.5} />
             </div>
-            <div className="h-16 rounded-md border border-border/60 bg-foreground/[0.03]" />
+            <div className="h-16 rounded-[6px] border border-border/60 bg-foreground/[0.03]" />
           </div>
           <div className={cn(bar, 'mt-1 h-2 w-full')} />
           <div className={cn(bar, 'h-2 w-11/12')} />
@@ -124,12 +125,12 @@ function BrowserMock({ bot, avatar }) {
         <div className="flex w-[44%] max-w-[240px] shrink-0 flex-col border-l border-border/60 bg-background">
           <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2">
             {avatar
-              ? <img src={avatar} alt="" className="size-5 rounded-full object-cover ring-1 ring-foreground/10" />
+              ? <BotPicture className="size-5 rounded-full ring-1 ring-foreground/10" />
               : <span className="size-5 rounded-full bg-muted" />}
             <span className="truncate text-[12px] font-semibold text-foreground/90">{bot}</span>
           </div>
           <div className="flex flex-1 flex-col gap-2 p-3">
-            <div className="self-end rounded-xl border border-border/60 bg-card px-2.5 py-1.5 text-[11px] text-foreground/85">
+            <div className="self-end rounded-[6px] border border-border/60 bg-card px-2.5 py-1.5 text-[11px] text-foreground/85">
               Which orders are late?
             </div>
             <span className="inline-flex items-center gap-1 self-start rounded-full bg-muted/60 px-2 py-0.5 text-[10px] text-muted-foreground/85">
@@ -153,7 +154,7 @@ function BrowserMock({ bot, avatar }) {
                 </span>
               </span>
             </div>
-            <div className="rounded-lg border border-border/50 bg-card px-2 py-1.5 text-[10.5px] text-muted-foreground/60">Ask anything</div>
+            <div className="rounded-[6px] border border-border/50 bg-card px-2 py-1.5 text-[10.5px] text-muted-foreground/60">Ask anything</div>
           </div>
         </div>
       </div>
@@ -163,7 +164,7 @@ function BrowserMock({ bot, avatar }) {
 
 function Step({ n, children }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md border border-border/60 bg-card px-3 py-2.5 text-[13px] text-foreground/80">
+    <li className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-[6px] border border-border/60 bg-card px-3 py-2.5 text-[13px] text-foreground/80">
       <span className="mr-1 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/70 text-[11px] font-semibold text-foreground/70">{n}</span>
       {children}
     </li>

@@ -28,12 +28,17 @@ it works. `open` = no auth at all (keyless hosted server, instant-activate).
 | **Amplitude** | Product analytics and charts | OAuth |
 | **Atlassian** | Jira and Confluence | OAuth |
 | **Cal.com** | Bookings and availability | OAuth |
+| **ClickUp** | Tasks, docs, time tracking | OAuth |
 | **Calendly** | Scheduling and invitees | OAuth |
-| **Canva** | Designs and brand assets | OAuth — **not connectable from a self-hosted domain** (see [below](#remote-mcp-one-click-oauth)) |
-| **Cloudflare** | Workers, KV, R2, DNS | OAuth |
+| **Cloudflare** | Workers, KV, R2, D1 | OAuth |
 | **Crypto.com** | Crypto prices and charts | open |
+| **DeepL** | Translate, rewrite, glossaries | OAuth |
+| **Fathom** | Meeting recordings, transcripts and summaries (read-only) | OAuth |
+| **Fireflies** | Meeting transcripts, summaries and action items | OAuth |
 | **Firecrawl** | Scrape, crawl, and search the web | OAuth |
 | **Klaviyo** | Campaigns, flows, lists | OAuth |
+| **Granola** | Meeting notes and transcripts (read-only) | OAuth |
+| **Krisp** | Meeting notes, transcripts and action items (read-only) | OAuth |
 | **Linear** | Issues, projects, cycles | OAuth |
 | **Mailchimp** | Audiences and campaigns | OAuth |
 | **Miro** | Boards and diagrams | OAuth |
@@ -42,11 +47,14 @@ it works. `open` = no auth at all (keyless hosted server, instant-activate).
 | **Netlify** | Sites, deploys, forms | OAuth |
 | **Notion** | Pages, databases, search | OAuth |
 | **Parallel Search** | Real-time web search | open |
+| **Otter.ai** | Meeting transcripts and summaries (read-only) | OAuth |
 | **PayPal** | Payments and invoices | OAuth |
+| **Read AI** | Meeting summaries, action items and transcripts | OAuth |
 | **Sentry** | Errors and releases | OAuth |
 | **Stripe** | Payments and subscriptions | OAuth |
 | **Supabase** | Postgres, auth, functions | OAuth |
 | **Todoist** | Tasks and projects | OAuth |
+| **Tally** | Forms and submissions | OAuth |
 | **Webflow** | Sites, CMS, publishing | OAuth |
 | **Wix** | Sites, stores, orders | OAuth |
 | **Zapier** | 7,000+ apps via Zapier | OAuth |
@@ -69,7 +77,6 @@ provider-side app the operator provisions; those steps are documented below.
 | **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation) |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
-| **Substack** | Read posts, archives, authors, Notes, comments (no credentials); optional sign-in unlocks drafting, editing, images, publishing/scheduling and Notes — publishing off by default |
 | **X (twitterapi.io)** | Read tweets, profiles, replies, followers, mentions |
 | **Grok (xAI)** | Live X + web search — real-time takes, breaking news, fact-checks |
 | **OpenAI (GPT)** | Ask GPT models (gpt-5, gpt-4.1, o-series) for second opinions |
@@ -172,14 +179,13 @@ differ and still works, because broker fetches use the open listener).
   shipping it — some gate DCR to whitelisted partners and will 4xx. Of the
   hosted MCPs in the catalog, 15 accept a self-hosted redirect end to end; Miro
   and Cal.com refuse the registration itself.
-- A successful registration **≠ a usable redirect** either. **Canva** issues a
-  client_id bound to this workspace's callback, then its `/authorize` rejects
-  that same URL with `Invalid redirect URI` — it only accepts an allow-list
-  (localhost and its partner apps), which DCR cannot reach. The catalog entry
-  carries `"unavailable": "provider-restricted"` and says so in its
-  description. The two routes forward are Canva's Connect API with a redirect
-  registered in your own Canva developer app (a bring-your-own-credentials
-  integration, like Shopify/Meta) or Canva allow-listing the domain.
+- A successful registration **≠ a usable redirect** either. One provider issued a
+  client_id bound to this workspace's callback, then its `/authorize` rejected that
+  same URL with `Invalid redirect URI` — it only accepted an allow-list (localhost
+  and its partner apps), which DCR cannot reach. Such an entry is dropped from the
+  catalog rather than shipped broken; the routes forward are the provider's own
+  developer app with a registered redirect (a bring-your-own-credentials
+  integration, like Shopify/Meta) or the provider allow-listing the domain.
 - A cached DCR registration is reused **only if its `redirect_uris` contain the
   redirect this flow will send**; otherwise the broker re-registers and logs
   why (`cached client_id was registered for …, not … — re-registering`). This
@@ -208,14 +214,14 @@ Each catalog entry declares:
 | `label` | Human-readable name shown in the dashboard. |
 | `logo` | Path under `frontend/public/` (e.g. `/integrations/grok.svg`). Vite's `BASE_URL` is prepended at runtime. |
 | `description` | One-line summary on the tile. |
-| `category` | Grouping label (`ai`, `commerce`, `marketing`, `messaging`). Currently informational only. |
+| `category` | Grouping label — the section the Integrations marketplace shows it under: `ai`, `commerce`, `content`, `dev`, `finance`, `marketing`, `meetings`, `messaging`, `productivity`, `tasks`. Labels live in the dashboard's `CATEGORY_LABELS`. |
 | `multi` | `true` for multi-account integrations (Email IMAP). Store keeps `items[]` instead of `fields`. |
 | `itemLabel`, `minItems` | Multi-only: shown in the modal accordion ("Account 1", "Account 2", …). |
 | `fields[]` | Per-credential field declarations — see below. |
 | `steps[]` | Numbered instructions shown in the activation modal's left column. |
 | `mcp` | How to spawn the MCP server (or which long-running process to restart). See "Runtime side" below. |
 | `comingSoon` | Marks the entry as visible-but-disabled in the dashboard. |
-| `unavailable` | Reason code for an entry the provider currently blocks (e.g. `"provider-restricted"` on Canva). A marker only — the dashboard does not read it yet, so the `description` must explain why activation will fail. |
+| `unavailable` | Reason code for an entry the provider currently blocks (e.g. `"provider-restricted"`). A marker only — the dashboard does not read it yet, so the `description` must explain why activation will fail. |
 | `process` | `'telegram-bot'` for the long-running PM2 case — triggers `pm2 restart` on activate/remove. |
 | `home` | Where the integration is set up when that is not the marketplace — e.g. `"browser-agent"`: the marketplace does not offer it, and lists it under Active with a link there once connected. |
 | `experimental` | Shows a neutral **Experimental** tag (quieter than Beta). |
@@ -435,6 +441,9 @@ A working MCP in the post-broker world is six steps. Follow them in order; each 
 5. **If you write files at runtime** — never to `$HOME`, only to `/tmp/<your-mcp>-data/` or `${PROJECT_DIR}/<your-integration>/`. Create the dir at MCP startup with `fs.mkdirSync({ recursive: true })`; don't assume it exists.
 
 6. **Deploy entry** in `ide-template/deploy.sh` — scp your `index.js` + `package.json` to the remote build context. Dockerfile LAYER 2d picks it up automatically as long as you copy with `COPY apps/your-thing-mcp /opt/ide/apps/your-thing-mcp` (already templated — bump only if you add unusual deps).
+
+7. **Marketplace routines** (optional, recommended) — add a few entries to `workspace-api/routines.catalog.json` with `"requires": ["your-integration-id"]`: duties the bot can do with it on its own ("check X daily, tell me only when Y"). They appear in Routines → Marketplace once the integration is connected. See [ROUTINES.md](ROUTINES.md#marketplace). Then regenerate the routines skill's reference: `node workspace-api/lib/routines-reference.js` (a test fails until you do).
+8. **A skill** — `skills/optional/<id>/SKILL.md` with `requires: <mcp.name>` (the server **name**, not the catalog id) and `allowed-tools: mcp__<mcp.name>__*`: the real tools from the vendor's docs, which ones send/pay/publish/delete and need a yes first, gotchas, and the routines that use it. Mirror any existing integration skill. Without one the bot has the tools but no idea how to use them well.
 
 After your first deploy, verify with `docker exec <ide> su -c "claude mcp list" coder` — your MCP should show `✓ Connected`. If `✗ Failed to connect`, run the spawn manually as the `mcp` user (`docker exec -u mcp ... /usr/local/bin/mcp-runner your-thing 2>&1`) to see the actual error — claude doesn't surface MCP startup stderr.
 

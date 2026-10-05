@@ -37,6 +37,7 @@
  *              SHARED memory/INDEX.md on every boot (USER_INDEX shares its
  *              filename), and left USER_RELATIONSHIPS / USER_REFLECTIONS flat —
  *              i.e. readable by every teammate.
+ *   v4       — true when a memory v4 turn still preloads it (V4_LOAD_ORDER).
  *   desc     — one-line blurb used when the card is listed in an INDEX map.
  *
  * ORDER IS LOAD-BEARING. The array below IS the cached-prefix order, and the
@@ -48,12 +49,12 @@
 export const CARDS = [
   {
     id: 'AGENT_IDENTITY', file: 'AGENT_IDENTITY.md', tier: 'shared',
-    prefix: true, seed: true, machine: false, stale: 'none', adopt: false,
+    prefix: true, seed: true, machine: false, stale: 'none', adopt: false, v4: true,
     desc: "the agent's name, voice, mood, defaults",
   },
   {
     id: 'AGENT_TOOLS', file: 'AGENT_TOOLS.md', tier: 'shared',
-    prefix: true, seed: true, machine: false, stale: 'claims', adopt: false,
+    prefix: true, seed: true, machine: false, stale: 'claims', adopt: false, v4: true,
     desc: 'per-tool gotchas + activation notes for active integrations',
   },
   {
@@ -68,7 +69,7 @@ export const CARDS = [
   },
   {
     id: 'RULES', file: 'RULES.md', tier: 'shared',
-    prefix: true, seed: true, machine: false, stale: 'none', adopt: false,
+    prefix: true, seed: true, machine: false, stale: 'none', adopt: false, v4: true,
     desc: 'hard never/always rules — override preferences on conflict',
   },
   {
@@ -91,17 +92,17 @@ export const CARDS = [
     // by team.js writeChannelsCard(). Both brains load it → the operator knows
     // which groups exist (and their chat_ids, so it can reply into one from a DM).
     id: 'CHANNELS', file: 'CHANNELS.md', tier: 'shared',
-    prefix: true, seed: false, machine: true, stale: 'none', adopt: false,
+    prefix: true, seed: false, machine: true, stale: 'none', adopt: false, v4: true,
     desc: 'the Telegram groups the bot is in + who is in them',
   },
   {
     id: 'USER_PROFILE', file: 'USER_PROFILE.md', tier: 'user',
-    prefix: true, seed: true, machine: false, stale: 'claims', adopt: true,
+    prefix: true, seed: true, machine: false, stale: 'claims', adopt: true, v4: true,
     desc: 'stable facts about the user (role, location, languages, focus)',
   },
   {
     id: 'USER_PREFERENCES', file: 'USER_PREFERENCES.md', tier: 'user',
-    prefix: true, seed: true, machine: false, stale: 'claims', adopt: true,
+    prefix: true, seed: true, machine: false, stale: 'claims', adopt: true, v4: true,
     desc: 'soft preferences (tone, formatting, working style)',
   },
   {
@@ -164,6 +165,14 @@ export function card(id) { return byId.get(id); }
  * a drop-in consumer.
  */
 export const LOAD_ORDER = CARDS.filter(c => c.prefix).map(c => ({ id: c.id, path: c.file }));
+
+/**
+ * The cards a memory v4 turn still preloads (`v4: true`): identity, tools, the
+ * team's hard rules, the group map, the person's profile and preferences.
+ * INDEX / USER_INDEX / RECENT_* are replaced by per-turn retrieval, and duties
+ * by routines.json. Same `{ id, path }` shape and order as LOAD_ORDER.
+ */
+export const V4_LOAD_ORDER = CARDS.filter(c => c.prefix && c.v4).map(c => ({ id: c.id, path: c.file }));
 
 /**
  * Cards that are PER-USER in team mode. A person's profile, duties, preferences

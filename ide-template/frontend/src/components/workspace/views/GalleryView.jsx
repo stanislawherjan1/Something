@@ -82,12 +82,12 @@ function Tile({ image, folderPath, fileEventNonce, onClick }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex flex-col gap-1.5 overflow-hidden rounded-lg text-left',
+        'group flex flex-col gap-1.5 overflow-hidden rounded-[6px] text-left',
         'transition-colors',
       )}
       title={image.name}
     >
-      <div className="relative aspect-square overflow-hidden rounded-lg border bg-muted/40">
+      <div className="relative aspect-square overflow-hidden rounded-[6px] border border-border/60 bg-muted/40">
         <img
           src={url}
           alt={image.name}
@@ -123,7 +123,7 @@ function GalleryEmptyState() {
   return (
     <div className="flex h-full items-center justify-center px-6 py-16">
       <div className="flex max-w-[320px] flex-col items-center gap-3 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground/50">
+        <div className="flex size-12 items-center justify-center rounded-[6px] border border-border/60 text-muted-foreground/50">
           <Images className="size-6" strokeWidth={1.75} />
         </div>
         <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">No images yet</h2>

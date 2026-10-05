@@ -39,6 +39,11 @@ docs/postmortems/
 # any future operator-only integration (docs-comments is now a tracked,
 # ship-to-everyone integration and no longer uses this path).
 ide-template/workspace-api/integrations.catalog.local.json
+ide-template/workspace-api/routines.catalog.local.json
 
 # Remotion demo-video template — local video-making tooling, not a repo artifact
 demo-video/
+
+# Memory v4 embedder model — fetched by deploy.sh on the deploy host, never committed.
+ide-template/models/*
+!ide-template/models/.keep

@@ -76,14 +76,29 @@ const DEFAULTS = {
 
 const BrandingContext = createContext(DEFAULTS);
 
+// The last branding this browser saw. Without it every page load starts from
+// the stock avatar and only learns the bot's picture after /api/branding
+// answers — so the bot's face was always the last thing on screen. The server
+// copy still wins the moment it arrives (`loaded` stays false until then).
+const CACHE_KEY = 'branding.v1';
+const CACHED = ['title', 'botName', 'botDisplayName', 'hideIdeText', 'botAvatarUrl', 'logoUrl', 'iconUrl', 'legacyMode'];
+function cachedBranding() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (!c || typeof c !== 'object') return DEFAULTS;
+    return { ...DEFAULTS, ...Object.fromEntries(CACHED.filter((k) => k in c).map((k) => [k, c[k]])) };
+  } catch { return DEFAULTS; }
+}
+
 export function BrandingProvider({ children }) {
-  const [state, setState] = useState(DEFAULTS);
+  const [state, setState] = useState(cachedBranding);
 
   const reload = useCallback(async () => {
     try {
       const resp = await fetch('/api/branding', { credentials: 'include' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(CACHED.map((k) => [k, data[k] ?? DEFAULTS[k]])))); } catch { /* private mode */ }
       setState(prev => ({
         ...prev,
         title:          data.title          ?? DEFAULTS.title,

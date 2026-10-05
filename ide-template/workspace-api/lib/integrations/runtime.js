@@ -364,9 +364,14 @@ export function installOptionalSkill(id) {
   const destRoot = join(projectDir, '.claude', 'skills');
   const installed = [];
 
+  // A skill's `requires:` may name the catalog id (email-imap, ga4, meta-ads) or
+  // the MCP server's name (email, analytics, meta) — the boot-time installer
+  // matches the latter, this one was matching only the former, so a skill
+  // written either way was missed by one path or the other.
+  const names = new Set([id, catalog.get(id)?.mcp?.name].filter(Boolean));
   const skills = discoverOptionalSkills(optDir);
   for (const skill of skills) {
-    if (!skill.requires.includes(id)) continue;
+    if (!skill.requires.some(r => names.has(r))) continue;
     const dest = join(destRoot, skill.name);
     if (existsSync(dest)) continue;   // never overwrite — respect user edits
 

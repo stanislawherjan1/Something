@@ -54,6 +54,15 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// A picture asked for by its versioned URL (`?v=<mtime>`, what /api/branding
+// hands out) never changes — a new upload gets a new URL — so the browser may
+// keep it for good. Five minutes was the old rule: past it the whole picture
+// (often a few hundred KB) was downloaded again, and the bot's face was the
+// last thing on every screen. An unversioned request keeps the short cache.
+function cacheFor(req) {
+  return req.query?.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300';
+}
+
 export default function brandingRouter() {
   const router = Router();
 
@@ -65,7 +74,7 @@ export default function brandingRouter() {
     }
   });
 
-  router.get('/branding/avatar', (_req, res) => {
+  router.get('/branding/avatar', (req, res) => {
     if (!branding.hasAvatar()) return res.status(404).end();
     try {
       const path = branding.avatarPath();
@@ -77,7 +86,7 @@ export default function brandingRouter() {
       const ct = head.equals(JPEG_MAGIC) ? 'image/jpeg' : 'image/png';
       res.setHeader('Content-Type',  ct);
       res.setHeader('Content-Length', stat.size);
-      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Cache-Control', cacheFor(req));
       createReadStream(path).pipe(res);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -88,7 +97,7 @@ export default function brandingRouter() {
   // /api/setup/logo via the wizard) feeds both logoUrl and iconUrl in
   // useBranding(), so TopBar, LoginPage, AccessDenied and WorkspaceHeader
   // all flip to the new image at once after the wizard saves.
-  router.get('/branding/logo', (_req, res) => {
+  router.get('/branding/logo', (req, res) => {
     if (!branding.hasLogo()) return res.status(404).end();
     try {
       const path = branding.logoPath();
@@ -97,7 +106,7 @@ export default function brandingRouter() {
       const ct = head.equals(JPEG_MAGIC) ? 'image/jpeg' : 'image/png';
       res.setHeader('Content-Type',  ct);
       res.setHeader('Content-Length', stat.size);
-      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('Cache-Control', cacheFor(req));
       createReadStream(path).pipe(res);
     } catch (err) {
       res.status(500).json({ error: err.message });

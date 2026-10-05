@@ -20,11 +20,16 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const turns = new Map();   // token → { actor, group }
+const turns = new Map();   // token → { actor, group, groupId }
 
-export function issueTurnToken({ actor = null, group = false } = {}) {
+export function issueTurnToken({ actor = null, group = false, groupId = null } = {}) {
   const token = randomBytes(24).toString('base64url');
-  turns.set(token, { actor: actor && actor !== 'default' ? String(actor) : null, group: !!group });
+  turns.set(token, {
+    actor: actor && actor !== 'default' ? String(actor) : null,
+    group: !!group,
+    // Which group, for memory v4: a group turn reads and writes that group's scope only.
+    groupId: group && /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null,
+  });
   return token;
 }
 
@@ -59,7 +64,7 @@ export function resolveTurnToken(token, claimedActor = '') {
     const got = createHash('sha256').update(t).digest();
     if (got.length === expected.length && timingSafeEqual(got, expected)) {
       const actor = /^[a-z0-9-]+$/.test(String(claimedActor || '')) ? String(claimedActor) : null;
-      return { actor, group: false, source: 'bot' };
+      return { actor, group: false, groupId: null, source: 'bot' };
     }
   }
   return null;

@@ -23,7 +23,6 @@ const INTEGRATION_LOGOS = {
   meta: 'meta.svg',
   google_ads: 'google-ads.svg',
   trello: 'trello.svg',
-  substack: 'substack.svg',
   signwell: 'signwell.jpg.png',
   grok: 'grok.svg',
   github: 'github.svg',

@@ -239,7 +239,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
           // Mobile (<640px): drop wrapper to px-0 so all horizontal space
           // goes to the BlockNote editor itself, which keeps just 8px of
           // its own gutter (see markdown-editor.css mobile override).
-          <div className="mx-auto w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-0 sm:px-2 pb-12 pt-2">
+          <div className="mx-auto w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-0 sm:px-2 pb-12 pt-5">
             <BlockNoteView
               editor={editor}
               theme={blockNoteTheme}

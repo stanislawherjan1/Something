@@ -94,7 +94,7 @@ export default function TelegramDashboard({ sidebarOpen, onSelect }) {
             <SectionHead title="Groups" lock={!canEdit} />
 
             {loading && !data ? (
-              <><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></>
+              <><Skeleton className="h-20 rounded-[6px]" /><Skeleton className="h-20 rounded-[6px]" /></>
             ) : groups.length === 0 ? (
               <EmptyHint>No groups yet. A group appears here once a teammate adds the bot to it.</EmptyHint>
             ) : (
@@ -111,13 +111,13 @@ export default function TelegramDashboard({ sidebarOpen, onSelect }) {
         <div className="flex items-center gap-2">
           {tg && (
             <button type="button" onClick={() => setSetup(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
               {connected ? 'Manage token' : 'Set up'}
             </button>
           )}
           {connected && tg && (
             <button type="button" onClick={() => setDisconnect(true)}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
               Disconnect
             </button>
           )}
@@ -186,7 +186,7 @@ function SectionHead({ icon: Icon, title, subtitle, lock, trailing }) {
 }
 
 function EmptyHint({ children }) {
-  return <div className="rounded-xl border border-dashed border-border/60 px-4 py-7 text-center text-[12.5px] text-muted-foreground/70">{children}</div>;
+  return <div className="rounded-[6px] border border-dashed border-border/60 px-4 py-7 text-center text-[12.5px] text-muted-foreground/70">{children}</div>;
 }
 
 /* ─── One registered group ──────────────────────────────────────────────── */
@@ -235,7 +235,7 @@ function GroupCard({ group, canEdit, avatars, onChanged }) {
   const title = group.title || 'Untitled group';
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-card px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <GroupAvatar />
         <div className="min-w-0">
@@ -251,7 +251,7 @@ function GroupCard({ group, canEdit, avatars, onChanged }) {
         {members.length > 0 && <MemberPile members={members} avatars={avatars} />}
         {canEdit && (
           <button type="button" onClick={() => setOpen(true)}
-            className="rounded-md px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
+            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
             Edit
           </button>
         )}
@@ -302,7 +302,7 @@ function GroupModal({ group, avatars, onClose, onSaved }) {
   return (
     <>
     <ModalShell onClose={onClose} ariaLabel={`Settings for ${title}`}>
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <GroupAvatar />
@@ -311,7 +311,7 @@ function GroupModal({ group, avatars, onClose, onSaved }) {
               <div className="font-mono text-[11px] text-muted-foreground/60">{group.chatId}</div>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+          <button type="button" onClick={onClose} className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
             <X className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
@@ -334,7 +334,7 @@ function GroupModal({ group, avatars, onClose, onSaved }) {
           )}
 
           {err && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+            <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} /><span>{err}</span>
             </div>
           )}
@@ -342,14 +342,14 @@ function GroupModal({ group, avatars, onClose, onSaved }) {
 
         <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
           <button type="button" onClick={remove} disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
             <Trash2 className="size-3.5" strokeWidth={1.75} /> Remove
           </button>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
+              className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
             <button type="button" onClick={save} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}
               {busy ? 'Saving…' : 'Save'}
             </button>
@@ -379,7 +379,7 @@ function GroupModal({ group, avatars, onClose, onSaved }) {
 function ConfirmDialog({ title, body, confirmLabel = 'Remove', busyLabel = 'Removing…', busy, error, onConfirm, onClose }) {
   return (
     <ModalShell onClose={onClose} ariaLabel={typeof title === 'string' ? title : 'Confirm'}>
-      <div className="w-full max-w-lg overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-lg overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="flex items-start gap-4 px-6 py-6">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-destructive/10">
             <Trash2 className="size-4 text-destructive" strokeWidth={2} />
@@ -388,15 +388,15 @@ function ConfirmDialog({ title, body, confirmLabel = 'Remove', busyLabel = 'Remo
             <div className="text-[15px] font-semibold text-foreground">{title}</div>
             <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/85">{body}</div>
             {error && (
-              <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">{error}</div>
+              <div className="mt-3 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">{error}</div>
             )}
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-6 py-3.5">
           <button type="button" onClick={onClose} disabled={busy}
-            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
+            className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
           <button type="button" onClick={onConfirm} disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-95 disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-destructive px-4 py-1.5 text-[12.5px] font-medium text-white hover:opacity-95 disabled:opacity-50">
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" strokeWidth={2} />}
             {busy ? busyLabel : confirmLabel}
           </button>
@@ -441,7 +441,7 @@ function People({ canEdit }) {
           </span>
         ) : null} />
       {loading && !data ? (
-        <Skeleton className="h-16 rounded-xl" />
+        <Skeleton className="h-16 rounded-[6px]" />
       ) : entries.length === 0 ? (
         <EmptyHint>No teammates yet.</EmptyHint>
       ) : (
@@ -461,7 +461,7 @@ function PersonRow({ person, canEdit, onChanged }) {
 
   return (
     <div className={cn(
-      'flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors',
+      'flex items-center justify-between gap-3 rounded-[6px] border px-4 py-3 transition-colors',
       linked ? 'border-border/60 bg-card' : 'border-dashed border-border/70 bg-muted/15',
     )}>
       <div className="flex min-w-0 items-center gap-3">
@@ -491,12 +491,12 @@ function PersonRow({ person, canEdit, onChanged }) {
       {canEdit && (
         linked ? (
           <button type="button" onClick={() => setOpen(true)}
-            className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
+            className="shrink-0 rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
             Edit
           </button>
         ) : (
           <button type="button" onClick={() => setOpen(true)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:bg-muted/40">
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:bg-muted/40">
             <Plus className="size-3" strokeWidth={2} /> Link
           </button>
         )
@@ -536,7 +536,7 @@ function LinkPersonModal({ person, onClose, onSaved }) {
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`Telegram link for ${name}`}>
-      <div className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <PersonAvatar name={name} avatar={person.avatarUrl} />
@@ -545,7 +545,7 @@ function LinkPersonModal({ person, onClose, onSaved }) {
               <div className="text-[11.5px] text-muted-foreground/65">{linked ? 'Edit Telegram link' : 'Link to Telegram'}</div>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+          <button type="button" onClick={onClose} className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
             <X className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
@@ -560,7 +560,7 @@ function LinkPersonModal({ person, onClose, onSaved }) {
             <span className="text-[11.5px] text-muted-foreground/55">The teammate sends /start to @userinfobot on Telegram to see their numeric id. Until linked here, the bot stays silent to them.</span>
           </label>
           {err && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+            <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} /><span>{err}</span>
             </div>
           )}
@@ -571,15 +571,15 @@ function LinkPersonModal({ person, onClose, onSaved }) {
             <span className="text-[11.5px] text-muted-foreground/65">Operator id from the Telegram activation, can't be unlinked.</span>
           ) : linked ? (
             <button type="button" onClick={() => submit(true)} disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
               <Trash2 className="size-3.5" strokeWidth={1.75} /> Unlink
             </button>
           ) : <span />}
           <div className="flex items-center gap-2">
             <button type="button" onClick={onClose} disabled={busy}
-              className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
+              className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
             <button type="button" onClick={() => submit()} disabled={busy || !chatId.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}
               {busy ? 'Saving…' : 'Save'}
             </button>

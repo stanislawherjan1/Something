@@ -1330,10 +1330,17 @@ export SHELL=/bin/bash
 # its own process memory, so this is acceptable.
 PREFIX_FILE="$BOT_HOME/.claude/memory-prefix.txt"
 CLAUDE_EXTRA_ARGS=""
+# In team mode the raw prefix holds the operator's private cards, so workspace-api
+# serves it only against the bot's own token (readable by this user only), and
+# the file stays private to this user — every turn's Bash can reach /home/bot.
+PREFIX_AUTH=()
+if [ -r "$PER_BOT_DIR/turn-id" ]; then
+    PREFIX_AUTH=(-H "X-IDE-Turn: $(cat "$PER_BOT_DIR/turn-id")")
+fi
 if command -v curl >/dev/null 2>&1; then
-    if curl -sS --max-time 5 --fail "http://localhost:3001/api/memory/prefix?raw=1" -o "$PREFIX_FILE" 2>/dev/null && [ -s "$PREFIX_FILE" ]; then
+    if curl -sS --max-time 5 --fail "${PREFIX_AUTH[@]}" "http://localhost:3001/api/memory/prefix?raw=1" -o "$PREFIX_FILE" 2>/dev/null && [ -s "$PREFIX_FILE" ]; then
         CLAUDE_EXTRA_ARGS="--append-system-prompt-file '$PREFIX_FILE'"
-        chmod 644 "$PREFIX_FILE" 2>/dev/null || true
+        chmod 600 "$PREFIX_FILE" 2>/dev/null || true
         log "Memory prefix fetched: $(wc -c < "$PREFIX_FILE") bytes → $PREFIX_FILE"
     else
         log "WARN: failed to fetch memory prefix from wsapi (:3001); bot will start without it"
@@ -1359,18 +1366,22 @@ if command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
         if printf '%s' "$OP_SLUG" | grep -qE '^[a-z0-9-]+$'; then
             export IDE_ACTOR_SLUG="$OP_SLUG"
             export IDE_ACTOR_IS_ADMIN=1
-            # The proof behind that identity for the memory routes: a token
-            # entrypoint wrote at boot, readable by this user only.
-            if [ -r "$PER_BOT_DIR/turn-id" ]; then
-                export IDE_TURN_ID="$(cat "$PER_BOT_DIR/turn-id")"
-            else
-                log "Operator identity: no turn-id file — memory calls will run without a proven identity (shared memory only)."
-            fi
             log "Operator identity: IDE_ACTOR_SLUG=$OP_SLUG IDE_ACTOR_IS_ADMIN=1 (relays attributed; scope-guard admin-passthrough)."
         else
             log "Operator identity: not in team mode (or no slug) — leaving IDE_ACTOR_SLUG unset (solo/legacy)."
         fi
     fi
+fi
+
+# The proof behind the brain's identity for the memory routes: a token the
+# entrypoint wrote at boot, readable by this user only. Exported in solo mode
+# too — it used to be set only in team mode, so on a solo workspace every
+# memory_search / memory_timeline from Telegram failed with "no turn identity"
+# (workspace-api resolves a solo token to the primary admin).
+if [ -r "$PER_BOT_DIR/turn-id" ]; then
+    export IDE_TURN_ID="$(cat "$PER_BOT_DIR/turn-id")"
+else
+    log "No turn-id file — memory search will fail with no turn identity until the next container start."
 fi
 
 # Only load the Telegram channel plugin when we actually have a token —
@@ -1426,7 +1437,7 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
 # start; CC doesn't re-read it mid-session. But the RECENT_WEB.md /
 # RECENT_TELEGRAM.md cards inside that prefix go stale as new messages
 # come in. The model can fall back to mcp__workspace-api__recent_messages
-# (live read from disk) via the `recent-context` skill — but for that to
+# (live read from disk) or memory_search for anything older — but for that to
 # work, /home/bot/.claude/memory-prefix.txt also needs to be kept fresh
 # so anyone who Reads it directly (operator debugging, another tool, the
 # model via the prefix path itself) sees recent data. Refresh once every
@@ -1440,9 +1451,9 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
         sleep 300
         if command -v curl >/dev/null 2>&1; then
             TMP=$(mktemp 2>/dev/null) || continue
-            if curl -sS --max-time 5 --fail "http://localhost:3001/api/memory/prefix?raw=1" -o "$TMP" 2>/dev/null && [ -s "$TMP" ]; then
+            if curl -sS --max-time 5 --fail "${PREFIX_AUTH[@]}" "http://localhost:3001/api/memory/prefix?raw=1" -o "$TMP" 2>/dev/null && [ -s "$TMP" ]; then
                 mv "$TMP" "$BOT_HOME/.claude/memory-prefix.txt"
-                chmod 644 "$BOT_HOME/.claude/memory-prefix.txt" 2>/dev/null || true
+                chmod 600 "$BOT_HOME/.claude/memory-prefix.txt" 2>/dev/null || true
             else
                 rm -f "$TMP"
             fi

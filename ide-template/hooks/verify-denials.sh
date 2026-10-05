@@ -26,8 +26,8 @@
 #     can leave it inert without anyone noticing).
 #   - Absence-claim pattern list extended to ≈90% of observed forms; on
 #     match we ALSO append the offending phrase to
-#     memory/patterns/verification-failures.md so taste-recall can show
-#     it back to the model next session.
+#     memory/patterns/verification-failures.md as a record of the
+#     failure.
 #
 # Exit:
 #   0 — let the response through (no absence claim, or claim was verified)
@@ -184,26 +184,32 @@ TOOLS_USED=$(tail -100 "$TRANSCRIPT" 2>/dev/null | jq -r '
     .name
 ' 2>/dev/null | sort -u)
 
-LOOKUP_TOOLS_PATTERN='^(Read|Bash|Glob|Grep|mcp__workspace-api__memory_grep)$'
+LOOKUP_TOOLS_PATTERN='^(Read|Bash|Glob|Grep|mcp__workspace-api__memory_grep|mcp__workspace-api__memory_search|mcp__workspace-api__memory_timeline)$'
 
 if echo "$TOOLS_USED" | grep -qE "$LOOKUP_TOOLS_PATTERN"; then
     log "absence claim BUT lookup tool was used, exit 0"
     exit 0
 fi
 
-# Block. Also append to patterns/verification-failures.md so taste-recall
-# can surface this back to the model in future sessions. Team mode: a member's
+# Block. Also append to patterns/verification-failures.md as a record of the
+# failure. Team mode: a member's
 # absence-claim failure is their OWN behavioural pattern, so route it to their
-# private memory/users/<slug>/patterns/ — not the shared file every teammate's
-# taste-recall reads. Validate the slug (path safety); fall back to the shared
+# private memory/users/<slug>/patterns/ — not the shared file every teammate
+# can read. Validate the slug (path safety); fall back to the shared
 # file for the operator/Telegram surface (no slug), 'default', or solo.
+# Memory v4 (the migration stamp): patterns/ is gone — nothing reads it, and
+# memory/ is written only through the engine. The block message itself is the
+# correction, so on v4 nothing is filed.
+_v4=""
+[ -e "${PROJECT_DIR:-/home/coder/project}/memory/_engine/.v4-migrated" ] && _v4=1
+
 _slug="${IDE_ACTOR_SLUG:-}"
 case "$_slug" in
     ""|default|*[!a-z0-9-]*) _pat_dir="memory/patterns" ;;
     *)                       _pat_dir="memory/users/${_slug}/patterns" ;;
 esac
 PATTERNS_FILE="${PROJECT_DIR:-/home/coder/project}/${_pat_dir}/verification-failures.md"
-if [ -d "$(dirname "$PATTERNS_FILE")" ] || mkdir -p "$(dirname "$PATTERNS_FILE")" 2>/dev/null; then
+if [ -z "$_v4" ] && { [ -d "$(dirname "$PATTERNS_FILE")" ] || mkdir -p "$(dirname "$PATTERNS_FILE")" 2>/dev/null; }; then
     {
         echo ""
         echo "## $(date -u '+%Y-%m-%d %H:%M:%S UTC') — absence-claim blocked"
@@ -218,6 +224,12 @@ fi
 
 log "BLOCKING absence claim"
 
+_LOGGED_LINE=""
+[ -z "$_v4" ] && _LOGGED_LINE="This block has been logged to ${_pat_dir}/verification-failures.md — try
+not to repeat it.
+
+"
+
 cat >&2 <<EOF
 Your response claims something is missing ("I don't have that skill/file/tool" or similar) but you did not run a lookup tool this turn.
 
@@ -225,15 +237,12 @@ Before claiming absence, verify with at least one of:
   - cat ~/.claude/skills/INDEX.md | grep -i <keyword>      # for skills (symlinked to ~/project/.claude/skills/INDEX.md)
   - ls ~/.claude/skills/ ~/project/.claude/skills/         # for skills (raw list)
   - find ~/project/ -iname "*<keyword>*" -type f | head    # for files
-  - mcp__workspace-api__memory_grep <keyword>              # for memory content
+  - memory_search <keyword> / memory_timeline <name>      # for memory content
   - grep mcp ~/.claude.json                                # for tools/MCPs
 
 If after 1-2 lookups you still don't find it, ASK the operator for clarification — don't refuse outright.
 
-This block has been logged to ${_pat_dir}/verification-failures.md so
-taste-recall can show it back to you next session — try not to repeat it.
-
-Retry your response with a verification step first.
+${_LOGGED_LINE}Retry your response with a verification step first.
 EOF
 
 exit 2

@@ -91,17 +91,17 @@ ide-template/skills/
 │   ├── environment/                ← sealed-container constraints (no runtime installs)
 │   ├── file-placement/             ← where-to-save decision tree
 │   ├── legacy-drive-sync/          ← only when LEGACY_DRIVE_SYNC=true (rclone reliability)
-│   ├── memory-cards/               ← 7-card memory model (read at session start)
-│   ├── morning-planner/            ← owns routines (RESPONSIBILITIES) + the daily plan; run after any duty change
-│   ├── non-technical-comms/        ← business-language framing for non-technical users
+│   ├── make-pdf/                   ← markdown → PDF, delivered as a file
+│   ├── mini-apps/                  ← small interactive tabs (start_tab + tab state)
+│   ├── morning-planner/            ← turns the person's routines into the day's plan; run after any routine change
 │   ├── playwright-protocol/        ← safe browser automation
-│   ├── project-backup/             ← tar.gz + Telegram delivery
+│   ├── project-backup/             ← tar.gz of the shared project (no memory, no others' private folders)
 │   ├── reminders/                  ← set_reminder MCP + [REMINDER] trigger handling
+│   ├── routines/                   ← suggests Marketplace routines in conversation, adds them (add_routine)
 │   ├── repo-audit/                 ← weekly structure review
 │   ├── security/                   ← untrusted-content discipline (5 rules)
 │   ├── skill-authoring/            ← how to write a new SKILL.md (reference + 3 examples)
-│   ├── task-management/            ← structured task board (HTTP API, no Tasks.md)
-│   └── taste-recall/               ← loads anti-pattern memory at session start
+│   └── task-management/            ← structured task board (HTTP API, no Tasks.md)
 │
 └── optional/                       ← installed conditionally per active integration
     ├── ask-gemini/, ask-gpt/, ask-grok/    ← per-model "ask the AI" wrappers
@@ -114,12 +114,21 @@ ide-template/skills/
     ├── docs-comments/                          ← shipped to all clients
     ├── shopify/{catalog-sync,edits,orders,products,store}/
     ├── signwell-protocol/                     ← e-signature workflow
-    └── trello/, substack/
+    ├── email-imap/                            ← reading mail (pairs with email-write-protocol)
+    ├── <one folder per hosted integration>/   ← notion, linear, todoist, monday, airtable, clickup, atlassian, miro,
+    │                                            calcom, calendly, granola, tally, stripe, paypal, klaviyo,
+    │                                            mailchimp, wix, webflow, github, sentry, supabase, neon, netlify,
+    │                                            cloudflare, amplitude, ga4, zapier, deepl,
+    │                                            parallel, firecrawl, cryptocom, fireflies, fathom, otter,
+    │                                            readai, krisp — tools, write rules, gotchas, routines
+    └── trello/
 ```
 
 **INDEX.md autogen at boot.** Entrypoint walks both skill trees, parses each `SKILL.md` frontmatter, and writes a one-line-per-skill `~/project/.claude/skills/INDEX.md`. The model uses `cat INDEX.md | grep -i <keyword>` to verify skill existence before claiming absence (per the **Before claiming absence** rule in global-claude.md). Eliminates "I don't have a skill for X" hallucinations.
 
-**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`. The remaining default split candidates (repo-audit, task-management, security, reminders, file-placement, project-backup) are queued for Phase 2.
+**Every integration has a skill.** An optional skill is installed when its `requires:` names an active integration — by its catalog id (`email-imap`, `ga4`, `meta-ads`) or by its MCP server's name (`email`, `analytics`, `meta`); both installers accept either. Each integration skill lists the server's real tools (from the vendor's docs or source), marks what sends, pays, publishes or deletes, and says which routines rely on it. A routine written by the bot may start with an emoji or an icon name in braces (`{bell}`); a known emoji is mapped to an icon.
+
+**Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`, `file-placement/references/decision-tree.md`, `project-backup/references/rules.md`, `reminders/references/{delivery, set-params}`, `repo-audit/references/{bash-commands, exclusions}`, `security/references/coverage-status.md`, `task-management/references/{reminder-rules, templates}`, `routines/references/catalog.md` (generated from `workspace-api/routines.catalog.json` by `lib/routines-reference.js`; a test fails when it is stale).
 
 **`allowed-tools` field is mandatory** for new skills — declares the minimum tool scope. Pure-reference skills get `Read`. Memory skills get `Read, Edit, Write`. Integration skills get tight MCP wildcards (`mcp__shopify__*`). Defaults to full access if omitted — only do that for orchestration skills that genuinely need everything.
 

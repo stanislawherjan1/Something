@@ -25,7 +25,7 @@ function validateEntry(i) {
   if (!i.id || typeof i.id !== 'string') throw new Error('integration missing id');
   if (i.comingSoon) return;
   // `fields[]` is required as an array but MAY be empty: a credential-less,
-  // read-only integration (e.g. Substack) activates with no inputs at all.
+  // read-only integration (a keyless hosted server) activates with no inputs at all.
   if (!Array.isArray(i.fields)) {
     throw new Error(`integration ${i.id} must declare a fields[] array (empty is allowed for a credential-less integration)`);
   }

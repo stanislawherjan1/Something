@@ -1,7 +1,7 @@
 import { Children, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Save, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
+import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MarkdownView, stripFrontmatter } from '@/lib/markdown';
 import EditorHeader from '../EditorHeader.jsx';
@@ -123,15 +123,10 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
-          <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground/85">
-            Skills are markdown playbooks {botDisplayName} follows for recurring tasks. Edit one to change how
-            it behaves, or add new ones in <span className="font-mono text-[12.5px] text-foreground/75">.claude/skills/</span>.
-          </p>
-
-          {isInitialLoad && <SkeletonCardGrid count={6} />}
+          {isInitialLoad && <SkeletonCardGrid count={6} width={306} />}
 
           {error && !data && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
+            <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
               Couldn't load skills: {error}
             </div>
           )}
@@ -325,7 +320,7 @@ function TagFilterBar({ tagCounts, activeTags, onToggleTag, onClearTags }) {
             type="button"
             onClick={() => onToggleTag(tag)}
             className={cn(
-              'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11.5px] font-medium leading-none transition-colors',
+              'inline-flex items-center gap-1 rounded-[6px] border px-2.5 py-1 text-[11.5px] font-medium leading-none transition-colors',
               on
                 ? 'border-foreground/45 bg-muted/70 text-foreground hover:bg-muted/85'
                 : 'border-border/55 bg-card text-foreground/80 hover:border-foreground/30 hover:bg-muted/40',
@@ -343,7 +338,7 @@ function TagFilterBar({ tagCounts, activeTags, onToggleTag, onClearTags }) {
         <button
           type="button"
           onClick={onClearTags}
-          className="ml-0.5 inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11.5px] font-medium leading-none text-muted-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground/95"
+          className="ml-0.5 inline-flex items-center gap-1 rounded-[6px] px-2.5 py-1 text-[11.5px] font-medium leading-none text-muted-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground/95"
         >
           <X className="size-3" strokeWidth={2.25} /> Clear
         </button>
@@ -372,11 +367,11 @@ function Section({ label, count, hint, empty, belowHeader, children }) {
           affects this one section — visual grouping > top-of-grid placement. */}
       {belowHeader}
       {tileCount === 0 && empty ? (
-        <div className="rounded-lg border border-border/50 bg-muted/15 px-4 py-5 text-center text-[13px] text-muted-foreground/75">
+        <div className="rounded-[6px] border border-border/50 bg-muted/15 px-4 py-5 text-center text-[13px] text-muted-foreground/75">
           {empty}
         </div>
       ) : (
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(320px,320px))]">
+        <div className="grid auto-rows-fr gap-3 grid-cols-[repeat(auto-fill,306px)] max-sm:grid-cols-1">
           {Children.map(children, (child) =>
             child ? (
               <motion.div
@@ -445,7 +440,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
   const overflowTags = showTags ? Math.max(0, tags.length - visibleTags.length) : 0;
 
   return (
-    <div className="group relative flex flex-col rounded-xl border border-border/60 bg-card transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
+    <div className="group relative flex flex-col rounded-[6px] border border-border/60 bg-card transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
       {/* Hover-revealed trash — hidden when read-only (system / integration).
           Absolute positioning so it doesn't shift layout when it appears.
           Positioned at the top-right corner — overlaps the right end of the
@@ -455,7 +450,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="absolute right-2.5 top-[18px] z-10 rounded-md p-1.5 text-muted-foreground/65 opacity-0 transition-all duration-150 hover:bg-destructive/[0.08] hover:text-destructive group-hover:opacity-100 focus:opacity-100"
+          className="absolute right-2.5 top-[18px] z-10 rounded-[6px] p-1.5 text-muted-foreground/65 opacity-0 transition-all duration-150 hover:bg-destructive/[0.08] hover:text-destructive group-hover:opacity-100 focus:opacity-100"
           aria-label={`Delete ${name}`}
           title="Delete skill"
         >
@@ -463,7 +458,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
         </button>
       )}
 
-      <div className="flex flex-1 flex-col px-4 pt-5">
+      <div className="flex flex-1 flex-col px-4 pt-4">
         <div className="flex items-center gap-2">
           <div className={cn(
             'flex size-5 shrink-0 items-center justify-center rounded bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
@@ -501,7 +496,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onToggleTag(t); }}
                 className={cn(
-                  'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10.5px] font-medium leading-none transition-colors',
+                  'inline-flex items-center rounded-[6px] px-1.5 py-0.5 text-[10.5px] font-medium leading-none transition-colors',
                   activeTags?.has(t)
                     ? 'bg-muted/85 text-foreground ring-1 ring-foreground/30'
                     : 'bg-muted/45 text-muted-foreground/80 hover:bg-muted/65 hover:text-foreground/85',
@@ -516,7 +511,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
             )}
             {refsCount > 0 && (
               <span
-                className="ml-auto inline-flex items-center gap-1 rounded-md bg-muted/45 px-1.5 py-0.5 text-[10.5px] font-medium leading-none text-muted-foreground/80"
+                className="ml-auto inline-flex items-center gap-1 rounded-[6px] bg-muted/45 px-1.5 py-0.5 text-[10.5px] font-medium leading-none text-muted-foreground/80"
                 title={`${refsCount} reference file${refsCount === 1 ? '' : 's'} in references/`}
               >
                 <FileText className="size-3" strokeWidth={2} />
@@ -527,19 +522,15 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
         )}
       </div>
 
-      <div className="px-4 pb-5 pt-4">
+      {/* Same footer as the AI Settings tiles: a quiet secondary button —
+          primary black is kept for things that still need setting up. */}
+      <div className="px-4 pb-4 pt-3.5">
         <button
           type="button"
           onClick={onEdit}
-          className={cn(
-            'inline-flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all active:scale-[0.98]',
-            isReadOnly
-              ? 'bg-muted/40 text-muted-foreground/85 hover:bg-muted/60 hover:text-foreground/90'
-              : 'bg-foreground text-background hover:opacity-95',
-          )}
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-all hover:bg-muted/55 hover:text-foreground/90 active:scale-[0.98]"
         >
           {isReadOnly ? 'View' : 'Edit'}
-          <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
         </button>
       </div>
     </div>
@@ -548,14 +539,15 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
 
 // ─── Add tile ──────────────────────────────────────────────────────────────
 
+// Same as the Team view's "Add member" tile: a dashed, centred call to add one.
 function AddSkillTile({ onClick }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full group flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-muted-foreground/70 transition-all hover:border-foreground/25 hover:bg-muted/30 hover:text-foreground/85"
+      className="h-full w-full group flex flex-col items-center justify-center gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-4 text-muted-foreground/70 transition-all hover:border-foreground/25 hover:bg-muted/30 hover:text-foreground/85"
     >
-      <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-background ring-1 ring-border/60 transition-colors group-hover:ring-foreground/20">
+      <div className="flex size-12 shrink-0 items-center justify-center rounded-[6px] bg-background ring-1 ring-border/60 transition-colors group-hover:ring-foreground/20">
         <Plus className="size-5" strokeWidth={1.75} />
       </div>
       <div className="text-[13.5px] font-medium">Add skill</div>
@@ -663,17 +655,17 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
       role="dialog"
       aria-modal="true"
       aria-label="Create skill"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <form onSubmit={submit} className="flex w-full max-w-lg flex-col overflow-hidden rounded-lg bg-background shadow-2xl">
+      <form onSubmit={submit} className="flex w-full max-w-lg flex-col overflow-hidden modal-panel">
         <div className="flex items-center gap-3 border-b border-border/40 px-6 py-4">
           <Hexagon className="size-4 shrink-0 text-muted-foreground/70" strokeWidth={1.75} />
           <div className="min-w-0 flex-1 text-[15px] font-semibold text-foreground/90">New skill</div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
+            className="rounded-[6px] p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />
@@ -881,11 +873,11 @@ function SkillEditModal({ skill, onClose, onSaved }) {
       role="dialog"
       aria-modal="true"
       aria-label={`Edit skill: ${name}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className={cn(
-        'relative flex w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-background shadow-2xl',
+        'relative flex w-full max-w-6xl flex-col overflow-hidden modal-panel',
         // When references exist, lock modal height. Otherwise expanding a
         // collapsed reference card would push the modal taller, which looks
         // like the modal is jumping. With explicit height the body's
@@ -910,7 +902,7 @@ function SkillEditModal({ skill, onClose, onSaved }) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
+            className="rounded-[6px] p-1.5 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />
@@ -928,7 +920,7 @@ function SkillEditModal({ skill, onClose, onSaved }) {
           )}
           {status === 'error' && (
             <div className="flex h-full items-center justify-center px-8 text-center">
-              <div className="flex max-w-md items-start gap-2 rounded-md border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12.5px] text-destructive">
+              <div className="flex max-w-md items-start gap-2 rounded-[6px] border border-destructive/25 bg-destructive/[0.04] px-3.5 py-2.5 text-[12.5px] text-destructive">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
                 <span>{error}</span>
               </div>
@@ -937,7 +929,7 @@ function SkillEditModal({ skill, onClose, onSaved }) {
           {status === 'ok' && (
             <div className="mx-auto w-full max-w-3xl px-8 py-8">
               {isReadOnly && (
-                <div className="mb-5 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3.5 py-2 text-[12px] text-muted-foreground/85">
+                <div className="mb-5 flex items-start gap-2 rounded-[6px] border border-border/50 bg-muted/30 px-3.5 py-2 text-[12px] text-muted-foreground/85">
                   <Lock className="mt-0.5 size-3 shrink-0 text-muted-foreground/60" strokeWidth={2} />
                   <span>
                     {isGlobal
@@ -1036,7 +1028,8 @@ function SkillEditModal({ skill, onClose, onSaved }) {
                   : 'bg-foreground text-background hover:opacity-95 active:scale-[0.98]',
               )}
             >
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" strokeWidth={1.75} />}
+              {saving ? <Loader2 className="size-3.5 animate-spin" />
+                : null}
               {saving ? 'Saving…' : 'Save'}
             </button>
           )}
@@ -1113,7 +1106,7 @@ function ReferenceCard({ skillName, origin, refName, readOnly }) {
   };
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/55 bg-card">
+    <div className="overflow-hidden rounded-[6px] border border-border/55 bg-card">
       <button
         type="button"
         onClick={expand}
@@ -1141,7 +1134,7 @@ function ReferenceCard({ skillName, origin, refName, readOnly }) {
             </div>
           )}
           {status === 'error' && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/25 bg-destructive/[0.04] px-3 py-2 text-[12px] text-destructive">
+            <div className="flex items-start gap-2 rounded-[6px] border border-destructive/25 bg-destructive/[0.04] px-3 py-2 text-[12px] text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
               <span>{error}</span>
             </div>
@@ -1176,7 +1169,8 @@ function ReferenceCard({ skillName, origin, refName, readOnly }) {
                         : 'bg-foreground text-background hover:opacity-95 active:scale-[0.98]',
                     )}
                   >
-                    {saving ? <Loader2 className="size-3 animate-spin" /> : <Save className="size-3" strokeWidth={1.75} />}
+                    {saving ? <Loader2 className="size-3 animate-spin" />
+                : null}
                     {saving ? 'Saving…' : 'Save'}
                   </button>
                 </div>
@@ -1226,10 +1220,10 @@ function DeleteSkillModal({ skill, onClose, onDeleted }) {
       role="dialog"
       aria-modal="true"
       aria-label={`Delete skill: ${name}`}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-md overflow-hidden rounded-lg bg-background shadow-2xl">
+      <div className="w-full max-w-md overflow-hidden modal-panel">
         <div className="flex items-start gap-3.5 px-6 py-5">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
             <Trash2 className="size-4 text-destructive" strokeWidth={2} />

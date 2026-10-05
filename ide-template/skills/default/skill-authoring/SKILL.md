@@ -17,7 +17,8 @@ USE when the user wants to:
 DO NOT USE when:
 - User wants to INVOKE an existing skill → just invoke it directly
 - User asks where to save a non-skill file → use `file-placement` skill
-- User wants to save a fact/preference → use the `memory_write` tool
+- User wants to do something regularly ("every Monday…", "each morning…") → `routines` skill, not a new skill
+- User says "remember this" (a fact) → `memory_note`; a correction to their profile or preferences card → `memory_write`
 - User wants to write a markdown document → not a skill, save under `documents/`
 
 ## Mode: reference vs runnable
@@ -75,10 +76,9 @@ Add `allowed-tools:` to frontmatter scoping to the minimum needed. Defaults to f
 
 Common patterns:
 - Pure reference skill: `allowed-tools: Read`
-- Memory-write skill: `allowed-tools: Read, Edit, Write`
+- Memory skill (writes go through the memory engine, never files under `memory/`): `allowed-tools: Read, mcp__workspace-api__memory_note, mcp__workspace-api__memory_write`
 - Browser skill: `allowed-tools: mcp__playwright__*`
 - Integration skill calling one MCP: `allowed-tools: mcp__shopify__*`
-- Background reflect-bot (writes durable memory to the markdown wiki + rebuilds the INDEX): `allowed-tools: Read, Edit, Write, Bash`
 
 ### 6. Validate before committing
 
@@ -104,7 +104,7 @@ Description is too broad. Add negative triggers: *"Do NOT use for X (use other-s
 
 ### YAML errors / skill silently invisible
 
-The skill discovery layer parses frontmatter quietly — if YAML is malformed, the skill **disappears with no warning**. The 2026-05-15 `d---` bug in `memory-cards/SKILL.md` is the canonical example: one stray character on line 1 killed the skill for 13 days, silently. Always verify:
+The skill discovery layer parses frontmatter quietly — if YAML is malformed, the skill **disappears with no warning**. The canonical example: one stray `d---` on line 1 of a default skill killed it for 13 days, silently. Always verify:
 
 - Opening delimiter is exactly `---` on line 1 (not `d---`, not `-----`, no BOM)
 - Closing delimiter `---` present after frontmatter
@@ -119,7 +119,7 @@ Description is good but body is ambiguous. Replace `"validate properly"` with `"
 
 ## After creating
 
-No registration step needed — skills are auto-discovered at every CC session start by walking `.claude/skills/` in the project tree, and a fresh session starts on every Telegram message / web chat turn. **No bot restart needed** for a new SKILL.md to be picked up — just send the next message. (Restart is only needed if you also changed MCPs, `settings.json`, or `global-claude.md`.)
+No registration step needed — skills are auto-discovered at session start by walking `.claude/skills/` in the project tree. On the **web**, every chat turn picks a new SKILL.md up — just send the next message. The **Telegram** brain is one long-running session, so it may not see the skill until it is restarted (`/restart`). (A restart is also needed if you changed MCPs, `settings.json`, or `global-claude.md`.)
 
 Tell the user:
 - The skill name

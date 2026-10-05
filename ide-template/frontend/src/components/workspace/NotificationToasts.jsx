@@ -86,12 +86,13 @@ export default function NotificationToasts({ chatOpen = false }) {
             exit={{ opacity: 0, x: 40, transition: { duration: 0.18 } }}
             transition={{ type: 'spring', stiffness: 320, damping: 28 }}
             className={cn(
-              'group pointer-events-auto relative rounded-md border border-border bg-card shadow-lg',
-              'flex gap-4 px-5 py-4 text-sm',
+              // Same family as the menus: off-white card, hairline, soft shadow, 6px.
+              'group pointer-events-auto relative rounded-[6px] border border-border/60 bg-card shadow-[0_10px_28px_-12px_rgba(0,0,0,0.18)]',
+              'flex gap-3 px-4 py-3 text-[13px]',
               // Very subtle solid colour shift on hover — neutral-50 is one
               // step off white, dark:neutral-900 one step off the dark card.
               // No opacity blending; the tail mirrors via group-hover.
-              (n.meta?.session_id || n.kind === 'memory') ? 'cursor-pointer transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900' : '',
+              (n.meta?.session_id || n.kind === 'memory') ? 'cursor-pointer transition-colors hover:bg-[color-mix(in_oklab,var(--card)_97%,var(--foreground))]' : '',
             )}
             onClick={() => {
               // A memory-write notification takes you to the memory graph; a
@@ -115,14 +116,14 @@ export default function NotificationToasts({ chatOpen = false }) {
             {/* Speech-bubble tail on the topmost bubble — visually
                 connects the stack to the floating avatar above it. */}
             {index === 0 && (
-              <span className="pointer-events-none absolute -top-[7px] right-4 size-3 rotate-45 border-l border-t border-border bg-card transition-colors group-hover:bg-neutral-50 dark:group-hover:bg-neutral-900" />
+              <span className="pointer-events-none absolute -top-[7px] right-4 size-3 rotate-45 border-l border-t border-border/60 bg-card transition-colors group-hover:bg-[color-mix(in_oklab,var(--card)_97%,var(--foreground))]" />
             )}
             <div className="min-w-0 flex-1">
               {n.title ? (
-                <div className="truncate font-medium leading-snug text-foreground">{n.title}</div>
+                <div className="truncate font-medium leading-snug text-foreground/90">{n.title}</div>
               ) : null}
               {n.body ? (
-                <div className="mt-1.5 line-clamp-3 leading-relaxed text-muted-foreground">{n.body}</div>
+                <div className="mt-0.5 line-clamp-3 text-[12.5px] leading-relaxed text-muted-foreground/80">{n.body}</div>
               ) : null}
             </div>
             <button
@@ -135,7 +136,7 @@ export default function NotificationToasts({ chatOpen = false }) {
                   return next;
                 });
               }}
-              className="-mr-1 -mt-1 shrink-0 self-start rounded p-1.5 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              className="-mr-1 -mt-0.5 shrink-0 self-start rounded-[5px] p-1 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
               aria-label="Dismiss"
             >
               <X className="size-3.5" aria-hidden />

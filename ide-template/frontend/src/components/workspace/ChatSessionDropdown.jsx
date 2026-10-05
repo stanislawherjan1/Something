@@ -132,11 +132,11 @@ export default function ChatSessionDropdown({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-x-2 top-full z-30 mt-1 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+      className="menu-panel absolute inset-x-2 top-full z-30 mt-2.5"
       data-testid="session-dropdown"
     >
       {/* Search header */}
-      <div className="flex items-center gap-2 rounded-md px-3 py-1.5">
+      <div className="flex h-9 items-center gap-2 px-2.5">
         <Search size={14} className="shrink-0 text-muted-foreground/65" />
         <input
           ref={searchInputRef}
@@ -158,13 +158,13 @@ export default function ChatSessionDropdown({
         )}
       </div>
 
-      <div className="my-1 border-t border-border/40" />
+      <div className="menu-sep" />
 
       {/* + New chat — same shape as a list row, primary-feel via icon */}
       <button
         type="button"
         onClick={createNew}
-        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium text-foreground/85 hover:bg-muted/40 transition-colors text-left"
+        className="menu-item"
       >
         <Plus className="size-4 text-muted-foreground/65 shrink-0" strokeWidth={1.75} />
         <span className="flex-1">New chat</span>
@@ -176,8 +176,8 @@ export default function ChatSessionDropdown({
         </div>
       )}
 
-      <div className="flex items-center justify-between px-3 pt-2 pb-1">
-        <span className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">Recent</span>
+      <div className="flex items-center justify-between pr-2.5">
+        <span className="menu-label">Recent</span>
         {sessions.some(x => !x.archived) && !search && (
           <button
             type="button"
@@ -200,10 +200,10 @@ export default function ChatSessionDropdown({
           <li
             key={s.id}
             className={cn(
-              "group/row flex cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 transition-colors",
+              "group/row flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2.5 transition-colors",
               s.id === activeSessionId
-                ? "bg-muted/40"
-                : "hover:bg-muted/40",
+                ? "bg-foreground/[0.05]"
+                : "hover:bg-foreground/[0.05]",
             )}
             onClick={() => {
               if (renamingId === s.id) return;

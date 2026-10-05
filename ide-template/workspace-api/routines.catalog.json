@@ -1,0 +1,1314 @@
+{
+  "routines": [
+    {
+      "id": "morning-brief",
+      "title": "Morning brief",
+      "summary": "Every working morning: the day's top three and what's due, in one short message.",
+      "description": "Every working morning, before the person usually starts. Read the task board (task API: list tasks with status, owner, deadline) (In Progress, due today, overdue), today's commitments from recent_messages, and the calendar if one is connected (leave meetings out if the Calendar brief routine is on). Send one short message: the top three for today and what's due. Each run, save a snapshot of the board in your notes (one line per task: id, status, deadline, date) — tasks have no change history, so 'unchanged' means the same status across snapshots. Send nothing on a day with no due tasks, no carry-over and no meetings.",
+      "icon": "sun",
+      "category": "planning",
+      "tags": [
+        "planning"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "deadline-at-risk",
+      "title": "Deadlines at risk",
+      "summary": "Speaks up only when a task can't realistically be finished in time.",
+      "description": "Once a day. Read the task board (task API: list tasks with status, owner, deadline): every task not Done with a deadline. Estimate the remaining work from its description; compare with free working hours before the deadline (the calendar if connected, else working days). Warn when the work needs more hours than are free, at least two working days before the deadline, with what to move, cut or hand off. Each run, save a snapshot of the board in your notes (one line per task: id, status, deadline, date) — tasks have no change history, so 'unchanged' means the same status across snapshots.",
+      "icon": "deadline",
+      "category": "planning",
+      "tags": [
+        "tasks",
+        "planning"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "day-wrap-up",
+      "title": "End-of-day wrap-up",
+      "summary": "Late afternoon: what moved today and what rolls to tomorrow.",
+      "description": "Around the end of the working day. Compare the task board (task API: list tasks with status, owner, deadline) with this morning's snapshot in your notes, and read today's recent_messages. Note what moved to Done and what rolls over; for anything half-done, set yourself a reminder for tomorrow morning (set_reminder). Send three lines only if something moved or slipped.",
+      "icon": "check",
+      "category": "planning",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "id": "weekly-plan",
+      "title": "Plan the week",
+      "summary": "Monday morning: three priorities for the week, from the board and what slipped.",
+      "description": "Monday morning. Read the task board (task API: list tasks with status, owner, deadline) (overdue, due this week, In Progress) and last week's snapshots in your notes to see what slipped; read recent_messages for promises I made. Propose three priorities in one message, then set yourself mid-week reminders (set_reminder) to check on each. Send nothing if the board is empty and nothing was promised.",
+      "icon": "calendar",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "weekly"
+      ]
+    },
+    {
+      "id": "friday-recap",
+      "title": "Friday recap",
+      "summary": "Friday afternoon: what got done, what's stuck, what's next — short.",
+      "description": "Friday afternoon. Compare the task board (task API: list tasks with status, owner, deadline) with Monday's snapshot in your notes: what reached Done, what is stuck (same status all week) and why (from the task or recent_messages), what to pick up on Monday. Short enough to read on a phone. Send nothing if nothing moved.",
+      "icon": "report",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "weekly"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "stale-tasks",
+      "title": "Stale task sweep",
+      "summary": "Weekly: tasks stuck In Progress for a week, with a question.",
+      "description": "Once a week. Each run, save a snapshot of the board in your notes (one line per task: id, status, deadline, date) — tasks have no change history, so 'unchanged' means the same status across snapshots. Find tasks In Progress with the same status in snapshots at least seven days apart. For each, ask in one line what's blocking it or whether to move it back to Backlog — move it only after I say yes.",
+      "icon": "tasks",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "weekly"
+      ]
+    },
+    {
+      "id": "promise-keeper",
+      "title": "Keep my promises",
+      "summary": "When you say you'll do something later, it comes back at the right moment.",
+      "description": "Once a day, read today's recent_messages (and mail I sent today, if a mailbox is connected). When I promised something for later (\"I'll send it tomorrow\", \"let's revisit Friday\"), set yourself a reminder for that moment (set_reminder) and note it. When it fires, check whether it happened (the board, sent mail, our conversation); bring it back only if it hasn't. If a notetaker (Granola, Fireflies, Fathom, Otter, Read AI or Krisp) is connected, also take the commitments they made in meetings from its notes, once a day.",
+      "icon": "followup",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "followup"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "waiting-on",
+      "title": "Waiting on others",
+      "summary": "Tracks what you're waiting on from people and offers a nudge.",
+      "description": "Once a day, read recent_messages (and the mailbox if connected) for things I'm waiting on from someone. Keep them in your notes (who, what, since when). After three working days still open, offer a short nudge text in the chat for me to send — never send it.",
+      "icon": "thread",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "followup"
+      ]
+    },
+    {
+      "id": "monthly-review",
+      "title": "Monthly look back",
+      "summary": "First working day of the month: what worked, what slipped, which routines to keep.",
+      "description": "On the first working day of the month. From your notes (board snapshots) and the task board (task API: list tasks with status, owner, deadline): what reached Done, what slipped repeatedly. From the routines list, list_reminders history and my replies in recent_messages: which routines produced messages I acted on and which I ignored. One message, with one suggested change (including pausing a routine I ignore).",
+      "icon": "trend",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "monthly"
+      ]
+    },
+    {
+      "id": "focus-guard",
+      "title": "Protect focus time",
+      "summary": "When tomorrow is packed, proposes what to batch or move to keep one focus block.",
+      "description": "Each evening. Read tomorrow in the calendar (Google Calendar list_events/get_event, or Cal.com/Calendly bookings — whichever is connected) and the task board (task API: list tasks with status, owner, deadline). If there's no free stretch of 90 minutes within working hours, propose what to batch, move or decline so one exists for the most important task. Send nothing if one already exists.",
+      "icon": "clock",
+      "category": "planning",
+      "tags": [
+        "planning"
+      ],
+      "requires": [
+        "google-workspace"
+      ]
+    },
+    {
+      "id": "renewals",
+      "title": "Renewals and expiries",
+      "summary": "Tracks what expires or renews and warns a month and a week ahead.",
+      "description": "Once a week, look through recent_messages, workspace files and the mailbox if connected for things that expire or renew (domains, insurance, contracts, subscriptions, documents). Keep one list in your notes (item, date, source). Set yourself reminders a month and a week before each date and tell me then.",
+      "icon": "renewal",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "admin"
+      ]
+    },
+    {
+      "id": "content-ideas",
+      "title": "Content ideas",
+      "summary": "Weekly: three post ideas from what happened in the business.",
+      "description": "Once a week. Look at the task board (task API: list tasks with status, owner, deadline) items that reached Done (launches, wins), questions customers asked (the mailbox, if connected) and recent_messages. Propose three post ideas with an opening line each, in the brand's voice (memory_search 'brand voice'). Send nothing in a week where nothing happened.",
+      "icon": "megaphone",
+      "category": "content",
+      "tags": [
+        "content",
+        "weekly"
+      ]
+    },
+    {
+      "id": "inbox-hourly",
+      "title": "Watch your inbox",
+      "summary": "About hourly in working hours; tells you only when a mail needs you, with a draft.",
+      "description": "About once an hour in working hours (set_reminder). Read new mail in the mailbox (email tools: list_recent, search, read_message) since the last run (time kept in your notes). Tell me only about mail that needs me — a client or colleague replying, a time-sensitive ask, money, a decision (memory_search for who matters) — with who, what they want, and a draft reply (create_draft). Newsletters, receipts and notifications stay quiet.",
+      "icon": "mail",
+      "category": "email",
+      "tags": [
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "inbox-digest",
+      "title": "Morning inbox digest",
+      "summary": "Each morning: what arrived overnight, sorted into reply / FYI / later.",
+      "description": "Each morning. Read mail in the mailbox (email tools: list_recent, search, read_message) since the previous digest (time in your notes). One digest: needs a reply / FYI / can wait, one line per thread; skip threads Watch your inbox already reported. Leave out newsletters, receipts and automated notifications.",
+      "icon": "digest",
+      "category": "email",
+      "tags": [
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "reply-drafts",
+      "title": "Draft the obvious replies",
+      "summary": "Twice a day: drafts for simple mails, and a note of which are ready.",
+      "description": "Twice a day, for mail in the mailbox (email tools: list_recent, search, read_message) since the last run. For each that needs a simple answer (confirming, scheduling, a quick yes or no), create a draft in my voice (create_draft; memory_search 'writing style'). One message listing the drafts ready to review; nothing if none.",
+      "icon": "reply",
+      "category": "email",
+      "tags": [
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "no-reply-followup",
+      "title": "Follow up when they go quiet",
+      "summary": "Drafts a polite follow-up when mail you sent gets no answer.",
+      "description": "Once a working day. In the sent folder of the mailbox (email tools: list_recent, search, read_message), find mail from 4–10 working days ago that asked for something and has no reply in the thread. Create a short, polite follow-up draft for each (create_draft) and tell me which.",
+      "icon": "followup",
+      "category": "email",
+      "tags": [
+        "email",
+        "followup"
+      ],
+      "requires": [
+        "email-imap"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "unanswered-threads",
+      "title": "Threads you owe a reply",
+      "summary": "Twice a week: mail waiting on your answer for three days or more.",
+      "description": "Twice a week. Search the mailbox (email tools: list_recent, search, read_message) for threads where someone asked me something and I haven't replied for three or more days. List them with one suggested next step each.",
+      "icon": "message",
+      "category": "email",
+      "tags": [
+        "email",
+        "followup"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "vip-mail",
+      "title": "Mail from key people",
+      "summary": "Tells you within half an hour when a key person writes.",
+      "description": "Every 30 minutes in working hours (set_reminder). The key people are in your notes (ask once). When one of them writes to the mailbox (email tools: list_recent, search, read_message), tell me with a one-line summary. Watch your inbox then leaves that mail alone.",
+      "icon": "star",
+      "category": "email",
+      "tags": [
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "invoice-catcher",
+      "title": "Invoices and receipts",
+      "summary": "Weekly list of invoices from mail, with what's due soon.",
+      "description": "Once a week. Search the mailbox (email tools: list_recent, search, read_message) since the last run for invoices, receipts and payment requests. Add them to the list in your notes (sender, amount, due date). Send the week's new ones and anything due in the next seven days.",
+      "icon": "invoice",
+      "category": "money",
+      "tags": [
+        "money",
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "subscription-watch",
+      "title": "Subscriptions and price rises",
+      "summary": "Notices new subscriptions, price rises and coming renewals.",
+      "description": "Once a week. From receipts in the mailbox (email tools: list_recent, search, read_message), keep the list of what I pay for (service, amount, cycle) in the same notes as Renewals if that routine is on. Tell me when a new subscription appears, a price goes up, or a renewal is due in the next two weeks.",
+      "icon": "billing",
+      "category": "money",
+      "tags": [
+        "money",
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "newsletter-digest",
+      "title": "Newsletters, weekly",
+      "summary": "Once a week: the newsletters worth reading, one line each.",
+      "description": "Once a week. Go through newsletters in the mailbox (email tools: list_recent, search, read_message) from the last seven days. Pick the ones worth my time given what I work on (memory_search 'work focus'), one line each on why. Archive the rest only if I say yes, and only the ones you listed.",
+      "icon": "read",
+      "category": "email",
+      "tags": [
+        "email",
+        "weekly"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "travel-prep",
+      "title": "Travel day prep",
+      "summary": "The day before a trip: check-in, times, bookings and weather in one message.",
+      "description": "Once a day, look in the mailbox (email tools: list_recent, search, read_message) for booking confirmations (flights, trains, hotels) and keep upcoming trips in your notes. The day before each, send check-in, departure times, booking references and the route — plus the weather at the destination from a web search.",
+      "icon": "calendar",
+      "category": "calendar",
+      "tags": [
+        "calendar",
+        "travel"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "lead-response",
+      "title": "Reply to new leads fast",
+      "summary": "New enquiry: who they are, what they want, and a draft reply within the hour.",
+      "description": "Hourly in working hours (set_reminder). In new mail in the mailbox (email tools: list_recent, search, read_message), spot enquiries from people we haven't worked with (memory_search their name/domain). Look them up on the web if Parallel or Firecrawl is connected. Tell me who they are and what they want in one paragraph, with a draft reply (create_draft). Watch your inbox then leaves that mail alone.",
+      "icon": "priority",
+      "category": "sales",
+      "tags": [
+        "sales",
+        "email"
+      ],
+      "requires": [
+        "email-imap"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "stale-deals",
+      "title": "Deals gone quiet",
+      "summary": "Weekly: clients and prospects with no contact in two weeks, with a next touch drafted.",
+      "description": "Once a week. The client and prospect list is in your notes (build it once from memory_search 'client' / 'prospect' and confirm with me). For each, find the last thread in the mailbox (email tools: list_recent, search, read_message). For anyone silent two weeks or more, create a short next-touch draft (create_draft).",
+      "icon": "thread",
+      "category": "sales",
+      "tags": [
+        "sales",
+        "followup"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "where-is-my-order",
+      "title": "\"Where is my order\" mail",
+      "summary": "Answers order-status questions with a ready draft.",
+      "description": "Hourly in working hours. In new mail in the mailbox (email tools: list_recent, search, read_message), find customers asking about their order. Look the order up in Shopify (get_orders by the customer's email or the order number) and create a reply draft with its status and tracking (create_draft).",
+      "icon": "reply",
+      "category": "shop",
+      "tags": [
+        "shop",
+        "email"
+      ],
+      "requires": [
+        "shopify"
+      ],
+      "requiresAll": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "month-end-pack",
+      "title": "Month-end pack",
+      "summary": "At month end: the month's invoices and receipts in one folder, and what's missing.",
+      "description": "On the last working day of the month. Download the month's invoices and receipts from the mailbox (email tools: list_recent, search, read_message) (download_attachment) into the workspace folder `Finance/YYYY-MM/`. Compare senders with last month's folder and tell me which expected ones are missing.",
+      "icon": "folder",
+      "category": "money",
+      "tags": [
+        "money",
+        "monthly"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "review-replies",
+      "title": "Answer product reviews",
+      "summary": "Drafts replies to new reviews from the review app's mails; flags bad ones.",
+      "description": "Once a day. Read review notification mails in the mailbox (email tools: list_recent, search, read_message) (from the store's review app). Draft a reply to each in the brand's voice (memory_search 'brand voice') in the chat; tell me right away about any rated one or two stars.",
+      "icon": "reply",
+      "category": "shop",
+      "tags": [
+        "shop"
+      ],
+      "requires": [
+        "email-imap"
+      ]
+    },
+    {
+      "id": "calendar-brief",
+      "title": "Morning calendar brief",
+      "summary": "Each morning: today's meetings, free blocks and what to prepare.",
+      "description": "Each morning. Read today in the calendar (Google Calendar list_events/get_event, or Cal.com/Calendly bookings — whichever is connected): each meeting with its attendees (memory_search each) and purpose, the free blocks, anything to prepare. Send nothing on a day without meetings.",
+      "icon": "calendar",
+      "category": "calendar",
+      "tags": [
+        "calendar"
+      ],
+      "requires": [
+        "google-workspace",
+        "calcom",
+        "calendly"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "meeting-prep",
+      "title": "Meeting prep",
+      "summary": "Before meetings with outside people: a short brief on who, the last thread and open items.",
+      "description": "Each morning, find today's meetings in the calendar (Google Calendar list_events/get_event, or Cal.com/Calendly bookings — whichever is connected) with an attendee from outside my email domain, and set yourself a reminder about 30 minutes before each (set_reminder). Then prepare a short brief: who they are (memory_search), the last mail thread with them if a mailbox is connected, related tasks and files, open items. If a notetaker (Granola, Fireflies, Fathom, Otter, Read AI or Krisp) is connected, also read the notes from your last meeting with them (its tools) and carry over what was left open.",
+      "icon": "meeting",
+      "category": "calendar",
+      "tags": [
+        "calendar",
+        "meetings"
+      ],
+      "requires": [
+        "google-workspace",
+        "calcom",
+        "calendly"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "meeting-followup",
+      "title": "After the meeting",
+      "summary": "Turns meeting notes into proposed tasks and a follow-up draft.",
+      "description": "Once a day, for yesterday's meetings in Google Calendar that have notes (a linked Google Doc or a workspace file named after the meeting). Pull out decisions and action items; propose the actions as tasks (add them to the board only after I say yes) and write the follow-up mail — create_draft if a mailbox is connected, otherwise in the chat. With a notetaker (Granola, Fireflies, Fathom, Otter, Read AI or Krisp) connected, read the meeting's notes and transcript from its tools instead.",
+      "icon": "notes",
+      "category": "calendar",
+      "tags": [
+        "calendar",
+        "meetings"
+      ],
+      "requires": [
+        "google-workspace",
+        "granola",
+        "fireflies",
+        "fathom",
+        "otter",
+        "readai",
+        "krisp"
+      ]
+    },
+    {
+      "id": "calendar-conflicts",
+      "title": "Tomorrow, checked",
+      "summary": "Each evening: clashes, no breaks or an overloaded tomorrow, with a fix.",
+      "description": "Each evening. Check tomorrow in the calendar (Google Calendar list_events/get_event, or Cal.com/Calendly bookings — whichever is connected): overlapping events, back-to-back meetings with no gap, no break between 12:00 and 14:00, more than six hours of meetings. Tell me once per problem, with a fix to propose.",
+      "icon": "warning",
+      "category": "calendar",
+      "tags": [
+        "calendar"
+      ],
+      "requires": [
+        "google-workspace",
+        "calcom",
+        "calendly"
+      ]
+    },
+    {
+      "id": "pending-invites",
+      "title": "Unanswered invites",
+      "summary": "Once a day: invites you haven't answered, soonest first.",
+      "description": "Once a day. List events in Google Calendar for the next two weeks (list_events) where my attendee response_status is needsAction, soonest first.",
+      "icon": "schedule",
+      "category": "calendar",
+      "tags": [
+        "calendar"
+      ],
+      "requires": [
+        "google-workspace"
+      ]
+    },
+    {
+      "id": "new-bookings",
+      "title": "New bookings",
+      "summary": "Tells you when someone books, moves or cancels time with you.",
+      "description": "Every hour in working hours (set_reminder). Check Cal.com / Calendly for bookings created, moved or cancelled since the last run (ids in your notes). Tell me about each with what memory_search knows about the person.",
+      "icon": "schedule",
+      "category": "calendar",
+      "tags": [
+        "calendar"
+      ],
+      "requires": [
+        "calcom",
+        "calendly"
+      ]
+    },
+    {
+      "id": "one-on-one-prep",
+      "title": "1:1 prep",
+      "summary": "Before each one-on-one: what they worked on, asked for, and what you owe them.",
+      "description": "Each morning, find today's events in the calendar (Google Calendar list_events/get_event, or Cal.com/Calendly bookings — whichever is connected) with exactly one other attendee from my team, and set yourself a reminder 30 minutes before (set_reminder). Then brief me: their tasks on the task board (task API: list tasks with status, owner, deadline) (done and in progress), what they asked me for and what I owe them (recent_messages, memory_search). If a notetaker (Granola, Fireflies, Fathom, Otter, Read AI or Krisp) is connected, start from the notes of your previous one-on-one with them (its tools): what was agreed, what was left open.",
+      "icon": "users",
+      "category": "team",
+      "tags": [
+        "team",
+        "meetings"
+      ],
+      "requires": [
+        "google-workspace",
+        "calcom",
+        "calendly"
+      ]
+    },
+    {
+      "id": "client-news",
+      "title": "News about key clients",
+      "summary": "Weekly: funding, launches or trouble at key clients, with a message drafted.",
+      "description": "Once a week. Take the key clients from your notes (confirm the list with me once). Search the web for news about each (funding, launches, hires, trouble). Tell me only what's worth a message, with the message drafted in the chat. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "search",
+      "category": "sales",
+      "tags": [
+        "sales",
+        "research"
+      ]
+    },
+    {
+      "id": "churn-risk",
+      "title": "Clients at risk",
+      "summary": "Monday: customers with failed payments, downgrades or cancellations.",
+      "description": "Every Monday. In Stripe, find customers with a failed payment, a downgrade or a cancelled subscription in the last week. Add clients we haven't heard from in a month (the mailbox, if connected). List them with a suggested check-in.",
+      "icon": "risk",
+      "category": "sales",
+      "tags": [
+        "sales",
+        "weekly"
+      ],
+      "requires": [
+        "stripe"
+      ]
+    },
+    {
+      "id": "contract-signatures",
+      "title": "Waiting for signatures",
+      "summary": "Checks documents out for signature and asks before chasing.",
+      "description": "Once a day. Check SignWell for documents out for signature. After three days unsigned, ask me whether to send the signer SignWell's reminder — send it only after I say yes. Tell me when a document is fully signed.",
+      "icon": "document",
+      "category": "sales",
+      "tags": [
+        "sales"
+      ],
+      "requires": [
+        "signwell"
+      ]
+    },
+    {
+      "id": "shop-pulse",
+      "title": "Daily store pulse",
+      "summary": "Each morning: yesterday's sales vs. the usual, only when something's off.",
+      "description": "Each morning. Get yesterday's totals from Shopify (orders, revenue, average order) and add them to the daily log in your notes. Compare with the same weekday over the last four weeks of that log. Tell me only when one is more than 30% off, with the likely reason (a product, a channel, refunds).",
+      "icon": "trend",
+      "category": "shop",
+      "tags": [
+        "shop"
+      ],
+      "requires": [
+        "shopify"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "stockout-forecast",
+      "title": "Stockout forecast",
+      "summary": "Daily: products that will sell out before restock, with a draft order.",
+      "description": "Once a day. Log each product's stock from Shopify in your notes; the selling rate is the drop over the last 14 days. When days of stock left fall below the supplier's lead time (lead times in your notes, from memory_search or the supplier files), tell me and write a draft purchase order to `Purchasing/PO-YYYY-MM-DD.md`.",
+      "icon": "warning",
+      "category": "shop",
+      "tags": [
+        "shop",
+        "stock"
+      ],
+      "requires": [
+        "shopify"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "stuck-orders",
+      "title": "Stuck orders",
+      "summary": "Orders unfulfilled after 48 hours or still unpaid.",
+      "description": "Twice a day. Check Shopify for orders unfulfilled after 48 hours or still unpaid. Tell me which, with the reason if the order shows one.",
+      "icon": "alert",
+      "category": "shop",
+      "tags": [
+        "shop"
+      ],
+      "requires": [
+        "shopify"
+      ]
+    },
+    {
+      "id": "bestsellers",
+      "title": "Rising products",
+      "summary": "Weekly: what's selling faster or slower than usual, with an idea for each.",
+      "description": "Once a week. From the daily sales log in your notes (build it from Shopify orders each day), compare each product's week with its last four. List those more than 30% up or down, with an idea for each — restock, promote, or let go.",
+      "icon": "growth",
+      "category": "shop",
+      "tags": [
+        "shop",
+        "weekly"
+      ],
+      "requires": [
+        "shopify"
+      ]
+    },
+    {
+      "id": "payment-issues",
+      "title": "Failed payments and disputes",
+      "summary": "Disputes as they come, with the deadline and evidence; failed payments for key clients.",
+      "description": "Twice a day. Check Stripe / PayPal for new disputes and chargebacks: the amount, the customer, the deadline to respond and the evidence to gather. Failed payments only for clients marked important in your notes.",
+      "icon": "billing",
+      "category": "money",
+      "tags": [
+        "money"
+      ],
+      "requires": [
+        "stripe",
+        "paypal"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "overdue-invoices",
+      "title": "Chase overdue invoices",
+      "summary": "At 7, 14 and 21 days overdue, a reminder that gets firmer — you approve each.",
+      "description": "Once a day. Track unpaid invoices in Stripe / PayPal. At seven, fourteen and twenty-one days overdue, write a reminder that gets firmer each time — create_draft if a mailbox is connected, otherwise in the chat. Never use Stripe's or PayPal's own send-reminder.",
+      "icon": "invoice",
+      "category": "money",
+      "tags": [
+        "money"
+      ],
+      "requires": [
+        "stripe",
+        "paypal"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "cash-weekly",
+      "title": "Weekly cash snapshot",
+      "summary": "Monday: money in, refunds, payouts and the change vs. last week.",
+      "description": "Monday morning. From Stripe / PayPal / Shopify (whichever are connected): money in, refunds, payouts, and the change against the previous week, in a few lines — even in a flat week.",
+      "icon": "money",
+      "category": "money",
+      "tags": [
+        "money",
+        "weekly"
+      ],
+      "requires": [
+        "stripe",
+        "paypal",
+        "shopify"
+      ]
+    },
+    {
+      "id": "ad-anomalies",
+      "title": "Ad spend out of line",
+      "summary": "Daily check; tells you only when a campaign overspends or underdelivers.",
+      "description": "Once a day. For each active campaign in Meta Ads / Google Ads, compare spend pace with its budget and cost per result with its own 14-day average. Tell me when pace is more than 20% over budget or cost per result more than 40% above average, with what to change. Only propose — never pause, edit or rebudget a campaign.",
+      "icon": "money",
+      "category": "marketing",
+      "tags": [
+        "marketing",
+        "ads"
+      ],
+      "requires": [
+        "meta-ads",
+        "google-ads"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "ads-weekly",
+      "title": "Weekly ad review",
+      "summary": "Monday: what worked, what's wearing out, what to pause or scale.",
+      "description": "Each Monday. Review the last seven days in Meta Ads / Google Ads: spend and return by campaign; ads wearing out (frequency above 3 and click-through down more than 25% week on week); what to pause or scale. One short message, proposals only.",
+      "icon": "analytics",
+      "category": "marketing",
+      "tags": [
+        "marketing",
+        "ads",
+        "weekly"
+      ],
+      "requires": [
+        "meta-ads",
+        "google-ads"
+      ]
+    },
+    {
+      "id": "traffic-anomalies",
+      "title": "Traffic out of line",
+      "summary": "Each morning; speaks only when visits or conversions are well off normal.",
+      "description": "Each morning. Compare yesterday's visits and conversions in GA4 / Amplitude with the same weekday over the last four weeks. Tell me when either is more than 30% off, with the likely cause (a source, a page, a campaign).",
+      "icon": "activity",
+      "category": "marketing",
+      "tags": [
+        "marketing",
+        "analytics"
+      ],
+      "requires": [
+        "ga4",
+        "amplitude"
+      ]
+    },
+    {
+      "id": "funnel-drop",
+      "title": "Funnel drops",
+      "summary": "Tells you when a step in your key funnel drops sharply.",
+      "description": "Once a day. The key funnel is in your notes (ask once which). In Amplitude, compare each step's conversion with its four-week average; tell me when a step is more than 20% lower.",
+      "icon": "activity",
+      "category": "marketing",
+      "tags": [
+        "marketing",
+        "analytics"
+      ],
+      "requires": [
+        "amplitude"
+      ]
+    },
+    {
+      "id": "campaign-results",
+      "title": "Campaign results",
+      "summary": "Two days after a send: opens, clicks, revenue vs. usual, and one lesson.",
+      "description": "Once a day, look for campaigns sent two days ago in Klaviyo / Mailchimp. Report opens, clicks, revenue and unsubscribes against the average of the last five campaigns, and one lesson for next time.",
+      "icon": "megaphone",
+      "category": "marketing",
+      "tags": [
+        "marketing"
+      ],
+      "requires": [
+        "klaviyo",
+        "mailchimp"
+      ]
+    },
+    {
+      "id": "list-health",
+      "title": "List health",
+      "summary": "Monthly: list growth, unsubscribes and bounces, flagged when unusual.",
+      "description": "Monthly. In Klaviyo / Mailchimp, check net list growth, unsubscribes and bounces. Tell me when growth is negative or unsubscribes or bounces are more than twice the three-month average.",
+      "icon": "pulse",
+      "category": "marketing",
+      "tags": [
+        "marketing",
+        "monthly"
+      ],
+      "requires": [
+        "klaviyo",
+        "mailchimp"
+      ]
+    },
+    {
+      "id": "page-health",
+      "title": "Key pages checked",
+      "summary": "Weekly: broken links, missing titles or pages hidden from search.",
+      "description": "Once a week. The key pages are in your notes (ask once). Scrape each with Firecrawl: broken links, missing or changed titles, pages marked noindex. Tell me what's new since last week.",
+      "icon": "eye",
+      "category": "marketing",
+      "tags": [
+        "marketing"
+      ],
+      "requires": [
+        "firecrawl"
+      ]
+    },
+    {
+      "id": "mentions",
+      "title": "Mentions worth answering",
+      "summary": "Twice a day: mentions that deserve a reply, with one drafted.",
+      "description": "Twice a day. Read new mentions and replies on X since the last run. Pick the ones that deserve an answer (a question, a customer, someone notable per memory_search) and draft a reply in the chat for me to post. Ignore the rest.",
+      "icon": "message",
+      "category": "content",
+      "tags": [
+        "content",
+        "social"
+      ],
+      "requires": [
+        "x"
+      ]
+    },
+    {
+      "id": "content-calendar",
+      "title": "Content calendar check",
+      "summary": "Friday: what was published, what slipped, what's due next week.",
+      "description": "Friday. The content calendar's location is in your notes (ask once — a Notion database or an Airtable base). Report what was published, what slipped, what's due next week.",
+      "icon": "calendar",
+      "category": "content",
+      "tags": [
+        "content",
+        "weekly"
+      ],
+      "requires": [
+        "notion",
+        "airtable"
+      ]
+    },
+    {
+      "id": "new-errors",
+      "title": "New errors",
+      "summary": "New or spiking errors, with how many users and a first guess at the cause.",
+      "description": "Every two hours in working hours (set_reminder). In Sentry, find issues first seen since the last run, or with more than three times their 7-day hourly average. Tell me how many users each hits and a first guess at the cause (stack trace, recent merges on GitHub if connected).",
+      "icon": "warning",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "ops"
+      ],
+      "requires": [
+        "sentry"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "failed-deploys",
+      "title": "Failed builds and deploys",
+      "summary": "When a CI run or deploy fails: what broke, the relevant part of the log, and when it's fixed.",
+      "description": "Every hour in working hours (set_reminder). With GitHub's Actions tools, list workflow runs on the main branches since the last run (keep the last run seen in your notes). When a build or deploy job fails, tell me which workflow, which commit and who pushed it, with the relevant lines of the failed job's log; tell me again when the next run of that workflow passes. Needs GitHub's Capabilities set to include Actions ('+ Actions / CI' or 'Everything'); if the Actions tools aren't there, say so once and stop.",
+      "icon": "deploy",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "ops"
+      ],
+      "requires": [
+        "github"
+      ]
+    },
+    {
+      "id": "review-queue",
+      "title": "Review queue",
+      "summary": "Each morning: PRs waiting on your review, and yours waiting on others.",
+      "description": "Each morning. On GitHub, list pull requests requesting my review for more than a day, and mine waiting on someone else's review.",
+      "icon": "tasks",
+      "category": "dev",
+      "tags": [
+        "dev"
+      ],
+      "requires": [
+        "github"
+      ]
+    },
+    {
+      "id": "what-shipped",
+      "title": "What shipped",
+      "summary": "Each morning: yesterday's merges and releases in plain words.",
+      "description": "Each morning. Read yesterday's merged pull requests and releases on GitHub and write what shipped in plain words, for people who don't read commit messages.",
+      "icon": "ship",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "report"
+      ],
+      "requires": [
+        "github"
+      ]
+    },
+    {
+      "id": "security-advisories",
+      "title": "Security advisories",
+      "summary": "Weekly: critical advisories for your dependencies, with the fix.",
+      "description": "Once a week. Check GitHub's Dependabot alerts on the repositories for critical and high ones, with the fix. Needs GitHub's Capabilities set to 'Everything'; if the Dependabot tools aren't there, tell me once which setting to change, then stop.",
+      "icon": "security",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "weekly"
+      ],
+      "requires": [
+        "github"
+      ]
+    },
+    {
+      "id": "standup-digest",
+      "title": "Standup digest",
+      "summary": "Before standup: what moved, what's blocked and what's next, per person.",
+      "description": "Before the daily standup (its time is in your notes; ask once). Read Linear / Jira issues and GitHub activity since the last standup: moved, blocked, next — per person.",
+      "icon": "board",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "team"
+      ],
+      "requires": [
+        "linear",
+        "github",
+        "atlassian",
+        "clickup"
+      ]
+    },
+    {
+      "id": "site-health",
+      "title": "Is the site up",
+      "summary": "A few times a day; tells you right away if the site is down or slow.",
+      "description": "Four times a day. The main URL is in your notes (ask once). Fetch it with Firecrawl. Tell me right away if it fails or takes more than 3 seconds on two checks in a row, and when it's back.",
+      "icon": "shield",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "ops"
+      ],
+      "requires": [
+        "firecrawl"
+      ]
+    },
+    {
+      "id": "database-limits",
+      "title": "Database limits",
+      "summary": "Daily: database size and usage vs. plan limits, before a limit is hit.",
+      "description": "Once a day. Check database size and usage against the plan's limits in Supabase / Neon. Warn at 80% of any limit.",
+      "icon": "activity",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "ops"
+      ],
+      "requires": [
+        "supabase",
+        "neon"
+      ]
+    },
+    {
+      "id": "team-pulse",
+      "title": "Weekly team pulse",
+      "summary": "Weekly: what's moving, stuck and coming up, one line per person or project.",
+      "description": "Once a week. Read the team's connected board (Notion, Todoist, Trello, Monday, Airtable, Linear or Jira): what moved, what's stuck (same status for seven days by its last-updated date), what's coming up — one line per person or project.",
+      "icon": "team",
+      "category": "team",
+      "tags": [
+        "team",
+        "weekly"
+      ],
+      "requires": [
+        "notion",
+        "todoist",
+        "trello",
+        "monday",
+        "airtable",
+        "linear",
+        "atlassian",
+        "clickup"
+      ]
+    },
+    {
+      "id": "board-overdue",
+      "title": "Overdue on the board",
+      "summary": "Each morning: overdue and due-this-week items, grouped by owner.",
+      "description": "Each morning. On the team's connected board (Notion, Todoist, Trello, Monday, Airtable, Linear or Jira), list items overdue or due this week, grouped by owner.",
+      "icon": "board",
+      "category": "team",
+      "tags": [
+        "team",
+        "tasks"
+      ],
+      "requires": [
+        "notion",
+        "todoist",
+        "trello",
+        "monday",
+        "airtable",
+        "linear",
+        "atlassian",
+        "clickup"
+      ]
+    },
+    {
+      "id": "wiki-changes",
+      "title": "What changed in the wiki",
+      "summary": "Weekly: new pages and comments waiting for your answer.",
+      "description": "Once a week. In Notion, list pages created in the last seven days and comments that mention me or wait for my answer.",
+      "icon": "docs",
+      "category": "team",
+      "tags": [
+        "team",
+        "weekly"
+      ],
+      "requires": [
+        "notion"
+      ]
+    },
+    {
+      "id": "monthly-update",
+      "title": "Monthly update draft",
+      "summary": "At month end, a draft update for the team or investors.",
+      "description": "On the last working day of the month. Draft an update from what's connected — revenue (Stripe), traffic (GA4), what shipped (GitHub / Linear) — plus tasks that reached Done this month. Save it to `Reports/update-YYYY-MM.md` and tell me it's there.",
+      "icon": "report",
+      "category": "team",
+      "tags": [
+        "team",
+        "report",
+        "monthly"
+      ],
+      "requires": [
+        "stripe",
+        "ga4",
+        "github",
+        "linear"
+      ]
+    },
+    {
+      "id": "competitor-prices",
+      "title": "Competitor prices",
+      "summary": "Daily: competitor prices for products you name, only when one changes.",
+      "description": "Once a day. The competitors' product pages to watch are in your notes (ask once). Scrape each and compare the price with the last one noted. Tell me only when one changes.",
+      "icon": "watch",
+      "category": "research",
+      "tags": [
+        "research"
+      ],
+      "requires": [
+        "parallel",
+        "firecrawl"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "competitor-launches",
+      "title": "Competitor launches",
+      "summary": "Weekly: what competitors launched or changed since last time.",
+      "description": "Once a week. The competitors are in your notes (ask once). Check their sites, blogs and announcements via web search / scraping, and tell me only what changed since last week's notes. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "monitor",
+      "category": "research",
+      "tags": [
+        "research",
+        "weekly"
+      ]
+    },
+    {
+      "id": "industry-news",
+      "title": "Industry news, filtered",
+      "summary": "Weekly: the few stories that matter to this business.",
+      "description": "Once a week. Search the web for news in the business's field (memory_search 'business'). Pick the two or three stories that matter to us, each with why — not what's trending. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "search",
+      "category": "research",
+      "tags": [
+        "research",
+        "weekly"
+      ]
+    },
+    {
+      "id": "reputation",
+      "title": "What people say about us",
+      "summary": "Weekly: new reviews, threads and articles about the business, with tone.",
+      "description": "Once a week. Search the web for new reviews, forum threads and articles mentioning the business by name. List them with the tone of each and anything that needs an answer. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "search",
+      "category": "research",
+      "tags": [
+        "research",
+        "weekly"
+      ]
+    },
+    {
+      "id": "supplier-watch",
+      "title": "Supplier watch",
+      "summary": "Weekly: restocks, price or lead-time changes at your suppliers.",
+      "description": "Once a week. The suppliers and their product pages are in your notes (ask once, or take them from the supplier files). Check each for restocks, price changes and lead-time changes; tell me only on a change, and update the lead times Stockout forecast uses.",
+      "icon": "refresh",
+      "category": "research",
+      "tags": [
+        "research",
+        "stock"
+      ],
+      "requires": [
+        "parallel",
+        "firecrawl"
+      ]
+    },
+    {
+      "id": "policy-changes",
+      "title": "Platform policy changes",
+      "summary": "Monthly: policy or pricing changes from platforms you depend on.",
+      "description": "Monthly. Search for policy and pricing changes from the platforms the business depends on (the connected integrations and those in memory) that would affect us. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "shield",
+      "category": "research",
+      "tags": [
+        "research",
+        "monthly"
+      ]
+    },
+    {
+      "id": "opportunities",
+      "title": "Tenders and opportunities",
+      "summary": "Weekly: new tenders, grants or calls that match what you do.",
+      "description": "Once a week. Search for new tenders, grants, calls or job posts matching what the business does (memory_search 'business'), with deadlines. Search with Parallel's tools when it's connected (better results), otherwise your built-in web search.",
+      "icon": "rocket",
+      "category": "research",
+      "tags": [
+        "research",
+        "weekly"
+      ]
+    },
+    {
+      "id": "weather-morning",
+      "title": "Morning weather",
+      "summary": "Each morning: today's weather where you are and what it means for the day.",
+      "description": "Every morning at about 7:00 their time, look up today's forecast for where they are with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search). Their place comes from memory (what they said about where they live or are this week); if you don't know it, ask once and save the answer with memory_note. Their time zone is in MY_SETTINGS. Send two lines: the temperature range, rain or snow and when, wind if strong — and one practical note (umbrella, layers, a good hour for a walk). On a plain, unremarkable day keep it to one line.",
+      "icon": "weather",
+      "category": "life",
+      "tags": [
+        "weather",
+        "daily"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "weekend-weather",
+      "title": "Weekend weather and a plan",
+      "summary": "Friday afternoon: the weekend's weather, with one idea that fits it.",
+      "description": "Every Friday around 15:00 their time, look up Saturday's and Sunday's forecast for where they are with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search). Their place comes from memory (what they said about where they live or are this week); if you don't know it, ask once and save the answer with memory_note. Their time zone is in MY_SETTINGS. Send the two days in a line each, then one idea that suits the weather (a sunny walk, a museum on a rainy day, a café with a terrace). Never the same idea two weeks running — keep past ones in your notes.",
+      "icon": "sun",
+      "category": "life",
+      "tags": [
+        "weather",
+        "weekly"
+      ]
+    },
+    {
+      "id": "good-news",
+      "title": "Something good",
+      "summary": "Once a day, one real piece of good news, with its source.",
+      "description": "Once a day at a quiet moment (late morning their time), find one recent, real, uplifting story with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search): science, kindness, nature, a small win — published in the last few days by a reputable outlet. Send one or two sentences and the link. Never politics, tragedy with a silver lining, or anything unverified; never the same story twice (keep links in your notes). If nothing good and fresh turns up, send nothing.",
+      "icon": "star",
+      "category": "life",
+      "tags": [
+        "news",
+        "daily"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "daily-fact",
+      "title": "A fact about your topic",
+      "summary": "Every day, one surprising, checked fact about a topic you choose.",
+      "description": "Ask once which topic(s) they'd enjoy facts about (space, history, coffee, their industry…) and save the answer with memory_note. Then every day at a calm hour, find one surprising fact on that topic with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search), check it against a second source, and send it in two sentences with a link. Rotate topics if they gave several; never repeat a fact (keep them in your notes).",
+      "icon": "book",
+      "category": "life",
+      "tags": [
+        "learning",
+        "daily"
+      ]
+    },
+    {
+      "id": "word-of-the-day",
+      "title": "Word of the day",
+      "summary": "A useful word or phrase in the language you're learning, with an example.",
+      "description": "Ask once which language they're learning and their level, and save it with memory_note. Each weekday morning send one useful word or short phrase in that language: the word, its meaning, how to say it, and one natural example sentence — at their level, never repeating a word (keep the list in your notes). Mix everyday words with ones from their work.",
+      "icon": "message",
+      "category": "life",
+      "tags": [
+        "learning",
+        "language"
+      ]
+    },
+    {
+      "id": "on-this-day",
+      "title": "On this day",
+      "summary": "Each morning, one thing that happened on today's date — tied to what you like.",
+      "description": "Each morning, look up an event, invention or birthday that happened on today's date with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search), picked to match their interests or their line of work (from memory). Send it in two sentences with the year and a link. Skip wars and disasters unless they asked for history in full.",
+      "icon": "calendar",
+      "category": "life",
+      "tags": [
+        "history",
+        "daily"
+      ]
+    },
+    {
+      "id": "weekend-ideas",
+      "title": "What's on this weekend",
+      "summary": "Thursday: three things worth doing near you this weekend.",
+      "description": "Every Thursday afternoon, look for events near where they are this weekend with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search): exhibitions, concerts, markets, talks, outdoor events. Their place comes from memory (what they said about where they live or are this week); if you don't know it, ask once and save the answer with memory_note. Their time zone is in MY_SETTINGS. Pick three that fit what you know they like (memory), each with the day, time, place, price if listed and a link. Say so if tickets are running out. Nothing that already happened, nothing you can't link.",
+      "icon": "rocket",
+      "category": "life",
+      "tags": [
+        "events",
+        "weekly"
+      ]
+    },
+    {
+      "id": "dinner-idea",
+      "title": "Dinner idea",
+      "summary": "Weekday afternoons: one simple dinner idea that fits your diet and the season.",
+      "description": "On weekdays around 16:00 their time, suggest one dinner: the dish, roughly how long it takes, and the 5–8 ingredients. Fit what you know from memory (diet, allergies, what they dislike, how much time they have) and the season. Ask once about diet and allergies if you don't know, and save the answer with memory_note. Don't repeat a dish within three weeks (keep them in your notes); if they say they're eating out, skip that day.",
+      "icon": "sun",
+      "category": "life",
+      "tags": [
+        "food",
+        "daily"
+      ]
+    },
+    {
+      "id": "weekly-read",
+      "title": "Weekly read",
+      "summary": "Once a week, one article worth your time on what you're into.",
+      "description": "Every Saturday morning, find one longer article, essay or interview from the past two weeks on their interests (memory; ask once if unknown) with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search). Prefer quality outlets and original reporting. Send the title, the outlet, why it's worth 15 minutes in one sentence, and the link. Never paywalled when an open one of the same quality exists; never one you sent before.",
+      "icon": "book",
+      "category": "life",
+      "tags": [
+        "reading",
+        "weekly"
+      ]
+    },
+    {
+      "id": "occasions",
+      "title": "Birthdays and occasions",
+      "summary": "A week ahead: birthdays and anniversaries you mentioned, with a gift idea.",
+      "description": "Keep a list in your notes of the birthdays, name days and anniversaries they've mentioned (memory; and calendar events named like a birthday if a calendar integration is connected). A week before each, remind them with who, the date and one gift or gesture idea that fits that person from what they've told you; again the day before if they haven't said it's handled. Ask once for missing dates of people they talk about often.",
+      "icon": "bell",
+      "category": "life",
+      "tags": [
+        "people",
+        "reminders"
+      ],
+      "recommended": true
+    },
+    {
+      "id": "break-nudge",
+      "title": "Take a break",
+      "summary": "Workday afternoons: a short break suggestion when you've been at it for hours.",
+      "description": "On workdays at about 14:30 their time, if they've been active in the chat or the task board through the day (or the calendar is packed, if connected), suggest one 3–5 minute break: a short walk, a stretch, water, eyes off the screen. One line, kind, never preachy; a different idea each day. On days they're clearly off or already took a break they mentioned, send nothing.",
+      "icon": "clock",
+      "category": "life",
+      "tags": [
+        "wellbeing",
+        "daily"
+      ]
+    },
+    {
+      "id": "weekly-wins",
+      "title": "This week's wins",
+      "summary": "Friday evening: three things that went well this week.",
+      "description": "Every Friday around 17:00 their time, look at what moved to Done on the task board this week (task tools: list_tasks), what they told you went well in the chat, and the routines that delivered. Send the three best wins in a line each, specific and warm — not a status report. If the week was thin, name one thing that did move and leave it there.",
+      "icon": "trend",
+      "category": "life",
+      "tags": [
+        "wellbeing",
+        "weekly"
+      ]
+    },
+    {
+      "id": "night-sky",
+      "title": "Night sky",
+      "summary": "A heads-up for a clear night with something worth looking up at.",
+      "description": "Once a day in the afternoon, check with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search) for a sky event where they are tonight — a meteor shower peak, a full or super moon, a visible planet or eclipse, the ISS passing — and whether the night will be clear. Their place comes from memory (what they said about where they live or are this week); if you don't know it, ask once and save the answer with memory_note. Their time zone is in MY_SETTINGS. Send a message only when both line up: what, when to look, which direction. Stay silent otherwise.",
+      "icon": "eye",
+      "category": "life",
+      "tags": [
+        "nature",
+        "alerts"
+      ]
+    },
+    {
+      "id": "local-news",
+      "title": "Your city this week",
+      "summary": "Monday: the three local stories that matter where you live.",
+      "description": "Every Monday morning, find the week's most useful local news for where they live with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search): transport changes, road works, new places opening, local events, weather warnings. Their place comes from memory (what they said about where they live or are this week); if you don't know it, ask once and save the answer with memory_note. Their time zone is in MY_SETTINGS. Send three items, one line each with a link. Skip crime and politics unless it changes their week.",
+      "icon": "megaphone",
+      "category": "life",
+      "tags": [
+        "news",
+        "weekly"
+      ]
+    },
+    {
+      "id": "long-weekends",
+      "title": "Long weekends ahead",
+      "summary": "A month ahead: public holidays near weekends, and days off that would stretch them.",
+      "description": "On the first of each month, look up the public holidays in their country for the next two months with a web search (Parallel's tools when it's connected — better results — otherwise your built-in web search) (country from memory or their time zone; ask once if unclear). For each that sits next to a weekend, say how many days off would make a long break and suggest it, a month ahead so there's time to plan. Stay silent in months with none.",
+      "icon": "calendar",
+      "category": "life",
+      "tags": [
+        "holidays",
+        "monthly"
+      ]
+    },
+    {
+      "id": "form-leads",
+      "title": "New form submissions",
+      "summary": "New answers to your forms, sorted: leads first, with a reply drafted.",
+      "description": "Twice a day (late morning and late afternoon their time), list new responses since the last check with the Tally tools; keep the last-seen response per form in your notes. Group them: a lead or an enquiry first (name, company, what they want, how to reach them), then sign-ups and feedback in one line each. For each lead, offer a short reply draft — never send it. Stay silent when nothing new came in.",
+      "icon": "users",
+      "category": "sales",
+      "tags": [
+        "forms",
+        "leads"
+      ],
+      "requires": [
+        "tally"
+      ]
+    },
+    {
+      "id": "meeting-actions",
+      "title": "Action items from meetings",
+      "summary": "After each meeting: who does what by when, ready to put on the board.",
+      "description": "A few times a day, list meetings that ended since the last check with the connected notetaker's tools — Granola, Fireflies, Fathom, Otter, Read AI or Krisp (keep the last one seen in your notes). For each, pull the action items from the notes and transcript: what, who owns it, by when if said. Send them in one message per meeting, with the meeting's name; offer to add the person's own items to the task board (task tools) — add only after a yes. Skip meetings with no action items, and never quote private small talk.",
+      "icon": "checklist",
+      "category": "calendar",
+      "tags": [
+        "meetings",
+        "tasks"
+      ],
+      "requires": [
+        "granola",
+        "fireflies",
+        "fathom",
+        "otter",
+        "readai",
+        "krisp"
+      ]
+    },
+    {
+      "id": "feedback-digest",
+      "title": "Feedback from your forms",
+      "summary": "Monday: what people said in your surveys and feedback forms last week.",
+      "description": "Every Monday morning, read last week's responses to the feedback and survey forms with the Tally tools (ask once which forms count as feedback and keep the list in your notes). Sum it up in five lines: the score or overall tone if there's a rating, the two or three themes that came up most, one quote worth reading as written, and anything that needs a reply. Stay silent on a week with no responses.",
+      "icon": "message",
+      "category": "sales",
+      "tags": [
+        "forms",
+        "feedback"
+      ],
+      "requires": [
+        "tally"
+      ]
+    }
+  ]
+}

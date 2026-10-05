@@ -1,17 +1,16 @@
-import { Lock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useBranding } from './workspace/identity';
-// AccessDenied currently doesn't render a brand image (we redesigned to a
-// neutral Lock icon), so no <img> swap needed here.
+import { useBranding, BrandedImage } from './workspace/identity';
+import TileBanner from './workspace/views/TileBanner.jsx';
 
 /**
  * Shown after a successful Google OAuth round-trip when the user's email
- * isn't on the IDE_ALLOWED_EMAILS whitelist. Sparse single-card layout —
- * one icon, one heading, one explanation, one CTA. Lots of whitespace.
+ * isn't on the IDE_ALLOWED_EMAILS whitelist. The same tile as the sign-in
+ * page (banner, logo on its edge, left-aligned text, one quiet button), so
+ * the two read as one screen in two states.
  */
 export default function AccessDenied() {
   const { user, signOut } = useAuth();
-  const { title } = useBranding();
+  const { title, iconUrl } = useBranding();
 
   // Dev mode: AuthContext returns no user, so /auth/session DELETE is moot.
   // Fake email so the UI has something to display, and route Sign out back
@@ -32,43 +31,41 @@ export default function AccessDenied() {
         fontFeatureSettings: '"cv11", "ss01", "ss03", "calt"',
       }}
     >
-      <div className="w-full max-w-[420px]">
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-[0_2px_4px_rgba(0,0,0,0.04),0_24px_60px_-20px_rgba(28,27,24,0.16)]">
-          <div className="flex flex-col items-center gap-7 px-10 py-12">
-            <div className="flex size-14 items-center justify-center rounded-2xl border border-border/70 bg-muted/40">
-              <Lock className="size-5 text-muted-foreground/70" strokeWidth={1.5} />
-            </div>
+      <div className="w-full max-w-[380px] overflow-hidden rounded-[6px] border border-border/60 bg-card">
+        {/* The sign-in wave, knocked out of line: same card, it didn't work. */}
+        <TileBanner abstract="wave-fault" seed={title || 'sign-in'} soft className="h-28" />
+        <div className="flex flex-col gap-5 px-7 pb-7">
+          <BrandedImage
+            src={iconUrl}
+            alt={workspaceName}
+            className="relative -mt-7 size-14 rounded-[6px] bg-card object-cover ring-1 ring-foreground/10"
+          />
 
-            <div className="flex flex-col gap-2.5 text-center">
-              <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-foreground">
-                You don't have access
-              </h1>
-              <p className="text-[13.5px] leading-relaxed text-muted-foreground">
-                {displayEmail ? (
-                  <>
-                    Ask an admin to add{' '}
-                    <span className="font-mono text-foreground/90">{displayEmail}</span>
-                    {' '}to {workspaceName}, or sign in with a different account.
-                  </>
-                ) : (
-                  <>This account isn't on the {workspaceName} access list.</>
-                )}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="mt-1 inline-flex items-center justify-center rounded-xl bg-foreground/95 px-5 py-2.5 text-[13px] font-medium text-background transition-all hover:bg-foreground active:scale-[0.99]"
-            >
-              Sign in with another account
-            </button>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-foreground/90">
+              You don't have access
+            </h1>
+            <p className="text-[13px] leading-relaxed text-muted-foreground/80">
+              {displayEmail ? (
+                <>
+                  Ask an admin to add{' '}
+                  <span className="font-medium text-foreground/85">{displayEmail}</span>
+                  {' '}to {workspaceName}, or sign in with a different account.
+                </>
+              ) : (
+                <>This account isn't on the {workspaceName} access list.</>
+              )}
+            </p>
           </div>
-        </div>
 
-        <p className="mt-7 text-center text-[11.5px] text-muted-foreground/55">
-          {workspaceName}
-        </p>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex w-full items-center justify-center rounded-[6px] border border-border/70 bg-card px-4 py-2.5 text-[13.5px] font-medium text-foreground/85 transition-colors hover:border-foreground/30 hover:text-foreground"
+          >
+            Sign in with another account
+          </button>
+        </div>
       </div>
     </main>
   );

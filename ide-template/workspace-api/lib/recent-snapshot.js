@@ -30,7 +30,7 @@ import { existsSync, readFileSync, statSync, readdirSync, mkdirSync, unlinkSync,
 import { join } from 'node:path';
 import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
-import { getTeamMode, primaryAdminSlug } from './team.js';
+import { getTeamMode, primaryAdminSlug, dmOwnerSlug } from './team.js';
 import { USERS_DIR } from './scope-rule.js';
 
 const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
@@ -203,6 +203,17 @@ function renderSnapshot(cfg, channel, messages, maxMessages, maxChars, updatedAt
   // pre-dates the fix or arrives via another path).
   if (channel === 'telegram') {
     messages = messages.filter(m => !String(m.chat_id == null ? '' : m.chat_id).startsWith('-'));
+    // Team mode: the log also holds teammates' DMs with the same bot, and this
+    // file is the OPERATOR's private card, loaded into the operator's prompt.
+    // Drop every chat a roster member other than the operator owns. Lines with
+    // no chat id and chats nobody claims stay (the operator's own history).
+    if (getTeamMode()) {
+      const op = primaryAdminSlug();
+      messages = messages.filter(m => {
+        const owner = m.chat_id == null ? null : dmOwnerSlug(m.chat_id);
+        return !owner || owner === op;
+      });
+    }
   }
   const head = buildHeader(cfg, messages.length, updatedAt);
   let body;

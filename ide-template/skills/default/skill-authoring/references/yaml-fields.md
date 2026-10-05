@@ -35,11 +35,11 @@ allowed-tools: mcp__shopify__list_orders, mcp__shopify__get_product
 Wildcards (`mcp__<server>__*`) are legit per Anthropic spec. Use them when the skill needs most of a server's tools; list explicit names when it needs only 2-3.
 
 ### `requires` (project-specific, this workspace only)
-For integration skills — declare which environment variables / integrations must be active for the skill to work. workspace-api's optional-skill installer uses this to decide whether to deploy the skill.
+For integration skills — name the integration the skill needs: its catalog id or the MCP server's name (never env vars). The optional-skill installer deploys the skill only when one of them is connected (a list is any-of).
 
 ```yaml
-requires: SHOPIFY_STORE_DOMAIN
-requires: [META_ACCESS_TOKEN, META_AD_ACCOUNT_ID]
+requires: shopify
+requires: [seedream, nano-banana]
 ```
 
 ### `tags` (project-specific, this workspace only)
@@ -70,7 +70,7 @@ When NOT:
 Gotcha: YAML array forms — `tags: [a, b]` (flow) and the block-style `tags:` + `  - a` / `  - b` both work. `tags: a, b` (unquoted CSV) parses as the single string `"a, b"` and you'll get one weird tag.
 
 ### `compatibility` (Anthropic spec)
-1–500 chars. Free-form description of environment requirements (intended product, system packages, network access). For our integration skills, prefer the workspace-specific `requires:` field above for env vars and use `compatibility:` for narrative context.
+1–500 chars. Free-form description of environment requirements (intended product, system packages, network access). For our integration skills, prefer the workspace-specific `requires:` field above for the integration and use `compatibility:` for narrative context.
 
 ```yaml
 compatibility: Requires Chromium installed in the container; network access to *.shopify.com.
@@ -98,6 +98,6 @@ For open-source skills. Common: `MIT`, `Apache-2.0`. Skip if the skill ships onl
 
 ## Format gotchas (silent killers)
 
-- **Opening delimiter must be exactly `---` on line 1.** A stray character (`d---`, `-` `-` `-`, BOM bytes) breaks YAML parsing → skill is invisible to CC's auto-discovery with no error. The 2026-05-15 `memory-cards/SKILL.md` outage was caused by `d---`.
+- **Opening delimiter must be exactly `---` on line 1.** A stray character (`d---`, `-` `-` `-`, BOM bytes) breaks YAML parsing → skill is invisible to CC's auto-discovery with no error. A default skill once went dark for 13 days over a stray `d---`.
 - **Don't quote the description** unless it contains special YAML characters. `description: "Helps with X"` is fine but unnecessary; just `description: Helps with X` works.
 - **Long descriptions on one line** are OK. YAML folds whitespace but DON'T put line breaks inside the description value — break the parse.

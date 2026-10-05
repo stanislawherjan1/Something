@@ -1,6 +1,6 @@
 ---
 name: email-write-protocol
-requires: email-imap
+requires: email
 description: How to send, reply, forward, archive, move, mark, or delete email on the user's behalf. Triggers on phrases like "send", "reply", "forward", "wyślij", "odpowiedz", "przekaż", "archive", "delete", "mark as read", or any request that mutates a mailbox. CRITICAL — every mutation requires explicit confirmation from the user before the tool fires. Read tools (`list_recent`, `search`, `read_message`, `download_attachment`) are NOT covered here and don't need confirmation. This skill governs only the write tools (`send_email`, `reply`, `forward`, `create_draft`, `archive`, `move`, `delete`, `mark_read`, `mark_unread`).
 allowed-tools: mcp__email__list_accounts, mcp__email__list_recent, mcp__email__search, mcp__email__read_message, mcp__email__download_attachment, mcp__email__send_email, mcp__email__reply, mcp__email__forward, mcp__email__create_draft, mcp__email__mark_read, mcp__email__mark_unread, mcp__email__archive, mcp__email__move, mcp__email__delete
 ---

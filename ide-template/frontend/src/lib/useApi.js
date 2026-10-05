@@ -122,7 +122,12 @@ export function useApi(url, init) {
 
   const reload = useCallback(() => {
     if (!url) return Promise.resolve(null);
-    return doFetch(url, initRef.current).catch(() => null);
+    // A reload means "something changed since": a fetch already in flight may
+    // have read the old state, so wait for it and fetch again rather than
+    // sharing its (possibly stale) answer.
+    const pending = inflight.get(url);
+    const run = () => doFetch(url, initRef.current).catch(() => null);
+    return pending ? pending.catch(() => null).then(run) : run();
   }, [url]);
 
   return { ...state, reload };
@@ -144,7 +149,10 @@ export function invalidate(url) {
  */
 export function refetch(url) {
   if (!url) return Promise.resolve(null);
-  return doFetch(url, undefined).catch(() => null);
+  // Same rule as reload(): never settle for a fetch that started before the change.
+  const pending = inflight.get(url);
+  const run = () => doFetch(url, undefined).catch(() => null);
+  return pending ? pending.catch(() => null).then(run) : run();
 }
 
 /**

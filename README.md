@@ -44,7 +44,7 @@ Your coworkers:
 - **Live on the web, in Chrome and on Telegram.** Pick any; same memory everywhere.
 - **Remember between sessions.** Markdown notes, a knowledge graph, recent threads.
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
-- **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups.
+- **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups. A Marketplace of ready-made routines shows what they can take on, with more for each tool you connect; add your own or edit any of them. Each morning they plan your day at 06:00 in your own time zone.
 - **Write their own playbooks.** A *skill* is a markdown file describing how to handle a recurring task, editable right from the UI.
 - **Keep the task list moving.** Your `Tasks.md` becomes a list or board view with owner, priority, and deadline, kept current as work progresses.
 - **Work with your whole team.** Turn on collaborative mode: everyone signs in with their own account and a private space beside the shared one, and your coworker routes routines, tasks, and messages to the right person.
@@ -175,6 +175,8 @@ Your coworker doesn't start from zero each conversation. A small markdown wiki u
 
 Open **AI Settings → Memory** to see it as a graph: cards (facts), topic pages (long-form), and the rolling snapshots, all linked. Click a node to open the file, or search to highlight. The bot maintains it itself: writing new facts after each session, promoting overgrown sections to their own pages, and reminding itself of past mistakes before it repeats them.
 
+**A new memory is on its way** (behind the `MEMORY_V4` flag, see [MEMORY.md](docs/MEMORY.md#memory-v4)): your coworker keeps every finished conversation, dated, and brings the few that matter into each answer instead of carrying everything in every message. The Memory screen shows what it's keeping track of right now, facts with the conversation each came from, topics, your preferences and rules, and a Privacy tab where you decide what the team may see. Admins move a workspace over from a banner, with a backup to download; routines move to a list of their own.
+
 Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern, and built in collaboration with [@jandziew](https://github.com/jandziew). Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
 
 <br/>
@@ -189,11 +191,11 @@ Inspired by [Karpathy's LLM-wiki](https://gist.github.com/karpathy/442a6bf555914
 
 **One-click — sign in, no keys to paste.** Two dozen provider-hosted MCP servers connect with a single popup: sign in, approve, done. No API keys, and nothing for whoever deploys the product to register — the workspace-api OAuth broker registers itself on the fly (Dynamic Client Registration) and completes the flow on the client's own domain.
 
-> Notion · Stripe · Linear · Airtable · Miro · monday.com · Todoist · Cal.com · Calendly · PayPal · Klaviyo · Mailchimp · Cloudflare · Atlassian (Jira/Confluence) · Sentry · Netlify · Neon · Supabase · Webflow · Canva · Zapier · Amplitude · Wix · Firecrawl · Parallel Search · Crypto.com
+> Notion · Stripe · Linear · Airtable · Miro · monday.com · Todoist · Cal.com · Calendly · PayPal · Klaviyo · Mailchimp · Cloudflare · Atlassian (Jira/Confluence) · Sentry · Netlify · Neon · Supabase · Webflow · Zapier · Amplitude · Wix · Firecrawl · Parallel Search · Crypto.com · ClickUp · WordPress.com · DeepL · Typeform · Tally · Granola · Fireflies · Fathom · Otter.ai · Read AI · Krisp
 
 **Bring your own credentials.** The rest paste a key, token, or file once — encrypted at rest:
 
-> Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · Substack · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
+> Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
 You activate each one from the Integrations dashboard, no redeploy, no `.env` editing. Credentials are encrypted at rest; removing an integration wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 

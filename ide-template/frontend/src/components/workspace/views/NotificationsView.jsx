@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import BotPicture from '../BotPicture.jsx';
 import { useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Check, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,8 +17,8 @@ import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity.jsx';
  * `ide:chat-select-session` window event that ChatPane listens for,
  * switching the right-pane Assistant chat to the auto-created session
  * that contains the bot's full message. The click also marks the
- * notification as read, which removes it from the inbox here and clears
- * the Sidebar's unread dot.
+ * notification as read: its red dot goes, the row turns quieter (it stays
+ * on the list), and the Sidebar's unread dot clears with the last one.
  *
  * Layout mirrors RemindersDashboard for visual consistency: shared
  * EditorHeader on top (no subtitle, action chips on the right), and
@@ -29,17 +30,17 @@ export default function NotificationsView({ sidebarOpen }) {
   const { isRead, markRead, markAllRead } = useNotificationReadState();
   const navigate = useNavigate();
 
+  // Read notifications stay on the list, quieter; new ones carry a red dot.
+  // Without the read ones there is nothing to tell the new ones apart from.
   const items = useMemo(
-    () =>
-      [...notifications]
-        .filter((n) => !isRead(n.id))
-        .sort((a, b) => (b.ts || '').localeCompare(a.ts || '')),
-    [notifications, isRead],
+    () => [...notifications].sort((a, b) => (b.ts || '').localeCompare(a.ts || '')),
+    [notifications],
   );
+  const unread = items.filter((n) => !isRead(n.id));
 
   const onOpen = (n) => {
     // A memory-write notification opens the memory page; a session notification
-    // opens that chat. Either way it's then marked read (leaves the inbox).
+    // opens that chat. Either way it's then marked read (loses its red dot).
     if (n.kind === 'memory') {
       navigate('/memory');
     } else if (n.meta?.session_id) {
@@ -61,12 +62,12 @@ export default function NotificationsView({ sidebarOpen }) {
         meta={(
           <div className="inline-flex items-center gap-2">
             <DesktopToggle desktop={desktop} />
-            {items.length > 0 && (
+            {unread.length > 0 && (
               <button
                 type="button"
-                onClick={() => markAllRead(items.map((n) => n.id))}
+                onClick={() => markAllRead(unread.map((n) => n.id))}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card px-2.5 py-1',
+                  'inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-card px-2.5 py-1',
                   'text-[11.5px] text-muted-foreground/80 transition-colors',
                   'hover:bg-muted/40 hover:text-foreground',
                 )}
@@ -79,9 +80,9 @@ export default function NotificationsView({ sidebarOpen }) {
         )}
       />
       <div className="flex flex-1 flex-col overflow-auto">
-        <div className="flex min-h-full flex-1 flex-col gap-7 px-6 pb-12 pt-2">
+        <div className="flex min-h-full flex-1 flex-col gap-7 px-6 pb-12 pt-5">
           {connecting && items.length === 0 ? (
-            <div className="flex flex-col overflow-hidden rounded-lg border border-border/60 bg-card divide-y divide-border/50">
+            <div className="flex flex-col divide-y divide-border/60 border-y border-border/60">
               <SkeletonRow />
               <SkeletonRow />
               <SkeletonRow />
@@ -89,9 +90,10 @@ export default function NotificationsView({ sidebarOpen }) {
           ) : items.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="flex flex-col gap-2">
+            // One list on hairlines, like Tasks and Routines — not a stack of cards.
+            <div className="flex flex-col divide-y divide-border/60 border-y border-border/60">
               {items.map((n) => (
-                <Row key={n.id} n={n} onOpen={() => onOpen(n)} />
+                <Row key={n.id} n={n} unread={!isRead(n.id)} onOpen={() => onOpen(n)} />
               ))}
             </div>
           )}
@@ -101,28 +103,28 @@ export default function NotificationsView({ sidebarOpen }) {
   );
 }
 
-function Row({ n, onOpen }) {
+function Row({ n, unread, onOpen }) {
   const { botAvatarUrl } = useBranding();
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group flex w-full items-start gap-3 rounded-md border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/20"
+      className="group flex w-full items-start gap-3 px-2 py-3.5 text-left transition-colors hover:bg-muted/30"
     >
-      <BrandedImage
-        src={botAvatarUrl}
-        fallback={BOT_FALLBACK}
-        alt=""
-        className="size-8 shrink-0 rounded-full object-cover ring-1 ring-foreground/10"
-      />
+      <span className="relative shrink-0">
+        <BotPicture className={cn('size-8 rounded-full ring-1 ring-foreground/10', !unread && 'opacity-60')} />
+        {unread && (
+          <span aria-label="New" className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-background" />
+        )}
+      </span>
       <div className="min-w-0 flex-1">
         {n.title ? (
-          <div className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">
+          <div className={cn('line-clamp-2 text-[13px] leading-snug', unread ? 'font-medium text-foreground/90' : 'text-foreground/60')}>
             {n.title}
           </div>
         ) : null}
         {n.body ? (
-          <div className="mt-0.5 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">
+          <div className={cn('mt-0.5 line-clamp-2 text-[12.5px] leading-relaxed', unread ? 'text-muted-foreground/80' : 'text-muted-foreground/55')}>
             {n.body}
           </div>
         ) : null}
@@ -136,7 +138,7 @@ function Row({ n, onOpen }) {
 
 function SkeletonRow() {
   return (
-    <div className="flex items-start gap-3 px-4 py-3">
+    <div className="flex items-start gap-3 px-2 py-3.5">
       <SkeletonCircle size="32px" />
       <div className="min-w-0 flex-1 space-y-2">
         <SkeletonLine width="60%" height="14px" />
@@ -153,7 +155,7 @@ function DesktopToggle({ desktop }) {
   if (permission === 'denied') {
     return (
       <span
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
+        className="inline-flex items-center gap-1.5 rounded-[6px] border border-border bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
         title="The browser is blocking desktop notifications for this site. Unblock in browser settings to enable."
       >
         <BellOff className="size-3.5" aria-hidden />
@@ -167,7 +169,7 @@ function DesktopToggle({ desktop }) {
         type="button"
         onClick={requestPermission}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground',
+          'inline-flex items-center gap-1.5 rounded-[6px] border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground',
           'transition-colors hover:bg-accent/40',
         )}
       >
@@ -184,7 +186,7 @@ function DesktopToggle({ desktop }) {
       onClick={() => setEnabled(!enabled)}
       title={enabled ? 'Click to disable desktop notifications' : 'Click to allow desktop notifications'}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] transition-colors',
+        'inline-flex items-center gap-1.5 rounded-[6px] border px-2.5 py-1 text-[11.5px] transition-colors',
         enabled
           ? 'border-border/70 bg-card text-foreground/85 hover:bg-muted/40'
           : 'border-dashed border-border/60 bg-background text-muted-foreground/75 hover:text-foreground/85',

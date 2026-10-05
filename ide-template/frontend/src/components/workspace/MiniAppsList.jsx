@@ -127,7 +127,7 @@ export default function MiniAppsList({ selected, onSelect, fileEventNonce, onCou
   return (
     <div className="flex flex-col gap-px pb-1">
       {error && (
-        <div className="mx-1 mb-1 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] leading-relaxed text-destructive">
+        <div className="mx-1 mb-1 rounded-[6px] border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] leading-relaxed text-destructive">
           {error}
         </div>
       )}

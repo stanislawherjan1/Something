@@ -62,7 +62,9 @@ defaults (`Workspace`/`bot`) are placeholders the user will replace.
 
 - `LEGACY_DRIVE_SYNC=true` — enables rclone Drive sync (for clients that pre-date the project-data volume model)
 - `LEGACY_CONFIG=true` — branding read-only via UI; managed via `.env` + `overrides/public/` + redeploy. Used by legacy clients pre-migration
-- `IDE_TIMEZONE=<IANA zone>` (e.g. `Europe/Berlin`, default `UTC`) — the workspace's local time. System rituals are scheduled in it (the morning planning fires at 06:00 local), and the usage-limit notice ("… is back at HH:MM") is rendered in it. An unknown zone name logs a warning and falls back to UTC. Set it before the first deploy: ritual reminders resolve their time only when first created, so on an existing workspace the already-scheduled rows keep their old hour until their `due` is corrected in `.reminders.json`.
+- `IDE_TIMEZONE=<IANA zone>` (e.g. `Europe/Berlin`, default `UTC`) — the fallback workspace time zone. An admin's **Default time zone** in Settings overrides it, and each person's own zone (Settings, or told to the bot) overrides both for their morning planning, which runs at 06:00 in that zone and follows a change at once. It still sets other system rituals and the usage-limit notice ("… is back at HH:MM"). An unknown zone name logs a warning and falls back to UTC. Rituals other than the morning planning resolve their time only when first created, so on an existing workspace they keep their old hour until their `due` is corrected in `.reminders.json`.
+
+- `MEMORY_V4=off|shadow|read|on` (default `off`) — memory v4 ([MEMORY.md](MEMORY.md#memory-v4)). `shadow` files conversations into the new memory in the background and shows admins the upgrade bar; the move from that bar switches the deployment to v4. `off` always wins (kill switch). `read` is for testing on the canary.
 
 ### Runtime secrets (Claude / Shopify / Meta / GA4 / Telegram / …)
 
@@ -430,6 +432,36 @@ cd clients/<your-client> && ./deploy.sh   # rebuild on the server, swap containe
 - Idempotent: safe to re-run if a deploy is interrupted.
 
 > Watch this repository's releases for security fixes. A public deployment that lags behind a published fix is exposed — a public patch is also a public disclosure.
+
+### Data migrations
+
+Each release carries its data migrations (`workspace-api/migrations/`, run by
+`lib/migrate.js`). **Structural** ones (directories, permissions, seeding a
+file next to an untouched source) apply by themselves at boot and are logged
+(`[workspace-api] migrations: …`). **Content** ones (moving or trimming what
+people wrote) never run by themselves: an admin starts them from the upgrade
+bar, or the operator from inside the container, as the workspace-api user:
+
+```bash
+node /opt/ide/workspace-api/bin/migrate.mjs status
+node /opt/ide/workspace-api/bin/migrate.mjs plan <id>      # dry run, written to the store
+node /opt/ide/workspace-api/bin/migrate.mjs apply <id>     # refused if the data changed since the plan
+node /opt/ide/workspace-api/bin/migrate.mjs rollback <id>  # restores the archive the apply took
+```
+
+Every apply first archives what it may touch into
+`/var/wsapi-store/migrations/` (outside `memory/`); a failed verify rolls back
+by itself. Archives are kept 30 days, then pruned nightly — after that a
+rollback is no longer possible.
+
+### Memory v4 embedder
+
+`deploy.sh` fetches the embedder model (multilingual-e5-small, int8 ONNX,
+~118 MB, pinned revision + sha256) on the deploy host into `models/` once and
+keeps it between deploys; the image copies it. If the fetch fails the deploy
+goes on and says so — memory v4 search then runs on BM25 alone until the next
+deploy. The embedder is a worker workspace-api forks when first needed (a few
+hundred MB of RAM while loaded, released after 30 idle minutes).
 
 ## Adding or removing a team member
 

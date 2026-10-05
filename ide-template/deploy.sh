@@ -332,6 +332,40 @@ scp apps/pdf-mcp/render.py           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/" 
 scp apps/pdf-mcp/house.css           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
 scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
+# Memory v4 embedder worker (forked by workspace-api; lib/embedder-client.js).
+# Three files, never a local node_modules (the image installs from the lock).
+ssh "$HETZNER_HOST" "rm -rf '$REMOTE_PATH/apps/embedder' && mkdir -p '$REMOTE_PATH/apps/embedder'" || exit 1
+scp apps/embedder/worker.mjs apps/embedder/package.json apps/embedder/package-lock.json "$HETZNER_HOST:$REMOTE_PATH/apps/embedder/" || exit 1
+
+# ─── Memory v4 embedder model (build-time embed) ─────────────────────────────
+# multilingual-e5-small, int8 ONNX, pinned by revision and checked by sha256 —
+# fetched HERE on the deploy host (the Docker build's network is not trusted to
+# reach a CDN, see the plugin clone above) and kept between deploys, so it is
+# downloaded once per server. Nothing is downloaded at run time. A failed fetch
+# does not fail the deploy: memory search then runs on BM25 alone (degraded,
+# measured 0.75 vs 0.80) and this says so loudly. The directory always exists
+# (models/.keep), so the Dockerfile COPY never breaks.
+EMBEDDER_MODEL_REV=761b726dd34fb83930e26aab4e9ac3899aa1fa78
+ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/models'" || exit 1
+scp models/.keep "$HETZNER_HOST:$REMOTE_PATH/models/" || exit 1
+if ! ssh "$HETZNER_HOST" "
+    set -e
+    d='$REMOTE_PATH/models/Xenova/multilingual-e5-small'
+    mkdir -p \"\$d/onnx\"
+    fetch() {
+        f=\"\$1\"; sum=\"\$2\"
+        if [ -f \"\$d/\$f\" ] && echo \"\$sum  \$d/\$f\" | sha256sum -c - >/dev/null 2>&1; then return 0; fi
+        curl -fsSL --retry 3 -o \"\$d/\$f.part\" \"https://huggingface.co/Xenova/multilingual-e5-small/resolve/$EMBEDDER_MODEL_REV/\$f\"
+        echo \"\$sum  \$d/\$f.part\" | sha256sum -c - >/dev/null
+        mv \"\$d/\$f.part\" \"\$d/\$f\"
+    }
+    fetch config.json               cb99455288675345e1a4f411438d5d0adbba5fbd3a67ea4fb03c015433b996c1
+    fetch tokenizer.json            0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39
+    fetch tokenizer_config.json     a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b
+    fetch onnx/model_quantized.onnx f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193
+"; then
+    echo -e "${YELLOW}  ⚠ Embedder model fetch failed — memory v4 search will run on BM25 alone until the next deploy.${NC}"
+fi
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/miniapp-mcp'"
 scp apps/miniapp-mcp/index.js        "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
 scp apps/miniapp-mcp/package.json    "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
@@ -380,6 +414,12 @@ if [ -f workspace-api/integrations.catalog.local.json ]; then
         "$HETZNER_HOST:$REMOTE_PATH/workspace-api/integrations.catalog.local.json" || exit 1
     echo "  catalog.local.json staged — adds private integration card(s)"
 fi
+# Same hook for the routines marketplace (lib/routines-catalog.js merges it).
+if [ -f workspace-api/routines.catalog.local.json ]; then
+    scp workspace-api/routines.catalog.local.json \
+        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/routines.catalog.local.json" || exit 1
+    echo "  routines.catalog.local.json staged — adds private marketplace routine(s)"
+fi
 
 # Gemini MCP (chat) — ask_gemini for second-opinion / long-context reads.
 # Separate from nano-banana (image). Shares GEMINI_API_KEY with that integration.
@@ -408,12 +448,6 @@ scp apps/gdocs-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/gdocs-mcp/" || 
 ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/x-mcp'"
 scp apps/x-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
 scp apps/x-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
-
-# Substack MCP — read public posts / authors / Notes without auth; optional
-# session cookie unlocks publishing, Notes posting, comments, restacks.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/substack-mcp'"
-scp apps/substack-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/substack-mcp/" || exit 1
-scp apps/substack-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/substack-mcp/" || exit 1
 
 # Shared helpers imported via `../_shared/<file>.js` at spawn time by every
 # brokered MCP (Google Workspace, email, etc.). Recursive scp — historically
@@ -494,11 +528,17 @@ ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/workspace-api/lib/integrations' '$RE
 scp workspace-api/index.js                 "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 scp workspace-api/package.json             "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 scp workspace-api/integrations.catalog.json "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+scp workspace-api/routines.catalog.json   "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 # scp -r on lib/. picks up the integrations/ subdir transitively.
 mirror_dir workspace-api/lib    "$REMOTE_PATH/workspace-api/lib"
 mirror_dir workspace-api/routes "$REMOTE_PATH/workspace-api/routes"
 # assets/ ships WORKSPACE.md (UI reference for Claude) + avatar presets.
 mirror_dir workspace-api/assets "$REMOTE_PATH/workspace-api/assets"
+# Versioned data migrations (lib/migrate.js loads ../migrations) and the
+# operator's CLI (bin/migrate.mjs). Without them the image boots with no
+# migrations at all — silently: nothing applies, nothing is offered.
+mirror_dir workspace-api/migrations "$REMOTE_PATH/workspace-api/migrations"
+mirror_dir workspace-api/bin        "$REMOTE_PATH/workspace-api/bin"
 
 # Upload full frontend source (needed for Docker build on remote).
 # Wipe per-client image patterns from the remote public/ first — `scp -r`

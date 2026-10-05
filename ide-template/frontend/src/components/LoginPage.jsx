@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
 import { useBranding, BrandedImage } from './workspace/identity';
+import TileBanner from './workspace/views/TileBanner.jsx';
 
 /**
  * Login page — single Google sign-in button. Visual language follows the
@@ -37,20 +38,23 @@ export default function LoginPage() {
         fontFeatureSettings: '"cv11", "ss01", "ss03", "calt"',
       }}
     >
-      <div className="flex w-full max-w-sm flex-col items-stretch">
-        {/* Card */}
-        <div className="flex flex-col items-stretch gap-5 rounded-md border border-foreground/15 bg-card px-7 py-8 shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+      {/* One tile, the same family as the AI Settings tiles: a halftone banner,
+          the organisation's logo on its edge, then the title and the button. */}
+      <div className="w-full max-w-[380px] overflow-hidden rounded-[6px] border border-border/60 bg-card">
+        {/* The wave to sign in; the same wave knocked out of line when it didn't work. */}
+        <TileBanner abstract={error ? 'wave-fault' : 'wave'} seed={title || 'sign-in'} soft className="h-28" />
+        <div className="flex flex-col gap-5 px-7 pb-7">
           <BrandedImage
             src={iconUrl}
             alt={title}
-            className="mx-auto size-16 rounded-md object-cover ring-1 ring-foreground/8 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
+            className="relative -mt-7 size-14 rounded-[6px] bg-card object-cover ring-1 ring-foreground/10"
           />
 
-          <div className="flex flex-col gap-1.5 text-center">
-            <h1 className="text-[18px] font-semibold tracking-[-0.01em] text-foreground/90">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-foreground/90">
               Sign in to {title}
             </h1>
-            <p className="text-[13px] leading-relaxed text-muted-foreground/85">
+            <p className="text-[13px] leading-relaxed text-muted-foreground/80">
               Use your Google account to access the workspace.
             </p>
           </div>
@@ -74,15 +78,11 @@ export default function LoginPage() {
 
           <a
             href={signInHref}
-            className="inline-flex w-full items-center justify-center gap-2.5 rounded-md border border-border/70 bg-background px-4 py-2.5 text-[13.5px] font-medium text-foreground/85 shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99]"
+            className="inline-flex w-full items-center justify-center gap-2.5 rounded-[6px] border border-border/70 bg-card px-4 py-2.5 text-[13.5px] font-medium text-foreground/85 transition-colors hover:border-foreground/30 hover:text-foreground"
           >
             <GoogleIcon />
             Sign in with Google
           </a>
-        </div>
-
-        <div className="mt-7 text-center text-[11.5px] text-muted-foreground/55">
-          By continuing you agree to keep your credentials safe and not share them.
         </div>
       </div>
     </main>
@@ -91,7 +91,7 @@ export default function LoginPage() {
 
 function ErrorBanner({ title, body }) {
   return (
-    <div className="flex items-start gap-2.5 rounded-md border border-destructive/25 bg-destructive/[0.04] px-3 py-2.5">
+    <div className="flex items-start gap-2.5 rounded-[6px] border border-destructive/25 bg-destructive/[0.04] px-3 py-2.5">
       <AlertTriangle className="mt-px size-3.5 shrink-0 text-destructive/85" strokeWidth={1.75} />
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-foreground/90">{title}</div>

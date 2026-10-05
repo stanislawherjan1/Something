@@ -48,4 +48,11 @@ while true; do
         log "memory-sweep: $sweep"
     fi
 
+    # Memory v4 (behind MEMORY_V4): file quiet conversations into the ledger.
+    # Answers {"skipped":"off"} while the flag is off.
+    consolidate=$(curl -sf --max-time 300 -X POST "http://localhost:3001/api/internal/memory/consolidate" 2>/dev/null) || true
+    if echo "$consolidate" | grep -qE '"sources":[1-9]|"failures":\[\{'; then
+        log "memory-v4: $consolidate"
+    fi
+
 done

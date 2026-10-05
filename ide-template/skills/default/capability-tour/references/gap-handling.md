@@ -29,15 +29,15 @@ The user's CLAUDE.md `## Context` section mentions an integration that's no long
 After the main tour message, append:
 
 ```
-PS: CLAUDE.md still describes <integration> but it's been deactivated. Remove that section from Context? (yes / no / leave for now)
+PS: CLAUDE.md still describes <integration> but it's been deactivated. Should I remove it from the Context section, or leave it there for now?
 ```
 
 - If user says **yes** → use Edit to remove that bullet from Context.
-- If user says **leave** → respect, don't ask again for 30 days. Note the dismissal in durable memory: route via the memory-router skill to the concept page `memory/concepts/capability-tour-state.md`, appending a claim like `dismissed-cleanup-<integration> (<actor-slug>): <date>` under its `## Claims`. (The memory write auto-reindexes the markdown INDEX.)
+- If user says **leave** → respect, don't ask again for 30 days. Nothing to write down: the conversation is filed automatically, and `memory_search "capability tour"` finds the dismissal later.
 - If user says **no** (no explicit dismissal period) → respect, but you may ask again next month.
 
-> **Team mode — key the state PER USER.** The `capability-tour-state` concept page is shared, so an unqualified claim would make one teammate's dismissal suppress the tour for everyone (and surface their interaction history to others). Tag every claim with the `<actor-slug>` (slug from the `[ACTOR …]` line) — e.g. `dismissed-cleanup-<integration> (<actor-slug>): <date>` — so dismissals + throttle are per person. Solo workspace → an untagged claim is fine.
+> **Team mode — per person.** A dismissal or a past tour belongs to the person who had that conversation; `memory_search` in their turn sees their own history, so one teammate's "leave it" never suppresses the tour for someone else.
 
 ## Repeated reminders cap
 
-Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. Track surfacing-attempt dates as actor-slug-tagged claims on `memory/concepts/capability-tour-state.md` (read them back with memory_grep or Read; write new ones via the memory-router) so the fortnight cap is evaluated against the CURRENT user's history only — not workspace-global.
+Don't run capability-tour proactively more than once per fortnight on the same user. Trust them to ask. There is no state file: before surfacing, run `memory_search "capability tour"` (or `memory_timeline` for the last two weeks) and skip if this person was already offered a tour or declined one recently.

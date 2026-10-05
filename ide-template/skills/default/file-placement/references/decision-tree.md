@@ -4,8 +4,9 @@
 
 1. **Explicit path in the user's request** — just write there, skip this skill.
 2. **`~/project/.claude/CLAUDE.md` → "Where to Save" section** — the user's per-workspace decision tree. Always wins over your guess.
-3. **Existing folder shape** — see what's already there, don't invent new structure.
-4. **Defaults** if `CLAUDE.md` missing or no "Where to Save" section:
+3. **`~/project/PROJECT_STRUCTURE.md`** — what each folder is for. Create it if missing; add a line when you create / rename / delete a folder.
+4. **Existing folder shape** — see what's already there, don't invent new structure.
+5. **Defaults** if `CLAUDE.md` missing or no "Where to Save" section:
    - References / research material → `Research/`
    - Anything unsorted / no clear home → `Inbox/` (waits for next audit)
 
@@ -36,7 +37,7 @@ Don't invent folders the user hasn't created.
 | Channel | Default |
 |---|---|
 | IDE / web chat (technical operator) | Always ask if non-obvious. They'll answer in seconds. |
-| Telegram (non-technical team member) | Decide yourself, mention destination in reply, never block on a question. |
+| Telegram, or any non-technical person | Decide yourself, mention the destination in plain language afterwards ("saved to your Reports folder, June 1st"), never block on a question. |
 
 ## Filename conventions
 
@@ -53,21 +54,7 @@ If you notice **3+ files in the same folder share an obvious subtopic**, propose
 
 Propose, wait, execute on approval. Never reorganize unilaterally.
 
-## Making the file discoverable after writing
+## After writing
 
-There is no knowledge graph. Discoverability is handled by the auto-generated
-`memory/INDEX.md` map, which is rebuilt automatically on every memory write and
-on wsapi boot. In the normal case you do **not** need to do anything — the file
-you just wrote will be picked up on the next automatic reindex.
-
-If you want to force the map to refresh immediately (e.g. you just created a new
-top-level folder and want it reflected right away), run the real index rebuild:
-
-```bash
-python3 <REFLECT_APPLY> reindex   # rebuilds memory/INDEX.md; safe to run anytime
-```
-
-Do **not** run reindex for files saved under `project/users/<slug>/` — those are
-private and the shared/group INDEX already excludes `users/**`, so there is
-nothing to record and nothing to leak. Re-saving an existing file needs no
-special step; the automatic reindex on write keeps the map current.
+Nothing to do — there is no index to rebuild; files are found by file search.
+If you created a new folder, add its line to `PROJECT_STRUCTURE.md`.

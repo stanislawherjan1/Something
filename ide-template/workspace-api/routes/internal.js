@@ -16,11 +16,14 @@ import * as oauthBroker from '../lib/integrations/oauth.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences } from '../lib/team.js';
+import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage, sayInGroup } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
+import { consolidateIdle } from '../lib/memory-consolidator.js';
+import { v4Write, v4SupersedeFallback } from '../lib/memory-v4-writes.js';
 import { runClaudeTurn } from '../lib/claude.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
@@ -615,6 +618,31 @@ export default function internalRouter() {
   // group flag come from it (lib/turn-identity.js), never from a claimed slug —
   // any process on loopback could claim one. No valid token in team mode means
   // no identity and group rules: shared memory only.
+  // The bot keeps a person's time zone and language current from the
+  // conversation ("I'm in Lisbon this week", "write to me in English"). Only a
+  // value in 'auto' mode — a choice fixed in Settings is the person's. Never in
+  // a group turn: these are one person's settings.
+  router.post('/internal/me/settings', loopbackOnly, (req, res) => {
+    const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+    const turn = resolveTurnToken(hdr('x-ide-turn'), hdr('x-ide-actor'));
+    if (turn?.group) return res.status(403).json({ ok: false, error: 'settings are personal — change them in a direct conversation' });
+    const slug = turn?.actor || (getTeamMode() ? null : primaryAdminSlug());
+    const member = slug && teamList().find(m => m.slug === slug);
+    if (!member) return res.status(403).json({ ok: false, error: 'no person for this conversation' });
+    const b = req.body || {};
+    try {
+      const r = setPreferences(member.email, {
+        ...(b.timezone !== undefined ? { timezone: b.timezone } : {}),
+        ...(b.language !== undefined ? { preferredLanguage: b.language } : {}),
+      }, { by: 'bot', from: b.why || 'the conversation' });
+      if (r.changed.includes('timezone')) { try { reschedulePlanFor(slug); } catch { /* best effort */ } }
+      return res.json({ ok: true, changed: r.changed, refused: r.refused,
+        note: r.refused.length ? 'locked by the person in Settings — not changed; they can unlock or change it there' : undefined });
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+
   router.post('/internal/memory-write', loopbackOnly, async (req, res) => {
     const body = req.body || {};
     const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
@@ -635,19 +663,34 @@ export default function internalRouter() {
     // A private write defaults to the ACTOR's own tree; the engine refuses any
     // other owner anyway (same rule that guards reads).
     const owner = scope === 'private' ? (body.owner || actor) : undefined;
+    // supersede / retire / revert / rename search every file the actor can READ,
+    // and the sender of a group message can read their own private tree — so in
+    // a group turn they ran over it and returned private lines (`replaced`,
+    // `ambiguous`) into a session the whole group shares. Those ops get no actor
+    // here: shared memory only. `remember` keeps the actor for attribution; its
+    // scope is already forced shared above.
+    const opActor = inGroup ? null : actor;
 
     try {
-      const common = { actor, scope, owner };
+      // Memory v4 on: duties go to routines.json, facts outside the loaded cards
+      // to the ledger (lib/memory-v4-writes.js); null → the engine, as before.
+      const v4 = await v4Write({ op: String(body.op || ''), body, actor, inGroup, groupId: turn?.groupId || null, scope, owner });
+      if (v4) return res.status(v4.status).json(v4.body);
+      const common = { actor: opActor, scope, owner };
       let out;
       switch (String(body.op || '')) {
         case 'remember':
-          out = memoryEngine.remember({ ...common, card: body.card, page: body.page, section: body.section, text: body.text, source: body.source });
+          out = memoryEngine.remember({ ...common, actor, card: body.card, page: body.page, section: body.section, text: body.text, source: body.source });
           break;
         case 'supersede':
-          out = memoryEngine.supersede({ actor, match: body.match, text: body.text, source: body.source });
+          out = memoryEngine.supersede({ actor: opActor, match: body.match, text: body.text, source: body.source });
+          if (out.not_found) {
+            const fb = await v4SupersedeFallback({ body, actor, inGroup, groupId: turn?.groupId || null });
+            if (fb) return res.status(fb.status).json(fb.body);
+          }
           break;
         case 'retire':
-          out = memoryEngine.retire({ actor, match: body.match, reason: body.reason });
+          out = memoryEngine.retire({ actor: opActor, match: body.match, reason: body.reason });
           break;
         case 'retire_page':
           out = memoryEngine.retirePage({ ...common, page: body.page, reason: body.reason });
@@ -656,7 +699,7 @@ export default function internalRouter() {
           out = memoryEngine.renameEntity({ ...common, from: body.from, to: body.to });
           break;
         case 'revert':
-          out = memoryEngine.revert({ actor, eventId: body.event_id });
+          out = memoryEngine.revert({ actor: opActor, eventId: body.event_id });
           break;
         default:
           return res.status(400).json({ ok: false, error: `unknown op ${JSON.stringify(body.op)}` });
@@ -677,6 +720,18 @@ export default function internalRouter() {
       return res.json(await sweepIdle(req.body || {}));
     } catch (err) {
       process.stderr.write(`[internal] memory-sweep failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Memory v4: file conversations that went quiet into the ledger. A no-op
+  // unless MEMORY_V4 is shadow/read/on; single-flight with per-source
+  // watermarks server-side, so the monitor can poke it every tick. loopback only.
+  router.post('/internal/memory/consolidate', loopbackOnly, async (req, res) => {
+    try {
+      return res.json(await consolidateIdle({ force: false }));
+    } catch (err) {
+      process.stderr.write(`[internal] memory consolidate failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
   });
@@ -717,12 +772,28 @@ export default function internalRouter() {
   // What the engine wrote lately. Memory writes are SILENT by contract — no
   // push on any surface — so this is how "what did you save?" is answered, and
   // what the dashboard's memory feed reads.
+  //
+  // The log carries the text of every write, private ones included, so it is
+  // scoped exactly like reads: a turn sees shared events plus its own private
+  // tree's, from its turn token; a group turn or an unproven caller in team mode
+  // sees shared events only. Loopback alone proves nothing — every turn's Bash
+  // is on loopback.
   router.get('/internal/memory-log', loopbackOnly, (req, res) => {
     try {
       const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
       const since = Date.now() - days * 86400 * 1000;
+      const hdr = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+      const turn = resolveTurnToken(hdr('x-ide-turn'), hdr('x-ide-actor'));
+      const me = turn && !turn.group ? turn.actor : null;
+      const visible = (e) => {
+        const target = String(e.target || '');
+        if (!target.startsWith('memory/users/')) return true;
+        if (!getTeamMode()) return true;   // solo: one person, one tree
+        return !!me && target.startsWith(`memory/users/${me}/`);
+      };
       const events = memoryEngine.readLog({ limit: 200, since })
         .filter(e => e.op !== 'relink')
+        .filter(visible)
         .map(e => ({
           id: e.id, ts: e.ts, op: e.op, target: e.target, section: e.section,
           scope: e.scope, owner: e.owner, source: e.source,

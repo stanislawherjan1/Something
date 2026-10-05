@@ -731,7 +731,9 @@
           "GA4_PROPERTY_ID": "GA4_PROPERTY_ID"
         },
         "extraEnv": {
-          "GOOGLE_APPLICATION_CREDENTIALS": "{dataDir}/google/ga4-credentials.json"
+          "GOOGLE_APPLICATION_CREDENTIALS": "{dataDir}/google/ga4-credentials.json",
+          "DISABLE_TELEMETRY": "1",
+          "DO_NOT_TRACK": "1"
         },
         "writeFiles": [
           {
@@ -825,8 +827,8 @@
               "label": "+ Actions / CI"
             },
             {
-              "value": "repos,issues,pull_requests,actions,code_security",
-              "label": "Everything (incl. code-security alerts)"
+              "value": "repos,issues,pull_requests,actions,code_security,dependabot",
+              "label": "Everything (incl. security and Dependabot alerts)"
             }
           ],
           "helper": "Picks which groups of GitHub tools the bot exposes. Narrower = smaller attack surface and less context noise."
@@ -885,7 +887,7 @@
       "label": "Trello",
       "logo": "/integrations/trello.svg",
       "description": "Read tasks, post, edit and delete comments, manage labels, move cards between columns, and attach or download files. The bot can pull a board's current state, comment on or tag a card, shift it to Done, drop a screenshot straight onto a card, or pull down files your team attached — all from chat.",
-      "category": "productivity",
+      "category": "tasks",
       "fields": [
         {
           "name": "TRELLO_API_KEY",
@@ -970,7 +972,7 @@
       "label": "Notion",
       "logo": "/integrations/notion.svg",
       "description": "Pages, databases, and search via Notion's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -994,7 +996,7 @@
       "label": "Todoist",
       "logo": "/integrations/todoist.svg",
       "description": "Tasks and projects via Todoist's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1018,7 +1020,7 @@
       "label": "monday.com",
       "logo": "/integrations/monday.svg",
       "description": "Boards, items, and updates via monday.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1112,7 +1114,7 @@
       "label": "Cal.com",
       "logo": "/integrations/calcom.svg",
       "description": "Bookings, event types, and availability via Cal.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "meetings",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1135,7 +1137,7 @@
       "label": "Calendly",
       "logo": "/integrations/calendly.svg",
       "description": "Scheduled events, invitees, and availability via Calendly's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "meetings",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1243,7 +1245,7 @@
           "bindings.mcp.cloudflare.com"
         ]
       },
-      "tagline": "Workers, KV, R2, DNS"
+      "tagline": "Workers, KV, R2, D1"
     },
     {
       "id": "stripe",
@@ -1283,12 +1285,11 @@
       ],
       "mcp": {
         "type": "http",
-        "url": "https://mcp.atlassian.com/v1/sse",
+        "url": "https://mcp.atlassian.com/v1/mcp",
         "name": "atlassian",
         "allowedHosts": [
           "mcp.atlassian.com"
-        ],
-        "transport": "sse"
+        ]
       },
       "tagline": "Jira and Confluence"
     },
@@ -1297,7 +1298,7 @@
       "label": "Airtable",
       "logo": "/integrations/airtable.svg",
       "description": "Bases, tables, and records via Airtable's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
-      "category": "productivity",
+      "category": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1429,30 +1430,6 @@
         ]
       },
       "tagline": "Postgres branches and SQL"
-    },
-    {
-      "id": "canva",
-      "label": "Canva",
-      "logo": "/integrations/canva.svg",
-      "description": "Designs and brand assets via Canva's official hosted MCP server. NOT CONNECTABLE from a self-hosted workspace right now: Canva's authorize step accepts only an allow-listed set of redirect URLs (localhost and its partner apps) and refuses this workspace's own domain with \"Invalid redirect URI\", no matter what its dynamic client registration accepted a moment earlier. Verified 2026-09-25 against mcp.canva.com; every other hosted MCP in this catalogue accepts it.",
-      "category": "content",
-      "fields": [
-        {
-          "name": "OAUTH_TOKENS",
-          "label": "Canva connection",
-          "type": "remote-mcp-oauth"
-        }
-      ],
-      "mcp": {
-        "type": "http",
-        "url": "https://mcp.canva.com/mcp",
-        "name": "canva",
-        "allowedHosts": [
-          "mcp.canva.com"
-        ]
-      },
-      "tagline": "Designs and brand assets",
-      "unavailable": "provider-restricted"
     },
     {
       "id": "amplitude",
@@ -1713,81 +1690,6 @@
       "tagline": "Post and read on X"
     },
     {
-      "id": "substack",
-      "label": "Substack",
-      "logo": "/integrations/substack.svg",
-      "description": "Read public Substack content, and — if you sign in — draft, edit, publish and schedule posts and Notes on your own publication. Reading needs no credentials.",
-      "category": "content",
-      "fields": [
-        {
-          "name": "SUBSTACK_SID",
-          "label": "Session cookie (optional — only for writing)",
-          "type": "secret",
-          "optional": true,
-          "placeholder": "the substack.sid cookie value",
-          "helper": "Leave empty for read-only. To let the bot draft/publish on YOUR account, paste the substack.sid cookie. It equals your password — anyone with it controls the account. Stored encrypted."
-        },
-        {
-          "name": "SUBSTACK_PUBLICATION_URL",
-          "label": "Publication URL (optional)",
-          "type": "text",
-          "optional": true,
-          "placeholder": "https://yourname.substack.com",
-          "helper": "Only needed if you write to more than one publication, or auto-detection picks the wrong one. Otherwise leave empty — it is detected from your cookie."
-        },
-        {
-          "name": "SUBSTACK_ALLOW_PUBLISH",
-          "label": "Allow publishing",
-          "type": "select",
-          "optional": true,
-          "default": "no",
-          "globalForMulti": true,
-          "options": [
-            {
-              "value": "no",
-              "label": "No — drafts only"
-            },
-            {
-              "value": "yes",
-              "label": "Yes — allow publish/schedule/Notes"
-            }
-          ],
-          "helper": "Off by default: the bot can create and edit drafts, but cannot publish, schedule, or post Notes to the public. Turn on only when you want the bot to be able to go live on its own."
-        }
-      ],
-      "steps": [
-        {
-          "title": "Read-only? Just hit Activate",
-          "body": "Leave every field empty and click Activate. The bot can then read any public Substack post, list an archive, look up authors, and follow Notes. A `substack-research` skill installs automatically."
-        },
-        {
-          "title": "Want the bot to write? Grab your session cookie",
-          "body": "Sign in at [substack.com](https://substack.com) in your browser. Open DevTools (**F12**) → **Application** (Chrome) or **Storage** (Firefox) → **Cookies** → `https://substack.com` → find **`substack.sid`** and copy its **Value**. Paste it into *Session cookie* below.\n\n⚠️ This cookie is as powerful as your password. Only paste it on a workspace you trust; you can revoke it any time by signing out of Substack everywhere."
-        },
-        {
-          "title": "Decide if the bot may publish",
-          "body": "*Allow publishing* stays **off** by default — the safe choice. The bot can prepare drafts and you hit Publish yourself in Substack. Flip it **on** only if you want the bot to publish, schedule, or post Notes without you. A `substack-writer` skill installs to keep it draft-first."
-        }
-      ],
-      "mcp": {
-        "command": "node",
-        "args": [
-          "{appsDir}/substack-mcp/index.js"
-        ],
-        "envMap": {
-          "SUBSTACK_SID": "SUBSTACK_SID",
-          "SUBSTACK_PUBLICATION_URL": "SUBSTACK_PUBLICATION_URL",
-          "SUBSTACK_ALLOW_PUBLISH": "SUBSTACK_ALLOW_PUBLISH"
-        },
-        "name": "substack",
-        "allowedHosts": [
-          "substack.com",
-          "*.substack.com"
-        ]
-      },
-      "tagline": "Read and publish posts"
-    },
-    {
       "id": "firecrawl",
       "label": "Firecrawl",
       "logo": "/integrations/firecrawl.svg",
@@ -1802,13 +1704,220 @@
       ],
       "mcp": {
         "type": "http",
-        "url": "https://mcp.firecrawl.dev/v2/mcp",
+        "url": "https://mcp.firecrawl.dev/v2/mcp-oauth",
         "name": "firecrawl",
         "allowedHosts": [
           "mcp.firecrawl.dev"
         ]
       },
       "tagline": "Scrape, crawl, and search the web"
+    },
+    {
+      "id": "clickup",
+      "label": "ClickUp",
+      "logo": "/integrations/clickup.svg",
+      "description": "Tasks, docs, comments and time tracking via ClickUp's official hosted MCP server. Connects with one click — sign in to ClickUp and approve; no API keys to paste. Without ClickUp's AI add-on, calls are capped per day.",
+      "category": "tasks",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "ClickUp connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.clickup.com/mcp",
+        "name": "clickup",
+        "allowedHosts": [
+          "mcp.clickup.com"
+        ]
+      },
+      "tagline": "Tasks, docs, time"
+    },
+    {
+      "id": "deepl",
+      "label": "DeepL",
+      "logo": "/integrations/deepl.svg",
+      "description": "Translation, rewriting and glossaries via DeepL's official hosted MCP server. Connects with one click — sign in to DeepL and approve. Text and documents you translate are sent to DeepL; the Free plan caps each translation at 5,000 characters.",
+      "category": "productivity",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "DeepL connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.deepl.com/v1/mcp",
+        "name": "deepl",
+        "allowedHosts": [
+          "mcp.deepl.com"
+        ]
+      },
+      "tagline": "Translate and rewrite"
+    },
+    {
+      "id": "tally",
+      "label": "Tally",
+      "logo": "/integrations/tally.svg",
+      "description": "Forms and submissions via Tally's official hosted MCP server. Connects with one click — sign in to Tally and approve. New forms stay private drafts until you publish them.",
+      "category": "marketing",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Tally connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://api.tally.so/mcp",
+        "name": "tally",
+        "allowedHosts": [
+          "api.tally.so"
+        ]
+      },
+      "tagline": "Forms and submissions"
+    },
+    {
+      "id": "granola",
+      "label": "Granola",
+      "logo": "/integrations/granola.svg",
+      "description": "Your meeting notes and transcripts via Granola's official hosted MCP server — read-only. Connects with one click — sign in to Granola and approve. On the free plan only the last 30 days of notes are available, without transcripts.",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Granola connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.granola.ai/mcp",
+        "name": "granola",
+        "allowedHosts": [
+          "mcp.granola.ai"
+        ]
+      },
+      "tagline": "Meeting notes"
+    },
+    {
+      "id": "fireflies",
+      "label": "Fireflies",
+      "logo": "/integrations/fireflies.svg",
+      "description": "Your meeting transcripts, summaries and action items via Fireflies' official hosted MCP server. Connects with one click — sign in to Fireflies and approve. Reading is the point; the few tools that share, rename or move a meeting are used only after you say yes. The free plan is rate-limited (about 50 requests a day).",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Fireflies connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://api.fireflies.ai/mcp",
+        "name": "fireflies",
+        "allowedHosts": [
+          "api.fireflies.ai"
+        ]
+      },
+      "tagline": "Meeting transcripts"
+    },
+    {
+      "id": "fathom",
+      "label": "Fathom",
+      "logo": "/integrations/fathom.svg",
+      "description": "Your Fathom meeting recordings, transcripts and summaries via Fathom's official hosted MCP server — read-only. Connects with one click — sign in to Fathom and approve. Works on every plan, including free.",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Fathom connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://api.fathom.ai/mcp",
+        "name": "fathom",
+        "allowedHosts": [
+          "api.fathom.ai"
+        ]
+      },
+      "tagline": "Meeting recordings"
+    },
+    {
+      "id": "otter",
+      "label": "Otter.ai",
+      "logo": "/integrations/otter.svg",
+      "description": "Your Otter conversations — search, transcripts and summaries — via Otter's official hosted MCP server, read-only. Connects with one click — sign in to Otter and approve; you choose which meetings it may see.",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Otter.ai connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.otter.ai/mcp",
+        "name": "otter",
+        "allowedHosts": [
+          "mcp.otter.ai"
+        ]
+      },
+      "tagline": "Meeting transcripts"
+    },
+    {
+      "id": "readai",
+      "label": "Read AI",
+      "logo": "/integrations/readai.svg",
+      "description": "Your Read AI meetings — summaries, chapters, action items, key questions and transcripts — via Read AI's official hosted MCP server. Connects with one click — sign in to Read AI and approve. Reading is the point; sharing a report is done only after you say yes. Read AI calls the server a beta.",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Read AI connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://api.read.ai/mcp",
+        "name": "readai",
+        "allowedHosts": [
+          "api.read.ai"
+        ]
+      },
+      "tagline": "Meeting summaries"
+    },
+    {
+      "id": "krisp",
+      "label": "Krisp",
+      "logo": "/integrations/krisp.svg",
+      "description": "Your Krisp meeting notes, transcripts and action items via Krisp's official hosted MCP server — read-only. Connects with one click — sign in to Krisp and approve.",
+      "category": "meetings",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Krisp connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.krisp.ai/mcp",
+        "name": "krisp",
+        "allowedHosts": [
+          "mcp.krisp.ai"
+        ]
+      },
+      "tagline": "Meeting notes"
     }
   ]
 }

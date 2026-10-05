@@ -3,6 +3,7 @@ import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, 
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
+import PersonInitial from '../PersonInitial.jsx';
 import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
 import { useApi } from '@/lib/useApi';
 import { SkeletonRow } from '@/components/ui/Skeleton';
@@ -86,7 +87,7 @@ function ReminderHeading({ reminder }) {
 
 /**
  * RemindersDashboard — horizontal-row layout matching the Skills dashboard
- * aesthetic (slim header, subtitle paragraph, sectioned list, hover-revealed
+ * aesthetic (slim header, sectioned list, hover-revealed
  * trash icon). Source of truth is project/.reminders.json which the
  * reminder-mcp owns; we read + write the file directly via /api/files so
  * the bot picks up changes on its next tick.
@@ -167,7 +168,7 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen, embedd
             )}
 
             {realError && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
+              <div className="rounded-[6px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-[13px] text-destructive">
                 Couldn't load reminders: {realError}
               </div>
             )}
@@ -177,7 +178,6 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen, embedd
                 {/* User-created reminders — what the bot has been asked to schedule */}
                 <Section
                   title="Your reminders"
-                  subtitle={`Timed nudges ${botDisplayName} has scheduled. Each fires on its own channel, Telegram, the web UI, or both, even when no chat session is active. Ask ${botDisplayName} to schedule new ones; clear out anything stale from here.`}
                 >
                   {userReminders.length === 0 ? (
                     <EmptyHint>
@@ -203,7 +203,6 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen, embedd
                 {forOthers.length > 0 && (
                   <Section
                     title="Scheduled for others"
-                    subtitle="Reminders you set for teammates: these fire on their side, not yours. You can still clear them from here."
                   >
                     <div className="flex flex-col gap-2">
                       {forOthers.map(r => (
@@ -227,7 +226,6 @@ export default function RemindersDashboard({ fileEventNonce, sidebarOpen, embedd
                   <div className="opacity-65 transition-opacity hover:opacity-100">
                     <Section
                       title="System rituals"
-                      subtitle={`Built-in self-maintenance: ${botDisplayName} runs these to keep the workspace clean and the memory index fresh, then reports to Telegram. Platform-managed; not deletable.`}
                     >
                       <div className="flex flex-col gap-2">
                         {systemReminders.map(r => (
@@ -289,7 +287,7 @@ function InfoTip({ label, side = 'top', children }) {
           side={side}
           sideOffset={6}
           collisionPadding={10}
-          className="z-50 max-w-[18rem] rounded-md border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] leading-snug text-popover-foreground shadow-md"
+          className="z-50 max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] leading-snug text-popover-foreground shadow-md"
         >
           {label}
           <TooltipPrimitive.Arrow className="fill-popover" />
@@ -311,12 +309,11 @@ function MiniAvatar({ name, avatar, label }) {
 // The bare avatar circle, no tooltip — used inside a stack that already carries
 // a single shared tooltip (e.g. the "Everyone on the team" pile).
 function AvatarDot({ name, avatar }) {
-  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  const [failed, setFailed] = useState(false);
+  if (!avatar || failed) return <PersonInitial initial={name} className="size-5 text-[9px]" />;
   return (
-    <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[9px] font-semibold text-muted-foreground/90 ring-1 ring-border/60">
-      {avatar
-        ? <img src={avatar} alt="" className="size-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-        : initial}
+    <span className="flex size-5 shrink-0 overflow-hidden rounded-full ring-1 ring-border/60">
+      <img src={avatar} alt="" className="size-full object-cover" onError={() => setFailed(true)} />
     </span>
   );
 }
@@ -391,7 +388,7 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
   const toggle = () => setOpen((o) => !o);
 
   return (
-    <div className={cn('group overflow-hidden rounded-md border border-border/60 bg-card', paused && 'opacity-60')}>
+    <div className={cn('group overflow-hidden rounded-[6px] border border-border/60 bg-card', paused && 'opacity-60')}>
       <div className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/20">
         {/* Click the task (avatar + title + repeat badge) to reveal the description. */}
         <div
@@ -453,7 +450,7 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
           <button
             type="button"
             onClick={onDelete}
-            className="ml-2 shrink-0 rounded-md p-1.5 text-muted-foreground/40 transition-colors duration-150 hover:bg-destructive/[0.08] hover:text-destructive"
+            className="ml-2 shrink-0 rounded-[6px] p-1.5 text-muted-foreground/40 transition-colors duration-150 hover:bg-destructive/[0.08] hover:text-destructive"
             aria-label="Delete reminder"
             title="Delete reminder"
           >
@@ -480,17 +477,12 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
 
 // ─── Section + helpers ────────────────────────────────────────────────────
 
-function Section({ title, subtitle, children }) {
+function Section({ title, children }) {
   return (
     <section className="flex flex-col gap-2.5">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+      <h2 className="text-[13.5px] font-semibold leading-snug text-foreground/90">
         {title}
       </h2>
-      {subtitle && (
-        <p className="text-[13px] leading-relaxed text-muted-foreground/80">
-          {subtitle}
-        </p>
-      )}
       {children}
     </section>
   );
@@ -498,7 +490,7 @@ function Section({ title, subtitle, children }) {
 
 function EmptyHint({ children }) {
   return (
-    <div className="rounded-md border border-dashed border-border/60 bg-muted/15 px-4 py-3 text-[13px] text-muted-foreground/75">
+    <div className="rounded-[6px] border border-dashed border-border/60 bg-muted/15 px-4 py-3 text-[13px] text-muted-foreground/75">
       {children}
     </div>
   );
@@ -564,10 +556,10 @@ function DeleteReminderModal({ reminder, onClose, onDeleted }) {
       role="dialog"
       aria-modal="true"
       aria-label="Delete reminder"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[3px] animate-[fade-in_0.12s_ease-out]"
+      className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop px-4 animate-[fade-in_0.12s_ease-out]"
       onClick={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
     >
-      <div className="w-full max-w-md overflow-hidden rounded-lg bg-background shadow-2xl">
+      <div className="w-full max-w-md overflow-hidden modal-panel">
         <div className="flex items-start gap-3.5 px-6 py-5">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
             <Trash2 className="size-4 text-destructive" strokeWidth={2} />
@@ -588,7 +580,7 @@ function DeleteReminderModal({ reminder, onClose, onDeleted }) {
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-md p-1 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85 disabled:opacity-50"
+            className="rounded-[6px] p-1 text-muted-foreground/65 transition-colors hover:bg-muted/30 hover:text-foreground/85 disabled:opacity-50"
             aria-label="Close"
           >
             <X className="size-4" strokeWidth={1.75} />

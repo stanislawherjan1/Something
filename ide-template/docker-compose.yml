@@ -144,6 +144,9 @@ services:
       - BOT_NAME=${BOT_NAME:-bot}
       # Ritual hours are local to this workspace, not to UTC.
       - IDE_TIMEZONE=${IDE_TIMEZONE:-UTC}
+      # Memory v4: off | shadow | read | on (docs/MEMORY.md). Off by default;
+      # the move from the upgrade bar switches a shadow deployment to on.
+      - MEMORY_V4=${MEMORY_V4:-off}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
       - TELEGRAM_ALLOWED_IDS=${TELEGRAM_ALLOWED_IDS:-}

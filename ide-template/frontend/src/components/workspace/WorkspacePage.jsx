@@ -8,6 +8,7 @@ import EditorPane from './EditorPane.jsx';
 import ChatPane from './ChatPane.jsx';
 import WelcomeScreen from './WelcomeScreen.jsx';
 import NotificationToasts from './NotificationToasts.jsx';
+import { MigrationBanner, MigrationModal } from './MemoryMigration.jsx';
 import useFileWatcher from './useFileWatcher.js';
 import { useBranding } from './identity';
 import SpinningAvatar from './SpinningAvatar.jsx';
@@ -27,6 +28,10 @@ import { useApi, invalidate } from '@/lib/useApi';
  * navigate to. Modals (skill editor, integration activate) stay in the same
  * top-level URL but use search params (`?edit=...`, `?activate=...`).
  */
+// Open sidebar width, and the icon rail it collapses to off a phone.
+const SIDEBAR_WIDTH = 280;
+const SIDEBAR_RAIL = 56;
+
 const VIEW_ROUTES = [
   { path: '/tasks',        selected: { path: 'Tasks.md',           type: 'file' } },
   { path: '/responsibilities', selected: { path: '.claude/responsibilities', type: 'responsibilities' } },
@@ -39,6 +44,7 @@ const VIEW_ROUTES = [
   { path: '/memory',       selected: { path: 'memory',             type: 'memory' } },
   { path: '/telegram',     selected: { path: '.claude/telegram',   type: 'telegram' } },
   { path: '/notifications',selected: { path: '.notifications',     type: 'notifications' } },
+  { path: '/settings',     selected: { path: '.settings',          type: 'settings' } },
 ];
 
 function pathnameToSelected(pathname) {
@@ -199,6 +205,14 @@ export default function WorkspacePage() {
     try { return window.localStorage.getItem(TELEGRAM_BANNER_DISMISSED_KEY) === '1'; }
     catch { return false; }
   });
+  // Memory v4: the upgrade bar (admins, while the move is pending) and its review
+  // modal; the old Memory view's note opens the same modal.
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setMigrationOpen(true);
+    window.addEventListener('memory-migration:review', open);
+    return () => window.removeEventListener('memory-migration:review', open);
+  }, []);
   const fileEventNonce = useFileWatcher();
   const isMobile = useMobile();
   // Tablet widths: sidebar + document + chat don't fit side by side, and a
@@ -286,6 +300,8 @@ export default function WorkspacePage() {
           reminders + future skill-completion pings reach the user regardless
           of which view is active. Phase 1 of WEB_CHAT_PUSH. */}
       <NotificationToasts chatOpen={chatOpen} />
+      <MigrationBanner onReview={() => setMigrationOpen(true)} />
+      {migrationOpen && <MigrationModal onClose={() => setMigrationOpen(false)} onOpenMemory={() => navigate('/memory')} />}
       {/* Top promo banner — Telegram CTA. Visible on desktop only; on mobile the
           chat already takes the full viewport so the banner has nowhere to live.
           The floating bot avatar (rendered below as `motion.button`) is offset
@@ -301,12 +317,13 @@ export default function WorkspacePage() {
           >
             <div className="flex h-12 items-center justify-between gap-4 px-4">
               <div className="flex min-w-0 items-center gap-2.5">
-                <img
-                  src={`${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg`}
-                  alt=""
-                  className="size-5 shrink-0"
+                {/* The Telegram mark in ink, not brand blue: one quiet line, not an ad. */}
+                <span
+                  aria-hidden
+                  className="size-[18px] shrink-0 bg-foreground/70"
+                  style={{ WebkitMask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat`, mask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat` }}
                 />
-                <p className="truncate text-[13px] text-foreground/85">
+                <p className="truncate text-[13px] text-foreground/80">
                   Add <span className="font-semibold text-foreground">{botDisplayName}</span> on Telegram and take them everywhere with you.
                 </p>
               </div>
@@ -314,7 +331,7 @@ export default function WorkspacePage() {
                 <button
                   type="button"
                   onClick={() => handleSelect({ path: '.claude/integrations', type: 'integrations' })}
-                  className="rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/85"
+                  className="rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]"
                 >
                   Set up
                 </button>
@@ -322,7 +339,7 @@ export default function WorkspacePage() {
                   type="button"
                   onClick={dismissBanner}
                   title="Dismiss"
-                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+                  className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground/80"
                 >
                   <X className="size-3.5" strokeWidth={1.75} />
                 </button>
@@ -345,12 +362,12 @@ export default function WorkspacePage() {
           >
             <div className="flex h-12 items-center justify-between gap-4 px-4">
               <div className="flex min-w-0 items-center gap-2.5">
-                <img
-                  src={`${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg`}
-                  alt=""
-                  className="size-5 shrink-0"
+                <span
+                  aria-hidden
+                  className="size-[18px] shrink-0 bg-foreground/70"
+                  style={{ WebkitMask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat`, mask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat` }}
                 />
-                <p className="truncate text-[13px] text-foreground/85">
+                <p className="truncate text-[13px] text-foreground/80">
                   Connect <span className="font-semibold text-foreground">your Telegram</span> so teammates can reach you there.
                 </p>
               </div>
@@ -358,7 +375,7 @@ export default function WorkspacePage() {
                 <button
                   type="button"
                   onClick={() => setLinkOpen(true)}
-                  className="rounded-md bg-foreground px-3 py-1.5 text-[12px] font-medium text-background transition-colors hover:bg-foreground/85"
+                  className="rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]"
                 >
                   Connect
                 </button>
@@ -366,7 +383,7 @@ export default function WorkspacePage() {
                   type="button"
                   onClick={dismissLinkBar}
                   title="Dismiss"
-                  className="flex size-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+                  className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-foreground/80"
                 >
                   <X className="size-3.5" strokeWidth={1.75} />
                 </button>
@@ -412,24 +429,30 @@ export default function WorkspacePage() {
 
       {/* Sidebar — push layer. Always mounted so file-tree
           subscription, expanded-folder state and scroll position
-          survive a toggle. The wrapper's width animates 280 ↔ 0;
-          content next to it grows naturally. Dashboards use fixed-
-          width tiles (minmax(260px,260px)) so the grids reflow column
-          count without resizing individual cards, which is what
-          matters visually. */}
+          survive a toggle. Off a phone it never disappears: closed, it
+          is a 56 px rail of centred icons (logo, shortcuts, avatar) at
+          the same heights as the open sidebar, so nothing jumps. On a
+          desktop the wrapper's width animates 280 ↔ 56; on a tablet the
+          rail stays in place and the open sidebar floats over the page.
+          On a phone it is hidden until opened, as before. */}
       <div
         className={cn(
-          'shrink-0 overflow-hidden',
-          sidebarOverlay
-            ? sidebarOpen
-              ? 'fixed inset-y-0 left-0 z-50 w-[280px] shadow-2xl'
-              : 'hidden'
-            : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+          // No overflow clipping: the content animates at the wrapper's own
+          // width, and the rail's user menu opens out to the right of it.
+          'relative z-30 shrink-0',
+          isMobile && !sidebarOpen && 'hidden',
+          !sidebarOverlay && 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
         )}
-        style={!sidebarOverlay ? { width: sidebarOpen ? 280 : 0 } : undefined}
-        aria-hidden={!sidebarOpen}
+        style={isMobile ? undefined : { width: sidebarOverlay ? SIDEBAR_RAIL : sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_RAIL }}
       >
-        <div className="h-full w-[280px]">
+        <div
+          className={cn(
+            sidebarOverlay && sidebarOpen
+              ? 'fixed inset-y-0 left-0 z-50 w-[280px] shadow-2xl'
+              : 'h-full',
+          )}
+          style={!sidebarOverlay ? { width: sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_RAIL } : undefined}
+        >
           <Sidebar
             selected={selected}
             onSelect={handleSelect}
@@ -437,6 +460,8 @@ export default function WorkspacePage() {
             showHidden={showHidden}
             onToggleHidden={() => setShowHidden(s => !s)}
             onCollapseSidebar={() => setSidebarOpen(false)}
+            onExpandSidebar={() => setSidebarOpen(true)}
+            collapsed={!sidebarOpen && !isMobile}
             fileEventNonce={fileEventNonce}
             className="h-full"
           />
@@ -444,13 +469,15 @@ export default function WorkspacePage() {
       </div>
 
       {!hasStarted ? (
-        <WelcomeScreen onSend={handleWelcomeSend} sidebarOpen={sidebarOpen} onExpandSidebar={() => setSidebarOpen(true)} />
+        <WelcomeScreen onSend={handleWelcomeSend} sidebarOpen={sidebarOpen || !isMobile} onExpandSidebar={() => setSidebarOpen(true)} />
       ) : (
         <EditorPane
           selected={selected}
           onSelect={handleSelect}
           fileEventNonce={fileEventNonce}
-          sidebarOpen={sidebarOpen}
+          // Off a phone the rail is always there, so the editor never needs
+          // its own "show sidebar" button or the room for one.
+          sidebarOpen={sidebarOpen || !isMobile}
           onExpandSidebar={() => setSidebarOpen(true)}
           className="flex-1 min-w-0"
         />
@@ -567,11 +594,11 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100] flex items-center justify-center modal-backdrop p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl"
+        className="w-full max-w-md overflow-hidden modal-panel"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -583,7 +610,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
           <button
             type="button"
             onClick={onClose}
-            className="-mr-1 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground/85"
+            className="-mr-1 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/60 hover:bg-muted/40 hover:text-foreground/85"
           >
             <X className="size-4" strokeWidth={1.75} />
           </button>
@@ -591,7 +618,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
 
         {/* Body */}
         <div className="flex flex-col gap-4 px-5 py-4">
-          <div className="flex flex-col gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-3">
+          <div className="flex flex-col gap-2.5 rounded-[6px] border border-border/50 bg-muted/25 px-3.5 py-3">
             <Step n={1}>
               On Telegram, send <span className="font-medium text-foreground/90">{botName}</span> the command <code className="rounded bg-foreground/[0.07] px-1 py-px font-mono text-[11.5px] text-foreground/85">/start</code>: it can&apos;t message you until you do.
             </Step>
@@ -611,7 +638,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
               onKeyDown={(e) => { if (e.key === 'Enter' && chatId.trim()) save(); }}
               placeholder="e.g. 123456789"
               inputMode="numeric"
-              className="rounded-md border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
+              className="rounded-[6px] border border-border/55 bg-background px-3 py-2 text-[13.5px] text-foreground/90 outline-none transition-colors focus:border-foreground/35"
             />
           </label>
 
@@ -623,7 +650,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
           </div>
 
           {err && (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
+            <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12.5px] text-destructive">
               <span>{err}</span>
             </div>
           )}
@@ -635,7 +662,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-md px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50"
+            className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -643,7 +670,7 @@ function LinkTelegramModal({ initialSurface = 'both', onClose, onSaved }) {
             type="button"
             disabled={busy || !chatId.trim()}
             onClick={save}
-            className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3.5 py-1.5 text-[12.5px] font-medium text-background transition-colors hover:bg-foreground/85 disabled:opacity-50"
           >
             {busy && <Loader2 className="size-3.5 animate-spin" />}
             {busy ? 'Linking…' : 'Link Telegram'}
@@ -674,7 +701,7 @@ function SurfacePicker({ value, onChange }) {
     { value: 'web',      label: 'Web UI' },
   ];
   return (
-    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
+    <div className="grid grid-cols-3 gap-1 rounded-[6px] bg-muted/40 p-1">
       {options.map((opt) => {
         const active = value === opt.value;
         return (
@@ -683,7 +710,7 @@ function SurfacePicker({ value, onChange }) {
             type="button"
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11.5px] font-medium transition-colors',
+              'flex items-center justify-center gap-1 rounded-[6px] px-2 py-1.5 text-[11.5px] font-medium transition-colors',
               active
                 ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
                 : 'text-muted-foreground/70 hover:text-foreground/85',

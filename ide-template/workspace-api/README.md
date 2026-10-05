@@ -66,10 +66,31 @@ workspace-api/
 │   ├── recent-snapshot.js   # rolling RECENT_WEB / RECENT_TELEGRAM snapshots (cross-surface awareness)
 │   ├── memory-graph.js      # memory wiki → graph (cards, topics, links) for the Memory dashboard
 │   ├── memory-grep.js       # search across memory/
+│   ├── memory-ledger.js     # memory v4: append-only ledger per scope, hide/unhide, erase + tombstones, MEMORY_V4 mode
+│   ├── memory-consolidator.js  # memory v4: files quiet conversations into the ledger (owner by code; router + notes add)
+│   ├── memory-router.js     # memory v4: the router and notes prompts, verbatim/evidence/name checks
+│   ├── memory-llm.js        # memory v4: one structured `claude -p` call (no tools), injectable for tests
+│   ├── memory-search.js     # memory v4: BM25 + vectors (RRF), timeline, per-scope stored vectors
+│   ├── embedder-client.js   # memory v4: forks apps/embedder, IPC, BM25 fallback
+│   ├── memory-recall.js     # memory v4: the per-turn recall block (fenced, coverage line, session dedupe)
+│   ├── memory-views.js      # memory v4: right now, standing rules, topics (+ aliases), digest
+│   ├── memory-facts.js      # memory v4: the facts store (facts.jsonl per scope: add/confirm/replace/update/amend/hide, keys, plan/apply)
+│   ├── memory-reconcile.js  # memory v4: the judgment (same / merge / corrects / supersedes / unrelated) on DECIDE_MODEL
+│   ├── memory-text.js       # memory v4: a fact's reading text and sentence cut
+│   ├── memory-titles.js     # memory v4: nightly titles, subjects, name narrowing
+│   ├── memory-aliases.js    # memory v4: nightly topic spelling merges
+│   ├── memory-invariants.js # memory v4: read-only checks for the nightly run
+│   ├── memory-maintenance.js  # memory v4: the nightly run (purge, prune, integrity, titles, names, reconcile, invariants, digests, aliases, profiles)
+│   ├── memory-asks.js       # memory v4: "share with the team?" questions per person
+│   ├── memory-v4-writes.js  # memory v4: where memory_write lands once v4 is on
+│   ├── memory-backup.js     # a person's own memory as a .tar.gz (before/after the move)
+│   ├── migrate.js           # versioned data migrations (plan / apply / verify / rollback, backups in the store)
+│   ├── routines-store.js    # routines.json per person + the RESPONSIBILITIES card parser
 │   ├── notify.js            # notifications pub/sub + ring buffer (SSE fan-out)
 │   ├── attachments.js       # chat file-upload handling → .attachments/
 │   ├── branding.js          # bot name / avatar / logo metadata
-│   ├── team.js              # allowed-emails whitelist + audit log
+│   ├── team.js              # allowed-emails whitelist + audit log; per-person time zone/language (setPreferences, locks), workspace default zone
+│   ├── planner-schedule.js  # morning planning at 06:00 in each person's zone (DST-safe; hourly realign)
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
@@ -81,15 +102,24 @@ workspace-api/
     ├── integrations.js      # /api/integrations — activate / configure / remove (encrypted at rest)
     ├── skills.js            # /api/skills — list / read skill markdown
     ├── memory.js            # /api/memory — graph, grep, prefix, threads, snapshot refresh
-    ├── team.js              # /api/team — whitelist CRUD (admin only)
+    ├── memory-v4.js         # /api/memory/v4/* (the Memory screen), /api/routines (+ POST/PATCH/DELETE your own, + /catalog: the Marketplace), /api/internal/memory/v4/* (the memory tools)
+    ├── migrations.js        # /api/migrations/status|:id/start|:id/job (upgrade bar), /api/memory/backup
+    ├── team.js              # /api/team — whitelist CRUD (admin only); PUT /api/team/default-timezone
     ├── branding.js          # /api/branding — name / avatar / logo
     ├── setup.js             # /api/setup — first-run wizard, Claude token rotation
     ├── notifications.js     # GET /api/notifications/stream — SSE notification feed
     ├── bot.js               # POST /api/bot/{restart,send} — lifecycle + web→tmux relay
-    ├── internal.js          # loopback-only: sync-mcp, notify, chat-session (in-container callers)
+    ├── internal.js          # loopback-only: sync-mcp, notify, chat-session, me/settings (the bot's set_my_settings)
+    │                        #   (memory-v4.js also serves /internal/memory/v4/now — the bot's memory_now)
     ├── tab.js               # the browser panel relay: /api/tab/*, /api/internal/tab-command, /api/internal/tab-handoff
     └── docs-comments-login.js  # OAuth/VNC bridge for the Docs Comments integration
+migrations/                  # NNNN-<name>.mjs, loaded by lib/migrate.js (structural at boot; content by review)
+bin/migrate.mjs              # the operator's CLI: status | plan | apply | verify | rollback
 ```
+
+Memory v4's endpoints are described in [docs/MEMORY.md](../../docs/MEMORY.md#memory-v4); all of
+them take the person from the session (the Memory screen) or from the turn token (the tools),
+and none has an admin exception.
 
 ### `lib/config.js` — visibility tiers
 
@@ -181,3 +211,9 @@ Then run the React dev server (`cd ../frontend && npm run dev`) — `vite.config
 ## Deploy
 
 `ide-template/deploy.sh` SCPs `index.js`, `package.json`, `lib/`, `routes/` to the server. The Dockerfile copies the whole directory and runs `npm install --production`. PM2 starts it from `bot/ecosystem.config.js` (see the `workspace-api` app block).
+
+**Branding pictures.** `/api/branding/avatar` and `/logo` are served with a one-year `immutable` cache when asked for by their versioned URL (`?v=<mtime>`, what `/api/branding` hands out); a new upload gets a new URL. The UI also remembers the last branding in `localStorage` so the bot's picture starts loading before `/api/branding` answers.
+
+**Facts.** `lib/memory-facts.js` keeps facts in `facts.jsonl` next to each scope's ledger (append-only events: add, confirm, replace (`why: superseded` when no longer true), update (a dated remark kept with the fact), amend, retire, hide, unhide, erased; erase rewrites the file). `GET /api/memory/v4/facts` items carry `updates`, `history` (the versions a current fact replaced), `supersededWhy`/`supersededByTitle`; `GET /api/memory/v4/search?q=` answers with `topics`, `facts` (best match first) and `hits`. `remember()` is the only writer (the consolidator, `memory_note`, `memory_write`'s fallback): a keyed status (`about|day|name`) matches with no model call, the rest go through `lib/memory-reconcile.js` (embeddings + one small model call). Routes: `GET /memory/v4/facts`, `POST /memory/v4/facts/bulk` (hide/erase by fact id), `POST /memory/v4/facts/unhide`. Migration `0102-facts-store` writes the store from the records' notes at boot. See docs/MEMORY.md.
+
+**Fact titles.** The extractor gives every fact a `title` (and a status `about` + `when`); the nightly run and `bin/title-notes.mjs` backfill older facts (an `amend`, the text never changes).

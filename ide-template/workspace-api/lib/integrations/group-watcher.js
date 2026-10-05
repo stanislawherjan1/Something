@@ -240,6 +240,7 @@ function persistHistory(chatId, entry) {
       ts: new Date().toISOString(),
       role: entry.role === 'assistant' ? 'assistant' : 'user',
       who: entry.who || '',
+      ...(entry.from_id ? { from_id: String(entry.from_id) } : {}),
       // The message id belongs in the DURABLE record, not only the in-RAM ring.
       // Without it the bot could repair a message it had just sent and nothing
       // older: after a restart its own posts became anonymous, so the leaked
@@ -1014,6 +1015,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     // skips the private-KG clone, and sets IDE_GROUP_CONTEXT=1 so the
     // scope-guard hook blocks EVERY private tree at tool time.
     groupContext: true,
+    groupId: String(group.chatId),     // memory v4 recall: shared + this group only
     // Redundant with the groupContext prefix exclusion — kept as belt-and-braces
     // for older claude.js versions that only honour excludeIds.
     excludeIds: ['USER_INDEX'],
@@ -1825,7 +1827,12 @@ export function routeGroupMessage(payload = {}) {
     // Record in the rolling conversation history (for addressivity context) — ALL
     // inbound text, even non-candidates, since the flow matters. The bot's own
     // replies are appended after each send (see flush).
-    pushHistory(chatId, { role: 'user', message_id: msg.message_id, who: clip(msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
+    // A teammate is named as the roster names them, not as their Telegram
+    // profile does: the history is what memory files a group from, and a
+    // profile called "s" filed the operator's own words under "s".
+    let member = null;
+    try { member = userByChatId(msg.from_id); } catch { member = null; }
+    pushHistory(chatId, { role: 'user', message_id: msg.message_id, from_id: msg.from_id, who: clip(member?.displayName || msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
 
     let buf = buffers.get(chatId);
     if (!buf) { buf = { msgs: [], firstAt: Date.now(), timer: null }; buffers.set(chatId, buf); }

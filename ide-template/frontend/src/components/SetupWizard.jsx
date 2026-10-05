@@ -1,16 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Loader2, ArrowRight, ArrowLeft, Check, AlertTriangle,
-  Wand2, Upload, Building2, ChevronLeft, ChevronRight,
+  Wand2, Upload, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBranding } from './workspace/identity';
+import TileBanner from './workspace/views/TileBanner.jsx';
+import AvatarTile, { PRESET_AVATARS } from './workspace/views/AvatarTile.jsx';
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-const PRESET_AVATARS = Array.from({ length: 16 }, (_, i) => ({
-  id: String(i + 1),
-  url: `${BASE}/avatars/${i + 1}.png`,
-}));
+
 
 const PERSONALITY_AXES = [
   { key: 'warmth',      labelLow: 'Cool',     labelHigh: 'Warm',      hint: 'Pleasantries vs. directness' },
@@ -43,6 +41,8 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
   const [orgLogoPreview, setOrgLogoPreview]           = useState(null);
   const [botName, setBotName]                         = useState(() => firstSet(status?.state?.botName, ''));
   const [avatarIdx, setAvatarIdx]                     = useState(0);
+  // A picture of their own instead of a preset: { file, url } (object URL).
+  const [customAvatar, setCustomAvatar]               = useState(null);
   const [backstory, setBackstory]                     = useState('');
   const [personality, setPersonality]                 = useState(DEFAULT_PERSONALITY);
   const [token, setToken]                             = useState('');
@@ -99,7 +99,8 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
   async function nextFromStep3() {
     try {
       await post('/api/setup/branding', { botName: botName.trim(), backstory: backstory.trim(), personality });
-      await post('/api/setup/avatar/preset', { preset: PRESET_AVATARS[avatarIdx].id });
+      if (customAvatar) await uploadFile('/api/setup/avatar', customAvatar.file);
+      else await post('/api/setup/avatar/preset', { preset: PRESET_AVATARS[avatarIdx].id });
       reloadBranding(); setStep(4);
     } catch (err) { setError(err.message); }
   }
@@ -129,18 +130,25 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
     return () => URL.revokeObjectURL(orgLogoPreview);
   }, [orgLogoPreview]);
 
-  const activeAvatarUrl = PRESET_AVATARS[avatarIdx].url;
+  // Revoke the custom picture's object URL when it's replaced or dropped.
+  useEffect(() => () => { if (customAvatar) URL.revokeObjectURL(customAvatar.url); }, [customAvatar]);
+
+  function pickAvatarFile(file) {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setError('File must be smaller than 2 MiB.'); return; }
+    if (!/^image\/(png|jpe?g)$/i.test(file.type)) { setError('Must be a PNG or JPEG.'); return; }
+    setError(null);
+    setCustomAvatar({ file, url: URL.createObjectURL(file) });
+  }
+
+  const activeAvatarUrl = customAvatar ? customAvatar.url : PRESET_AVATARS[avatarIdx].url;
 
   return (
     <div
       className="flex h-screen w-screen items-center justify-center overflow-hidden bg-background p-8 text-foreground"
       style={{ fontFamily: '"Geist Variable","Geist",-apple-system,BlinkMacSystemFont,system-ui,sans-serif' }}
     >
-      <div aria-hidden className="pointer-events-none fixed inset-0">
-        <div className="absolute -top-48 left-1/3 size-[700px] rounded-full bg-[radial-gradient(closest-side,rgba(217,119,6,0.08),transparent_70%)]" />
-      </div>
-
-      <div className="relative w-[580px]">
+      <div className="relative w-[860px] max-w-full">
         {step === 1 && (
           <Step1
             title={title} setTitle={setTitle}
@@ -153,8 +161,9 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
         {step === 2 && (
           <Step2Avatar
             botName={botName} setBotName={setBotName}
-            avatarIdx={avatarIdx} setAvatarIdx={setAvatarIdx}
-            activeAvatarUrl={activeAvatarUrl}
+            avatarIdx={avatarIdx}
+            onPickPreset={(i) => { setAvatarIdx(i); setCustomAvatar(null); }}
+            customAvatar={customAvatar} onPickFile={pickAvatarFile}
             onBack={() => setStep(1)} onNext={nextFromStep2} busy={busy} error={error}
             canNext={!!botName.trim()}
           />
@@ -192,7 +201,7 @@ export default function SetupWizard({ status, onComplete, mock = false }) {
 function ErrorBanner({ error }) {
   if (!error) return null;
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-[12px] text-destructive">
+    <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-[12px] text-destructive">
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
       <span>{error}</span>
     </div>
@@ -204,13 +213,13 @@ function NavRow({ onBack, onNext, nextLabel = 'Continue', busy, canNext = true }
     <div className={cn('flex items-center gap-3', onBack ? 'justify-between' : 'justify-end')}>
       {onBack && (
         <button type="button" onClick={onBack} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 transition-colors"
+          className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-2 text-[12.5px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-50 transition-colors"
         >
           <ArrowLeft className="size-3.5" strokeWidth={2} /> Back
         </button>
       )}
       <button type="button" onClick={onNext} disabled={busy || !canNext}
-        className="inline-flex items-center gap-2 rounded-lg bg-foreground px-5 py-2.5 text-[13px] font-semibold text-background shadow-[0_1px_2px_rgba(0,0,0,0.10),inset_0_1px_0_rgba(255,255,255,0.06)] transition-all hover:bg-foreground/90 active:scale-[0.99] disabled:opacity-30 disabled:cursor-not-allowed"
+        className="inline-flex items-center gap-2 rounded-[6px] bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-all hover:bg-foreground/90 active:scale-[0.99] disabled:opacity-30 disabled:cursor-not-allowed"
       >
         {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
         {nextLabel}
@@ -220,53 +229,61 @@ function NavRow({ onBack, onNext, nextLabel = 'Continue', busy, canNext = true }
   );
 }
 
-function Card({ children }) {
+// The same tile family as the sign-in page (6px, hairline, no drop shadow),
+// laid out wide: a soft halftone banner down the left (the sign-in wave;
+// rings once it's done), the step on the right. Fixed height, so the steps
+// don't jump; the side banner keeps short steps from looking empty.
+function Card({ children, banner = 'wave' }) {
   return (
-    <div className="flex h-[580px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_2px_4px_rgba(0,0,0,0.04),0_24px_60px_-20px_rgba(28,27,24,0.16)]">
-      {children}
+    <div className="flex h-[540px] overflow-hidden rounded-[6px] border border-border/60 bg-card">
+      <TileBanner abstract={banner} seed="setup" soft className="!h-full w-[240px] shrink-0 border-r border-border/60 max-md:hidden" />
+      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }
 
-function StepHeader({ stepLabel, title, subtitle }) {
+// The step as four short bars, the title and one line of context.
+function StepHeader({ step, title, subtitle }) {
   return (
-    <div className="border-b border-border/60 bg-gradient-to-b from-muted/40 to-card px-8 py-7">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[--color-ring]">{stepLabel}</div>
-      <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-foreground">{title}</h1>
-      {subtitle && <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{subtitle}</p>}
+    <div className="shrink-0">
+      <div className="px-8 pb-5 pt-7">
+        {step ? (
+          <div className="flex items-center gap-2.5">
+            <div className="flex gap-1" aria-hidden>
+              {[1, 2, 3, 4].map((n) => (
+                <span key={n} className={cn('h-[3px] w-5 rounded-full', n <= step ? 'bg-foreground/75' : 'bg-foreground/[0.12]')} />
+              ))}
+            </div>
+            <span className="text-[12px] text-muted-foreground/75">Step {step} of 4</span>
+          </div>
+        ) : (
+          <div className="text-[12px] text-muted-foreground/75">All set</div>
+        )}
+        <h1 className="mt-2.5 text-[20px] font-semibold tracking-[-0.015em] text-foreground/90">{title}</h1>
+        {subtitle && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground/80">{subtitle}</p>}
+      </div>
     </div>
   );
 }
 
 const inputCls = cn(
-  'w-full rounded-xl border border-border bg-card px-3.5 py-2.5 text-[14px] text-foreground outline-none',
-  'placeholder:text-muted-foreground/45 transition-all',
-  'focus:border-[--color-ring]/50 focus:ring-2 focus:ring-[--color-ring]/12',
+  'w-full rounded-[6px] border border-border/60 bg-card px-3 py-2 text-[13.5px] text-foreground outline-none',
+  'placeholder:text-muted-foreground/45 transition-colors',
+  'focus:border-foreground/35',
 );
 
-const labelCls = 'text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground';
-
-const LOGO_GRADIENTS = [
-  'from-yellow-200 to-amber-300',
-  'from-amber-200 to-orange-300',
-  'from-orange-200 to-amber-300',
-  'from-yellow-200 to-orange-300',
-  'from-amber-300 to-yellow-300',
-];
+const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
 
 function WorkspaceLogoOrInitial({ src, initial, size = 'md' }) {
-  const gradientIdx = (initial?.charCodeAt(0) || 0) % LOGO_GRADIENTS.length;
-  const gradient = LOGO_GRADIENTS[gradientIdx];
   const sm = size === 'sm';
   return (
     <div className={cn(
-      'flex shrink-0 items-center justify-center overflow-hidden border border-border/60',
-      sm ? 'size-9 rounded-lg' : 'size-16 rounded-xl shadow-sm border-border',
-      src ? 'bg-card' : `bg-gradient-to-br ${gradient}`,
+      'flex shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-[#f1efea] ring-1 ring-foreground/10 dark:bg-[#2a2826]',
+      sm ? 'size-9' : 'size-16',
     )}>
       {src
-        ? <img src={src} alt="" className="size-full object-contain p-1" />
-        : <span className={cn('font-semibold text-foreground/60 select-none', sm ? 'text-[14px]' : 'text-[22px]')}>{initial}</span>
+        ? <img src={src} alt="" className="size-full bg-card object-contain p-1" />
+        : <span className={cn('select-none font-medium text-foreground/80', sm ? 'text-[14px]' : 'text-[22px]')}>{initial}</span>
       }
     </div>
   );
@@ -278,9 +295,9 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
   const logoInputRef = useRef(null);
   return (
     <Card>
-      <StepHeader stepLabel="Step 1 of 4" title="Name your workspace"
+      <StepHeader step={1} title="Name your workspace"
         subtitle="Shown in the sidebar and browser tab. Change it any time from Settings." />
-      <div className="flex-1 overflow-y-auto px-8 py-7">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
         <div className="flex flex-col gap-6">
           <label className="flex flex-col gap-2">
             <span className={labelCls}>Workspace name</span>
@@ -293,21 +310,21 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
           <div className="flex flex-col gap-2">
             <span className={labelCls}>Organisation logo</span>
             <div onClick={() => logoInputRef.current?.click()}
-              className={cn('group flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 transition-all',
-                orgLogoPreview ? 'border-[--color-ring]/50 bg-[--color-ring]/5' : 'border-border hover:border-foreground/25 hover:bg-muted/50')}>
+              className={cn('group flex cursor-pointer items-center gap-3 rounded-[6px] border px-3.5 py-3 transition-colors',
+                orgLogoPreview ? 'border-border/60' : 'border-dashed border-border/80 hover:border-foreground/30')}>
               {orgLogoPreview ? (
                 <>
-                  <img src={orgLogoPreview} alt="" className="size-10 rounded-lg object-contain" />
+                  <img src={orgLogoPreview} alt="" className="size-10 rounded-[6px] object-contain ring-1 ring-foreground/10" />
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[13px] font-medium text-foreground">Logo uploaded</span>
-                    <button type="button" className="text-left text-[11.5px] text-[--color-ring] hover:underline"
+                    <button type="button" className="text-left text-[11.5px] text-muted-foreground/80 hover:text-foreground hover:underline"
                       onClick={(e) => { e.stopPropagation(); onPickLogo(null); }}>Remove</button>
                   </div>
-                  <Check className="ml-auto size-4 text-[--color-ring]" strokeWidth={2.5} />
+                  <Check className="ml-auto size-4 text-foreground/70" strokeWidth={2.25} />
                 </>
               ) : (
                 <>
-                  <div className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted/50">
+                  <div className="flex size-10 items-center justify-center rounded-[6px] bg-[#f1efea] ring-1 ring-foreground/10 dark:bg-[#2a2826]">
                     <Building2 className="size-4 text-muted-foreground" strokeWidth={1.75} />
                   </div>
                   <div className="flex flex-col gap-0.5">
@@ -324,7 +341,7 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
           <ErrorBanner error={error} />
         </div>
       </div>
-      <div className="shrink-0 border-t border-border/60 px-8 py-5">
+      <div className="shrink-0 border-t border-border/60 px-8 py-4">
         <NavRow onNext={onNext} busy={busy} canNext={canNext} />
       </div>
     </Card>
@@ -333,29 +350,37 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
 
 // ─── Step 2: Avatar & Name ────────────────────────────────────────────────────
 
-function Step2Avatar({ botName, setBotName, avatarIdx, setAvatarIdx, activeAvatarUrl, onBack, onNext, busy, error, canNext }) {
-  const total = PRESET_AVATARS.length;
+function Step2Avatar({ botName, setBotName, avatarIdx, onPickPreset, customAvatar, onPickFile, onBack, onNext, busy, error, canNext }) {
+  const fileRef = useRef(null);
   return (
     <Card>
-      <StepHeader stepLabel="Step 2 of 4" title="Choose an avatar"
+      <StepHeader step={2} title="Choose an avatar"
         subtitle="This is what your team sees in the chat header." />
-      <div className="flex-1 overflow-y-auto px-8 py-7">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex items-center gap-6">
-              <button type="button" onClick={() => setAvatarIdx((avatarIdx - 1 + total) % total)}
-                className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                <ChevronLeft className="size-4" strokeWidth={2} />
-              </button>
-              <div className="size-32 overflow-hidden rounded-2xl ring-2 ring-border shadow-[0_4px_20px_rgba(0,0,0,0.10)]">
-                <img src={activeAvatarUrl} alt="" className="size-full object-cover" />
-              </div>
-              <button type="button" onClick={() => setAvatarIdx((avatarIdx + 1) % total)}
-                className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
-                <ChevronRight className="size-4" strokeWidth={2} />
+          {/* Every picture at once, as in AI Settings: the presets, then your own at the end. */}
+          <div className="flex flex-col gap-2.5">
+            <span className={labelCls}>Picture</span>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden"
+              onChange={(e) => { onPickFile(e.target.files?.[0]); e.target.value = ''; }} />
+            <div className="grid grid-cols-9 gap-2">
+              {PRESET_AVATARS.map((a, i) => (
+                <AvatarTile key={a.id} src={a.url} halftone label={`Picture ${i + 1}`}
+                  selected={!customAvatar && avatarIdx === i}
+                  onClick={() => onPickPreset(i)} />
+              ))}
+              {customAvatar && (
+                <AvatarTile src={customAvatar.url} selected onClick={() => {}} label="Your picture" />
+              )}
+              <button type="button" onClick={() => fileRef.current?.click()}
+                title="Upload a picture" aria-label="Upload a picture"
+                className="flex aspect-square items-center justify-center rounded-[6px] border border-dashed border-border text-muted-foreground/55 transition-colors hover:border-foreground/30 hover:text-foreground/70">
+                <Upload className="size-3.5" strokeWidth={2} />
               </button>
             </div>
-            <p className="text-[12px] text-muted-foreground">{avatarIdx + 1} / {total}</p>
+            <span className="text-[11px] text-muted-foreground/60">
+              {customAvatar ? customAvatar.file.name : 'Or upload your own: PNG or JPEG, up to 2 MiB.'}
+            </span>
           </div>
           <label className="flex flex-col gap-2">
             <span className={labelCls}>Assistant name</span>
@@ -369,7 +394,7 @@ function Step2Avatar({ botName, setBotName, avatarIdx, setAvatarIdx, activeAvata
           <ErrorBanner error={error} />
         </div>
       </div>
-      <div className="shrink-0 border-t border-border/60 px-8 py-5">
+      <div className="shrink-0 border-t border-border/60 px-8 py-4">
         <NavRow onBack={onBack} onNext={onNext} busy={busy} canNext={canNext} />
       </div>
     </Card>
@@ -387,15 +412,15 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
   const [idx, setIdx] = useState(0);
   return (
     <Card>
-      <StepHeader stepLabel="Step 3 of 4" title="Define their character"
+      <StepHeader step={3} title="Define their character"
         subtitle="Write a brief backstory and tune the personality. We'll turn this into a system prompt." />
-      <div className="flex-1 overflow-y-auto px-8 py-7">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
               <span className={labelCls}>Backstory</span>
               <button type="button" onClick={() => setIdx((idx + 1) % examples.length)}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[--color-ring] hover:text-[--color-ring]/80">
+                className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground/80 transition-colors hover:text-foreground">
                 <Wand2 className="size-3" strokeWidth={2} /> See an example
               </button>
             </div>
@@ -409,7 +434,7 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
           </div>
           <div className="flex flex-col gap-2">
             <span className={labelCls}>Personality</span>
-            <div className="overflow-hidden rounded-xl border border-border divide-y divide-border/60">
+            <div className="overflow-hidden rounded-[6px] border border-border/60 divide-y divide-border/60">
               {PERSONALITY_AXES.map(axis => (
                 <SliderRow key={axis.key} axis={axis} value={personality[axis.key]}
                   onChange={(v) => setPersonality(p => ({ ...p, [axis.key]: v }))} />
@@ -419,7 +444,7 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
           <ErrorBanner error={error} />
         </div>
       </div>
-      <div className="shrink-0 border-t border-border/60 px-8 py-5">
+      <div className="shrink-0 border-t border-border/60 px-8 py-4">
         <NavRow onBack={onBack} onNext={onNext} busy={busy} />
       </div>
     </Card>
@@ -446,9 +471,9 @@ function SliderRow({ axis, value, onChange }) {
 function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
   return (
     <Card>
-      <StepHeader stepLabel="Step 4 of 4" title="Connect Claude"
+      <StepHeader step={4} title="Connect Claude"
         subtitle="Paste the OAuth token from Claude Code. It's stored encrypted on your server and never leaves it." />
-      <div className="flex-1 overflow-y-auto px-8 py-7">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
         <div className="flex flex-col gap-5">
           <label className="flex flex-col gap-2">
             <span className={labelCls}>OAuth token</span>
@@ -465,7 +490,7 @@ function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
                 <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">1</span>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[13px] leading-relaxed text-muted-foreground">Open a terminal on your computer and run:</span>
-                  <div className="rounded-lg border border-border bg-muted px-3 py-2">
+                  <div className="rounded-[6px] border border-border/60 bg-muted/50 px-3 py-2">
                     <code className="font-mono text-[12.5px] tracking-tight text-foreground select-all">claude setup-token</code>
                   </div>
                   <span className="text-[11.5px] text-muted-foreground/60">No Claude Code yet? <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">npm i -g @anthropic-ai/claude-code</code></span>
@@ -484,7 +509,7 @@ function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
           <ErrorBanner error={error} />
         </div>
       </div>
-      <div className="shrink-0 border-t border-border/60 px-8 py-5">
+      <div className="shrink-0 border-t border-border/60 px-8 py-4">
         <NavRow onBack={onBack} onNext={onNext} nextLabel={busy ? 'Saving…' : 'Finish setup'} busy={busy} canNext={canNext} />
       </div>
     </Card>
@@ -495,25 +520,18 @@ function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
 
 function Step5Done({ botName, avatarUrl, orgLogoPreview, title, onBack, onDismiss }) {
   return (
-    <Card>
-      <div className="shrink-0 border-b border-border/60 bg-gradient-to-b from-muted/40 to-card px-8 py-7">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[--color-ring]">All set</div>
-        <h1 className="mt-2 text-[26px] font-semibold tracking-[-0.02em] text-foreground">
-          {title || 'Your workspace'} is ready.
-        </h1>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">
-          {botName || 'Your assistant'} has their brief and is waiting in chat.
-        </p>
-      </div>
+    <Card banner="rings">
+      <StepHeader title={`${title || 'Your workspace'} is ready.`}
+        subtitle={`${botName || 'Your assistant'} has their brief and is waiting in chat.`} />
 
-      <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-8 py-7">
+      <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-8 pb-6 pt-1">
         <div className="flex items-center gap-3">
           {/* Workspace */}
-          <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-muted/20 px-3.5 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-[6px] border border-border/60 px-3 py-2">
             <WorkspaceLogoOrInitial src={orgLogoPreview} initial={(title || 'W').charAt(0).toUpperCase()} size="sm" />
             <div className="flex flex-col gap-0">
               <span className="text-[12.5px] font-medium text-foreground leading-tight">{title || 'Workspace'}</span>
-              <span className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.09em]">Workspace</span>
+              <span className="text-[11px] text-muted-foreground/60">Workspace</span>
             </div>
           </div>
 
@@ -525,13 +543,13 @@ function Step5Done({ botName, avatarUrl, orgLogoPreview, title, onBack, onDismis
           </div>
 
           {/* Assistant */}
-          <div className="flex items-center gap-2.5 rounded-xl border border-border/70 bg-muted/20 px-3.5 py-2.5">
-            <div className="size-9 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted">
-              <img src={avatarUrl} alt="" className="size-full object-cover" />
+          <div className="flex items-center gap-2.5 rounded-[6px] border border-border/60 px-3 py-2">
+            <div className="relative size-9 shrink-0 overflow-hidden rounded-full ring-1 ring-foreground/10">
+              <TileBanner image={avatarUrl} mode="dark" center plain step={1.7} scale={1} seed="bot" paper className="!absolute inset-0 !h-full" />
             </div>
             <div className="flex flex-col gap-0">
               <span className="text-[12.5px] font-medium text-foreground leading-tight">{botName || 'Assistant'}</span>
-              <span className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.09em]">Assistant</span>
+              <span className="text-[11px] text-muted-foreground/60">Assistant</span>
             </div>
           </div>
         </div>
@@ -545,7 +563,7 @@ function Step5Done({ botName, avatarUrl, orgLogoPreview, title, onBack, onDismis
             <div key={label} className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0">
               <span className="text-[12.5px] text-muted-foreground">{label}</span>
               <div className="flex items-center gap-1.5">
-                <Check className="size-3 text-[--color-ring]" strokeWidth={2.5} />
+                <Check className="size-3 text-foreground/70" strokeWidth={2.5} />
                 <span className="text-[12.5px] font-medium text-foreground">{value}</span>
               </div>
             </div>
@@ -555,7 +573,7 @@ function Step5Done({ botName, avatarUrl, orgLogoPreview, title, onBack, onDismis
         <p className="text-[11.5px] text-muted-foreground/60">You can adjust branding, avatar and skills anytime from Settings.</p>
       </div>
 
-      <div className="shrink-0 border-t border-border/60 px-8 py-5">
+      <div className="shrink-0 border-t border-border/60 px-8 py-4">
         <NavRow onBack={onBack} onNext={onDismiss} nextLabel="Open workspace" />
       </div>
     </Card>

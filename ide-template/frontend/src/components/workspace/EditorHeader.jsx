@@ -23,21 +23,26 @@ export default function EditorHeader({ icon: Icon, title, subtitle, meta, sideba
 
   return (
     <div
-      className={cn('flex shrink-0', hasSubtitle ? 'flex-col py-3.5' : 'items-center py-3.5')}
+      // Without a subtitle the bar is exactly h-14 (56 px), the height of the
+      // sidebar and chat headers, so the three titles share one centre line.
+      className={cn('flex shrink-0', hasSubtitle ? 'flex-col py-3.5' : 'h-14 items-center')}
       style={{
         paddingLeft: sidebarOpen ? '24px' : '64px',
-        minHeight: '60px',
+        minHeight: hasSubtitle ? '60px' : undefined,
         // Match the sidebar wrapper's width-animation curve so the title
         // slides over with the same rhythm instead of snapping when the
         // hamburger needs to appear / disappear.
         transition: 'padding-left 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
       }}
     >
-      <div className="flex w-full items-center justify-between gap-2.5 pr-6">
+      {/* +1 px: lines the title up optically with the org name in the sidebar. */}
+      <div className="flex w-full translate-y-px items-center justify-between gap-2.5 pr-6">
         <div className="flex min-w-0 items-center gap-2.5">
           {Icon && (
+            // -1 px: the title's capitals sit above its line box's centre,
+            // so a box-centred icon reads a pixel low next to them.
             <Icon
-              className="size-[17px] shrink-0 text-muted-foreground/75"
+              className="size-[17px] shrink-0 -translate-y-px text-muted-foreground/75"
               strokeWidth={1.75}
             />
           )}

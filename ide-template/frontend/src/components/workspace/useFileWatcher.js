@@ -25,9 +25,12 @@ export default function useFileWatcher() {
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    const es = new EventSource('/api/files/watch');
+    let es = null;
+    let retryTimer = null;
+    let closed = false;
+    let attempt = 0;
 
-    es.onmessage = (ev) => {
+    const onMessage = (ev) => {
       // A malformed or empty frame still means "something moved" — bump and
       // move on rather than dropping the batch on the floor.
       let events = null;
@@ -45,12 +48,37 @@ export default function useFileWatcher() {
       setNonce(n => n + 1);
     };
 
-    es.onerror = () => {
-      // EventSource auto-reconnects; just log silently. If the server is
-      // genuinely down, we'll keep retrying every few seconds — that's fine.
+    const connect = () => {
+      if (closed) return;
+      es = new EventSource('/api/files/watch');
+      es.onmessage = onMessage;
+      es.onopen = () => {
+        // Back after a drop: whatever changed while we were away produced no
+        // event we saw, so refetch once to catch up.
+        if (attempt > 0) setNonce(n => n + 1);
+        attempt = 0;
+      };
+      es.onerror = () => {
+        // A plain network blip: the browser retries by itself (CONNECTING).
+        // But a reconnect that gets an HTTP error — a 502 while the stack
+        // restarts on a deploy, a 401 before the session is renewed — makes
+        // EventSource give up for good (CLOSED), and every view stopped
+        // refreshing until the page was reloaded. Reopen it ourselves, backing
+        // off up to 30 s.
+        if (es.readyState !== EventSource.CLOSED) return;
+        es.close();
+        attempt += 1;
+        const delay = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
+        retryTimer = setTimeout(connect, delay);
+      };
     };
 
-    return () => es.close();
+    connect();
+    return () => {
+      closed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      es?.close();
+    };
   }, []);
 
   return nonce;

@@ -168,6 +168,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['id', 'status'],
       },
     },
+    {
+      name: 'delete_task',
+      description:
+        'Remove a task from the board for good — for mistakes, tests and duplicates. Finished work belongs in Done ' +
+        '(move_task), not here. Say which task you are deleting before you do it.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: { type: 'string', description: 'Task id from list_tasks.' } },
+        required: ['id'],
+      },
+    },
   ],
 }));
 
@@ -228,6 +239,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     await writeTasks(tasks);
     return ok(`Updated "${t.title}" → ${STATUS_LABEL[t.status]}${t.owner ? `, owner: ${t.owner}` : ''}. id: ${t.id}`);
+  }
+
+  if (name === 'delete_task') {
+    if (!args.id) return fail('Which task? Pass the id from list_tasks.');
+    const tasks = await readTasks();
+    const i = tasks.findIndex(x => x.id === args.id);
+    if (i < 0) return fail(`No task with id ${args.id}; run list_tasks to see current ids.`);
+    const [gone] = tasks.splice(i, 1);
+    // Close up the column it left.
+    tasks.filter(t => t.status === gone.status)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .forEach((t, n) => { t.order = n; });
+    await writeTasks(tasks);
+    return ok(`Deleted "${gone.title}" from ${STATUS_LABEL[gone.status]}. id: ${gone.id}`);
   }
 
   return fail(`Unknown tool: ${name}`);

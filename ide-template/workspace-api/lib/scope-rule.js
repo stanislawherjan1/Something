@@ -10,14 +10,16 @@
 export const USERS_DIR = 'users';
 
 /**
- * May an actor touch this project-relative POSIX path?
- *   admin            → everything.
- *   member/observer  → the shared team space (anything NOT under users/) plus
- *                      their own users/<ownSlug>/...; another user's
- *                      users/<other>/ is denied.
- * `relPosix === ''` is the project root (allowed — the shared listing).
+ * May an actor touch this project-relative POSIX path? The same answer for
+ * admins and members — privacy is by path, never by role:
+ *   the shared team space                                  → yes
+ *   their own users/, memory/users/ and .team/users/ tree  → yes
+ *   anyone else's                                          → no
+ *   memory/groups/ (membership, not a path, decides)       → no, for everyone
+ * `relPosix === ''` is the project root (allowed — the shared listing). Callers
+ * may still pass `isAdmin`; it changes nothing.
  */
-export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) {
+export function pathInScope(relPosix, { ownSlug = null } = {}) {
   // Normalize BEFORE the positional check so it can't be defeated by empty
   // ('//') or dot ('/./') segments — 'memory//users/bob' and 'memory/./users/bob'
   // must both classify as the memory tree and get denied. Reject upward
@@ -33,18 +35,18 @@ export function pathInScope(relPosix, { isAdmin = false, ownSlug = null } = {}) 
   // never hand one member another member's private data.) Own tree → allow.
   const isUsersTree = parts[0] === USERS_DIR;                            // users/<slug>/…
   const isMemTree   = parts[0] === 'memory' && parts[1] === USERS_DIR;   // memory/users/<slug>/…
-  if (isUsersTree || isMemTree) {
+  // .team/users/<slug>/ is the same person's app data — chat history, routines.
+  const isTeamTree  = parts[0] === '.team' && parts[1] === USERS_DIR;    // .team/users/<slug>/…
+  if (isUsersTree || isMemTree || isTeamTree) {
     if (!ownSlug) return false;                     // a private tree, but the actor has no slug
-    return (isMemTree ? parts[2] : parts[1]) === ownSlug;   // only your OWN — admin or not
+    return (isUsersTree ? parts[1] : parts[2]) === ownSlug;   // only your OWN — admin or not
   }
-  // Not a private tree. Admins get everything else; members get the shared team
-  // space. memory/groups/ stays denied to non-admins as defence in depth: a
-  // per-group memory tree was designed and never built (nothing writes it, and
-  // a group's durable facts go to SHARED memory instead, where they are
-  // visible, searchable and correctable). The deny costs nothing and means a
-  // future writer cannot quietly expose raw group content to every member.
-  if (isAdmin) return true;
+  // memory/groups/<chatId>/ holds a group's memory (the v4 ledger). Who may read
+  // it depends on who is in that group, which a path cannot tell — so no raw
+  // path reaches it, for anyone, admins included; group memory is read through
+  // the memory tools, which check membership from the turn's identity.
   if (parts[0] === 'memory' && parts[1] === 'groups') return false;
+  // Not a private tree: the shared team space, the same for admins and members.
   return true;
 }
 
@@ -63,5 +65,7 @@ export function pathInGroupScope(relPosix) {
   if (parts.length === 0) return true;              // project root → shared listing
   if (parts[0] === USERS_DIR) return false;                            // anyone's private files
   if (parts[0] === 'memory' && parts[1] === USERS_DIR) return false;   // anyone's private memory
+  if (parts[0] === '.team' && parts[1] === USERS_DIR) return false;    // anyone's chats and routines
+  if (parts[0] === 'memory' && parts[1] === 'groups') return false;    // any group's memory (tools check membership)
   return true;
 }

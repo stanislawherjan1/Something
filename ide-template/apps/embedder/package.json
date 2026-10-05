@@ -1,0 +1,11 @@
+{
+  "name": "ide-embedder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Memory v4 sentence vectors (multilingual-e5-small, int8 ONNX), forked by workspace-api",
+  "type": "module",
+  "main": "worker.mjs",
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0"
+  }
+}

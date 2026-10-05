@@ -1,7 +1,7 @@
 ---
 name: mini-apps
 description: Build persistent mini apps (dashboards, trackers, widgets) that live as tabs in the workspace sidebar under "Mini Apps". Use whenever the user asks for a dashboard, tracker, overview, widget, "app", or keeps asking for the same summary repeatedly — offer to turn it into a tab instead of another one-off chat answer. The dedicated tool is mcp__miniapps__save_as_tab; NEVER paste UI specs or component code into the chat.
-allowed-tools: mcp__miniapps__save_as_tab, mcp__miniapps__list_tabs, mcp__miniapps__delete_tab, Read, Bash
+allowed-tools: mcp__miniapps__start_tab, mcp__miniapps__save_as_tab, mcp__miniapps__get_tab_state, mcp__miniapps__set_tab_state, mcp__miniapps__append_tab_state, mcp__miniapps__list_tabs, mcp__miniapps__delete_tab, Read, Bash
 ---
 
 # Mini Apps — persistent sidebar tabs
@@ -52,14 +52,14 @@ Do NOT build one for a one-off question — answer normally.
   entries to the app's state INSTANTLY (no turn of yours involved). Pair it
   with a List/DataTable whose data source is `{ "key": stateKey, "source":
   "state" }` so new entries show up as the user types them.
-- **Read what the user did with `get_tab_state(id)`** — on demand ("ile
-  wydałem?") or from a scheduled reminder that aggregates state, updates the
+- **Read what the user did with `get_tab_state(id)`** — on demand ("how much
+  have I spent?") or from a routine that aggregates state, updates the
   app's computed parts (totals, charts) via `save_as_tab`, and alerts the
   user when a threshold is crossed. State survives your turns — it's the
   app's database.
 - **You can WRITE state too** — `append_tab_state` / `set_tab_state` hit the
   same store the Form writes, and the open widget refreshes live. When the
-  user asks in chat ("dodaj lead Acme 25k"), append it yourself — never tell
+  user asks in chat ("add lead Acme 25k"), append it yourself — never tell
   them to go fill the form manually.
 
 Updating = call `save_as_tab` again with the **same id** (spec and/or fresh
@@ -77,16 +77,16 @@ data). Renaming/deleting: the user can do it in the sidebar; you can
 
 ## Keeping a tab fresh (the important part)
 
-An embedded snapshot goes stale. For anything the user checks daily, pair the
-tab with a **reminder** (reminders MCP) that re-gathers the data and calls
-`save_as_tab` with the same id — e.g. "every morning 07:30: refresh the
-`orders` mini app from Shopify". Offer this when you create the tab:
-"Should I refresh it every morning?" This is the same watch/refresh pattern
-used for other recurring rituals.
+An embedded snapshot goes stale. For anything the user checks daily, offer
+when you create the tab: "Should I refresh it every morning?" On a yes, add a
+**routine** (`memory_write` to the RESPONSIBILITIES card, e.g. "every morning:
+re-gather today's orders from Shopify and refresh the `orders-today` mini app
+with `save_as_tab`, same id"), then run the `morning-planner` skill in the same
+turn so it is planned now. See the `routines` skill.
 
 ## Design guidance (what makes a GOOD app)
 
-- **Pre-format values** — `value` strings arrive display-ready ("2 840 zł",
+- **Pre-format values** — `value` strings arrive display-ready ("€2,840",
   "17", "+12%"). Components never compute or format numbers.
 - **Top row = 2–4 Stats** with the numbers the user actually checks; details
   below in a List/DataTable; ONE chart only when a trend/comparison genuinely

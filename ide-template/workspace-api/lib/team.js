@@ -183,6 +183,14 @@ export function list() {
     preferredSurface: VALID_SURFACES.has(e.preferredSurface) ? e.preferredSurface : null,
     // Shared so a teammate's bot can relay to this person in their language.
     preferredLanguage: normalizeLang(e.preferredLanguage),
+    // Locked = the person fixed it in Settings and the bot may not change it.
+    // Unlocked (the default) = the bot changes it when the person asks.
+    languageLocked: e.languageLocked === true,
+    // Time zone (IANA), where it came from and when.
+    timezone:     isValidTimezone(e.timezone) ? canonicalTimezone(e.timezone) : null,
+    timezoneLocked: e.timezoneLocked === true,
+    timezoneFrom: typeof e.timezoneFrom === 'string' ? e.timezoneFrom.slice(0, 200) : null,
+    timezoneSetAt: e.timezoneSetAt || null,
     // Reflect v2 scope routing: when true, org-classified non-sensitive facts
     // from THIS person's private DMs auto-promote to shared team memory (with an
     // audit trail) instead of prompting them for consent each time. A one-time
@@ -455,6 +463,21 @@ export function operatorChatId() {
   } catch { return null; }
 }
 
+/**
+ * Whose DM is this Telegram chat, in team mode? The roster member who linked it;
+ * else the operator when it is the activation chat (TELEGRAM_ADMIN_CHAT_ID —
+ * the operator's chat is often not linked in the roster); else nobody (null).
+ * The one bot logs every DM into one file, so every consumer of that log must
+ * split it by owner — never assume it is all the operator's.
+ */
+export function dmOwnerSlug(chatId) {
+  const id = normalizeChatId(chatId);
+  if (!id) return null;
+  const member = list().find(m => m.telegramChatId === id);
+  if (member) return member.slug;
+  return id === operatorChatId() ? primaryAdminSlug() : null;
+}
+
 export function setTelegram(email, { chatId, preferredSurface, preferredLanguage } = {}, actor) {
   const e = normalize(email);
   const entries = readRaw();
@@ -507,6 +530,108 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
 }
 
 
+
+// ─── Time zone and language (Settings page + the bot's set_my_settings) ─────
+
+/** An IANA zone the runtime knows ('Europe/Warsaw', 'UTC'), else false. */
+/**
+ * The name of a zone as the system knows it. Debian moved the old names
+ * (Asia/Calcutta, Europe/Kiev…) out of tzdata: Node still knows
+ * them, `date` does not — `TZ=Asia/Calcutta date` printed UTC, and the morning
+ * planner, thinking it was 23:00, planned nothing. A saved zone is stored by
+ * its current name; an old value is read back by it too.
+ */
+// The system's own list of renamed zones: tzdata.zi's "L <current> <old>" lines.
+let zoneLinks = null;
+function readZoneLinks() {
+  if (zoneLinks) return zoneLinks;
+  zoneLinks = new Map();
+  try {
+    for (const l of readFileSync(process.env.TZDATA_ZI || '/usr/share/zoneinfo/tzdata.zi', 'utf8').split('\n')) {
+      const m = l.match(/^L\s+(\S+)\s+(\S+)/);
+      if (m) zoneLinks.set(m[2], m[1]);
+    }
+  } catch { /* no tzdata here: names stay as given */ }
+  return zoneLinks;
+}
+export function canonicalTimezone(tz) {
+  if (typeof tz !== 'string' || !tz) return tz;
+  let cur = tz;
+  for (let i = 0; i < 3 && readZoneLinks().has(cur); i++) cur = readZoneLinks().get(cur);
+  // Only to a name Intl knows too — a link the runtime cannot use is no help.
+  try { new Intl.DateTimeFormat('en-US', { timeZone: cur }); return cur; } catch { return tz; }
+}
+
+export function isValidTimezone(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 64) return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch { return false; }
+}
+
+/** The workspace default zone: set by an admin in Settings, else IDE_TIMEZONE, else UTC. */
+export function getDefaultTimezone() {
+  const cfg = readConfig();
+  if (isValidTimezone(cfg.defaultTimezone)) return canonicalTimezone(cfg.defaultTimezone);
+  const env = (process.env.IDE_TIMEZONE || '').trim();
+  return isValidTimezone(env) ? canonicalTimezone(env) : 'UTC';
+}
+
+export function setDefaultTimezone(tz, actor) {
+  if (!isValidTimezone(tz)) throw new Error('Unknown time zone.');
+  const cfg = readConfig();
+  cfg.defaultTimezone = tz;
+  cfg.updatedAt = new Date().toISOString();
+  if (actor) cfg.updatedBy = normalize(actor);
+  writeConfig(cfg);
+  appendAudit('default_timezone', actor || '', { timezone: tz });
+  return tz;
+}
+
+/** The zone this person lives in right now: their own, else the workspace default. */
+export function effectiveTimezone(slugOrEmail) {
+  const m = list().find(x => x.slug === slugOrEmail || x.email === normalize(slugOrEmail));
+  return m?.timezone || getDefaultTimezone();
+}
+
+/**
+ * Change a person's time zone and/or language. `by: 'user'` (Settings) may set
+ * anything, modes included. `by: 'bot'` (set_my_settings) may only change a value
+ * whose mode is 'auto' — a fixed choice is the person's, not the bot's.
+ * Returns { changed: [...], refused: [...] }.
+ */
+export function setPreferences(email, { timezone, timezoneLocked, preferredLanguage, languageLocked } = {}, { by = 'user', from = null, actor = null } = {}) {
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) throw new Error(`${e} is not on the team.`);
+  const cur = list().find(x => x.email === e);
+  const patch = {}, changed = [], refused = [];
+  const now = new Date().toISOString();
+
+  // Only the person sets a lock; the bot never unlocks its way past one.
+  if (by === 'user' && timezoneLocked !== undefined) { patch.timezoneLocked = !!timezoneLocked; changed.push('timezoneLocked'); }
+  if (by === 'user' && languageLocked !== undefined) { patch.languageLocked = !!languageLocked; changed.push('languageLocked'); }
+  if (timezone !== undefined) {
+    if (by === 'bot' && cur.timezoneLocked) refused.push('timezone');
+    else if (timezone === null || timezone === '') { patch.timezone = null; changed.push('timezone'); }
+    else if (!isValidTimezone(timezone)) throw new Error('Unknown time zone — use an IANA name like Europe/Warsaw.');
+    else {
+      patch.timezone = canonicalTimezone(timezone); patch.timezoneSetAt = now;
+      patch.timezoneFrom = by === 'bot' ? (String(from || 'the conversation').slice(0, 200)) : 'Settings';
+      changed.push('timezone');
+    }
+  }
+  if (preferredLanguage !== undefined) {
+    if (by === 'bot' && cur.languageLocked) refused.push('preferredLanguage');
+    else { patch.preferredLanguage = normalizeLang(preferredLanguage); changed.push('preferredLanguage'); }
+  }
+  if (Object.keys(patch).length) {
+    entries[idx] = { ...entries[idx], ...patch };
+    writeRaw(entries);
+    appendAudit('preferences_update', e, { actor: normalize(actor) || null, by, ...patch });
+    writeTeamRoster();
+  }
+  return { changed, refused, user: getUser(e) };
+}
 
 /**
  * The Telegram chat ids allowed to DM the bot, derived from the team store —
@@ -608,6 +733,18 @@ export function getGroup(chatId) {
   const cfg = readConfig();
   const v = cfg.groups && cfg.groups[id];
   return v && typeof v === 'object' ? { chatId: id, ...v } : null;
+}
+
+/**
+ * The registered groups a roster member has been seen in (their Telegram id in
+ * the group's members map). A person may read their groups' memory from their
+ * own 1:1 turns; never the other way round.
+ */
+export function memberGroupsOf(slug) {
+  const u = list().find(x => x.slug === slug);
+  const tid = u?.telegramChatId;
+  if (!tid) return [];
+  return listGroups().filter(g => g.members && Object.prototype.hasOwnProperty.call(g.members, tid)).map(g => g.chatId);
 }
 
 /** Is this group allow-listed (the assistant may operate in it)? */

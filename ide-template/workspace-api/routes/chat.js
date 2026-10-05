@@ -760,6 +760,10 @@ export default function chatRouter() {
       actTurn,
       systemNote:    tabToken ? panelTurnRules(tabCtx) : '',   // the panel's rules: system prompt, not the user's message
       message:       promptForClaude,
+      // Memory v4 recall: searched with what the person typed plus the two turns
+      // before it (a vague follow-up alone rarely finds anything).
+      recallQuery:   message,
+      recallHistory: handoffDialogue(req.chatActor, sid).slice(0, -1).slice(-2).map(m => m.text),
       sessionId:     claudeSid,
       webSessionId:  sid,                // B3 v2: our manifest id → IDE_SESSION_ID for relay threading
       relayThread,                       // B3 v2: peers this thread is a relay channel with (reply→relay back)
