@@ -90,7 +90,10 @@ r = await stan('GET', '/overview');
 ok('(b) right now shows the current status only', r.body.now.length === 1 && /Lisbon/.test(r.body.now[0].text));
 // The nightly pass first: a legacy record's facts wore every name of the
 // record — "Stan is in Lisbon this week" is not about Orion.
+// The names question is the model's; the stand-in keeps a name whose word the fact carries.
+LLM.configureRunner(async ({ user }) => ({ items: String(user).split('\n\n').map((block, i) => { const names = (block.match(/NAMES: (.*)/)?.[1] || '').split(' | ').filter(Boolean); const fact = block.match(/FACT: ([\s\S]*)/)?.[1] || ''; return { n: i + 1, mentioned: names.filter(n => fact.includes(n.split(' ')[0])) }; }) }));
 await (await import('./memory-titles.js')).narrowNames(['user:stan', 'shared']);
+LLM.configureRunner(null);
 r = await stan('GET', '/topics');
 const orion = r.body.items.find(t => t.name === 'Orion');
 ok('(b) topics carry kind and a latest line', orion && orion.kind === 'company' && orion.line === 'Orion asked for SSO.', r.body.items);
