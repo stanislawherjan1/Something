@@ -164,6 +164,9 @@ export function syncMcpServers() {
       // Context7) need no Authorization header, so no helper: an entry
       // whose helper 401s at wsapi would flip the server to "needs auth".
       const needsAuth = (cat.fields || []).some(f => f.type === 'remote-mcp-oauth');
+      // An own-client integration is active as soon as its client is saved,
+      // before the provider sign-in; wire it only once tokens exist.
+      if (cat.mcp.oauthClient && !store.hasField(id, 'OAUTH_TOKENS')) continue;
       next[name] = {
         // Most providers speak Streamable HTTP; a few (Square) are SSE-only —
         // the catalog marks those with `transport: "sse"`.

@@ -13,7 +13,7 @@ import { useBranding, BrandedImage, BOT_FALLBACK } from '../identity';
 import { useApi, refetch } from '@/lib/useApi';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, logoUrl, SearchField, ActivateModal } from './IntegrationsDashboard.jsx';
-import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
+import { connectsByPopup, isOpenServer, openOAuthPopup } from './integrationConnect.js';
 import { cn } from '@/lib/utils';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import useMe from '../useMe.js';
@@ -780,7 +780,7 @@ function RoutinesMarketplace({ onChanged }) {
   const connect = (id) => {
     const integ = (integrationsQ.data?.integrations || []).find((i) => i.id === id);
     if (!integ) { navigate('/integrations'); return; }
-    if (isRemoteMcpOauth(integ)) { openOAuthPopup(integ, afterConnect); return; }
+    if (connectsByPopup(integ)) { openOAuthPopup(integ, afterConnect); return; }
     if (isOpenServer(integ)) {
       fetch(`/api/integrations/${encodeURIComponent(integ.id)}`, {
         method: 'PUT', credentials: 'include',

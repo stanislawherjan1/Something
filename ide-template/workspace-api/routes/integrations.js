@@ -139,6 +139,9 @@ export default function integrationsRouter() {
         globalFieldValues,
         // Pausable integrations: switched off for now, key kept.
         ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
+        // Own-OAuth-client integrations: the client is saved but the provider
+        // sign-in has not completed yet, so the tile offers Connect again.
+        ...(entry.mcp?.oauthClient ? { oauthPending: Boolean(s?.active) && !store.hasField(entry.id, 'OAUTH_TOKENS') } : {}),
       };
     });
     // no-store so the dashboard's post-OAuth refetch always sees the freshly

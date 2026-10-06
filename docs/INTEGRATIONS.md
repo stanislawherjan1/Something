@@ -90,6 +90,7 @@ provider-side app the operator provisions; those steps are documented below.
 
 | Integration | What it does |
 |---|---|
+| **HubSpot** | Contacts, companies, deals, lists, marketing email drafts, campaigns — HubSpot's hosted MCP with your own MCP connector ([own OAuth client](#own-oauth-client-providers-without-dcr)) |
 | **Shopify** | Read orders, products, inventory; create draft orders & products; manage fulfillments |
 | **Meta Ads** | Facebook + Instagram ads, campaigns, audiences, Page + IG insights, Business Portfolio |
 | **Google Ads** | Campaigns, ad groups, keywords, RSAs, Keyword Planner, performance reports |
@@ -218,6 +219,54 @@ differ and still works, because broker fetches use the open listener).
 - `pm2 restart` does **not** reload the catalog JSON; a catalog change needs a
   `docker restart` of the container.
 
+### Own OAuth client (providers without DCR)
+
+Some providers host an MCP server but refuse Dynamic Client Registration —
+HubSpot's `mcp.hubspot.com` advertises no `registration_endpoint` and wants a
+client created in the customer's own account (**Development → MCP
+Connectors**). For these the catalog entry keeps `mcp.type: "http"` and the
+`remote-mcp-oauth` field (marked `optional`, the callback fills it), adds the
+client fields, and names them in `mcp.oauthClient`:
+
+```jsonc
+"fields": [
+  { "name": "HUBSPOT_CLIENT_ID",     "type": "text" },
+  { "name": "HUBSPOT_CLIENT_SECRET", "type": "secret" },
+  { "name": "OAUTH_TOKENS",          "type": "remote-mcp-oauth", "optional": true }
+],
+"mcp": {
+  "type": "http", "url": "https://mcp.hubspot.com", "name": "hubspot",
+  "allowedHosts": ["mcp.hubspot.com"],
+  "oauthClient": {
+    "clientIdField": "HUBSPOT_CLIENT_ID",
+    "clientSecretField": "HUBSPOT_CLIENT_SECRET",
+    "tokenEndpointAuthMethod": "client_secret_post"   // default when a secret is set
+  }
+}
+```
+
+The flow:
+
+1. The admin creates the client at the provider with this workspace's callback
+   as its redirect URL. The setup steps show it via the `{{oauthRedirectUrl}}`
+   step variable (`https://<domain>/api/integrations/oauth/callback`).
+2. **Save and connect** in the modal stores the ID and secret through the
+   normal `PUT /api/integrations/:id` (encrypted store, audit-logged) and, in
+   the same click, sends the consent popup to `…/oauth/start`. The popup is
+   opened empty inside the submit gesture so blockers allow it.
+3. The broker hands the SDK the saved client as `clientInformation`
+   (`lib/integrations/oauth.js` → `ownClientFor`), so no registration is
+   attempted and `mcp-oauth-clients.json` is never written for it. The secret
+   goes only to the provider's token endpoint, never to the browser.
+4. The callback stores `OAUTH_TOKENS` next to the client; refresh uses the
+   same client. `syncMcpServers` wires the server for the bot only once
+   tokens exist, so a saved-but-unsigned client never leaves a server
+   failing auth.
+
+Until the sign-in completes, `GET /api/integrations` reports
+`oauthPending: true` and the tile offers **Connect** (or **Remove**).
+`startAuth` refuses to run before the client is saved.
+
 **When a hosted MCP doesn't exist** (Shopify Admin, Google Ads) or the provider
 forces pre-provisioned creds (Google Workspace's own GCP project), the
 integration stays in the second table — a bring-your-own-credentials MCP.
@@ -276,6 +325,7 @@ can't slip a `custom` provider through without a host.
 | Type | Purpose | Storage path |
 |---|---|---|
 | `storage-state-json` | Paste a Playwright [`storageState()`](https://playwright.dev/docs/api/class-browsercontext#browser-context-storage-state) JSON (cookies + origins). Frontend renders a drop-zone + textarea with live preview ("17 cookies on 3 domains"). Server filters cookies by per-integration domain allowlist, hashes the surviving set into `.<id>-audit.jsonl`, then encrypts. Legacy — superseded by `docs-comments-browser-login` for everything except programmatic-export flows. |
+| `remote-mcp-oauth` | The provider's OAuth tokens for a hosted MCP. Never typed: the consent popup fills it through the callback. Alone, it makes a one-click integration; with `mcp.oauthClient`, the admin's own client fields are saved first (see [Own OAuth client](#own-oauth-client-providers-without-dcr)). |
 | `docs-comments-browser-login` | Renders a "Connect to Google" button. Click → wsapi spawns an Xvfb + chromium + x11vnc + websockify stack, frontend opens a modal with an embedded `<iframe>` running [noVNC](https://novnc.com). Operator logs into Google normally (incl. 2FA, security keys). "Done" gracefully kills chromium so the profile flushes to disk. Field's stored value is just a marker (`"ok"`); the real session lives in `/var/wsapi-store/docs-comments-profile/`. See "Interactive browser login" section below. |
 
 ### MCP wiring
@@ -504,6 +554,9 @@ Returns the full catalog merged with the active state for each entry:
 
 `credentialSummary` is computed by decrypting the primary field server-side
 and returning only `{length, last4}`. Plaintext never crosses the wire.
+
+An entry with `mcp.oauthClient` also carries `oauthPending`: `true` while its
+client is saved but the provider sign-in has not completed.
 
 ### `PUT /api/integrations/:id`
 
