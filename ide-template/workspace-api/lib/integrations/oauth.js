@@ -106,6 +106,29 @@ function catFor(id) {
   return cat;
 }
 
+/**
+ * A provider without open DCR (HubSpot) takes a client the admin registered
+ * in the provider's own developer console. The catalog names the fields that
+ * hold it (`mcp.oauthClient: { clientIdField, clientSecretField }`); the admin
+ * saves them through the normal credentials modal, so the secret sits in the
+ * encrypted store like any other key. Returns null for DCR providers, and for
+ * an own-client provider whose credentials are not saved yet.
+ */
+function ownClientFor(id, cat = catFor(id)) {
+  const spec = cat.mcp.oauthClient;
+  if (!spec) return null;
+  if (!store.isActive(id)) return null;
+  const plain = store.decryptFor(id);
+  const clientId = (plain[spec.clientIdField] || '').trim();
+  if (!clientId) return null;
+  const clientSecret = spec.clientSecretField ? (plain[spec.clientSecretField] || '').trim() : '';
+  return {
+    client_id: clientId,
+    ...(clientSecret ? { client_secret: clientSecret } : {}),
+    token_endpoint_auth_method: spec.tokenEndpointAuthMethod || (clientSecret ? 'client_secret_post' : 'none'),
+  };
+}
+
 function sweepPending() {
   const cutoff = Date.now() - PENDING_TTL_MS;
   for (const [k, v] of pending) if (v.createdAt < cutoff) pending.delete(k);
@@ -152,6 +175,10 @@ function makeProvider(id, redirectUrl, flow) {
     // the cause is a stale client_id. Returning undefined makes the SDK
     // register again, which is cheap and idempotent.
     clientInformation: () => {
+      // An admin-registered client is used as is: the SDK must never try to
+      // register over it (the provider has no registration endpoint).
+      const own = ownClientFor(id);
+      if (own) return { ...own, redirect_uris: [redirectUrl] };
       const info = readClients()[id];
       if (!info) return undefined;
       const uris = Array.isArray(info.redirect_uris) ? info.redirect_uris : [];
@@ -162,6 +189,7 @@ function makeProvider(id, redirectUrl, flow) {
       return undefined;
     },
     saveClientInformation: (info) => {
+      if (catalog.get(id)?.mcp?.oauthClient) return;   // admin-registered, lives in the store
       const all = readClients();
       all[id] = info;
       writeClients(all);
@@ -198,6 +226,9 @@ function makeProvider(id, redirectUrl, flow) {
 export async function startAuth(id, baseUrl) {
   const cat = catFor(id);
   sweepPending();
+  if (cat.mcp.oauthClient && !ownClientFor(id, cat)) {
+    throw new Error(`save the ${cat.label} client ID and secret first`);
+  }
 
   const redirectUrl = `${baseUrl.replace(/\/$/, '')}/api/integrations/oauth/callback`;
   const flow = { state: randomBytes(24).toString('base64url') };
@@ -273,7 +304,7 @@ export async function getFreshToken(id) {
     try {
       const cat = catFor(id);
       const { asUrl, metadata } = await authServerFor(cat.mcp.url);
-      const clientInformation = readClients()[id];
+      const clientInformation = ownClientFor(id, cat) || readClients()[id];
       if (!clientInformation) {
         throw Object.assign(new Error(`${id} has no registered OAuth client`), { code: 'reauth_required' });
       }

@@ -414,6 +414,11 @@ export function decryptFor(id) {
   return out;
 }
 
+/** Whether an active single-set integration has a value stored for `name` (no decrypt). */
+export function hasField(id, name) {
+  return Boolean(readAll()[id]?.fields?.[name]);
+}
+
 /** All active integration ids — used by runtime to build mcpServers config. */
 export function activeIds() {
   return Object.keys(readAll());

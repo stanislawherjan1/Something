@@ -1225,6 +1225,67 @@
       "tagline": "Audiences and campaigns"
     },
     {
+      "id": "hubspot",
+      "label": "HubSpot",
+      "logo": "/integrations/hubspot.svg",
+      "description": "Contacts, companies, deals, lists, marketing emails and campaigns via HubSpot's official hosted MCP server. HubSpot has no dynamic client registration, so you register one MCP connector in your HubSpot account and paste its client ID and secret; then sign in to HubSpot and approve. CRM records you ask about are sent between HubSpot and the assistant; marketing emails are drafted, never sent, through this connection.",
+      "category": "marketing",
+      "fields": [
+        {
+          "name": "HUBSPOT_CLIENT_ID",
+          "label": "Client ID",
+          "type": "text",
+          "placeholder": "Client ID from your HubSpot MCP connector",
+          "helper": "Development → MCP Connectors → your connector → Client ID."
+        },
+        {
+          "name": "HUBSPOT_CLIENT_SECRET",
+          "label": "Client Secret",
+          "type": "secret",
+          "placeholder": "Client secret from the same page",
+          "helper": "Same connector page. Stored encrypted on this server."
+        },
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "HubSpot connection",
+          "type": "remote-mcp-oauth",
+          "optional": true
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create an MCP connector in HubSpot",
+          "body": "In HubSpot open **Development** → **MCP Connectors** and click **Create MCP connector**. Name it after your assistant (e.g. `{{botDisplayName}}`). You need a HubSpot user with access to the Development section."
+        },
+        {
+          "title": "Set the redirect URL",
+          "body": "Paste this exact address as the connector's **Redirect URL**:\n\n`{{oauthRedirectUrl}}`\n\nSave the connector."
+        },
+        {
+          "title": "Copy the client ID and secret",
+          "body": "Open the connector's details page and copy the **Client ID** and **Client Secret** into the fields here."
+        },
+        {
+          "title": "Save and sign in",
+          "body": "Click **Save and connect**. A HubSpot window opens: sign in, pick your account and approve. If you close it before finishing, the HubSpot tile shows **Connect** to try again."
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.hubspot.com",
+        "name": "hubspot",
+        "allowedHosts": [
+          "mcp.hubspot.com"
+        ],
+        "oauthClient": {
+          "clientIdField": "HUBSPOT_CLIENT_ID",
+          "clientSecretField": "HUBSPOT_CLIENT_SECRET",
+          "tokenEndpointAuthMethod": "client_secret_post"
+        }
+      },
+      "tagline": "CRM, lists, marketing emails"
+    },
+    {
       "id": "cloudflare",
       "label": "Cloudflare",
       "logo": "/integrations/cloudflare.svg",

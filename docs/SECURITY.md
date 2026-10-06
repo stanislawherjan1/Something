@@ -1124,6 +1124,17 @@ deployment regression and re-run the relevant entrypoint.sh block — most
 of the perms/groups setup is in the root-block at the top of
 `entrypoint.sh` and is idempotent on re-run via `docker exec`.
 
+### 19d. Own OAuth Clients for Hosted MCPs (HubSpot)
+
+**Attack**: A provider without dynamic client registration needs a client secret the admin creates at the provider. Kept in the DCR cache (`mcp-oauth-clients.json`) or sent to the browser, it would sit outside the encrypted store or reach the page.
+
+**Mitigation**:
+✅ The client ID and secret are ordinary catalog fields saved through `PUT /api/integrations/:id` (admin-only, audit-logged, AES-256-GCM like every other key). The DCR cache is never written for these entries.
+✅ The broker decrypts the client only to build the SDK's `clientInformation` for the authorize URL (client ID only) and the token/refresh calls to the provider, which go through the egress proxy. The authorize URL, the popup and the dashboard never carry the secret.
+✅ The bot still sees only short-lived access tokens through `mcp-auth-helper.sh`, and the server is wired for it only once a sign-in has stored tokens.
+
+**Code**: [ide-template/workspace-api/lib/integrations/oauth.js](../ide-template/workspace-api/lib/integrations/oauth.js) (`ownClientFor`), test `lib/oauth-own-client.test.mjs`.
+
 ### 20. Plaintext Credential Leak via Stale `.env`
 
 **Attack**: Operator pasted the token into the wizard, but the old `CLAUDE_CODE_OAUTH_TOKEN` (or `SHOPIFY_CLIENT_SECRET`, etc.) is still in `clients/<client>/.env`. Time Machine / iCloud / Dropbox backups of the operator's laptop leak the plaintext even though "everything is encrypted on the server".

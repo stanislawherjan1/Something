@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import TileBanner from './TileBanner.jsx';
 import StatusTag from './StatusTag.jsx';
 import EditorHeader from '../EditorHeader.jsx';
-import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
+import { connectsByPopup, needsOwnOAuthClient, isOpenServer, openOAuthPopup, openBlankOAuthPopup, startOAuthIn } from './integrationConnect.js';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
@@ -149,7 +149,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     if (!activateId) { setActivating(null); return; }
     const match = integrations.find(i => i.id === activateId);
     if (!match || !isAdmin) return;               // members can't activate
-    if (isRemoteMcpOauth(match)) {
+    if (connectsByPopup(match)) {
       const next = new URLSearchParams(searchParams);
       next.delete('activate');
       setSearchParams(next, { replace: true });
@@ -221,7 +221,9 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     // activation is the provider consent popup → server-side callback
     // (routes/integrations.js). The popup must open synchronously inside
     // this click handler or popup blockers eat it.
-    if (isRemoteMcpOauth(integration)) {
+    // An own-client integration (catalog `mcp.oauthClient`) first takes its
+    // client ID and secret in the modal; once saved, a click goes here.
+    if (connectsByPopup(integration)) {
       // The popup postMessages us on success (handled below). As a fallback for
       // when it can't reach the opener, revalidate once when it closes — a
       // single scoped refetch, NOT a blanket focus listener (that caused the
@@ -747,6 +749,13 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
       {!canManage   ? <span className={idle}><Lock className="size-3.5" strokeWidth={1.75} /></span>
        : isComingSoon ? <span className={idle}><Clock className="size-3.5" strokeWidth={1.75} /></span>
        : cantActivate ? <span className={idle} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
+       : integration.oauthPending ? (
+          // Client saved, provider sign-in not finished: offer it again.
+          <button type="button" onClick={onActivate}
+            className={cn(btn, 'bg-muted/40 text-muted-foreground/80 hover:bg-muted/55 hover:text-foreground/90')}>
+            Connect
+          </button>
+        )
        : isActive     ? (
           // "Added" at rest; on hover the same button offers to remove it.
           <button type="button" onClick={onRemove} aria-label={`Remove ${integration.label}`}
@@ -841,6 +850,24 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             <Lock className="size-3.5" strokeWidth={1.75} />
             {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
           </button>
+        ) : integration.oauthPending ? (
+          // Client saved, provider sign-in not finished: Connect runs it again.
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onActivate}
+              className="inline-flex flex-1 items-center justify-center rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
+            >
+              Connect {integration.label}
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center justify-center rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+            >
+              Remove
+            </button>
+          </div>
         ) : isActive && integration.home === 'browser-agent' ? (
           // Set up and managed where it is used (the Browser agent page).
           <button
@@ -895,7 +922,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             onClick={onActivate}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
-            {isOneClick(integration) ? 'One-click connect' : 'Activate'}
+            {isOneClick(integration) && !needsOwnOAuthClient(integration) ? 'One-click connect' : 'Activate'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </button>
         )}
@@ -1323,9 +1350,13 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
     logoUrl:        branding.logoUrl,
     iconUrl:        branding.iconUrl,
     title:          branding.title,
+    // The callback an admin registers in a provider's developer console for
+    // an own-client OAuth integration (catalog `mcp.oauthClient`).
+    oauthRedirectUrl: `${window.location.origin}/api/integrations/oauth/callback`,
   };
 
   const isMulti = !!integration.multi;
+  const ownOAuthClient = needsOwnOAuthClient(integration);
   const itemLabel = integration.itemLabel || 'Item';
   // For `multi` integrations, fields flagged `globalForMulti` are rendered
   // once at the top of the modal and the same value is copy-pasted into
@@ -1340,7 +1371,8 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
   // dropdown form field, which is what we hand the user with the credential
   // inputs and reads as confusing UI.
   const globalFields  = (integration.fields || []).filter(f => f.globalForMulti);
-  const perItemFields = (integration.fields || []).filter(f => !f.globalForMulti);
+  // The OAuth token field is filled by the provider callback, never typed.
+  const perItemFields = (integration.fields || []).filter(f => !f.globalForMulti && f.type !== 'remote-mcp-oauth');
   // Browser-login integrations (e.g. Docs Comments) activate themselves through
   // their own Connect → Done flow (connect-start pre-activates server-side).
   // There is no separate "Activate" step — the field IS the whole form. We
@@ -1415,6 +1447,9 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
     setError(null);
     setRestartFailed(false);
     setPhase('saving');
+    // Own-client OAuth: the consent popup follows the save, so open it now,
+    // inside the submit gesture, and point it at the provider once saved.
+    const popup = ownOAuthClient ? openBlankOAuthPopup(integration) : null;
     try {
       // For multi integrations, fold global field values into every item
       // record. For single integrations, merge them into the single fields
@@ -1431,10 +1466,12 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      if (popup) startOAuthIn(popup, integration);
       // Close immediately; the dashboard shows "connected" + the restart
       // progress toast (unified with one-click/open flows).
       onSuccess(data);
     } catch (err) {
+      if (popup && !popup.closed) popup.close();
       setError(err.message);
       setPhase('idle');
     }
@@ -1710,7 +1747,7 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                     ? 'Restarting bot…'
                     : phase === 'done'
                       ? (restartFailed ? 'Saved' : 'Done')
-                      : 'Activate'}
+                      : ownOAuthClient ? 'Save and connect' : 'Activate'}
               </button>
             )}
           </div>
