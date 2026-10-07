@@ -460,7 +460,7 @@ project, topic) when no conversation's tag carried one — a migrated page's
 title never does — and keeps it in `_engine/kinds.json`, for every viewer; a
 tag with a kind still wins. The owner can write their own line; after that, new
 information arrives as a suggestion to take or decline, never a silent
-overwrite. A topic's card shows its first mentions and its latest.
+overwrite. A topic's card shows its facts newest first, from the top (the newest 40, all on request).
 
 `lib/memory-maintenance.js` runs once a day after 04:00 local: purge hidden
 records past 30 days, prune migration backups past 30 days, archive and remove

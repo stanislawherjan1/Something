@@ -874,7 +874,7 @@ function TimelineModal({ topic, candidates, onClose, onChanged }) {
               <MergeLine topic={topic} candidates={candidates} onChanged={() => { changed(); onClose(); }} />
               {items.length > 0 && (
                 <section>
-                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">{all ? 'Everything, newest first' : 'Latest'}</h3>
+                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">{all ? 'Everything, newest first' : 'Newest first'}</h3>
                   <ol className="relative border-l border-border/60 pl-5">{items.map((it) => <TimelineItem key={it.factId || it.recordId} it={it} onChanged={changed} />)}</ol>
                 </section>
               )}

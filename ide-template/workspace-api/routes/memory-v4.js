@@ -341,11 +341,13 @@ export default function memoryV4Router() {
     const bare = [];
     const all = [...views.topicFacts(v.read, [t.key, ...t.aliases.map(views.topicKey)]).map(ofFact), ...bare].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));   // oldest first
     const item = (x) => x;
-    // How the name came up is on the first records; the limit on the newest
-    // used to cut exactly those. Both ends, in full on request.
+    // Newest first, all of it — the owner reads a timeline from the top. (The
+    // oldest three used to sit apart as "How it came up", in the opposite
+    // order, and read as the timeline running backwards.) The newest 40, all
+    // on request.
     const full = req.query.all === '1';
-    const first = full ? [] : all.slice(0, 3).map(item);
-    const rest = (full ? all : all.slice(3).slice(-40)).slice().reverse().map(item);
+    const first = [];
+    const rest = (full ? all : all.slice(-40)).slice().reverse().map(item);
     const p = views.readProfiles(v.own).topics[t.key] || null;
     return res.json({
       ok: true, name: t.name, kind: t.kind, n: t.mentions, aliases: t.aliases,

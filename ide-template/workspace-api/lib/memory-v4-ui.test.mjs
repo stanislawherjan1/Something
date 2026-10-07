@@ -98,8 +98,8 @@ r = await stan('GET', '/topics');
 const orion = r.body.items.find(t => t.name === 'Orion');
 ok('(b) topics carry kind and a latest line', orion && orion.kind === 'company' && orion.line === 'Orion asked for SSO.', r.body.items);
 r = await stan('GET', `/topics/${orion.key}/timeline`);
-ok('(b) a topic\'s timeline: how it came up first, then the rest newest first', r.body.total === 2 && r.body.first.length === 2 && r.body.first[0].text === 'Orion kickoff is on Tuesday.' && r.body.items.length === 0, r.body);
-ok('(b) the timeline lists the facts about the topic — a fact from the same conversation about something else is not there', r.body.first.every(x => x.factId && /Orion/.test(x.text)), r.body.first);
+ok('(b) a topic\'s timeline: newest first, from the top', r.body.total === 2 && r.body.first.length === 0 && r.body.items.length === 2 && r.body.items[0].text === 'Orion asked for SSO.' && r.body.items[1].text === 'Orion kickoff is on Tuesday.', r.body);
+ok('(b) the timeline lists the facts about the topic — a fact from the same conversation about something else is not there', r.body.items.every(x => x.factId && /Orion/.test(x.text)), r.body.items);
 r = await stan('GET', `/topics/${orion.key}/timeline?all=1`);
 ok('(b) ...and all of them newest first on request', r.body.items.length === 2 && r.body.items[0].text === 'Orion asked for SSO.' && r.body.first.length === 0);
 
