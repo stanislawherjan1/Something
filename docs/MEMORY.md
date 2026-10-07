@@ -37,6 +37,12 @@ it the way you would a colleague: just tell it.
   yourself, and remove a topic you don't want tracked.
 - **Preferences**: the standing rules you stated ("keep answers short",
   "never email a client without asking"). They are read on every turn.
+- **Sources**: what feeds memory besides conversations. A meeting notetaker
+  you have connected (Granola, Fireflies, Fathom, Otter, Read AI, Krisp) is
+  read in each night: its notes and transcripts become facts of yours, each
+  with the meeting behind "See source" and the service's icon after its title.
+  A switch per source, here and on the integration's card; "Read now" reads
+  it at once.
 - **Privacy** (team mode): what you shared with the team, and the lines the
   bot asks you about before sharing them.
 - **Changes**: a log of what memory did (remembered, corrected, merged, hidden,
@@ -49,6 +55,13 @@ sharing a borderline business line. Privacy is enforced by where a thing is
 stored, never by role: an admin cannot read a teammate's private memory, and
 the bot never reads one person's private memory on another's behalf. A
 Telegram group has a memory of its own, readable by its members.
+
+**Meetings you did not tell it about.** Connect a meeting notetaker and you
+need not recount your meetings: each night the coworker reads the meetings of
+the day, and what was said in them is remembered the way a conversation is —
+one fact per thing, a change as a dated remark, the meeting itself a click
+away. It only ever reads into your own memory; nothing from a meeting reaches
+the team unless you share it.
 
 **New and older workspaces.** A new workspace starts on this memory from day
 one. A workspace set up before it keeps its old notes until an admin moves it
@@ -176,6 +189,72 @@ survived dedup often enough to clutter Facts and "Right now" — they are gone.
 What a single conversation's notes miss is the price; the digest and the
 who-lines (views, not facts) still read the whole period.
 
+### Fed by integrations
+
+`lib/memory-sources.js`. A meeting from a connected notetaker becomes a
+**record** the way a conversation does, in the private scope of the person it
+is read for — `source: 'integration'`, `conv: import:<id>:<item>`, `ts` the
+meeting's time, `tags.import` holding the service, the item id, title, people
+and link — and the facts store and the nightly run treat it like any other
+record. The service's notes are one record; the transcript is filed in
+conversation-sized parts; each record's text opens with the meeting's
+heading ("Meeting: <title>", "With: <participants>") — never the service's
+name, which is the record's source and was once read as a party ("Szymon of
+Granola"). **One meeting is one fact.** The meeting is read whole, in one
+pass (`router.meeting`: the app is never a party, anonymous speakers are
+never assigned, a person's employer only from the words): a status about
+the meeting on its day, titled by code ("Call with Szymon Kubicki (5 Oct
+2026)"), its summary as the description (what it was about, what was
+decided, who committed to what), the names it was about, on the notes record
+(standing `found`) or the first part. Only what lives on after the call and
+has a day — a follow-up, a deadline, at most two — is filed on its own,
+grounded in the words like any note (`whenFrom`, `dayStated`) and pinned
+to the part that holds them (standing `said`). Twenty-six parts read one by
+one once gave eleven facts from one hour, each meaningless outside the call.
+A chat-made "call with X" on the same day keys with the import and shows
+once; two imported meetings with the same person on one day do not key with
+each other. The item id dedupes; an erased meeting is tombstoned like any
+record and never learned again.
+
+What can feed memory is declared in the catalog (`memory: { kind, default,
+what }`; today the six notetakers, `kind: meetings`, on by default). Whether
+a person's connected feeder is on is their own setting
+(`memory/_engine/sources.json`), read and written by Memory → Sources
+(`/api/memory/v4/sources`) and by the switch on the integration's card.
+
+The fetch is **code, at 02:00 the person's time** (before the 04:00
+tidy-up; `startImports`, a ten-minute tick): workspace-api reads the service
+itself as an MCP client (`lib/integrations/mcp-client.js` — the person's
+OAuth token from the store, the egress proxy's open listener, one connection
+per run) through the service's feeder (`lib/memory-feeders/`: list the items
+since a time, get one item's notes and transcript — Granola's reader checked
+against its live server; Fireflies, Fathom, Otter, Read AI and Krisp read by
+`generic.js`, which takes the tool names each service publishes and fills
+the arguments from the schema the server itself declares; Fathom's tools
+were checked live)
+and files each new item through `importItem` — the records first, each marked
+pending until the meeting pass has run (an import stopped halfway finishes
+on the next run, a finished item answers "already"). No model in the fetch:
+the
+first version had a headless turn pass the transcript to `memory_import`
+verbatim, and the model spent twenty minutes re-emitting one transcript as
+a tool argument (and, with `--tools ''`, still ran shell commands through a
+built-in — see SECURITY §23). A service whose answer the reader cannot read (a renamed tool, a changed
+shape) is read that night through such a turn (`runHeadlessTurn`: a strict MCP config of that service
+and workspace-api, every built-in tool refused by name, the memory write
+and delivery tools disallowed, a 30-minute stop), for its **notes only**,
+never a transcript. The window starts a day before the newest meeting
+imported (two days on a fresh source, never more than a week back), so a
+skipped item is caught next time and a repeat is harmless. "Read now" on
+the Sources tab runs the same read at once. The import route
+(`/internal/memory/v4/import`, turn token; the bot's `memory_import`)
+refuses a group turn, an integration that is not a feeder, not connected,
+or switched off for that person. Changes logs "Imported a meeting from …"
+with counts only. To check a newly connected notetaker before a night depends
+on it: `node bin/probe-feeder.mjs <id>` (as wsapi in the container) lists the
+server's tools, the meetings the reader parses and, for the newest, which
+fields came back — names and lengths only, never what was said.
+
 ### Reading
 
 - **The prefix** (cached): the product rules from the v3 preamble, identity and
@@ -213,6 +292,10 @@ who-lines (views, not facts) still read the whole period.
   detail becomes a dated update under the fact, something no longer true marks
   the old fact as such — and the tool answers what it did),
   `memory_forget`
+  (the `memory-notes` skill says how a note is written: it must stand on its
+  own months later — what it is about, who, when, what was decided, where it
+  came from; pasted meeting notes are one "Call with <who> (<date>)" note that
+  merges with the notetaker's; when the bot cannot say what or who, it asks first);
   (hides; erased for good after 30 days), and `memory_now` — the person's
   current settings, "Right now", "What I'm keeping track of" and routines,
   fetched fresh. The Telegram brain's prefix is loaded once per session and can
@@ -264,7 +347,11 @@ ledger — `memory/facts.jsonl` (shared), `memory/users/<slug>/facts.jsonl`,
 - `add` — a new fact with a stable id, the record it rests on, the words it
   stands on (`evidence`), its standing (`said` for a person's words, `found` for
   what the assistant found with a tool, `note` for `memory_note`, or `legacy`
-  for what was migrated) and who wrote it;
+  for what was migrated), who wrote it, and two times: `ts`, the
+  conversation's (the story; a replacement takes the later of the two), and
+  `at`, when memory learned it — the Facts tab lists by `at`, newest first,
+  so a meeting read at night sits under that night, and an earlier version
+  says until when it stood;
 - `confirm` — the same thing said again: one more source (shown as "N sources");
 - `replace` — it changed: the old fact is history, `by` names the **fact** that
   took its place (never a record — a record that held no note once retired a fact
@@ -405,8 +492,9 @@ The tab has a bulk select for facts; erasing the whole conversation lives where
 the conversation is shown ("See source"), and both erasures confirm in a modal.
 An open fact shows its own timeline — the versions it replaced (struck through
 when no longer true) and its dated updates — under its description. A topic's
-timeline offers hide/erase per fact (per record only for a line that gave no
-fact); a topic can
+timeline is its facts only (a conversation that named it and gave no fact —
+a request to draft a reply, a passing mention — is not shown there; it stays
+searchable), each with hide/erase; a topic can
 be **removed** — the name stops making a tile for that person, their
 conversations are no longer tagged with it (the extractor's exclusion list), the
 records keep their text; the undo in Changes puts the tag back on exactly those

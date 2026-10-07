@@ -37,6 +37,8 @@ const ti = await import('./turn-identity.js');
 // ...and memory_note reads the person's words with the extractor: a stand-in
 // that dates a meeting with Kamil from the words it is given.
 (await import('./memory-llm.js')).configureRunner(async ({ user, schema }) => {
+  // The meeting pass (an import): one summary, the people from "With:".
+  if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }], upcoming: [] };
   if (schema?.properties?.notes) {
     const m = String(user).match(/(call|meeting) with Kamil on (\d+) October/i);
     if (m) return { notes: [{ title: `Kamil ${m[2]} October`, text: `A ${m[1]} with Kamil on ${m[2]} October.`, kind: 'status', about: 'meeting', when: `2026-10-${m[2].padStart(2, '0')}`, whenFrom: `on ${m[2]} October`, dayStated: true, subject: 'Kamil', evidence: m[0], names: [] }], rules: [], entities: [] };
@@ -151,6 +153,29 @@ ok('(d) ...but its sharer can hide what they shared', r.body.hidden.includes(kas
 r = await call('GET', '/search?q=Orion', { token: stanTurn });
 ok('(d) hidden records leave search at once', !/term sheet/.test(r.body.text) && !/kickoff/.test(r.body.text));
 ok('(d) hiding is reversible (still on disk)', L.read({ scopes: ['user:stan'], includeHidden: true }).some(x => x.id === stanPriv.id && x.hidden));
+
+// ─── (h) the import route: a turn's own scope, never a group, only a feeder ──
+{
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(ROOT, '.integrations'), { recursive: true });
+  writeFileSync(join(ROOT, '.integrations', 'credentials.json'), JSON.stringify({ granola: { activatedAt: '2026-10-01T00:00:00Z', fields: {} } }));
+  const body = { integration: 'granola', item: 'g-9', title: 'Orion sync', at: '2026-10-05T10:00:00Z', participants: ['Marek'], summary: 'Orion wants SSO by March.' };
+  r = await call('POST', '/import', { body });
+  ok('(h) no turn token → refused', r.status === 403);
+  r = await call('POST', '/import', { token: groupTurn, body });
+  ok('(h) a group turn cannot import', r.status === 403 && /group/.test(r.body.error), r.body);
+  r = await call('POST', '/import', { token: stanTurn, body: { ...body, integration: 'shopify' } });
+  ok('(h) only a memory source', r.status === 400 && /not a memory source/.test(r.body.error), r.body);
+  r = await call('POST', '/import', { token: stanTurn, body: { ...body, integration: 'fireflies' } });
+  ok('(h) only a connected one', r.status === 400 && /not connected/.test(r.body.error), r.body);
+  r = await call('POST', '/import', { token: stanTurn, body });
+  ok('(h) imported into the turn\'s own scope', r.status === 200 && r.body.ok && r.body.records === 1 && L.read({ scopes: ['user:stan'] }).some(x => x.conv === 'import:granola:g-9'), r.body);
+  ok('(h) ...and nowhere else', !L.read({ scopes: ['shared', 'user:kasia'] }).some(x => x.conv === 'import:granola:g-9'));
+  r = await call('POST', '/import', { token: stanTurn, body });
+  ok('(h) the same item again: already', r.status === 200 && r.body.already === true, r.body);
+  r = await call('POST', '/import', { token: kasiaTurn, body });
+  ok('(h) another person importing the same meeting gets their own copy', r.status === 200 && r.body.ok && L.read({ scopes: ['user:kasia'] }).some(x => x.conv === 'import:granola:g-9'), r.body);
+}
 
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);

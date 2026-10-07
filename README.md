@@ -182,6 +182,7 @@ Open **AI Settings → Memory**:
 - **Topics**: the people, companies and projects that keep coming up, each with who they are to you and the facts about them over time.
 - **Preferences**: the standing rules you stated ("keep answers short", "never email a client without asking").
 - **Privacy** (team mode): what the team may see of yours, and the lines it asks you about before sharing.
+- **Sources**: what feeds memory besides conversations. Connect a meeting notetaker and each night the day's meetings are read in, notes and transcripts, and remembered like a conversation, each fact with the meeting behind it. A switch per source.
 - **Changes**: a log of what memory did: remembered, corrected, merged, hidden, erased, restored.
 
 In a [team workspace](#team) memory splits like the files do: shared memory the team works from, private memory that is only yours. Privacy is enforced on the server by where a thing is stored, never by role: an admin cannot read a teammate's private memory, and the bot won't go digging through it on someone else's behalf.

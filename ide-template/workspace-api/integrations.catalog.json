@@ -1802,7 +1802,12 @@
           "mcp.granola.ai"
         ]
       },
-      "tagline": "Meeting notes"
+      "tagline": "Meeting notes",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     },
     {
       "id": "fireflies",
@@ -1825,7 +1830,12 @@
           "api.fireflies.ai"
         ]
       },
-      "tagline": "Meeting transcripts"
+      "tagline": "Meeting transcripts",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     },
     {
       "id": "fathom",
@@ -1848,7 +1858,12 @@
           "api.fathom.ai"
         ]
       },
-      "tagline": "Meeting recordings"
+      "tagline": "Meeting recordings",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     },
     {
       "id": "otter",
@@ -1871,7 +1886,12 @@
           "mcp.otter.ai"
         ]
       },
-      "tagline": "Meeting transcripts"
+      "tagline": "Meeting transcripts",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     },
     {
       "id": "readai",
@@ -1894,7 +1914,12 @@
           "api.read.ai"
         ]
       },
-      "tagline": "Meeting summaries"
+      "tagline": "Meeting summaries",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     },
     {
       "id": "krisp",
@@ -1917,7 +1942,12 @@
           "mcp.krisp.ai"
         ]
       },
-      "tagline": "Meeting notes"
+      "tagline": "Meeting notes",
+      "memory": {
+        "kind": "meetings",
+        "default": true,
+        "what": "your meetings' notes and transcripts, each night"
+      }
     }
   ]
 }

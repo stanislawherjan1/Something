@@ -11,6 +11,11 @@ approve, and you are back. A few ask for an API key the service gives you;
 paste it and you are done. Either way, nothing to install, nothing to restart.
 The key is stored encrypted on your own server and never leaves it.
 
+A meeting notetaker (Granola, Fireflies, Fathom, Otter, Read AI, Krisp) also
+feeds the coworker's memory: each night it reads the day's meetings, notes and
+transcripts, and remembers what was said the way it remembers a conversation.
+The switch for that sits on the service's card and under Memory → Sources.
+
 Once a service is connected the coworker uses it when a conversation or a
 routine calls for it: "what's on my calendar tomorrow", "pull the notes from
 today's call", "create a task for Ola". Connecting a service also adds a
@@ -465,7 +470,9 @@ A working MCP in the post-broker world is six steps. Follow them in order; each 
 
 6. **Deploy entry** in `ide-template/deploy.sh` — scp your `index.js` + `package.json` to the remote build context. Dockerfile LAYER 2d picks it up automatically as long as you copy with `COPY apps/your-thing-mcp /opt/ide/apps/your-thing-mcp` (already templated — bump only if you add unusual deps).
 
-7. **Marketplace routines** (optional, recommended) — add a few entries to `workspace-api/routines.catalog.json` with `"requires": ["your-integration-id"]`: duties the bot can do with it on its own ("check X daily, tell me only when Y"). They appear in Routines → Marketplace once the integration is connected. See [ROUTINES.md](ROUTINES.md#marketplace). Then regenerate the routines skill's reference: `node workspace-api/lib/routines-reference.js` (a test fails until you do).
+7. **Memory** — decide, and write the decision down: does this integration hold things worth remembering about the person's life and work (a notetaker's meetings: yes; a shop's order numbers or ad metrics: no), is what it holds dated and bounded enough to read in nightly, and exactly what is read (today: a meeting's title, time, participants, notes and transcript)? If yes, declare it in the catalog entry — `"memory": { "kind": "meetings", "default": true, "what": "…" }` — and say so in [MEMORY.md](MEMORY.md#fed-by-integrations); `default: true` only for a kind where connecting it plainly means "read my meetings". If no, leave the block out: nothing is read.
+
+8. **Marketplace routines** (optional, recommended) — add a few entries to `workspace-api/routines.catalog.json` with `"requires": ["your-integration-id"]`: duties the bot can do with it on its own ("check X daily, tell me only when Y"). They appear in Routines → Marketplace once the integration is connected. See [ROUTINES.md](ROUTINES.md#marketplace). Then regenerate the routines skill's reference: `node workspace-api/lib/routines-reference.js` (a test fails until you do).
 8. **A skill** — `skills/optional/<id>/SKILL.md` with `requires: <mcp.name>` (the server **name**, not the catalog id) and `allowed-tools: mcp__<mcp.name>__*`: the real tools from the vendor's docs, which ones send/pay/publish/delete and need a yes first, gotchas, and the routines that use it. Mirror any existing integration skill. Without one the bot has the tools but no idea how to use them well.
 
 After your first deploy, verify with `docker exec <ide> su -c "claude mcp list" coder` — your MCP should show `✓ Connected`. If `✗ Failed to connect`, run the spawn manually as the `mcp` user (`docker exec -u mcp ... /usr/local/bin/mcp-runner your-thing 2>&1`) to see the actual error — claude doesn't surface MCP startup stderr.

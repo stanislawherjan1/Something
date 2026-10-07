@@ -214,7 +214,7 @@ function turnModel() {
 // overrides it.
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -263,6 +263,13 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // memory cards are still in the prompt; only reaching further is gone.
   const pageTurn = !!tabToken;
   let actMcpFile = null;
+  // `--tools ''` was supposed to drop every built-in tool from a restricted
+  // turn, and the model still ran shell commands through Monitor (an import
+  // turn, 170 calls, to read a transcript it was not allowed to). So every
+  // built-in is also refused by name — the belt under the braces.
+  const NO_BUILTINS = ['Bash', 'BashOutput', 'KillShell', 'Monitor', 'Agent', 'Task', 'Workflow', 'Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS',
+    'WebFetch', 'WebSearch', 'Skill', 'TaskStop', 'TaskOutput', 'TodoWrite', 'ToolSearch', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup',
+    'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'SendMessage', 'ListAgents', 'RemoteTrigger', 'PushNotification', 'Artifact'];
   if (pageTurn) {
     let servers = {};
     try {
@@ -276,10 +283,29 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     args[args.indexOf('--mcp-config') + 1] = actMcpFile;
     args.push('--strict-mcp-config');
     args.push('--tools', '');
-    blocked.push(
+    blocked.push(...NO_BUILTINS,
       'mcp__workspace-api__memory_write', 'mcp__workspace-api__memory_grep', 'mcp__workspace-api__memory_log',
       'mcp__workspace-api__recent_messages', 'mcp__workspace-api__fix_sent_message',
     );
+  }
+  // A turn that must reach only a few MCP servers (the night memory import:
+  // the person's notetakers and the memory tools) gets a config of those
+  // alone, strict, and no built-in tools — nothing to run, read or write with.
+  let onlyMcpFile = null;
+  if (!pageTurn && Array.isArray(onlyMcp)) {
+    let servers = {};
+    try {
+      const all = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers || {};
+      for (const name of ['workspace-api', ...onlyMcp]) if (all[name]) servers[name] = all[name];
+    } catch (err) {
+      process.stderr.write(`[claude] restricted turn: no MCP config (${err.message}) — running with none\n`);
+    }
+    onlyMcpFile = join(tmpdir(), `only-mcp-${randomUUID()}.json`);
+    writeFileSync(onlyMcpFile, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
+    args[args.indexOf('--mcp-config') + 1] = onlyMcpFile;
+    args.push('--strict-mcp-config');
+    args.push('--tools', '');
+    blocked.push(...NO_BUILTINS, 'mcp__workspace-api__memory_write', 'mcp__workspace-api__memory_forget', 'mcp__workspace-api__memory_note', 'mcp__workspace-api__web_send_message', 'mcp__workspace-api__add_routine', 'mcp__workspace-api__set_my_settings');
   }
   args.push('--disallowedTools', blocked.join(','));
   if (turnModel()) args.push('--model', turnModel());
@@ -648,6 +674,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   proc.on('close', (code, signal) => {
     revokeTurnToken(turnId);
     if (actMcpFile) { try { unlinkSync(actMcpFile); } catch { /* already gone */ } }
+    if (onlyMcpFile) { try { unlinkSync(onlyMcpFile); } catch { /* already gone */ } }
     if (code === 0) return onDone({ sessionId: capturedSessionId });
 
     // A spent plan is not a crash and must not read like one. The turn failed
@@ -705,4 +732,43 @@ function extractImages(content) {
     }
   }
   return out;
+}
+
+/**
+ * A turn nobody is talking to — a system job run AS a person (the night memory
+ * import): their identity and scope, only the named MCP servers plus the
+ * memory tools, no built-in tools, no delivery. Resolves with the reply text
+ * once the turn is done; rejects on a spawn error.
+ */
+const HEADLESS_MINUTES = Number(process.env.MEMORY_IMPORT_TURN_MINUTES) || 30;
+export function runHeadlessTurn({ message, actor, actorName, servers = [], label = 'headless', minutes = HEADLESS_MINUTES }) {
+  return new Promise((resolve, reject) => {
+    let text = '';
+    let failed = null;
+    let calls = 0;
+    const t0 = Date.now();
+    const log = (m) => process.stderr.write(`[claude/${label}] ${actor}: ${m}\n`);
+    // Nobody is watching this turn, so its tool calls go to the log — the one
+    // place to see what a night's import did — and it cannot run for ever.
+    const proc = runClaudeTurn({
+      message, actor, actorName: actorName || actor, actorIsAdmin: false, teammates: [],
+      onlyMcp: servers,
+      onText: (t) => { text += t; },
+      onToolStart: (info) => { calls++; log(`tool ${String(info?.name || '?').replace(/^mcp__/, '')} (${Math.round((Date.now() - t0) / 1000)} s)`); },
+      onToolEnd: () => {}, onImage: () => {},
+      onError: (e) => { failed = e; },
+      onDone: () => {
+        clearTimeout(timer);
+        log(`done: ${calls} tool call${calls === 1 ? '' : 's'}, ${Math.round((Date.now() - t0) / 1000)} s${failed ? `, error: ${String(failed?.message || failed).slice(0, 160)}` : ''}`);
+        if (failed && !text) return reject(failed instanceof Error ? failed : new Error(String(failed)));
+        resolve(text);
+      },
+    });
+    const timer = setTimeout(() => {
+      failed = new Error(`stopped after ${minutes} minutes`);
+      log(`stopping after ${minutes} minutes`);
+      try { proc?.kill?.('SIGTERM'); } catch { /* already gone */ }
+    }, minutes * 60_000);
+    timer.unref?.();
+  });
 }

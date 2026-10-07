@@ -1187,6 +1187,18 @@ Memory v4 ([MEMORY.md](MEMORY.md#how-it-works); `MEMORY_V4=off` is the kill swit
 conversations, so its boundaries are about scope and injection rather than
 about which facts a model chose to keep.
 
+- **An integration feeds one person's memory only.** A meeting read from a
+  notetaker (lib/memory-sources.js) is filed in the private scope of the
+  person it is read for, never shared or a group. workspace-api reads the
+  service itself (lib/integrations/mcp-client.js, the person's token, the
+  egress proxy) — no model in the fetch; a service without a feeder is read
+  through a turn that runs as that person with a strict MCP config of that
+  service and workspace-api alone, the memory write and delivery tools
+  disallowed, and **every built-in tool refused by name**: `--tools ''` alone
+  did not stop the model from running shell commands through `Monitor` (seen
+  on the canary 2026-10-05; the page turn now carries the same list). The
+  import route takes the actor from the turn token and refuses a group turn
+  or a source the person has not switched on.
 - **Scope by path, identity by token.** Each scope is its own tree
   (`memory/ledger`, `memory/users/<slug>/ledger`, `memory/groups/<chatId>/ledger`).
   Which scopes a turn reads comes from its turn token (`lib/turn-identity.js`,

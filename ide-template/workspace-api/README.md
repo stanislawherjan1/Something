@@ -70,6 +70,9 @@ workspace-api/
 │   ├── memory-consolidator.js  # memory v4: files quiet conversations into the ledger (owner by code; router + notes add)
 │   ├── memory-router.js     # memory v4: the router and notes prompts, verbatim/evidence/name checks
 │   ├── memory-llm.js        # memory v4: one structured `claude -p` call (no tools), injectable for tests
+│   ├── memory-sources.js    # memory v4: integrations that feed memory (a notetaker's meetings → records), the person's switches, the night import
+│   ├── memory-feeders/      # memory v4: per-service readers (granola.js: list since, get notes + transcript) used by the night import
+│   ├── integrations/mcp-client.js  # workspace-api as a client of a provider's remote MCP (the person's token, the egress proxy)
 │   ├── memory-search.js     # memory v4: BM25 + vectors (RRF), timeline, per-scope stored vectors
 │   ├── embedder-client.js   # memory v4: forks apps/embedder, IPC, BM25 fallback
 │   ├── memory-recall.js     # memory v4: the per-turn recall block (fenced, coverage line, session dedupe)
@@ -102,7 +105,7 @@ workspace-api/
     ├── integrations.js      # /api/integrations — activate / configure / remove (encrypted at rest)
     ├── skills.js            # /api/skills — list / read skill markdown
     ├── memory.js            # /api/memory — graph, grep, prefix, threads, snapshot refresh
-    ├── memory-v4.js         # /api/memory/v4/* (the Memory screen), /api/routines (+ POST/PATCH/DELETE your own, + /catalog: the Marketplace), /api/internal/memory/v4/* (the memory tools)
+    ├── memory-v4.js         # /api/memory/v4/* (the Memory screen; /sources = what feeds memory, a switch per source, /sources/:id/run), /api/routines (+ POST/PATCH/DELETE your own, + /catalog: the Marketplace), /api/internal/memory/v4/* (the memory tools, incl. /import)
     ├── migrations.js        # /api/migrations/status|:id/start|:id/job (upgrade bar), /api/memory/backup
     ├── team.js              # /api/team — whitelist CRUD (admin only); PUT /api/team/default-timezone
     ├── branding.js          # /api/branding — name / avatar / logo
@@ -215,5 +218,7 @@ Then run the React dev server (`cd ../frontend && npm run dev`) — `vite.config
 **Branding pictures.** `/api/branding/avatar` and `/logo` are served with a one-year `immutable` cache when asked for by their versioned URL (`?v=<mtime>`, what `/api/branding` hands out); a new upload gets a new URL. The UI also remembers the last branding in `localStorage` so the bot's picture starts loading before `/api/branding` answers.
 
 **Facts.** `lib/memory-facts.js` keeps facts in `facts.jsonl` next to each scope's ledger (append-only events: add, confirm, replace (`why: superseded` when no longer true), update (a dated remark kept with the fact), amend, retire, hide, unhide, erased; erase rewrites the file). `GET /api/memory/v4/facts` items carry `updates`, `history` (the versions a current fact replaced), `supersededWhy`/`supersededByTitle`; `GET /api/memory/v4/search?q=` answers with `topics`, `facts` (best match first) and `hits`. `remember()` is the only writer (the consolidator, `memory_note`, `memory_write`'s fallback): a keyed status (`about|day|name`) matches with no model call, the rest go through `lib/memory-reconcile.js` (embeddings + one small model call). Routes: `GET /memory/v4/facts`, `POST /memory/v4/facts/bulk` (hide/erase by fact id), `POST /memory/v4/facts/unhide`. Migration `0102-facts-store` writes the store from the records' notes at boot. See docs/MEMORY.md.
+
+**Fed by integrations.** `lib/memory-sources.js`: a meeting from a connected notetaker (catalog entries with a `memory` block) becomes records in the person's private scope (`source: 'integration'`, `conv: import:<id>:<item>`, `tags.import`), the notes pass and `facts.remember()` take the facts (notes → `found`, transcript chunks → `said`), the item id dedupes. `GET /memory/v4/sources` lists the person's connected feeders with their switch and last run; `POST /memory/v4/sources/:id { on }` flips it; `POST /memory/v4/sources/:id/run` starts their import turn now. `POST /internal/memory/v4/import` (turn token; the bot's `memory_import`) files one item verbatim. `startImports()` runs per person at 02:00 their time: a feeder workspace-api can read itself (`lib/memory-feeders/<id>.js` over `lib/integrations/mcp-client.js`; Granola) is read by code; the rest through `runHeadlessTurn` in lib/claude.js (`onlyMcp` = that service + workspace-api, every built-in tool refused by name, notes only). See docs/MEMORY.md "Fed by integrations".
 
 **Fact titles.** The extractor gives every fact a `title` (and a status `about` + `when`); the nightly run and `bin/title-notes.mjs` backfill older facts (an `amend`, the text never changes).

@@ -139,10 +139,16 @@ ${cands.map((c, i) => `${i + 1}. (${c.kind}, ${c.ts.slice(0, 10)}) ${c.title ? `
  */
 export function inheritStatus(a, b) {
   const out = {};
-  if (a?.kind === 'status' || b?.kind === 'status') out.kind = 'status';
+  // A meeting that happened (the new one a dated 'fact') stays a fact: what
+  // was said does not expire with the plan it replaces.
+  if (a?.kind === 'fact' && a?.about && a?.when) out.kind = 'fact';
+  else if (a?.kind === 'status' || b?.kind === 'status') out.kind = 'status';
   const exp = [a?.expires, b?.expires].filter(Boolean).sort().pop();
   if (exp) out.expires = exp;
-  const about = a?.about || b?.about, when = a?.when || b?.when;
+  const about = a?.about || b?.about;
+  // The same day said with and without a time: the time is kept.
+  const whens = [a?.when, b?.when].filter(Boolean);
+  const when = whens.length === 2 && whens[0].slice(0, 10) === whens[1].slice(0, 10) ? whens.sort((x, y) => y.length - x.length)[0] : whens[0];
   if (about) out.about = about;
   if (when) out.when = when;
   return out;

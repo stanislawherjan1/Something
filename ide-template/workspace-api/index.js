@@ -55,6 +55,7 @@ import { reindexAll, pruneEngineStore } from './lib/memory-engine.js';
 import { migrateToEngine } from './lib/memory-migrate.js';
 import { autoApply as migrateAutoApply } from './lib/migrate.js';
 import { startMaintenance as startMemoryMaintenance } from './lib/memory-maintenance.js';
+import { startImports as startMemoryImports } from './lib/memory-sources.js';
 import jwt from 'jsonwebtoken';
 import { isReady as cryptoReady } from './lib/integrations/crypto.js';
 import { syncMcpServers } from './lib/integrations/runtime.js';
@@ -297,6 +298,8 @@ migrateAutoApply()
 // Memory v4 nightly jobs (lib/memory-maintenance.js) — only when MEMORY_V4 is
 // not off. Checks every 10 minutes, runs once per local day after 04:00.
 if (startMemoryMaintenance()) process.stdout.write('[workspace-api] memory v4 maintenance scheduled\n');
+// The night import of what each person's connected integrations hold (lib/memory-sources.js).
+if (startMemoryImports()) process.stdout.write('[workspace-api] memory v4 imports scheduled\n');
 
 // Seed the egress allowlist file on every boot — covers the cold-start
 // case (no integrations yet) where the host script would otherwise read a

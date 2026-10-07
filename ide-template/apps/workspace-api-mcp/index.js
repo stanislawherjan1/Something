@@ -108,7 +108,9 @@ const V4_TOOLS = [
       'same thing merges, a changed detail becomes a dated remark under the fact it corrects, and something no longer true marks the old fact ' +
       'as such — Facts and Right now show it straight away. A note about several things is split into one entry per thing; a part the ' +
       'person\'s words do not carry is left out and said so. Write only names and details the person said or memory holds; if you do not know who someone is, ask — never ' +
-      'fill a gap with a guess. Topics are not made by hand: they form on their own once a subject comes up in several conversations; do not ' +
+      'fill a gap with a guess. Every note must stand on its own, read months later without this chat: what it is about (the project or company by name), who (full names, and their role when it matters), when (absolute dates), what was decided or committed, and where it came from if not the person\'s own words. ' +
+      'Pasted meeting notes or a call summary are ONE note titled "Call with <who> (<d Mon yyyy>)", its text the summary of what was agreed — never loose sentences from it. If you cannot say what it is about, who or when, ask the person first. Load the memory-notes skill before writing. ' +
+      'Topics are not made by hand: they form on their own once a subject comes up in several conversations; do not ' +
       'say you created one. Report to the person what the result says.',
     inputSchema: {
       type: 'object',
@@ -119,6 +121,29 @@ const V4_TOOLS = [
         confirmNames: { type: 'array', items: { type: 'string' }, description: 'Only after a refusal naming words that are not names (a place, a translation): the words you vouch for. Never a person the person did not name.' },
       },
       required: ['text', 'said'],
+    },
+  },
+  {
+    name: 'memory_import',
+    description:
+      'Pass one item of a connected integration — a meeting from a notetaker — into memory, exactly as the service gives it. Used by the ' +
+      'night import that runs for the person, and when they ask you to read today\'s meeting notes in. Memory files the notes and the transcript ' +
+      'as records of theirs and takes the facts from them itself (one fact per thing, corrections as remarks); you copy, you do not judge. ' +
+      'Never summarise, shorten, translate or add anything. An item already imported is answered "already imported" and nothing is written. ' +
+      'Only sources the person switched on (Memory → Sources) are accepted. Not in a group chat.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        integration: { type: 'string', description: 'The integration\'s id, e.g. "granola", "fireflies".' },
+        item: { type: 'string', description: 'The service\'s own id of the meeting.' },
+        title: { type: 'string', description: 'The meeting\'s title as the service shows it.' },
+        at: { type: 'string', description: 'When the meeting started, ISO 8601.' },
+        participants: { type: 'array', items: { type: 'string' }, description: 'Participant names as the service lists them.' },
+        url: { type: 'string', description: 'A link to the meeting in the service, if any.' },
+        summary: { type: 'string', description: 'The service\'s notes or summary, whole and verbatim.' },
+        transcript: { type: 'string', description: 'The full transcript, verbatim, when the service offers one.' },
+      },
+      required: ['integration', 'item'],
     },
   },
   {
@@ -631,7 +656,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // ── Memory v4 ──────────────────────────────────────────────────────────────
-  if (['memory_search', 'memory_timeline', 'memory_note', 'memory_forget'].includes(name)) {
+  if (['memory_search', 'memory_timeline', 'memory_note', 'memory_forget', 'memory_import'].includes(name)) {
     if (!MEMORY_V4_TOOLS || PAGE_TURN) return { content: [{ type: 'text', text: 'Not available here.' }], isError: true };
     try {
       let r;
@@ -648,6 +673,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // all it had was "Saved".
         if (r.ok && r.already) r.text = `Already in memory${r.repeats?.length ? ` ("${r.repeats.join('", "')}")` : ''} — nothing new saved.`;
         else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}.`;
+      } else if (name === 'memory_import') {
+        r = await v4Call('POST', 'import', {
+          integration: String(args?.integration || ''), item: String(args?.item || ''), title: String(args?.title || ''), at: args?.at ? String(args.at) : null,
+          participants: Array.isArray(args?.participants) ? args.participants.map(String) : [], url: args?.url ? String(args.url) : null,
+          summary: String(args?.summary || ''), transcript: String(args?.transcript || ''),
+        });
+        if (r.ok && r.already) r.text = 'Already imported — nothing written.';
+        else if (r.ok) r.text = `Imported: ${r.records} record${r.records === 1 ? '' : 's'}, ${r.titles?.length || 0} fact${r.titles?.length === 1 ? '' : 's'}${r.titles?.length ? ` ("${r.titles.slice(0, 5).join('", "')}")` : ''}${r.updated?.length ? `; ${r.updated.length} remark${r.updated.length === 1 ? '' : 's'} added` : ''}${r.superseded?.length ? `; ${r.superseded.length} no longer true` : ''}.`;
       } else {
         r = await v4Call('POST', 'forget', { ids: Array.isArray(args?.ids) ? args.ids : [] });
         if (r.ok) r.text = `Hidden: ${r.hidden.length}${r.refused.length ? `; not yours to hide or not found: ${r.refused.join(', ')}` : ''}.${r.note ? ` ${r.note}.` : ''}`;

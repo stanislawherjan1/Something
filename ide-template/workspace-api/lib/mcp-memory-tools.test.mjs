@@ -38,6 +38,7 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (/\/note$/.test(req.url)) return res.end(JSON.stringify(parsed?.said ? { ok: true, id: 'f1', scope: 'private', replaced: [], saved: 'A title' } : { ok: false, error: 'said required' }));
     if (/\/forget$/.test(req.url)) return res.end(JSON.stringify({ ok: true, hidden: parsed?.ids || [], refused: [] }));
+    if (/\/import$/.test(req.url)) return res.end(JSON.stringify(parsed?.item ? { ok: true, records: 2, titles: ['Pilot starts 4 November'], updated: [], superseded: [] } : { ok: false, error: 'item required' }));
     return res.end(JSON.stringify({ ok: true, text: 'fine' }));
   });
 });
@@ -85,6 +86,18 @@ try {
   // A refusal comes back to the model as an error it can read.
   r = await rpc('tools/call', { name: 'memory_note', arguments: { text: 'x' } });
   ok('a refused note is an error with the reason', r.result?.isError === true && /said/.test(r.result?.content?.[0]?.text || ''), r.result);
+
+  // memory_import: every field of its schema reaches workspace-api, verbatim.
+  const imp = tools.get('memory_import');
+  ok('memory_import is offered', !!imp, [...tools.keys()]);
+  const impArgs = { integration: 'granola', item: 'g-1', title: 'Kick-off', at: '2026-10-05T09:00:00Z', participants: ['Marta Zielak'], url: 'https://example.test/m/g-1', summary: 'Pilot starts 4 November.', transcript: 'Ola: hello\nMarta Zielak: hi' };
+  for (const k of Object.keys(imp?.inputSchema?.properties || {})) ok(`memory_import: the schema's "${k}" is something the test sends`, k in impArgs, k);
+  seen.length = 0;
+  r = await rpc('tools/call', { name: 'memory_import', arguments: impArgs });
+  const si = seen.find(s => /\/import$/.test(s.url));
+  ok('memory_import reaches workspace-api', !!si, seen.map(s => s.url));
+  for (const k of Object.keys(impArgs)) ok(`memory_import sends "${k}"`, si && JSON.stringify(si.body[k]) === JSON.stringify(impArgs[k]), si?.body);
+  ok('memory_import reports what happened', !r.result?.isError && /Imported: 2 records, 1 fact/.test(r.result?.content?.[0]?.text || ''), r.result);
 
   seen.length = 0;
   r = await rpc('tools/call', { name: 'memory_forget', arguments: { ids: ['a1', 'b2'] } });

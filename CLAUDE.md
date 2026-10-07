@@ -132,6 +132,12 @@ Skills and `global-claude.md` are English only, with no trigger phrases in any l
 - **Privacy is enforced by path, never by role.** Private memory lives under
   `memory/users/<slug>/`; no admin bypass anywhere (scope rules, hooks, APIs). Group
   turns are fenced off every private tree.
+- **A new integration gets a memory decision.** Before it lands, decide whether it
+  should feed memory at all (does it hold things worth remembering about the
+  person's life and work, dated and bounded enough to read in nightly?), and exactly
+  what is read; declare the answer in the catalog entry's `memory` block (or its
+  absence) and in `docs/INTEGRATIONS.md`'s checklist. Never add a feeder "because
+  it can".
 - **Memory is written only through the memory engine** (`memory_write`), which keeps
   scope checks, undo and the log. No direct file writes under `memory/`.
 - **The bot talks like a colleague.** Normal messages, normal replies; no buttons,

@@ -25,7 +25,7 @@ import { atomicWrite } from './atomic-write.js';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
 const GROUP_RE = /^-\d{4,20}$/;
-const SOURCES = new Set(['web', 'telegram', 'group', 'email', 'note', 'review', 'migration']);
+const SOURCES = new Set(['web', 'telegram', 'group', 'email', 'note', 'review', 'migration', 'integration']);
 const MAX_TEXT = 12000;
 export const HIDE_GRACE_DAYS = 30;
 

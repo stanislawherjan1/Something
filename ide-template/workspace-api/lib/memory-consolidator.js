@@ -361,7 +361,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
       if (r.ok) {
         result.records++; result.rules += tags.rules?.length || 0;
         if (n?.notes?.length) {
-          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said' });
+          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said', conv: src.conv });
           result.notes += got.added; result.updated = (result.updated || 0) + got.updated.length; result.superseded = (result.superseded || 0) + got.superseded.length;
           for (const t of got.titles) if (result.titles.length < 5) result.titles.push(t);
         }

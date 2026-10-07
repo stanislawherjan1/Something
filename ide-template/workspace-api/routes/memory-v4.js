@@ -31,6 +31,8 @@ import { resolve as resolveBranding } from '../lib/branding.js';
 import { requireActor } from '../lib/auth.js';
 import { goingOnCard, settingsCard, routinesCard } from '../lib/claude.js';
 import * as facts from '../lib/memory-facts.js';
+import * as sources from '../lib/memory-sources.js';
+import * as integrationsCatalog from '../lib/integrations/catalog.js';
 import { unsupportedDetails, splitNote } from '../lib/memory-router.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
 
@@ -241,7 +243,7 @@ export default function memoryV4Router() {
       for (let i = 0; i < 10 && cur; i++) {
         const older = (prev.get(cur.id) || []).sort((a, b) => (a.ts < b.ts ? -1 : 1))[0];
         if (!older) break;
-        out.unshift({ id: older.id, ts: older.ts, title: older.title || null, text: older.text, updates: (older.updates || []).map(u => ({ ts: u.ts, text: u.text })), why: older.replacedWhy || 'replaced' });
+        out.unshift({ id: older.id, ts: older.at || older.ts, until: older.replacedAt || null, title: older.title || null, text: older.text, updates: (older.updates || []).map(u => ({ ts: u.ts, text: u.text })), why: older.replacedWhy || 'replaced' });
         cur = older;
       }
       return out;
@@ -257,7 +259,9 @@ export default function memoryV4Router() {
       if (past && !history) continue;
       items.push({
         id: f.id, recordId: f.record || null,
-        ts: f.ts, title: f.title || null, text: f.text, kind: f.kind || 'fact', importance: f.importance || null,
+        // The Facts list is dated by when memory learned the fact (a meeting
+        // read at night sits under that night); `said` is the conversation's time.
+        ts: f.at || f.ts, said: f.ts, title: f.title || null, text: f.text, kind: f.kind || 'fact', importance: f.importance || null,
         expires: f.expires || null, past: !!past, superseded: sup ? (f.replacedAt || f.retired) : null, sources: f.sources.length || 1,
         supersededBy: f.replacedBy || null, supersededWhy: f.replacedWhy || f.retiredWhy || null, supersededByTitle: f.replacedBy ? (byId.get(f.replacedBy)?.title || null) : null,
         updates: (f.updates || []).map(u => ({ ts: u.ts, text: u.text, recordId: u.record || null })),
@@ -265,6 +269,13 @@ export default function memoryV4Router() {
         ended: !expired && !sup && past ? ended : null, evidence: f.evidence || null,
         undated: !!f.undated,   // a card line without a date: `ts` is when the card last changed — known by then
         scope: where, source: r.source, review: r.source === 'review',
+        // A fact an integration stands behind — its own record, or one of its
+        // sources (a chat-made "call with X" confirmed by the meeting's import)
+        // — wears the service's icon after its title.
+        integration: (() => {
+          const imp = [r, ...(f.sources || []).map(id => recs.get(id))].find(x => x?.tags?.import)?.tags.import;
+          return imp ? { id: imp.integration, label: integrationsCatalog.get(imp.integration)?.label || imp.integration, logo: integrationsCatalog.get(imp.integration)?.logo || null, title: imp.title || null } : null;
+        })(),
         mine: canManage(v, { scope: f.scope, origin: r.origin }), owned: isOwned(v, { scope: f.scope, origin: r.origin }),
         names: (f.entities || []).map(e => (typeof e === 'string' ? e : e?.name)).filter(Boolean),
       });
@@ -276,7 +287,12 @@ export default function memoryV4Router() {
   router.get('/memory/v4/records/:id', requireActor, withViewer((req, res, v) => {
     const r = ledger.get(String(req.params.id), v.read);
     if (!r || r.hidden) return res.status(404).json({ ok: false, error: 'not found' });
-    return res.json({ ok: true, id: r.id, ts: r.ts, source: r.source, scope: whereOf(r.scope), messages: messagesOf(r.text, speakersOf(r)), notes: factsOf(r), mine: canManage(v, r), owned: isOwned(v, r) });
+    // An imported meeting: its header (title, service, people) is shown as a
+    // heading, the notes or the transcript as the conversation.
+    const imp = r.tags?.import || null;
+    const body = imp ? r.text.replace(/^[\s\S]*?\n(?:Notes|Transcript[^:\n]*):\n/, '') : r.text;
+    const meeting = imp ? { ...imp, integration: { id: imp.integration, label: integrationsCatalog.get(imp.integration)?.label || imp.integration, logo: integrationsCatalog.get(imp.integration)?.logo || null } } : null;
+    return res.json({ ok: true, id: r.id, ts: r.ts, source: r.source, scope: whereOf(r.scope), meeting, messages: messagesOf(body, imp?.kind === 'transcript' ? null : speakersOf(r)), notes: factsOf(r), mine: canManage(v, r), owned: isOwned(v, r) });
   }));
 
   // Topics, with their latest line and state from the digest.
@@ -317,7 +333,12 @@ export default function memoryV4Router() {
       ts: r.ts, recordId: r.id, source: r.source, scope: whereOf(r.scope),
       text: spokenExcerpt(r.text), kind: 'excerpt', undated: false, mine: canManage(v, r),
     });
-    const bare = t.recordIds.map(id => recs.get(id)).filter(r => r && !factsOf(r).length).map(ofRecord);
+    // A topic's timeline is what memory knows about it: its facts. A
+    // conversation that named it and gave no fact (an instruction to draft a
+    // reply, a passing mention) is not knowledge — it once showed as a raw
+    // quote among the facts. It stays searchable and behind the facts'
+    // sources; it is not on the timeline.
+    const bare = [];
     const all = [...views.topicFacts(v.read, [t.key, ...t.aliases.map(views.topicKey)]).map(ofFact), ...bare].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));   // oldest first
     const item = (x) => x;
     // How the name came up is on the first records; the limit on the newest
@@ -477,6 +498,7 @@ export default function memoryV4Router() {
       switch (e.op) {
         case 'hide': case 'unhide': case 'keep_private': case 'dismiss_topic': case 'restore_topic': case 'hide_fact': case 'unhide_fact': case 'erase_fact': return own(e) || e.by === 'nightly';
         case 'alias': return true;
+        case 'source': return own(e);
         case 'redact': return own(e) || (e.by === 'purge' && readable.has(e.scope));
         case 'share': return true;
         case 'note': return e.scope === 'shared' ? true : readable.has(e.scope);
@@ -510,6 +532,8 @@ export default function memoryV4Router() {
         case 'restore_topic': return { ...base, label: `Restored the topic “${e.name}”` };
         case 'redact': return { ...base, label: e.by === 'purge' ? 'Erased after 30 days hidden' : 'Erased', detail: `${e.removed} record${e.removed === 1 ? '' : 's'} — nothing about ${e.removed === 1 ? 'it' : 'them'} is kept`, preview: e.titles?.length ? e.titles.join(' · ') : null, by: e.by === 'purge' ? 'the 30-day rule' : base.by };
         case 'review': return { ...base, label: e.period === 'weekly' ? 'Weekly review' : 'Daily review', detail: `${e.items} thing${e.items === 1 ? '' : 's'} that mattered on ${e.day}` };
+        case 'source': return { ...base, label: `${e.on ? 'Switched on' : 'Switched off'} ${integrationsCatalog.get(e.integration)?.label || e.integration} as a memory source` };
+        case 'import': return { ...base, label: `Imported a meeting from ${e.label || e.integration}`, preview: e.title || null, detail: [`${e.records} excerpt${e.records === 1 ? '' : 's'}`, `${e.notes} fact${e.notes === 1 ? '' : 's'}`, e.updated ? `${e.updated} remark${e.updated === 1 ? '' : 's'} added` : null, e.superseded ? `${e.superseded} no longer true` : null].filter(Boolean).join(', ') };
         default: return null;
       }
     }).filter(Boolean).reverse();
@@ -822,11 +846,60 @@ export default function memoryV4Router() {
       origin: scope === 'shared' ? who.write : null,
     });
     if (!r.ok) return res.json({ ok: false, error: r.skipped === 'tombstoned' ? 'this was erased by its owner and cannot be saved again' : 'not saved' });
-    const got = await facts.apply(scope, plan, { record: r.id, standing: 'note', by: 'note' });
+    const got = await facts.apply(scope, plan, { record: r.id, standing: 'note', by: 'note', single: cands.length === 1 });
     ledger.logEvent({ op: 'note', scope, ids: [r.id], by: who.actor || null, ...(got.titles.length ? { titles: got.titles } : {}), ...(got.updated.length ? { updated: got.updated } : {}), ...(got.superseded.length ? { superseded: got.superseded } : {}) });
     const titles = plan.filter(d => d.fact && (d.op === 'add' || d.op === 'replace')).map(d => d.fact.title || d.fact.text);
     return res.json({ ok: true, id: got.ids[0] || r.id, scope: scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private', replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length });
   });
+
+  // One item of an integration (a meeting), passed verbatim by the night
+  // import turn (lib/memory-sources.js) — or by the assistant when the person
+  // asks for today's notes to be read in. Filed in the actor's private scope.
+  router.post('/internal/memory/v4/import', loopbackOnly, async (req, res) => {
+    const who = whoIsAsking(req);
+    if (!who) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    if (who.group) return res.status(403).json({ ok: false, error: 'not in a group' });
+    const b = req.body || {};
+    try {
+      const r = await sources.importItem({
+        actor: who.actor, name: nameOf(who.actor), integration: b.integration, item: b.item, title: b.title, at: b.at,
+        participants: b.participants, url: b.url, summary: b.summary, transcript: b.transcript,
+      });
+      return res.status(r.ok || r.already ? 200 : 400).json(r);
+    } catch (err) {
+      process.stderr.write(`[memory-v4] import: ${err.stack || err}\n`);
+      return res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  // Memory → Sources: the person's connected integrations that can feed
+  // memory, each with its switch and last run; the same switch sits on the
+  // integration's card. "Run now" starts their import turn at once.
+  router.get('/memory/v4/sources', requireActor, withViewer((req, res, v) => {
+    // The two sources every workspace has, always on: the person's own
+    // conversations, filed when they go quiet. What the last day brought.
+    const since = new Date(Date.now() - 86400_000).toISOString();
+    const filed = ledger.readEvents({ since }).filter(e => e.op === 'file' && e.scope === v.own);
+    const sum = (src, k) => filed.filter(e => e.source === src).reduce((a, e) => a + (e[k] || 0), 0);
+    const builtin = [
+      { id: 'web', label: 'Web chat', what: 'every conversation here, once it has gone quiet', records: sum('web', 'records'), facts: sum('web', 'notes') },
+      { id: 'telegram', label: 'Telegram', what: 'every conversation with me on Telegram, once it has gone quiet', records: sum('telegram', 'records'), facts: sum('telegram', 'notes') },
+    ];
+    return res.json({ ok: true, hour: sources.RUN_HOUR, builtin, items: sources.listFor(v.slug), available: sources.available() });
+  }));
+  router.post('/memory/v4/sources/:id', requireActor, withViewer((req, res, v) => {
+    const id = String(req.params.id || '');
+    if (!sources.listFor(v.slug).some(s => s.id === id)) return res.status(404).json({ ok: false, error: 'not a connected memory source' });
+    const s = sources.setOn(v.slug, id, req.body?.on === true);
+    ledger.logEvent({ op: 'source', scope: v.own, by: v.slug, integration: id, on: !!s.on });
+    return res.json({ ok: true, items: sources.listFor(v.slug) });
+  }));
+  router.post('/memory/v4/sources/:id/run', requireActor, withViewer((req, res, v) => {
+    const id = String(req.params.id || '');
+    if (!sources.listFor(v.slug).some(s => s.id === id && s.on)) return res.status(400).json({ ok: false, error: 'switch the source on first' });
+    sources.runFor(v.slug, { only: id }).then(r => process.stdout.write(`[memory-v4/imports] ${v.slug} (${id}, on request): ${JSON.stringify(r)}\n`)).catch(e => process.stderr.write(`[memory-v4/imports] ${v.slug}: ${e.message}\n`));
+    return res.status(202).json({ ok: true, started: id });
+  }));
 
   router.post('/internal/memory/v4/forget', loopbackOnly, async (req, res) => {
     const who = whoIsAsking(req);

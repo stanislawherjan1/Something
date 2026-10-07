@@ -3,8 +3,10 @@ import {
   Brain, Search, History, Lock, Users, MessageCircle, Mail, Globe, ChevronRight, Pencil,
   Trash2, EyeOff, Plus, User, Building2, FolderKanban, Hash, Clock, CalendarClock,
   Send, X, Check, CircleDot, Sparkles, Undo2, NotebookPen, Archive, ListChecks, Replace,
-  CalendarDays, Plane, Flag, Hourglass, Package,
+  CalendarDays, Plane, Flag, Hourglass, Package, Plug,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { logoUrl, Toggle } from './IntegrationsDashboard.jsx';
 import EditorHeader from '../EditorHeader.jsx';
 import { Button } from '@/components/ui/button';
 import { useBranding } from '../identity';
@@ -158,7 +160,13 @@ function Empty({ children }) {
 
 const STATE_DOT = { active: 'bg-blue-600', paused: 'bg-background ring-2 ring-inset ring-blue-600', closed: 'bg-muted-foreground/30' };
 const SRC_ICON = { telegram: MessageCircle, web: Globe, group: Users, email: Mail, note: NotebookPen, review: ListChecks, migration: Archive };
-const SRC_LABEL = { telegram: 'Telegram conversation', web: 'web chat', group: 'team group', email: 'inbox check', note: 'saved note', review: 'daily review', migration: 'earlier memory' };
+const SRC_LABEL = { telegram: 'Telegram conversation', web: 'web chat', group: 'team group', email: 'inbox check', note: 'saved note', review: 'daily review', migration: 'earlier memory', integration: 'meeting notes' };
+
+/** The icon of the integration a fact came from, after its title. */
+function SourceIcon({ integration, className }) {
+  if (!integration?.logo) return null;
+  return <img src={logoUrl(integration.logo)} alt={integration.label} title={`From ${integration.label}${integration.title ? ` · ${integration.title}` : ''}`} className={cn('inline-block size-3.5 shrink-0 object-contain align-[-2.5px]', className)} />;
+}
 const KIND_ICON = { person: User, company: Building2, project: FolderKanban, topic: Hash };
 
 /* A checkbox in the page's own tones — the native one is a white box in dark mode. */
@@ -336,8 +344,16 @@ function Transcript({ recordId, evidence }) {
   let hit = ev ? msgs.findIndex((m) => norm(m.text).includes(ev)) : -1;
   if (hit < 0 && ev) hit = msgs.findIndex((m) => ev.split(' ').filter((w) => w.length > 3).every((w) => norm(m.text).includes(w)));
   const shown = hit >= 0 ? msgs.slice(Math.max(0, hit - 1), hit + 1) : msgs.slice(0, 6);
+  const mt = data.meeting;
   return (
     <div className="flex flex-col gap-2.5">
+      {mt && (
+        <div className="mb-1 rounded-[5px] border border-border/50 bg-muted/25 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/80">
+          <div className="text-foreground/85">{mt.title || 'Meeting'}{mt.kind === 'transcript' ? ` · transcript${mt.of > 1 ? ` (part ${mt.part} of ${mt.of})` : ''}` : ' · notes'}</div>
+          {mt.participants?.length > 0 && <div>With {mt.participants.join(', ')}</div>}
+          {mt.url && <a href={mt.url} target="_blank" rel="noreferrer" className="underline decoration-border hover:text-foreground/85">Open in {mt.integration?.label || 'the service'}</a>}
+        </div>
+      )}
       {shown.map((m, i) => {
         const isEv = hit >= 0 && msgs.indexOf(m) === hit;
         return (
@@ -385,9 +401,9 @@ function FactRow({ f, open, onToggle, onChanged, selecting = false, picked = fal
               line here, in full when opened); a fact written before titles shows
               its sentence alone, as before. */}
           {f.title ? (
-            <span className={cn('truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}</span>
+            <span className={cn('truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           ) : (
-            <span className={cn('line-clamp-2 text-[12.5px] leading-snug text-foreground/85 sm:block sm:truncate', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{plain(f.text)}</span>
+            <span className={cn('line-clamp-2 text-[12.5px] leading-snug text-foreground/85 sm:block sm:truncate', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{plain(f.text)}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           )}
           <span className="flex flex-wrap items-center gap-1.5 sm:hidden">
             <span className="text-[11px] tabular-nums text-muted-foreground/60">{f.undated ? `by ${dayLabel(f.ts)}` : dayLabel(f.ts)}</span>
@@ -408,13 +424,13 @@ function FactRow({ f, open, onToggle, onChanged, selecting = false, picked = fal
               replaced it, what was corrected later. Shown only when there is more than the description. */}
           {(f.history?.length > 0 || f.updates?.length > 0) && (
             <ol className="relative mb-1 mt-5 border-l border-border/60 pl-6">
-              {[...(f.history || []).map((h) => ({ ts: h.ts, text: h.text, gone: h.why === 'superseded', kind: 'version' })),
+              {[...(f.history || []).map((h) => ({ ts: h.ts, until: h.until || null, text: h.text, gone: h.why === 'superseded', kind: 'version' })),
                 ...(f.updates || []).map((u) => ({ ts: u.ts, text: u.text, kind: 'update' }))]
                 .sort((x, y) => (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : x.kind === 'version' ? -1 : 1))
                 .map((e, i) => (
                   <li key={i} className="relative pb-5 last:pb-1">
                     <span className={cn('absolute -left-[29px] top-[7px] size-2 rounded-full ring-2 ring-background', e.kind === 'update' ? 'bg-background ring-2 ring-inset ring-blue-600' : e.kind === 'current' ? 'bg-blue-600' : 'bg-muted-foreground/30')} />
-                    <div className="mb-1 text-[11px] tabular-nums text-muted-foreground/60">{dayLabel(e.ts)}{e.kind === 'update' && <> · update</>}{e.kind === 'version' && <> · {e.gone ? 'no longer true' : 'earlier version'}</>}</div>
+                    <div className="mb-1 text-[11px] tabular-nums text-muted-foreground/60">{dayLabel(e.ts)}{e.kind === 'update' && <> · update</>}{e.kind === 'version' && <> · {e.gone ? 'no longer true' : 'earlier version'}{e.until && <> · until {dayLabel(e.until)}</>}</>}</div>
                     <p className={cn('text-[13px] leading-relaxed', e.kind === 'version' ? 'text-muted-foreground/70' : 'text-foreground/85', e.gone && 'line-through decoration-muted-foreground/40')}>{plain(e.text)}</p>
                   </li>
                 ))}
@@ -496,7 +512,11 @@ function SourceModal({ f, onClose, onEraseConversation = null }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-semibold text-foreground/90">{f.title || 'Source'}</div>
-            <div className="text-[12px] text-muted-foreground/70">From {f.source === 'review' ? 'the' : 'your'} {SRC_LABEL[f.source] || 'conversation'} · {dayLabel(f.ts)}</div>
+            {f.integration ? (
+              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground/70"><SourceIcon integration={{ ...f.integration, title: null }} /><span className="truncate">From {f.integration.label}{f.integration.title ? ` · ${f.integration.title}` : ''} · {dayLabel(f.said || f.ts)}</span></div>
+            ) : (
+              <div className="text-[12px] text-muted-foreground/70">From {f.source === 'review' ? 'the' : 'your'} {SRC_LABEL[f.source] || 'conversation'} · {dayLabel(f.said || f.ts)}</div>
+            )}
           </div>
           <Button variant="ghost" size="xs" onClick={onClose} aria-label="Close"><X /></Button>
         </div>
@@ -986,6 +1006,100 @@ function PrefsTab() {
   );
 }
 
+/* ────────────────────────────── sources ────────────────────────────── */
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+function lastRunLine(s) {
+  if (!s.lastRun) return 'Not read yet';
+  if (s.lastError) return `Last try ${dayLabel(s.lastRun)}: ${s.lastError}`;
+  return `Last read ${dayLabel(s.lastRun)} · ${plural(s.lastItems || 0, 'meeting')}, ${plural(s.lastFacts || 0, 'fact')}`;
+}
+
+/**
+ * What feeds memory besides conversations: the person's connected
+ * integrations that can (a meeting notetaker), each with its switch and its
+ * last night. The same switch sits on the integration's card.
+ */
+function SourcesTab() {
+  const navigate = useNavigate();
+  const { data, loading, reload } = useApi(`${API}/sources`);
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState(null);
+  const flip = async (s) => {
+    setBusy(s.id); setErr(null);
+    try { await post(`/sources/${encodeURIComponent(s.id)}`, { on: !s.on }); reload(); } catch (e) { setErr(e.message); } finally { setBusy(null); }
+  };
+  if (loading && !data) return <LoadingRows />;
+  const items = data?.items || [];
+  const hour = String(data?.hour ?? 2).padStart(2, '0');
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col rounded-[6px] border border-border/60 bg-card">
+        <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
+          <span className="text-[13px] font-semibold text-foreground/90">What feeds my memory</span>
+          <ScopePill scope="private" />
+          <span className="ml-auto hidden text-[11px] text-muted-foreground/55 sm:inline">each night at {hour}:00, your time</span>
+        </div>
+        <ul className="divide-y divide-border/25">
+          {(data?.builtin || []).map((b) => {
+            const Icon = SRC_ICON[b.id] || MessageCircle;
+            return (
+              <li key={b.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground/70"><Icon className="size-4" strokeWidth={1.75} /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium text-foreground/90">{b.label}</div>
+                  <div className="text-[12px] text-muted-foreground/70">{b.what}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground/55">{b.records ? `Last day · ${plural(b.records, 'conversation')}, ${plural(b.facts, 'fact')}` : 'Nothing new in the last day'}</div>
+                </div>
+                <span className="text-[11px] text-muted-foreground/55">always on</span>
+              </li>
+            );
+          })}
+        </ul>
+        {items.length ? (
+          <ul className="divide-y divide-border/25 border-t border-border/25">
+            {items.map((s) => (
+              <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+                <img src={logoUrl(s.logo)} alt="" className={cn('size-5 shrink-0 object-contain', !s.on && 'opacity-50 grayscale')} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-[13px] font-medium text-foreground/90">{s.label}{!s.on && <Pill>off</Pill>}</div>
+                  <div className="text-[12px] text-muted-foreground/70">{s.what}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground/55">{lastRunLine(s)}</div>
+                </div>
+                <Toggle small on={s.on} busy={busy === s.id} label={`Feed memory from ${s.label}`} onClick={() => flip(s)} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-3 text-[12.5px] text-muted-foreground/60">Nothing connected yet that can feed memory.</p>
+        )}
+      </div>
+      {err && <p className="text-[12px] text-destructive">{err}</p>}
+      {(data?.available || []).length > 0 && (
+        <div className="flex flex-col rounded-[6px] border border-border/60 bg-card">
+          <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
+            <span className="text-[13px] font-semibold text-foreground/90">Could feed my memory</span>
+            <span className="ml-auto hidden text-[11px] text-muted-foreground/55 sm:inline">not connected yet</span>
+          </div>
+          <ul className="divide-y divide-border/25">
+            {data.available.map((a) => (
+              <li key={a.id} className="flex items-center gap-3 px-4 py-2.5">
+                <img src={logoUrl(a.logo)} alt="" className="size-5 shrink-0 object-contain opacity-60 grayscale" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium text-foreground/85">{a.label}</div>
+                  <div className="text-[12px] text-muted-foreground/65">{a.what}</div>
+                </div>
+                <Button variant="ghost" size="xs" onClick={() => navigate(`/integrations?tab=marketplace&category=${encodeURIComponent(a.kind)}`)}><Plug />Connect</Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ────────────────────────────── privacy ────────────────────────────── */
 
 /** The facts a record holds, one per line — what the person actually sees of a record. */
@@ -1149,6 +1263,7 @@ export default function MemoryV4View({ sidebarOpen }) {
   const facts = useApi(`${API}/facts?history=1&limit=500`).data;
   const topics = useApi(`${API}/topics`).data;
   const privacy = useApi(`${API}/privacy`).data;
+  const sourcesTab = useApi(`${API}/sources`).data;
 
   const meta = (
     <div className="relative">
@@ -1172,6 +1287,7 @@ export default function MemoryV4View({ sidebarOpen }) {
             onChange={setTab}
             tabs={[
               ['short', 'Short-term memory'],
+              ['sources', 'Sources', sourcesTab?.items?.filter((s) => s.on).length || undefined],
               ['facts', 'Facts', facts?.items ? facts.items.filter((f) => !f.past).length : undefined],   // what the tab shows by default: past ones sit behind the toggle
               ['topics', 'Topics', topics?.items?.length],
               ['prefs', 'Preferences & rules'],
@@ -1196,6 +1312,7 @@ export default function MemoryV4View({ sidebarOpen }) {
           ))}
           {tab === 'topics' && <TopicsTab kind={kind} />}
           {tab === 'prefs' && <PrefsTab />}
+          {tab === 'sources' && <SourcesTab />}
           {tab === 'privacy' && <PrivacyTab />}
           {tab === 'changes' && <ChangesTab />}
         </div>

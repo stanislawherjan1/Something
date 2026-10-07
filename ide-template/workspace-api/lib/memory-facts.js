@@ -115,7 +115,7 @@ function fold(scope, events) {
   for (const e of events) {
     if (e.op === 'add') {
       const { op, ...f } = e;
-      facts.set(e.id, { ...f, scope, sources: e.record ? [e.record] : [], lastSeen: e.ts });
+      facts.set(e.id, { ...f, scope, sources: e.record ? [e.record] : [], lastSeen: e.ts, at: e.at || e.ts });
       continue;
     }
     if (e.op === 'erased') { erased.add(e.hash); continue; }
@@ -210,7 +210,9 @@ export function find(scopes, id) {
  * Two facts with one key are one thing by definition.
  */
 export function keyOf(f, entities = []) {
-  if (f.kind !== 'status' || !KEYED.has(f.about) || !f.when) return null;
+  // A status with a day and a kind of thing — or the fact a meeting became
+  // once it happened (kind 'fact', `about` and `when` kept): one thing.
+  if (!['status', 'fact'].includes(f.kind) || !KEYED.has(f.about) || !f.when) return null;
   let subject = f.subject;
   if (!subject) {
     const names = [...(entities || []), ...(f.entities || [])].map(e => (typeof e === 'string' ? e : e?.name)).filter(Boolean);
@@ -264,10 +266,20 @@ const pickFields = (c) => ({
  *   { op: 'replace', target, fact }           it changed; `fact` takes the place of `target`
  * Later candidates in the batch see the earlier ones.
  */
-export async function plan(scope, cands = [], { entities = [] } = {}) {
+export async function plan(scope, cands = [], { entities = [], conv = null } = {}) {
   const st = state(scope);
   let cur = [...st.facts.values()].filter(f => !f.hidden && !f.replacedBy && !f.retired);
   const out = [];
+  // Two imported meetings with the same person on one day share a key but are
+  // two meetings: an import's fact never keys with another import's. (A
+  // chat-made "call with X" on that day still keys with the import of it.)
+  let convOf = null;
+  const otherImport = (f) => {
+    if (!conv || !String(conv).startsWith('import:') || !f.record) return false;
+    if (!convOf) convOf = new Map(ledger.read({ scopes: [scope], includeHidden: true }).map(r => [r.id, r.conv]));
+    const c = convOf.get(f.record) || '';
+    return c.startsWith('import:') && c !== conv;
+  };
   for (const c of cands) {
     if (!c?.text) continue;
     if (st.erased.has(ledger.contentHash(c.text))) { out.push({ op: 'skip', why: 'erased' }); continue; }
@@ -275,23 +287,34 @@ export async function plan(scope, cands = [], { entities = [] } = {}) {
     const key = keyOf({ ...fact, entities: c.entities }, entities);
     if (key) fact.key = key;
     let d = null;
-    const twin = key && cur.find(f => sameKey(f.key || keyOf(f), key));
+    const twin = key && cur.find(f => sameKey(f.key || keyOf(f), key) && !otherImport(f));
     if (twin) {
       // The same thing by its key. New words that add nothing → confirm; a
       // candidate that carries all the old one had → it replaces; otherwise
-      // one model call words the combined fact (and may only merge).
-      if (covers(fullText(twin), fact.text)) d = { op: 'confirm', target: twin };
-      else if (covers(fact.text, twin.text)) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
+      // one model call words the combined fact (and may only merge). A
+      // meeting read from a notetaker takes no shortcut: its summary is never
+      // "nothing new" to the one-line plan it meets (covers() once swallowed
+      // a whole call), and the plan's who-and-when is never dropped for it —
+      // the judgment words the one fact from both.
+      const fromImport = !!(conv && String(conv).startsWith('import:'));
+      if (!fromImport && covers(fullText(twin), fact.text)) d = { op: 'confirm', target: twin };
+      else if (!fromImport && covers(fact.text, twin.text)) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
       // The same meeting at another time: the status itself changes (Right now
       // plans by `when`), so it is replaced, with the old time kept as history —
       // never a remark under a fact that still says the old time.
-      else if (fact.when && twin.when && fact.when !== twin.when) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
+      // (A day said without a time against the same day with one — a meeting
+      // read from a notetaker meets the chat that planned it — is not a move:
+      // the judgment below words the one fact, time kept.)
+      else if (fact.when && twin.when && fact.when !== twin.when && !(fact.when.slice(0, 10) === twin.when.slice(0, 10) && (fact.when.length === 10 || twin.when.length === 10))) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
       else {
         const m = await decide({ ...fact, ts: c.ts }, [{ ...twin, kind: twin.kind || 'fact' }]);
         d = m.verdict === 'same' ? { op: 'confirm', target: twin }
           : m.verdict === 'supersedes' ? { op: 'add', fact, supersedes: twin }
           : m.verdict === 'corrects' ? { op: 'update', target: twin, fact }
-          : m.verdict === 'merge' ? { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin), title: m.merged.title || fact.title, text: m.merged.text } }
+          // A merge takes the model's wording — and the title of the fact the
+          // owner's convention wrote ("Call with X (date)") when an imported
+          // meeting meets a chat-made "call with X".
+          : m.verdict === 'merge' ? { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin), title: (conv && String(conv).startsWith('import:') && fact.title) ? fact.title : (m.merged.title || fact.title), text: m.merged.text } }
           : { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
       }
     } else {
@@ -308,7 +331,7 @@ export async function plan(scope, cands = [], { entities = [] } = {}) {
       // One claim of a richer fact changes: the fact keeps its words and gets
       // the new note as a dated remark under it.
       else if (m.verdict === 'corrects') d = { op: 'update', target: m.target, fact };
-      else if (m.verdict === 'merge') d = { op: 'replace', target: m.target, fact: { ...fact, ...inheritStatus(fact, m.target), title: m.merged.title || fact.title, text: m.merged.text } };
+      else if (m.verdict === 'merge') d = { op: 'replace', target: m.target, fact: { ...fact, ...inheritStatus(fact, m.target), title: (conv && String(conv).startsWith('import:') && fact.title) ? fact.title : (m.merged.title || fact.title), text: m.merged.text } };
       else d = { op: 'add', fact };
     }
     out.push(d);
@@ -327,16 +350,39 @@ function byName(entities, cur) {
 }
 
 /** Write a plan. Returns `{ added, confirmed, replaced: [titles], superseded, updated, ids, titles }`. */
-export function apply(scope, decisions, { record = null, standing = 'said', by = null, ts = new Date().toISOString(), entities = [] } = {}) {
+export function apply(scope, decisions, { record = null, standing = 'said', by = null, ts = new Date().toISOString(), entities = [], conv = null, single = false } = {}) {
   return serial(() => {
     materialise(scope);
     const ev = [];
     const res = { added: 0, confirmed: 0, replaced: [], superseded: [], updated: [], repeats: [], ids: [], titles: [] };
     const pending = (t) => String(t?.id || '').startsWith('pending-');
+    // One conversation filed in parts (a long window in chunks, a meeting's
+    // notes and transcript) is still ONE conversation: a thing it says twice
+    // is one fact with one source, and a fuller wording of it in a later part
+    // is the fact written out, not a version to keep under it. Without this a
+    // meeting showed "3 sources" and two "earlier versions" of the same minute.
+    let convOf = null;
+    const samePiece = (t) => {
+      if (!conv || !t?.record || pending(t)) return false;
+      if (!convOf) convOf = new Map(ledger.read({ scopes: [scope], includeHidden: true }).map(r => [r.id, r.conv]));
+      return convOf.get(t.record) === conv;
+    };
     for (let d of decisions) {
       // A remark on a fact that is only being added in this same batch has
       // nothing to attach to yet: it stands as a fact of its own.
       if (d.op === 'update' && pending(d.target)) d = { op: 'add', fact: d.fact };
+      if (d.op !== 'add' && !pending(d.target) && samePiece(d.target)) {
+        if (d.op === 'confirm') { res.repeats.push(d.target.title || d.target.text); continue; }
+        // A merge, a correction or a replacement from the same conversation:
+        // the fact takes the fuller wording in place — no history, no new source.
+        const { entities: ownNames, standing: _s, ...fact } = d.fact;
+        const have = new Set((d.target.entities || []).map(e => nameKey(typeof e === 'string' ? e : e?.name)));
+        const more = (ownNames || []).filter(e => e?.name && !have.has(nameKey(e.name)));
+        const patch = { ...(fact.title ? { title: fact.title } : {}), text: atSentence(fact.text, FACT_CHARS), ...(fact.kind ? { kind: fact.kind } : {}), ...(fact.about ? { about: fact.about } : {}), ...(fact.when ? { when: fact.when } : {}), ...(fact.expires ? { expires: fact.expires } : {}), ...(more.length ? { entities: [...(d.target.entities || []), ...more].slice(0, 8) } : {}) };
+        ev.push({ op: 'amend', id: d.target.id, ts, ...patch });
+        res.ids.push(d.target.id); res.repeats.push(d.target.title || d.target.text);
+        continue;
+      }
       if (d.op === 'confirm') {
         if (pending(d.target)) continue;
         ev.push({ op: 'confirm', id: d.target.id, ...(record ? { record } : {}), ts });
@@ -355,11 +401,15 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
         // the replacement look older than what it replaced.
         const when = old && old.ts > ts ? old.ts : ts;
         const id = ledger.newId(Date.parse(when) || Date.now());
-        // The names a fact is about: its own, from the note; a note that named
-        // none takes the record's, so a topic's timeline is what is about it.
+        // The names a fact is about: its own, from the note. A record's names
+        // stand in only when the record holds this one note (a saved note is
+        // about one thing): with several notes a nameless one took every name
+        // of the conversation, and a sugar routine sat on a client's timeline.
         const { entities: ownNames, standing: ownStanding, ...fact } = d.fact;
-        const names = ownNames?.length ? ownNames : entities;
-        ev.push({ op: 'add', id, ts: when, ...(record ? { record } : {}), ...fact, standing: ownStanding || standing, by, ...(names?.length ? { entities: names } : {}), ...(old ? { replaces: old.id } : {}) });
+        const names = ownNames?.length ? ownNames : single ? entities : [];
+        // `ts` is the conversation's time (the story); `at` is when memory
+        // learned it (the Facts list reads newest-learned first).
+        ev.push({ op: 'add', id, ts: when, at: new Date().toISOString(), ...(record ? { record } : {}), ...fact, standing: ownStanding || standing, by, ...(names?.length ? { entities: names } : {}), ...(old ? { replaces: old.id } : {}) });
         // The fact that takes another's place keeps its sources: what was said before still stands behind it.
         if (old) {
           for (const s of old.sources || []) if (s !== record) ev.push({ op: 'confirm', id, record: s, ts });
@@ -380,8 +430,8 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
 
 /** Decide and write in one go — what the consolidator calls once a record is on disk. */
 export async function remember(scope, cands, opts = {}) {
-  const decisions = await plan(scope, cands.map(c => ({ ...c, ts: opts.ts })), { entities: opts.entities });
-  return apply(scope, decisions, opts);
+  const decisions = await plan(scope, cands.map(c => ({ ...c, ts: opts.ts })), { entities: opts.entities, conv: opts.conv || null });
+  return apply(scope, decisions, { ...opts, single: cands.length === 1 });
 }
 
 function event(scope, e) { return serial(() => { materialise(scope); appendEvents(scope, [e]); }); }

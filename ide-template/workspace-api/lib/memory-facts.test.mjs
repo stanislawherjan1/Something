@@ -159,8 +159,10 @@ ok('amend sets the subject and the day\'s words too', F.get(S, untitled.id).subj
   ], { record: r11, ts: '2026-10-01T10:00:00Z', entities: [{ name: 'Quillwork', kind: 'project' }, { name: 'Marek', kind: 'person' }] });
   const by = (re) => F.forRecord(S, r11).find(f => re.test(f.text));
   ok('a fact carries the names its note was about, not the record\'s', got.added === 3 && by(/Quillwork/).entities?.map(e => e.name).join() === 'Quillwork' && by(/Marek/).entities?.map(e => e.name).join() === 'Marek', F.forRecord(S, r11));
-  ok('a note without names takes the record\'s', by(/kiosk project/).entities?.length === 2, by(/kiosk project/));
-  await F.amend(S, by(/kiosk project/).id, { entities: null });
+  ok('a nameless note among several takes none — not every name of the conversation', !by(/kiosk project/).entities, by(/kiosk project/));
+  const r11b = (await L.append({ scope: S, source: 'note', ts: '2026-10-01T11:00:00Z', text: 'Ola: the kiosk goes to Quillwork.' })).id;
+  await F.remember(S, [{ title: 'Kiosk to Quillwork', text: 'The kiosk project goes to Quillwork.', kind: 'fact', evidence: 'the kiosk goes to Quillwork' }], { record: r11b, ts: '2026-10-01T11:00:00Z', entities: [{ name: 'Quillwork', kind: 'project' }] });
+  ok('a record holding one note: that note takes the record\'s names (a saved note is about one thing)', F.forRecord(S, r11b)[0]?.entities?.map(e => e.name).join() === 'Quillwork', F.forRecord(S, r11b));
   ok('amend can take the names away', !F.get(S, by(/kiosk project/).id).entities);
 }
 
@@ -281,6 +283,26 @@ ok('amend sets the subject and the day\'s words too', F.get(S, untitled.id).subj
   const got = await F.remember(S, [{ title: 'Call with Ulla at 11:30', text: 'The call with Ulla on 23 October moved to 11:30.', kind: 'status', about: 'meeting', when: '2026-10-23T11:30', expires: '2026-10-23', subject: 'Ulla', evidence: 'moved to 11:30' }], { record: r19b, ts: '2026-10-06T10:00:00Z' });
   const now = F.current([S]).find(f => /Ulla/.test(f.text) && !f.replacedBy);
   ok('a moved time replaces the status (Right now plans by when), even when the model would only remark', got.replaced.length === 1 && now?.when === '2026-10-23T11:30' && F.get(S, a.ids[0]).replacedBy === now.id, { got, now });
+}
+
+
+// ─── 12. a meeting read from a notetaker meets the chat that planned it ──────
+{
+  const LLM = await import('./memory-llm.js');
+  // The judgment: nothing is related to the plan when it is filed; the import then merges into it.
+  let importing = false;
+  LLM.configureRunner(async ({ schema }) => (schema?.properties?.decisions ? (importing ? { decisions: [{ n: 1, verdict: 'merge', merged: { title: 'merged by the model', text: 'Ola met Marta Zielak, Vellmark\'s CTO, on 9 October at 13:00: the pilot starts 4 November.' } }] } : { decisions: [] }) : {}));
+  const r12 = (await L.append({ scope: S, source: 'web', ts: '2026-10-03T10:00:00Z', text: 'Ola: Thursday 13:00 I meet Marta Zielak, Vellmark\'s CTO, about the pilot.' })).id;
+  await F.remember(S, [{ title: 'Meeting with Marta Zielak', text: 'Ola meets Marta Zielak, Vellmark\'s CTO, on Thursday 9 October at 13:00 about the pilot.', kind: 'status', about: 'meeting', when: '2026-10-09T13:00', subject: 'Marta Zielak', evidence: 'Thursday 13:00 I meet Marta Zielak' }], { record: r12, ts: '2026-10-03T10:00:00Z' });
+  const planned = F.current([S]).find(f => /Vellmark's CTO/.test(f.text));
+  ok('the planned meeting is a timed status', planned?.when === '2026-10-09T13:00', planned);
+  // The import: the same day, no time of its own, the summary as its text. The judgment merges, keeping both.
+  importing = true;
+  const rec = (await L.append({ scope: S, source: 'integration', ts: '2026-10-09T06:00:00Z', conv: 'import:granola:m-9', text: 'Meeting: Pilot\nWith: Marta Zielak\nNotes:\n- the pilot starts 4 November', tags: { import: { integration: 'granola', item: 'm-9' } } })).id;
+  const got = await F.remember(S, [{ title: 'Call with Marta Zielak (9 Oct 2026)', text: 'Marta Zielak agreed the pilot starts 4 November.', kind: 'fact', about: 'meeting', when: '2026-10-09', subject: 'Marta Zielak', evidence: null }], { record: rec, ts: '2026-10-09T06:00:00Z', by: 'integration', standing: 'found', conv: 'import:granola:m-9' });
+  const cur = F.current([S]).filter(f => /Marta Zielak/.test(f.text) && f.about === 'meeting');
+  ok('a day-only meeting against the timed plan is not a moved meeting: one fact, merged, time kept, the convention\'s title', cur.length === 1 && cur[0].kind === 'fact' && cur[0].when === '2026-10-09T13:00' && /4 November/.test(cur[0].text) && /Vellmark's CTO/.test(cur[0].text) && cur[0].title === 'Call with Marta Zielak (9 Oct 2026)' && got.replaced.length === 1, cur.map(f => [f.title, f.kind, f.when, f.text]));
+  LLM.configureRunner(null);
 }
 
 console.log(`memory-facts: ${pass} passed, ${fail} failed`);

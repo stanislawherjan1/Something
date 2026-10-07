@@ -107,6 +107,7 @@ ide-template/skills/
 │   ├── file-placement/             ← where-to-save decision tree
 │   ├── legacy-drive-sync/          ← only when LEGACY_DRIVE_SYNC=true (rclone reliability)
 │   ├── make-pdf/                   ← markdown → PDF, delivered as a file
+│   ├── memory-notes/               ← how the bot writes memory itself: whole notes, one note per meeting, ask when unsure
 │   ├── mini-apps/                  ← small interactive tabs (start_tab + tab state)
 │   ├── morning-planner/            ← turns the person's routines into the day's plan; run after any routine change
 │   ├── playwright-protocol/        ← safe browser automation

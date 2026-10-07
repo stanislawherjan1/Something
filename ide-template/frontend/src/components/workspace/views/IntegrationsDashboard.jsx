@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search } from 'lucide-react';
+import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search, Brain } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import EditorHeader from '../EditorHeader.jsx';
 import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
+
 import useMe from '../useMe.js';
 import { SkeletonCardGrid } from '@/components/ui/Skeleton';
 import { RestartingBanner, DoneBanner, RestartFailedBanner, runRestartPhases, RESTART_WINDOW_MS } from '../RestartBanners';
@@ -128,6 +129,14 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   const { me } = useMe();
   const isAdmin = !!me?.isAdmin;
   const { data, loading, error, reload: reloadApi } = useApi('/api/integrations');
+  // Which connected integrations feed this person's memory (Memory → Sources).
+  const { data: sourcesData, reload: reloadSources } = useApi('/api/memory/v4/sources');
+  const memorySources = sourcesData?.items || [];
+  const setMemorySource = async (id, on) => {
+    try {
+      await fetch(`/api/memory/v4/sources/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ on }) });
+    } finally { reloadSources(); }
+  };
   // `?activate=<integration-id>` opens the activation modal — works for
   // deep links + browser-back closes the modal + the bot's first-mention
   // capability surfacing can deep-link to "click here to set up Shopify".
@@ -298,7 +307,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     if (initialTabSet.current) return;
     if (!data) return;
     initialTabSet.current = true;
-    setTab(active.length === 0 ? 'marketplace' : 'active');
+    if (searchParams.get('tab') !== 'marketplace') setTab(active.length === 0 ? 'marketplace' : 'active');
   }, [data, active.length]);
 
   // Marketplace state — search + category filter for the Available pane.
@@ -307,7 +316,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // Top-level tab — Active vs Marketplace. Default to Marketplace when
   // the operator has no active integrations yet (nothing else to show);
   // otherwise land on Active so they see their current setup first.
-  const [tab, setTab] = useState('active');  // 'active' | 'marketplace'
+  // `?tab=marketplace&category=meetings` opens the Marketplace on a category (Memory → Sources links here).
+  const [tab, setTab] = useState(searchParams.get('tab') === 'marketplace' ? 'marketplace' : 'active');  // 'active' | 'marketplace'
 
   // Category facets: walk the catalog list, group by `category`, count.
   // Order is fixed so the chip row doesn't reshuffle as users activate/
@@ -412,6 +422,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                           integration={integration}
                           ready={ready}
                           canManage={isAdmin}
+                          memorySource={memorySources.find((s) => s.id === integration.id) || null}
+                          onMemorySource={(on) => setMemorySource(integration.id, on)}
                           onActivate={() => openActivate(integration)}
                           onRemove={() => setRemoving(integration)}
                           onSettings={() => setSettingsFor(integration)}
@@ -659,6 +671,14 @@ function Marketplace({
   facets, query, onQuery,
   items, ready, canManage, onActivate, onRemove,
 }) {
+  // `?category=<id>` (Memory → Sources' "Connect") scrolls to that section once the list is in.
+  const [params] = useSearchParams();
+  const wanted = params.get('category');
+  useEffect(() => {
+    if (!wanted || !items.length) return;
+    const el = document.getElementById(`category-${wanted}`);
+    if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [wanted, items.length]);
   // One grid with the Active tab's 306 px columns: the search field and the
   // category headers span it, so both tabs share the same right edge.
   return (
@@ -674,7 +694,7 @@ function Marketplace({
           const group = items.filter(i => (i.category || 'other') === f.id);
           if (!group.length) return null;
           return [
-            <div key={`h-${f.id}`} className={cn('col-span-full flex items-center gap-2 px-0.5', idx > 0 && 'mt-3.5')}>
+            <div key={`h-${f.id}`} id={`category-${f.id}`} className={cn('col-span-full flex items-center gap-2 px-0.5 scroll-mt-4', idx > 0 && 'mt-3.5')}>
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{f.label}</span>
               <span className="text-[10.5px] tabular-nums text-muted-foreground/45">{group.length}</span>
             </div>,
@@ -765,7 +785,7 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
   );
 }
 
-function IntegrationTile({ integration, ready, canManage = true, showStatus = true, onActivate, onRemove, onSettings }) {
+function IntegrationTile({ integration, ready, canManage = true, showStatus = true, memorySource = null, onMemorySource = null, onActivate, onRemove, onSettings }) {
   const navigate = useNavigate();
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
@@ -834,6 +854,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
       {/* Footer — action (read-only for non-admins) */}
       <div className="px-4 pb-4 pt-3.5">
         {!canManage ? (
+          <div className="flex items-center gap-2">
           <button
             type="button" disabled
             className="inline-flex w-full cursor-default items-center justify-center gap-1.5 rounded-[6px] border border-border/40 bg-muted/20 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
@@ -841,6 +862,13 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             <Lock className="size-3.5" strokeWidth={1.75} />
             {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
           </button>
+          {isActive && memorySource && (
+            <div className="flex h-8 shrink-0 items-center gap-2 rounded-[6px] bg-muted/40 px-2.5" title={memorySource.on ? 'Feeds memory nightly' : 'Not feeding memory'}>
+              <Brain className={cn('size-3.5', memorySource.on ? 'text-foreground/80' : 'text-muted-foreground/50')} strokeWidth={1.75} />
+              <Toggle small on={memorySource.on} label={`Feed memory from ${integration.label}`} onClick={() => onMemorySource?.(!memorySource.on)} />
+            </div>
+          )}
+          </div>
         ) : isActive && integration.home === 'browser-agent' ? (
           // Set up and managed where it is used (the Browser agent page).
           <button
@@ -871,6 +899,14 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             >
               Remove
             </button>
+            {/* A source of memory (a meeting notetaker): the same switch as on
+                Memory → Sources — each person's own, so not admin-gated. */}
+            {memorySource && (
+              <div className="flex h-8 shrink-0 items-center gap-2 rounded-[6px] bg-muted/40 px-2.5" title={memorySource.on ? 'Feeds memory nightly' : 'Not feeding memory'}>
+                <Brain className={cn('size-3.5', memorySource.on ? 'text-foreground/80' : 'text-muted-foreground/50')} strokeWidth={1.75} />
+                <Toggle small on={memorySource.on} label={`Feed memory from ${integration.label}`} onClick={() => onMemorySource?.(!memorySource.on)} />
+              </div>
+            )}
           </div>
         ) : isComingSoon ? (
           <button
@@ -901,6 +937,18 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
         )}
       </div>
     </div>
+  );
+}
+
+/** A quiet on/off switch (the Team page's), small for a row inside a card. */
+export function Toggle({ on, busy = false, small = false, label, onClick }) {
+  return (
+    <button
+      type="button" role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={onClick}
+      className={cn('relative inline-flex shrink-0 items-center rounded-full transition-colors disabled:opacity-50', small ? 'h-5 w-9' : 'h-6 w-11', on ? 'bg-foreground' : 'bg-muted-foreground/30')}
+    >
+      <span className={cn('inline-block transform rounded-full bg-background shadow-sm transition-transform', small ? 'size-4' : 'size-5', on ? (small ? 'translate-x-[18px]' : 'translate-x-[22px]') : 'translate-x-0.5')} />
+    </button>
   );
 }
 

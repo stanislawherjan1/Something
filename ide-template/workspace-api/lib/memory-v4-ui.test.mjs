@@ -303,6 +303,41 @@ await stan('POST', '/rules', { text: 'No meetings before 11:00.', retired: true 
 r = await stan('GET', '/prefs');
 ok('(e) ...and can be removed', !r.body.rules.some(x => x.text === 'No meetings before 11:00.'));
 
+// ─── (f) Memory → Sources: a connected notetaker feeds memory; the switch; the icon on a fact ──
+{
+  mkdirSync(join(ROOT, '.integrations'), { recursive: true });
+  writeFileSync(join(ROOT, '.integrations', 'credentials.json'), JSON.stringify({ granola: { activatedAt: '2026-10-01T00:00:00Z', fields: {} } }));
+  r = await stan('GET', '/sources');
+  ok('(f) a connected notetaker is listed as a source, on by default', r.body.ok && r.body.items.length === 1 && r.body.items[0].id === 'granola' && r.body.items[0].on === true && r.body.items[0].logo, r.body);
+  r = await stan('POST', '/sources/granola', { on: false });
+  ok('(f) the switch turns it off', r.body.items[0].on === false, r.body);
+  r = await stan('POST', '/sources/granola/run');
+  ok('(f) run now needs the switch on', r.status === 400, r.body);
+  r = await stan('GET', '/changes');
+  ok('(f) the switch is a change of mine', r.body.items.some(x => x.label === 'Switched off Granola as a memory source'), r.body.items.map(x => x.label));
+  r = await kasia('GET', '/changes');
+  ok('(f) ...not a teammate\'s', !r.body.items.some(x => /memory source/.test(x.label)));
+  r = await stan('POST', '/sources/shopify', { on: true });
+  ok('(f) only a connected feeder has a switch', r.status === 404);
+  await stan('POST', '/sources/granola', { on: true });
+  // A meeting imported for Stan: its facts wear Granola's icon; See source opens the notes.
+  LLM.configureRunner(async ({ user, schema }) => schema?.properties?.summary
+    ? { with: ['Marta Zielak'], title: 'Kick-off', summary: 'Vellmark Logistics starts the warehouse pilot on 4 November.', names: [{ name: 'Marta Zielak', kind: 'person' }, { name: 'Vellmark Logistics', kind: 'company' }], upcoming: [] }
+    : { items: [], decisions: [], notes: [], rules: [], entities: [], known_mentioned: [] });
+  const S = await import('./memory-sources.js');
+  const imp = await S.importItem({ actor: 'stan', name: 'Stan', integration: 'granola', item: 'g-1', title: 'Vellmark kick-off', at: '2026-10-05T09:00:00Z', participants: ['Marta Zielak'], summary: 'Vellmark Logistics starts the warehouse pilot on 4 November.' });
+  ok('(f) the import filed one fact for the meeting', imp.ok && imp.titles.length === 1 && imp.titles[0] === 'Call with Marta Zielak (5 Oct 2026)', imp);
+  r = await stan('GET', '/facts?history=1&limit=500');
+  const f = r.body.items.find(x => /4 November/.test(x.text));
+  ok('(f) the fact carries the integration for its icon, with the meeting\'s title', f && f.integration?.id === 'granola' && f.integration.label === 'Granola' && /granola\.svg$/.test(f.integration.logo) && f.integration.title === 'Vellmark kick-off' && f.source === 'integration', f);
+  r = await stan('GET', `/records/${f.recordId}`);
+  ok('(f) See source opens the meeting: its heading apart, the notes as the text', r.body.ok && r.body.meeting?.title === 'Vellmark kick-off' && r.body.meeting.integration.label === 'Granola' && !/Granola/.test(r.body.messages.map(m => m.text).join('')) && r.body.meeting.participants.join() === 'Marta Zielak' && r.body.messages.length === 1 && r.body.messages[0].text === 'Vellmark Logistics starts the warehouse pilot on 4 November.', r.body);
+  r = await stan('GET', '/changes');
+  ok('(f) Changes says a meeting was imported, counts only', r.body.items.some(x => x.label === 'Imported a meeting from Granola' && x.preview === 'Vellmark kick-off' && /1 excerpt, 1 fact/.test(x.detail)), r.body.items.filter(x => /Imported/.test(x.label)));
+  r = await kasia('GET', '/facts?history=1&limit=500');
+  ok('(f) a teammate never sees it', !r.body.items.some(x => /4 November/.test(x.text)));
+}
+
 server.close();
 console.log(`memory-v4-ui: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -45,6 +45,10 @@ export const ROUTER_SCHEMA = {
 const NOTES_ONE_TO_ONE = (name) => `You maintain the long-term memory of an AI assistant that works with ${name} at a small company. You read ONE whole conversation.
 Ask two questions: what changed in ${name}'s work or life, or what did they decide or commit to, that a thoughtful human assistant must still know a month from now? And what is coming up for them — a meeting, a call, a trip, a deadline, something they are waiting on — that the assistant must know until it has passed?`;
 
+const NOTES_MEETING = (name) => `You maintain the long-term memory of an AI assistant that works with ${name} at a small company. You read the notes or the transcript of ONE meeting ${name} took part in, recorded by a note-taking app. The first line is the meeting's title and "With:" lists the participants as the app knew them; the app itself is never a party to the meeting and never a name to remember.
+A transcript's speakers may be unnamed ("Speaker A", "Speaker B"): never guess which participant is which — write what was said as said in the meeting, and attach a person's name to a statement only when the transcript itself names the speaker. A person's employer, role or company is only what the words say; never infer it from the meeting's title or from who recorded it.
+Ask two questions: what changed in ${name}'s work or life, or what was decided or committed to in this meeting, that a thoughtful human assistant must still know a month from now? And what is coming up — a follow-up, a deadline, an introduction, something ${name} is waiting on — that the assistant must know until it has passed?`;
+
 const NOTES_GROUP = () => `You maintain the long-term memory of an AI assistant that works with a small company's team. You read ONE whole conversation from the team's group chat.
 Ask two questions: what changed in the team's work, or what did someone decide or commit to, that a thoughtful human assistant must still know a month from now? And what is coming up — a meeting, a trip, a deadline, something someone is waiting on — that the assistant must know until it has passed?`;
 
@@ -89,8 +93,8 @@ export const NOTES_SCHEMA = {
   required: ['notes', 'rules', 'entities', 'known_mentioned'],
 };
 
-export function notesSystem({ group = false, name = 'the team member', max = 2 } = {}) {
-  return `${group ? NOTES_GROUP() : NOTES_ONE_TO_ONE(name)}\n${NOTES_RULES.replace(/\$\{MAX\}/g, String(max))}`;
+export function notesSystem({ group = false, meeting = false, name = 'the team member', max = 2 } = {}) {
+  return `${meeting ? NOTES_MEETING(name) : group ? NOTES_GROUP() : NOTES_ONE_TO_ONE(name)}\n${NOTES_RULES.replace(/\$\{MAX\}/g, String(max))}`;
 }
 
 /**
@@ -378,16 +382,17 @@ export async function route({ name, channel, ts, text }) {
  * reads the whole conversation for context, but what the assistant said is
  * not a source — otherwise its recital of the memory becomes memory.
  */
-export async function notes({ name, group = false, ts, text, attest = null, known = [], kinds = {}, exclude = [], max = 2 }) {
-  const source = String(text).slice(-MAX_INPUT);
+export async function notes({ name, group = false, meeting = false, ts, text, attest = null, known = [], kinds = {}, exclude = [], max = 2, limit = MAX_INPUT, timeoutMs = undefined }) {
+  const source = String(text).slice(-limit);
   const names = known.slice(0, 80).join(', ');
   const r = await runStructured({
-    system: notesSystem({ group, name, max }),
-    user: `Conversation date: ${ts}\n${names ? `KNOWN NAMES: ${names}\n` : ''}\n${source}`,
+    system: notesSystem({ group, meeting, name, max }),
+    user: `${meeting ? 'Meeting' : 'Conversation'} date: ${ts}\n${names ? `KNOWN NAMES: ${names}\n` : ''}\n${source}`,
     schema: NOTES_SCHEMA,
+    ...(timeoutMs ? { timeoutMs } : {}),
   });
   // The owner (a 1:1 conversation's) and the assistant are never topics.
-  const said = attest == null ? source : String(attest).slice(-MAX_INPUT);
+  const said = attest == null ? source : String(attest).slice(-limit);
   const out = cleanNotes(r, said, known, { exclude: [...(group ? [] : [name]), ...exclude], max, full: source, kinds });
   // A note the model grounded in the assistant's tidy restatement ("medical
   // offices, not gastro — noted") instead of the person's own words is asked
@@ -409,3 +414,72 @@ export async function notes({ name, group = false, ts, text, attest = null, know
 
 export const REQUOTE_SYSTEM = `You get a memory NOTE and WHAT THE PERSON SAID in a conversation (their lines only). Return "quote": the person's own words that support the note, copied EXACTLY as written (5-25 words, same spelling and inflections). If nothing the person said supports it, return an empty quote.`;
 const REQUOTE_SCHEMA = { type: 'object', properties: { quote: { type: 'string' } }, required: ['quote'] };
+
+
+// ─── a meeting, whole ─────────────────────────────────────────────────────────
+
+export const MEETING_SYSTEM = (name) => `You maintain the long-term memory of an AI assistant that works with ${name} at a small company. You read ONE meeting ${name} took part in — its notes and/or transcript, recorded by a note-taking app. The first line is the meeting's title and "With:" lists the participants as the app knew them; the app itself is never a party and never a name.
+A transcript's speakers may be unnamed ("Speaker A"): never guess which participant is which; attach a person's name to a statement only when the words name the speaker. When the speakers are unnamed, do NOT write that ${name} is doing, launching, running or deciding something unless the words make it plain that it is ${name} speaking (the other party addresses them, or the notes say so): write who, as the words say it, or "the other party" / "one of them". A summary once said ${name} was launching a project that the other party was launching. A person's employer or role is only what the words say — never inferred from the title or from who recorded.
+Write ONE memory of the meeting, "summary": what it was about, what was decided or agreed, who committed to what, and what it means for ${name} — the way a careful colleague would brief someone a month later: 3 to 6 plain sentences, concrete (names, numbers, dates as said), no filler, no "the discussion covered". "with": the other party of the meeting — the person or people ${name} actually talked to (not people merely mentioned), by name as the words or the KNOWN NAMES spell them. The participant list may show a placeholder with an address ("Kontakt <kontakt@kpawlik.example>") or the title may carry an address: when a KNOWN NAME plainly matches that address (its local part or domain), use the known name — never the placeholder. Empty when nothing says who. Never ${name}.
+"title": 3 to 8 words naming the meeting by its subject ("Pricing for the warehouse pilot").
+"names": the people, companies and projects the meeting was about, exactly as the words spell them, each with its kind (person|company|project|topic). Never ${name}, never the app.
+"upcoming": at most 2 things that live on after the meeting AND have a day: a follow-up call, a deadline, an introduction promised for a date, a decision due — each with "title" (3 to 8 English words), "text" (one English sentence, as it stands now), "about" (meeting|travel|deadline|waiting|other), "when" (ISO date, with time if said), "whenFrom" (the words the day comes from, copied exactly), "dayStated" (true only when those words name a day — "Monday", "4 November", "tomorrow"; false for "soon" or "in a few weeks") and "evidence" (the words that say so, copied exactly from the text). Nothing undated goes here; it belongs in the summary. Empty when nothing is coming up.`;
+const MEETING_SCHEMA = {
+  type: 'object',
+  properties: {
+    with: { type: 'array', items: { type: 'string' } },
+    title: { type: 'string' },
+    summary: { type: 'string' },
+    names: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, kind: { type: 'string' } }, required: ['name'] } },
+    upcoming: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, text: { type: 'string' }, about: { type: 'string' }, when: { type: 'string' }, whenFrom: { type: 'string' }, dayStated: { type: 'boolean' }, evidence: { type: 'string' } }, required: ['title', 'text', 'when', 'whenFrom', 'dayStated', 'evidence'] } },
+  },
+  required: ['with', 'title', 'summary', 'names', 'upcoming'],
+};
+
+/**
+ * One meeting → one fact: its summary as the description, dated the meeting's
+ * day (a status about a meeting, so it keys with a chat-made "call with X"
+ * on the same day and shows once), the names it was about, and the few dated
+ * things that follow from it — each of those grounded in the text like any
+ * note. Twenty-six transcript parts read one by one once gave eleven facts
+ * from one hour, each meaningless outside the call.
+ */
+export async function meeting({ name, ts, when = null, text, participants = [], known = [], kinds = {}, exclude = [], limit = 70_000, timeoutMs = 240_000 }) {
+  const source = String(text).slice(0, limit);
+  const names = known.slice(0, 80).join(', ');
+  const r = await runStructured({ system: MEETING_SYSTEM(name), user: `Meeting date: ${ts}\n${names ? `KNOWN NAMES: ${names}\n` : ''}\n${source}`, schema: MEETING_SCHEMA, timeoutMs });
+  const skip = [name, ...exclude];
+  const entities = attestedNames(r?.names || [], source, known, { withKinds: true, exclude: skip });
+  const summary = String(r?.summary || '').trim();
+  if (!summary) throw new Error('the meeting pass gave no summary');
+  // The meeting's day (and time) as the person's own clock says — `when` from
+  // the caller, in their zone; the record's `ts` is UTC and may be another day.
+  const day = String(when || ts).slice(0, 10);
+  // Who the meeting was with: the model's call (the words, or a known name an
+  // address in the title points at), held to the names rule — never a name
+  // merely mentioned (a title once read "Call with Maciej Kawecki and Szymon
+  // Kubicki" for a call with neither). Else the app's participant list minus
+  // the owner; else the meeting's subject.
+  const withNames = attestedNames(r?.with || [], source, known, { exclude: skip }).map(n => (typeof n === 'string' ? n : n.name));
+  const owner = String(name || '').toLowerCase();
+  const listed = (participants || []).map(p => String(p).replace(/\(.*?\)/g, '').trim()).filter(p => p && p.toLowerCase() !== owner && !owner.startsWith(p.toLowerCase().split(' ')[0]));
+  const who = (withNames.length ? withNames : listed).slice(0, 2);
+  // The title is the owner's convention, written by code: "Call with X (5 Oct 2026)".
+  const dayLabel = new Date(`${day}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const subjectLine = String(r?.title || '').trim().slice(0, 80);
+  // A meeting that has happened is a FACT (what was said stays), not a status
+  // (a plan that expires the day after and greys out); it keeps `about` and
+  // `when`, so it keys with the plan that preceded it and shows once.
+  const happened = day <= String(when || ts).slice(0, 10) && Date.parse(`${day}T23:59:59`) <= Date.now() + 6 * 3600_000;
+  const fact = {
+    title: (who.length ? `Call with ${who.join(' and ')} (${dayLabel})` : `Call: ${subjectLine || 'a meeting'} (${dayLabel})`).slice(0, 120),
+    text: summary, kind: happened ? 'fact' : 'status', about: 'meeting', when: when && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? when : day,
+    ...(who.length ? { subject: who[0] } : {}), evidence: null, entities,
+  };
+  // What is coming up: held to the evidence rule like any note — and to its
+  // day: an item whose day the words do not carry is not filed at all (it is
+  // in the summary), never as an undated fact beside the meeting's.
+  const up = cleanNotes({ notes: (r?.upcoming || []).map(u => ({ ...u, kind: 'status' })), rules: [], entities: [], known_mentioned: [] }, source, known, { exclude: skip, max: 2, full: source, kinds });
+  const dated = up.notes.filter(n => n.kind === 'status' && n.when);
+  return { fact, upcoming: dated, entities, dropped: (up.dropped || 0) + (up.notes.length - dated.length) };
+}
