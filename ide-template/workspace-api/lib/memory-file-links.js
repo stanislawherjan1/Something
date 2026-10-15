@@ -55,7 +55,10 @@ export function filesWrittenDuring({ from, to, owner = null, group = false, slac
     const who = ownerOfPath(f.rel);
     if (who && (group || who !== owner)) continue;
     let st; try { st = statSync(f.abs); } catch { continue; }
-    const t = Math.max(st.mtimeMs || 0, Number.isFinite(st.birthtimeMs) && st.birthtimeMs > 0 ? st.birthtimeMs : 0);
+    // Modification time only: writing or editing a file sets it. Creation time
+    // means different things per file system (Linux keeps it when mtime is set
+    // back, macOS moves it), so it would make the window platform-dependent.
+    const t = st.mtimeMs || 0;
     if (t < a || t > b) continue;
     out.push({ path: f.rel, at: new Date(t).toISOString() });
   }
