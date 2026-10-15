@@ -11,6 +11,11 @@
 
 REMINDERS_FILE="/home/coder/project/.reminders.json"
 BOT_NAME="${BOT_NAME:-bot}"
+# The routes that act for a teammate (invoke-turn, reminder-deliver, group-say)
+# want proof that the caller is this monitor: the bot user's token, written at
+# boot into a file only that user can read. Read per call; it changes per boot.
+TURN_ID_FILE="/home/bot/.${BOT_NAME}/turn-id"
+turn_header() { printf 'X-IDE-Turn: %s' "$(cat "$TURN_ID_FILE" 2>/dev/null)"; }
 TMUX_SOCKET="$BOT_NAME"
 TMUX_SESSION="$BOT_NAME"
 CHAT_ID="${TELEGRAM_ADMIN_CHAT_ID:-}"
@@ -62,7 +67,7 @@ WEB_NOTIFY_SCRIPT="/opt/ide/web-notify.sh"
 # Serialized, idle-gated tmux injector — the ONLY path that may type into the
 # bot's Claude session (prevents reminder/user-turn interleaving). Overridable
 # for local dev; defaults to the deployed location alongside this script.
-INJECT_SCRIPT="${INJECT_SCRIPT:-/opt/ide/tmux-inject.sh}"
+INJECT_SCRIPT=/opt/ide/tmux-inject.sh
 export INJECT_MAX_WAIT_S="${INJECT_MAX_WAIT_S:-25}"
 
 log() { echo "[reminder-monitor] $*"; }
@@ -70,10 +75,10 @@ log() { echo "[reminder-monitor] $*"; }
 # Append-only record of every fire attempt and how it actually left the box.
 # Complements the record itself, which now SURVIVES its firing: a due reminder
 # is CLAIMED (status 'firing'), delivered, and only then settled — advanced,
-# tombstoned, retried with a backoff, or parked as 'dead' after
-# REMINDER_MAX_ATTEMPTS. Before that, the record was consumed in the same pass
-# that found it due, so a minute when neither route to the brain was up simply
-# ate the occurrence.
+# tombstoned, retried with a backoff, or, after REMINDER_MAX_ATTEMPTS, parked
+# as 'dead' (a one-shot) or moved on to its next occurrence (a repeat). Before
+# that, the record was consumed in the same pass that found it due, so a minute
+# when neither route to the brain was up simply ate the occurrence.
 # `path` matters as much as `ok`: a reminder "delivered" as a raw fallback ping
 # or an in-memory web toast is one the user very likely never saw.
 FIRED_LOG="${FIRED_LOG:-/home/coder/project/.reminders-log.jsonl}"
@@ -123,6 +128,13 @@ operator_in_set() {
     return 1
 }
 
+# Did leg $2 (operator | teammates) of this reminder already reach its
+# recipients on an earlier attempt? $1 is the record's deliveredTo, as a CSV.
+leg_done() {
+    case ",$1," in *",$2,"*) return 0 ;; esac
+    return 1
+}
+
 # Run a frame as a HEADLESS turn for the operator, via the same endpoint the
 # per-user planner already uses successfully. This is the right fallback when
 # tmux injection is abandoned: the pane being busy says nothing about whether
@@ -146,7 +158,7 @@ process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process
 NODE
 ) || return 1
     resp=$(curl -sS -m 8 -w '\n%{http_code}' -X POST \
-        "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" \
+        "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" -H "$(turn_header)" \
         -H 'Content-Type: application/json' -d "$json" 2>/dev/null) || return 1
     status="${resp##*$'\n'}"
     payload="${resp%$'\n'*}"
@@ -290,7 +302,7 @@ NODE
     # delivered while the record had already been consumed.
     local resp status payload
     resp=$(curl -sS -m 6 -w '\n%{http_code}' -X POST \
-        "http://localhost:${WSAPI_PORT}/api/internal/reminder-deliver" \
+        "http://localhost:${WSAPI_PORT}/api/internal/reminder-deliver" -H "$(turn_header)" \
         -H 'Content-Type: application/json' -d "$json" 2>/dev/null) || {
         log "reminder-deliver: POST failed (wsapi unreachable)"
         return 1
@@ -321,11 +333,20 @@ NODE
 # person's identity + scope (reads their own private cards) instead of the
 # operator brain — which the scope-guard now fences out of a teammate's private
 # tree. POSTs to wsapi /internal/invoke-turn, which spawns runClaudeTurn(actor).
-# Fire-and-forget (wsapi returns 202); the operator's own leg still runs via
-# fire_operator above, so the operator is skipped here to avoid a double-run.
+# The operator's own leg still runs via fire_operator above, so the operator is
+# skipped here to avoid a double-run.
+#
+# Returns non-zero when ANY teammate's turn did not start, so the caller keeps
+# the reminder for a retry. The turn itself is fire-and-forget, but "started"
+# is the only thing wsapi can confirm: the contract is a 202 carrying
+# `started`, as in invoke_turn_operator. Anything else (a 500, a 400 for an
+# unknown actor, wsapi unreachable, solo's 200 skipped) is a leg that did not
+# run — and used to count as delivered, because curl without --fail exits 0 on
+# every HTTP status.
 invoke_turn_teammates() {
     command -v curl >/dev/null 2>&1 || return 1
-    local recips="$1" wire="$2" mode="${3:-1}" channel="${4:-all}" title="${5:-}" urgency="${6:-now}" slug json msg
+    local recips="$1" wire="$2" mode="${3:-1}" channel="${4:-all}" title="${5:-}" urgency="${6:-now}" slug json msg resp status payload
+    local failed=0
     [ "$recips" = "*everyone*" ] && return 0   # planner triggers are per-slug; never mass-execute
     # mode 2 (a duty the planner placed): wrap it in the same frame the operator's
     # brain gets, so the reminder contract in global-claude.md applies — do the
@@ -349,11 +370,22 @@ const body = { actor: process.env.ACTOR, message: process.env.MSG };
 body.deliver = process.env.MODE === '2' ? { channel: process.env.CH, title: process.env.TI } : undefined;
 process.stdout.write(JSON.stringify(body));
 NODE
-) || continue
-        curl -sS -m 8 -X POST "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" \
-            -H 'Content-Type: application/json' -d "$json" >/dev/null 2>&1 \
-            || log "invoke-turn POST failed for ${slug}"
+) || { failed=1; continue; }
+        resp=$(curl -sS -m 8 -w '\n%{http_code}' -X POST \
+            "http://localhost:${WSAPI_PORT}/api/internal/invoke-turn" -H "$(turn_header)" \
+            -H 'Content-Type: application/json' -d "$json" 2>/dev/null) || {
+            log "invoke-turn: POST failed for ${slug} (wsapi unreachable)"
+            failed=1
+            continue
+        }
+        status="${resp##*$'\n'}"
+        payload="${resp%$'\n'*}"
+        case "$status:$payload" in
+            202:*'"started"'*) ;;
+            *) log "invoke-turn: turn for ${slug} did not start (HTTP ${status}) — ${payload}"; failed=1 ;;
+        esac
     done
+    return $failed
 }
 
 # Don't block on bot startup — keep polling and route per-reminder. If the
@@ -497,8 +529,17 @@ let lockHeld = false;
 const releaseLock = () => { if (lockHeld) { try { fs.unlinkSync(LOCK_FILE); } catch {} lockHeld = false; } };
 
 let reminders;
-try { reminders = JSON.parse(fs.readFileSync(file, 'utf8')); }
-catch { releaseLock(); process.exit(0); }
+try {
+    reminders = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!Array.isArray(reminders)) throw new Error('not a JSON array');
+} catch (err) {
+    // Nothing fires until the file is repaired. Say so on every tick (exit 3,
+    // which the loop below turns into one notice to the operator) instead of
+    // exiting quietly, which looked exactly like a minute with nothing due.
+    releaseLock();
+    process.stderr.write(`[reminder-monitor] Cannot read ${file} (${err.message}) — no reminder fires until the file is repaired\n`);
+    process.exit(3);
+}
 
 let changed = false;
 const toSend = [];
@@ -515,7 +556,12 @@ reminders = reminders.map(r => {
     if (r.status !== 'pending' && !stuck) return r;
 
     const due = new Date(r.due).getTime();
-    if (due > now) return r;
+    // A failed attempt leaves `retryAt` on the record and `due` where it was:
+    // the recurrence anchors on `due`, and moving it by the backoff made an
+    // interval series drift for good after one bad minute. A retry waits for
+    // retryAt; a first attempt waits for due.
+    const retryAt = Date.parse(r.retryAt || '');
+    if ((Number.isFinite(retryAt) ? retryAt : due) > now) return r;
 
     // Compose the wire-format message. Prefer the structured title +
     // description fields when present (newer reminders), fall back to the
@@ -562,7 +608,10 @@ reminders = reminders.map(r => {
     //         for that person, never text for them to read. Run it as them and
     //         deliver only the outcome (or nothing, if nothing is worth saying);
     //   ''  = a plain reminder the user asked for: notify the recipient.
-    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : (r.origin === 'planner' ? '2' : '')}\x1f${flat(r.chat || '')}`);
+    // 10th column: the legs (operator / teammates) that already reached their
+    // recipients on an earlier attempt, so a retry repeats only the missing one.
+    const deliveredTo = Array.isArray(r.deliveredTo) ? r.deliveredTo.map(flat).join(',') : '';
+    toSend.push(`${flat(r.id)}\x1f${channel}\x1f${recipientsCsv}\x1f${flat(wire)}\x1f${flat(title)}\x1f${flat(desc)}\x1f${flat(r.urgency || 'now')}\x1f${r.exec ? '1' : (r.origin === 'planner' ? '2' : '')}\x1f${flat(r.chat || '')}\x1f${deliveredTo}`);
     changed = true;
 
     // CLAIM it — do NOT advance or delete yet. The record used to be consumed
@@ -582,6 +631,7 @@ reminders = reminders.map(r => {
         status: 'firing',
         attempts: (Number(r.attempts) || 0) + 1,
         lastAttemptAt: new Date(now).toISOString(),
+        retryAt: undefined,
         pendingNext: adv ? { due: adv.due, recur: adv.recur } : null,
     };
 });
@@ -610,9 +660,17 @@ releaseLock();
 toSend.forEach(m => process.stdout.write(m + '\n'));
 NODEEOF
     )
+    claim_rc=$?
+    if [ "$claim_rc" = "3" ] && [ -z "$FILE_UNREADABLE_NOTIFIED" ]; then
+        # Told to the operator once per monitor lifetime; the tick log carries
+        # the detail every minute until the file is repaired.
+        FILE_UNREADABLE_NOTIFIED=1
+        fire_operator "telegram" "The reminders file could not be read, so no reminder will fire until it is repaired. Please check ${REMINDERS_FILE} on the server." "now" || true
+    fi
 
-    # Fire each due reminder. Wire format (tab-separated, 5 columns from the node
-    # block above): channel \t recipients \t wire \t title \t description.
+    # Fire each due reminder. Wire format (\x1f-separated, 10 columns from the
+    # node block above): id, channel, recipients, wire, title, description,
+    # urgency, exec, group chat, legs already delivered.
     #
     #   - recipients EMPTY → solo / operator-only: fire_operator() — TODAY's exact
     #     path (tmux brain frame, else the channel-matched fallback ladder).
@@ -628,12 +686,15 @@ NODEEOF
     [ -z "$OP_SLUG" ] && fetch_op_slug
     # Delivery outcomes, settled against the file AFTER the loop. A reminder is
     # only consumed once something confirmed it left the box.
-    OK_IDS=""; FAIL_IDS=""
+    # DONE_LEGS lists the legs that reached their recipients this pass, one
+    # `<id> <leg>` per line; the settle pass keeps them on a failed record so
+    # the next attempt repeats only the leg that is still missing.
+    OK_IDS=""; FAIL_IDS=""; DONE_LEGS=""
     while IFS= read -r line; do
         [ -z "$line" ] && continue
         # Split on \x1f (unit separator) — non-whitespace, so empty fields (e.g.
         # an absent recipients column = solo) are preserved.
-        IFS=$'\x1f' read -r rid channel recipients wire title desc urgency exec gchat <<< "$line"
+        IFS=$'\x1f' read -r rid channel recipients wire title desc urgency exec gchat done_legs <<< "$line"
         [ -z "$channel" ] && channel="all"
         delivered=1
 
@@ -641,7 +702,7 @@ NODEEOF
             # Targeted at a GROUP. The brain composes it in the chat (and may
             # decide there is nothing worth saying); the group registry, not
             # this id, is what authorises the send.
-            if curl -sf --max-time 300 -X POST "http://localhost:${WSAPI_PORT}/api/internal/group-say" \
+            if curl -sf --max-time 300 -X POST "http://localhost:${WSAPI_PORT}/api/internal/group-say" -H "$(turn_header)" \
                  -H 'Content-Type: application/json' \
                  -d "$(MSG="$wire" CHAT="$gchat" node -e 'process.stdout.write(JSON.stringify({chat_id:process.env.CHAT,text:process.env.MSG}))')" \
                  >/dev/null 2>&1; then
@@ -657,36 +718,50 @@ NODEEOF
             delivered=$?
             log_fire "$delivered" "$FIRE_PATH" "$channel" "" "$urgency" "$exec" "$title"
         else
-            # Team mode. Operator's own copy is brain-elaborated when targeted.
-            if operator_in_set "$recipients"; then
+            # Team mode: two legs — the operator's own copy (brain-elaborated
+            # when targeted) and the teammates' — and the reminder is delivered
+            # only when BOTH are. One flag used to cover both, assigned in turn,
+            # so the teammate leg's result simply replaced the operator's: a
+            # dropped operator copy counted as delivered, and a failed teammate
+            # leg re-fired the operator's copy on every retry. A leg that is
+            # already in `done_legs` (delivered on an earlier attempt) is not
+            # repeated; the retry covers only what is still missing.
+            op_rc=0; tm_rc=0
+            if operator_in_set "$recipients" && ! leg_done "$done_legs" operator; then
                 fire_operator "$channel" "$wire" "$urgency"
-                delivered=$?
-                log_fire "$delivered" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
+                op_rc=$?
+                log_fire "$op_rc" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "$title"
+                [ "$op_rc" = "0" ] && DONE_LEGS="$DONE_LEGS$rid operator
+"
             fi
-            if [ -n "$exec" ]; then
+            if leg_done "$done_legs" teammates; then
+                : # reached them on an earlier attempt
+            elif [ -n "$exec" ]; then
                 # EXECUTION reminder (a planner trigger, or a duty the planner
                 # placed): run it AS each teammate recipient in their own scope,
                 # not the operator brain — and never relay its text to them.
                 invoke_turn_teammates "$recipients" "$wire" "$exec" "$channel" "$title" "$urgency"
-                delivered=$?
-                log_fire "$delivered" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
+                tm_rc=$?
+                log_fire "$tm_rc" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
             else
                 # Delivery reminder: notify teammates via wsapi; on failure,
                 # surface to the operator so a team reminder is never lost.
                 others=$(recipients_without_operator "$recipients")
                 if [ -z "$others" ]; then
-                    : # operator-only reminder — already delivered by fire_operator above
+                    : # operator-only reminder — the operator leg above is all there is
                 elif deliver_to_teammates "$others" "$channel" "$title" "$desc"; then
-                    delivered=0
                     log_fire 0 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
                 else
-                    delivered=1
+                    tm_rc=1
                     log_fire 1 "teammates" "$channel" "$recipients" "$urgency" "$exec" "$title"
                     log "reminder-deliver reached nobody — surfacing to operator"
                     fire_operator "$channel" "(team delivery failed) $wire"
                     log_fire "$?" "$FIRE_PATH" "$channel" "$OP_SLUG" "$urgency" "$exec" "(escalated) $title"
                 fi
             fi
+            if [ "$tm_rc" = "0" ] && ! leg_done "$done_legs" teammates; then DONE_LEGS="$DONE_LEGS$rid teammates
+"; fi
+            [ "$op_rc" = "0" ] && [ "$tm_rc" = "0" ] && delivered=0
         fi
         if [ "$delivered" = "0" ]; then OK_IDS="$OK_IDS$rid
 "; else FAIL_IDS="$FAIL_IDS$rid
@@ -697,53 +772,109 @@ NODEEOF
     # ── Settle ────────────────────────────────────────────────────────────────
     # Only now is a claimed reminder consumed: a repeat advances, a one-shot
     # becomes a dated tombstone. A failed delivery goes back to pending with a
-    # backoff, and after REMINDER_MAX_ATTEMPTS it is parked as 'dead' and
-    # surfaced once — instead of vanishing on the first bad minute.
+    # backoff, and after REMINDER_MAX_ATTEMPTS a one-shot is parked as 'dead'
+    # while a repeat moves on to its next occurrence; either is surfaced once —
+    # instead of vanishing on the first bad minute.
     if [ -n "$OK_IDS$FAIL_IDS" ]; then
-        DEAD=$(OK_IDS="$OK_IDS" FAIL_IDS="$FAIL_IDS" node - "$REMINDERS_FILE" << 'SETTLEEOF'
+        SETTLED=$(OK_IDS="$OK_IDS" FAIL_IDS="$FAIL_IDS" DONE_LEGS="$DONE_LEGS" node - "$REMINDERS_FILE" << 'SETTLEEOF'
 const fs = require('fs');
 const [,, file] = process.argv;
 const now = Date.now();
 const ok   = new Set((process.env.OK_IDS   || '').split('\n').filter(Boolean));
 const fail = new Set((process.env.FAIL_IDS || '').split('\n').filter(Boolean));
 const MAX_ATTEMPTS = Number(process.env.REMINDER_MAX_ATTEMPTS) || 5;
+// Legs delivered this pass, per id (`<id> <leg>` lines from the loop above).
+const doneLegs = {};
+for (const line of (process.env.DONE_LEGS || '').split('\n').filter(Boolean)) {
+    const i = line.indexOf(' ');
+    if (i > 0) (doneLegs[line.slice(0, i)] ||= []).push(line.slice(i + 1));
+}
+
+// Same advisory lock as the claim pass above (and the MCP, the reminders route
+// and the planner schedule): a cancel or a new reminder landing between this
+// read and the rename below was otherwise written over, or undid the settle.
+// Breaks a stale lock and fails open after a short wait, like the others.
+const LOCK_FILE = file + '.lock';
+const sleepMs = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} };
+let lockHeld = false;
+{
+  const deadline = Date.now() + 4000;
+  while (true) {
+    try { fs.closeSync(fs.openSync(LOCK_FILE, 'wx')); lockHeld = true; break; }
+    catch (err) {
+      if (err.code !== 'EEXIST') break;
+      try { const st = fs.statSync(LOCK_FILE); if (Date.now() - st.mtimeMs > 30000) { fs.unlinkSync(LOCK_FILE); continue; } } catch {}
+      if (Date.now() >= deadline) break;
+      sleepMs(40);
+    }
+  }
+}
+const releaseLock = () => { if (lockHeld) { try { fs.unlinkSync(LOCK_FILE); } catch {} lockHeld = false; } };
 
 let reminders;
-try { reminders = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { process.exit(0); }
+try {
+    reminders = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!Array.isArray(reminders)) throw new Error('not a JSON array');
+} catch (err) {
+    releaseLock();
+    process.stderr.write(`[reminder-monitor] Cannot read ${file} to settle this pass (${err.message}) — the claims stay and are retried once stuck\n`);
+    process.exit(3);
+}
 
-const dead = [];
+const dead = [], missed = [];
+const label = (r) => `${r.id}: ${String(r.title || r.message || '').replace(/\s+/g, ' ').slice(0, 60)}`;
 reminders = reminders.map(r => {
     if (r.status !== 'firing') return r;
     const settledAt = new Date(now).toISOString();
+    // Attempt-only fields: dropped from every settled shape below.
+    const { pendingNext: next, deliveredTo, retryAt, ...rest } = r;
 
     if (ok.has(String(r.id))) {
-        const next = r.pendingNext;
-        delete r.pendingNext;
-        if (!next) return { ...r, status: 'sent', settledAt };
+        if (!next) return { ...rest, status: 'sent', settledAt };
         process.stderr.write(`[reminder-monitor] Repeating ${r.id} → next: ${next.due}\n`);
-        return { ...r, status: 'pending', due: next.due, recur: next.recur, settledAt, attempts: 0, pendingNext: undefined };
+        return { ...rest, status: 'pending', due: next.due, recur: next.recur, settledAt, attempts: 0 };
     }
     if (!fail.has(String(r.id))) return r;   // still in flight elsewhere
 
     const attempts = Number(r.attempts) || 1;
     if (attempts >= MAX_ATTEMPTS) {
-        dead.push(`${r.id}: ${(r.title || r.message || '').slice(0, 60)}`);
-        return { ...r, status: 'dead', settledAt };
+        if (next) {
+            // A repeat skips the occurrence it could not deliver and keeps its
+            // schedule; parking the whole series was a silent stop, since dead
+            // records are hidden from every list and pruned after 30 days.
+            // settledAt is left alone: it marks the last run that completed,
+            // which is what the watermark on the next run should start from.
+            missed.push(`${label(r)} (next ${next.due})`);
+            process.stderr.write(`[reminder-monitor] Missed ${r.id} after ${attempts} attempts → next: ${next.due}\n`);
+            return { ...rest, status: 'pending', due: next.due, recur: next.recur, attempts: 0, missedAt: settledAt };
+        }
+        dead.push(label(r));
+        return { ...rest, status: 'dead', settledAt };
     }
-    // Exponential-ish backoff, capped: 1, 2, 4, 8 minutes.
+    // Exponential-ish backoff, capped: 1, 2, 4, 8 minutes — in retryAt, never
+    // in due, which stays the anchor of the series. The legs that did reach
+    // their recipients ride along so the retry repeats only the missing one.
     const backoff = Math.min(8, 2 ** (attempts - 1)) * 60_000;
-    return { ...r, status: 'pending', due: new Date(now + backoff).toISOString(), pendingNext: undefined };
+    const legs = [...new Set([...(Array.isArray(deliveredTo) ? deliveredTo : []), ...(doneLegs[String(r.id)] || [])])];
+    return { ...rest, status: 'pending', retryAt: new Date(now + backoff).toISOString(), ...(legs.length ? { deliveredTo: legs } : {}) };
 });
 
 const tmp = `${file}.${process.pid}.${Math.random().toString(16).slice(2, 10)}.tmp`;
 try { fs.writeFileSync(tmp, JSON.stringify(reminders, null, 2)); fs.renameSync(tmp, file); }
 catch { try { fs.unlinkSync(tmp); } catch {} }
-process.stdout.write(dead.join('\n'));
+releaseLock();
+process.stdout.write([...dead.map(d => `dead ${d}`), ...missed.map(m => `missed ${m}`)].join('\n'));
 SETTLEEOF
         )
+        DEAD=$(printf '%s\n' "$SETTLED" | sed -n 's/^dead //p')
+        MISSED=$(printf '%s\n' "$SETTLED" | sed -n 's/^missed //p')
         if [ -n "$DEAD" ]; then
             log "reminder undeliverable after retries: $DEAD"
             fire_operator "telegram" "A reminder could not be delivered after several tries and has been parked: $DEAD" "now" || true
+        fi
+        if [ -n "$MISSED" ]; then
+            log "repeating reminder skipped an occurrence after retries: $MISSED"
+            fire_operator "telegram" "A repeating reminder could not be delivered after several tries; that occurrence was skipped and the series continues: $MISSED" "now" || true
         fi
     fi
 

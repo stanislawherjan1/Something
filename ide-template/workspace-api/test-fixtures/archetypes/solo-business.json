@@ -1,0 +1,51 @@
+{
+ "teamMode": false,
+ "people": [
+  {
+   "email": "mia@example.test",
+   "role": "admin",
+   "slug": "mia",
+   "displayName": "Mia",
+   "addedAt": "2026-09-01T00:00:00Z"
+  }
+ ],
+ "connections": [
+  {
+   "id": "shopify",
+   "owner": "mia",
+   "reach": "workspace",
+   "access": "write",
+   "fields": {
+    "SHOPIFY_STORE_DOMAIN": "x.myshopify.com",
+    "SHOPIFY_CLIENT_ID": "a",
+    "SHOPIFY_CLIENT_SECRET": "b"
+   }
+  },
+  {
+   "id": "trello",
+   "owner": "mia",
+   "reach": "workspace",
+   "access": "write",
+   "fields": {
+    "TRELLO_API_KEY": "k",
+    "TRELLO_TOKEN": "t"
+   }
+  },
+  {
+   "id": "otter",
+   "owner": "mia",
+   "reach": "workspace",
+   "access": "read",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"o-mia\"}"
+   }
+  }
+ ],
+ "groups": [],
+ "notetakers": {
+  "mia": [
+   "otter"
+  ]
+ },
+ "_about": "A workspace archetype of the test programme (plan 8.1): roster, connections, groups. Synthetic people and companies."
+}

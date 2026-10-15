@@ -72,7 +72,7 @@ static const char *ALLOWED_SCRIPTS[] = {
     NULL,
 };
 
-extern char **environ;
+#include "env-guard.h"   /* declares environ */
 
 static int is_allowed(const char *path) {
     for (int i = 0; ALLOWED_SCRIPTS[i] != NULL; i++) {
@@ -82,6 +82,8 @@ static int is_allowed(const char *path) {
 }
 
 int main(int argc, char *argv[]) {
+    /* The uid that started us — getuid() before the switch below. */
+    const uid_t caller = getuid();
     /* Refuse if our own binary lost its setuid bit (means a deploy bug). */
     struct stat self_stat;
     if (stat("/proc/self/exe", &self_stat) != 0) {
@@ -90,6 +92,13 @@ int main(int argc, char *argv[]) {
     }
     if ((self_stat.st_mode & S_ISUID) == 0 && getuid() != 0) {
         fprintf(stderr, "monitor-runner: setuid bit missing on this binary; refusing to run\n");
+        return 1;
+    }
+
+    /* PM2 (coder) starts the monitors; workspace-api (1001) runs bot-relay.sh. */
+    static const uid_t allowed_callers[] = { 0, ENV_GUARD_PM2_UID, 1001 };
+    if (!env_guard_caller_ok(caller, allowed_callers, sizeof allowed_callers / sizeof allowed_callers[0])) {
+        fprintf(stderr, "monitor-runner: not started by an allowed user (uid %u); refusing to run\n", (unsigned)caller);
         return 1;
     }
 
@@ -171,6 +180,11 @@ int main(int argc, char *argv[]) {
         bash_argv[idx++] = argv[i];
     }
     bash_argv[idx] = NULL;
+
+    if (env_guard_apply(caller) != 0) {
+        fprintf(stderr, "monitor-runner: could not prepare the environment; refusing to run\n");
+        return 1;
+    }
 
     execve(BASH_BIN, bash_argv, environ);
     fprintf(stderr, "monitor-runner: execve %s: %s\n", BASH_BIN, strerror(errno));

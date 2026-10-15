@@ -22,6 +22,8 @@
  * A window with no human message in it (a reminder the bot sent that nobody
  * answered) is a schedule by-product, not a memory, and is skipped.
  */
+import { tasksCreatedDuring, linkFactToTask } from './memory-task-links.js';
+import { filesWrittenDuring, linkFactToFiles } from './memory-file-links.js';
 import * as facts from './memory-facts.js';
 import { readdirSync, readFileSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,12 +31,16 @@ import { fileURLToPath } from 'node:url';
 
 import * as ledger from './memory-ledger.js';
 import * as router from './memory-router.js';
-import { addAsk } from './memory-asks.js';
+import { addAsk, listRules, decisions as askDecisions } from './memory-asks.js';
+import * as sharing from './memory-sharing.js';
 import { knownNames, knownKinds, dismissedNames } from './memory-views.js';
 import { getTeamMode, isAllowedGroup, dmOwnerSlug, primaryAdminSlug, list as rosterList } from './team.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 const IDLE_MS      = num('MEMORY_V4_IDLE_SECONDS', 900) * 1000;
+let traceOnce = false;   // one tick's trace on request (the canary asks), MEMORY_TRACE=1 for all
+/** How long a conversation must be quiet before it is filed. */
+export const idleMs = () => IDLE_MS;
 const FIRST_RUN_MS = num('MEMORY_V4_FIRST_RUN_HOURS', 48) * 3600_000;   // no watermark yet → look this far back
 const MAX_PER_TICK = num('MEMORY_V4_MAX_PER_TICK', 3);
 const MAX_MESSAGES = 400;                                               // per source per tick; the rest waits
@@ -310,25 +316,33 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
     // the assistant wrote from what it already knew.
     const spoken = c.messages.filter(m => m.human || m.worked).map(line).join('\n');
     try {
-      const n = await router.notes({ name: src.name, group, ts: c.ts, text: c.text, attest: spoken, known: knownNames([src.scope, 'shared']), kinds: knownKinds([src.scope, 'shared']), exclude: [await botName(), ...dismissedNames(src.scope)], max: router.notesCap(c.messages.filter(m => m.human).length) });
+      // Tasks put on the board while this was being said: the model may tie a note to the one it was made for.
+      const span = { from: c.ts, to: c.messages[c.messages.length - 1]?.ts || c.ts, owner: src.owner, group };
+      const boardTasks = tasksCreatedDuring(span);
+      const written = filesWrittenDuring(span);
+      const n = await router.notes({ tasks: boardTasks, files: written, name: src.name, group, ts: c.ts, text: c.text, attest: spoken, known: knownNames([src.scope, 'shared']), kinds: knownKinds([src.scope, 'shared']), exclude: [await botName(), ...dismissedNames(src.scope)], max: router.notesCap(c.messages.filter(m => m.human).length) });
       // Where each note stands: on what a person said, or on what the
       // assistant found — its quote is in one or the other. One standing for
       // the whole chunk once marked a registry check "said".
       const said = c.messages.filter(m => m.human).map(line).join('\n');
       for (const x of n?.notes || []) x.standing = router.isVerbatim(x.evidence, said, 8) || router.isNearVerbatim(x.evidence, said) ? 'said' : 'found';
+      if (n) n.written = written;   // what the filing loop below links
       noted.push(n);
       // MEMORY_TRACE=1: what the gate saw and did, one line per chunk, for a
       // replay to read — the standing of every line, the candidates kept and
       // the ones rejected with the reason.
-      if (process.env.MEMORY_TRACE) {
+      if (process.env.MEMORY_TRACE || traceOnce) {
         try {
           mkdirSync(join(projectDir(), 'memory', '_engine'), { recursive: true });
-          appendFileSync(join(projectDir(), 'memory', '_engine', 'trace.jsonl'), JSON.stringify({
-            ts: new Date(now).toISOString(), src: src.id, scope: src.scope, chunk: `${i + 1}/${chunks.length}`,
+          // Outside the project tree (turns read it) and readable by workspace-api alone.
+          const traceDir = join(process.env.WSAPI_STORE_DIR || '/var/wsapi-store', 'trace');
+          try { mkdirSync(traceDir, { recursive: true, mode: 0o700 }); } catch { /* exists */ }
+          appendFileSync(join(traceDir, 'consolidator.jsonl'), JSON.stringify({
+            ts: new Date(now).toISOString(), src: src.id, scope: src.scope, chunk: `${i + 1}/${chunks.length}`, tasks: boardTasks.map(t => t.id), written: written.map(f => f.path),
             lines: c.messages.map(m => ({ who: m.speaker, standing: m.human ? 'said' : m.worked ? 'found' : 'recital', ...(m.tools?.length ? { tools: m.tools } : {}), text: m.text.slice(0, 200) })),
             kept: (n?.notes || []).map(x => ({ title: x.title, text: x.text, kind: x.kind, about: x.about, when: x.when, expires: x.expires, evidence: x.evidence })),
             rejected: n?.rejected || [], entities: n?.entities || [], rules: n?.rules || [],
-          }) + '\n');
+          }) + '\n', { mode: 0o600 });
         } catch { /* a trace is never worth a failed filing */ }
       }
     } catch (e) {
@@ -344,6 +358,10 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
   }
   result.dropped = noted.reduce((a, n) => a + (n?.dropped || 0), 0);
 
+  // What may reach the team from this conversation, per fact: the person's
+  // mode, their standing rules and earlier answers (lib/memory-sharing.js).
+  const gate = src.owner && routed ? { mode: sharing.modeOf(src.owner), rules: listRules(src.owner), decided: askDecisions(src.owner) } : null;
+  const sharedIds = [];
   try {
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i];
@@ -364,21 +382,47 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
           const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said', conv: src.conv });
           result.notes += got.added; result.updated = (result.updated || 0) + got.updated.length; result.superseded = (result.superseded || 0) + got.superseded.length;
           for (const t of got.titles) if (result.titles.length < 5) result.titles.push(t);
+          // A note the model tied to a task made during this conversation: the
+          // fact and the task point at each other from now on.
+          // A conversation that wrote exactly one file wrote it for what it was
+          // about: that file is every note's, whether the model said so or not.
+          const theFile = (n.written || []).length === 1 ? [n.written[0].path] : null;
+          for (const [ni, nt] of n.notes.entries()) {
+            const files = nt.files?.length ? nt.files : theFile;
+            if (!nt.task && !files) continue;
+            try {
+              // The fact that stands for this note now — a new one, or the one it
+              // confirmed (the bot often notes the same thing during the turn).
+              const standsFor = got.linkable?.[ni] ?? got.linkable?.[nt.text];
+              const f = (standsFor && facts.get(src.scope, standsFor))
+                || facts.all(src.scope).filter(x => x.text === nt.text && !x.retired && !x.hidden).sort((a, b) => (a.ts < b.ts ? 1 : -1))[0];
+              if (!f) continue;
+              if (nt.task && await linkFactToTask(src.scope, f.id, nt.task)) result.linked = (result.linked || 0) + 1;
+              if (files && await linkFactToFiles(src.scope, f.id, files)) result.filesLinked = (result.filesLinked || 0) + 1;
+            } catch (e) { process.stderr.write(`[memory-v4] link: ${e.message}\n`); }
+          }
+          // Each fact goes to the team, to a question, or stays — the fact,
+          // never the excerpt. A fact that merely repeats one memory holds
+          // (nothing added) is not offered again.
+          if (gate && got.added) {
+            // Only what this batch actually added: a note that merely confirmed or
+            // merged into a fact memory had is not offered again (no second question).
+            for (const [fi, f] of n.notes.entries()) {
+              if (got.fresh && !got.fresh[fi]) continue;
+              const d = sharing.decide({ mode: gate.mode, fact: f, routed, rules: gate.rules, decided: gate.decided });
+              if (d.outcome === 'team') {
+                const out = await sharing.fileTeamFact(src.owner, f, { ts: c.ts, conv: src.conv, source: SOURCE_OF[src.kind], name: src.name, by: SOURCE_OF[src.kind] });
+                if (out.recordId) { result.shared++; sharedIds.push(out.recordId); }
+              } else if (d.outcome === 'ask') {
+                addAsk(src.owner, { text: f.text, question: routed.askQuestion || '', conv: src.conv, ts: c.ts, source: SOURCE_OF[src.kind], fact: f, reason: d.reason, key: sharing.factKey(f) });
+                result.asks++;
+              }
+            }
+          }
         }
       }
     }
-    // Nothing new in the owner's scope (every chunk a near-verbatim repeat, or
-    // a window re-read after the state file was lost) → nothing to share or
-    // ask either: the shared copy and the question were made the first time.
-    let sharedId = null;
-    if (routed?.shared && result.records) {
-      const r = await ledger.append({ scope: 'shared', source: SOURCE_OF[src.kind], ts: fresh[0].ts, conv: src.conv, speaker: src.name, text: routed.shared.slice(0, 11000), origin: src.scope });
-      if (r.ok) { result.shared++; sharedId = r.id; }
-    }
-    if (routed?.ask && src.owner && result.records) {
-      addAsk(src.owner, { text: routed.ask, question: routed.askQuestion, conv: src.conv, ts: fresh[0].ts, source: SOURCE_OF[src.kind] });
-      result.asks++;
-    }
+    const sharedId = sharedIds[0] || null;
     if (result.records) {
       // `dropped`: notes the model offered whose quote was not in the person's
       // words — visible in Changes, so a thin filing is not a silent one.
@@ -400,7 +444,8 @@ let running = false;
  * File every due source (capped per tick). Single-flight; safe to call on a
  * timer. Off unless MEMORY_V4 is shadow/read/on.
  */
-export async function consolidateIdle({ force = false, now = Date.now() } = {}) {
+export async function consolidateIdle({ force = false, now = Date.now(), trace = false } = {}) {
+  if (trace) traceOnce = true;
   if (ledger.v4Mode() === 'off' && !force) return { ok: true, skipped: 'off' };
   if (running) return { ok: true, skipped: 'in-progress' };
   running = true;
@@ -417,7 +462,8 @@ export async function consolidateIdle({ force = false, now = Date.now() } = {}) 
     }
     const sum = (k) => results.reduce((s, r) => s + (r[k] || 0), 0);
     const failures = results.filter(r => r.errors.length);
-    const summary = { ok: true, sources: results.length, records: sum('records'), shared: sum('shared'), asks: sum('asks'), notes: sum('notes'), pending: Math.max(0, due.length - MAX_PER_TICK), failures: failures.map(r => ({ id: r.id, errors: r.errors })) };
+    traceOnce = false;
+    const summary = { ok: true, sources: results.length, records: sum('records'), shared: sum('shared'), asks: sum('asks'), notes: sum('notes'), linked: sum('linked'), filesLinked: sum('filesLinked'), pending: Math.max(0, due.length - MAX_PER_TICK), failures: failures.map(r => ({ id: r.id, errors: r.errors })) };
     if (results.length) {
       state.runs = [...(state.runs || []), { at: new Date(now).toISOString(), ...summary }].slice(-50);
       writeState(state);

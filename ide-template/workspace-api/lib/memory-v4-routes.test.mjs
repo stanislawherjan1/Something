@@ -37,6 +37,11 @@ const ti = await import('./turn-identity.js');
 // ...and memory_note reads the person's words with the extractor: a stand-in
 // that dates a meeting with Kamil from the words it is given.
 (await import('./memory-llm.js')).configureRunner(async ({ user, schema }) => {
+  // The router's reading of a person's words: a pilot is the team's, "between us" is private.
+  if (schema?.properties?.ask_question) {
+    const line = String(user).split('\n').pop() || '';
+    return { shared: /between us/i.test(line) ? '' : line, private: /between us/i.test(line) ? line : '', ask: '', ask_question: '' };
+  }
   // The meeting pass (an import): one summary, the people from "With:".
   if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }], upcoming: [] };
   if (schema?.properties?.notes) {
@@ -46,7 +51,7 @@ const ti = await import('./turn-identity.js');
     const note = String(user).match(/NOTE: ([^]*?)\n\nWORDS: [^:]+: ([^]*)$/);
     if (!note) return { notes: [], rules: [], entities: [] };
     const words = note[2].trim();
-    const entries = note[1].split(/(?<=\.)\s+/).map(t => t.trim()).filter(Boolean).map(t => ({ title: t.replace(/^Correction:\s*/i, '').split(' ').slice(0, 4).join(' '), text: t.replace(/^Correction:\s*/i, ''), kind: 'fact', evidence: t.toLowerCase().match(/\p{L}{5,}/gu)?.some(w => words.toLowerCase().includes(w)) ? words : '', names: [] }));
+    const entries = note[1].split(/(?<=\.)\s+/).map(t => t.trim()).filter(Boolean).map(t => ({ title: t.replace(/^Correction:\s*/i, '').split(' ').slice(0, 4).join(' '), text: t.replace(/^Correction:\s*/i, ''), kind: 'fact', evidence: t.toLowerCase().match(/\p{L}{5,}/gu)?.some(w => words.toLowerCase().includes(w)) ? words : '', names: [], concerns: /pilot|launch/i.test(t) ? 'a company or project' : 'the person themselves', subject: /pilot/i.test(t) ? 'Vellmark' : null }));
     return { notes: entries, rules: [], entities: [] };
   }
   return { unsupported: /Krzysztof/.test(String(user).split('WORDS:')[0]) ? ['Krzysztof'] : [] };
@@ -98,7 +103,7 @@ ok('(b) a group turn finds shared + its group only — not its sender\'s private
 r = await call('GET', '/search?q=Orion', { token: BOT_TOKEN });
 ok('(b) the operator brain (bot token, no actor) is the primary admin', /term sheet/.test(r.body.text) && !/side project/.test(r.body.text));
 r = await call('GET', '/search?q=Orion', { token: BOT_TOKEN, actor: 'kasia' });
-ok('(b) the bot token acting for a teammate reads that teammate', /side project/.test(r.body.text) && !/term sheet/.test(r.body.text));
+ok('(b) the bot token stays the operator whatever slug is sent beside it', /term sheet/.test(r.body.text) && !/side project/.test(r.body.text), r.body.text);
 ok('(b) excerpts are fenced', r.body.text.startsWith('<<<MEMORY') && r.body.text.trim().endsWith('<<<END MEMORY>>>'));
 
 r = await call('GET', '/timeline?term=Orion', { token: stanTurn });
@@ -173,9 +178,30 @@ ok('(d) hiding is reversible (still on disk)', L.read({ scopes: ['user:stan'], i
   ok('(h) ...and nowhere else', !L.read({ scopes: ['shared', 'user:kasia'] }).some(x => x.conv === 'import:granola:g-9'));
   r = await call('POST', '/import', { token: stanTurn, body });
   ok('(h) the same item again: already', r.status === 200 && r.body.already === true, r.body);
+  // The workspace's Granola is the account of the admin who connected it:
+  // what it brings in is theirs. Another person imports from their own.
   r = await call('POST', '/import', { token: kasiaTurn, body });
-  ok('(h) another person importing the same meeting gets their own copy', r.status === 200 && r.body.ok && L.read({ scopes: ['user:kasia'] }).some(x => x.conv === 'import:granola:g-9'), r.body);
+  ok('(h) another person cannot import from a notetaker that is not theirs', r.status === 400 && /not connected/.test(r.body.error), r.body);
+  writeFileSync(join(ROOT, '.integrations', 'credentials.json'), JSON.stringify({ granola: { activatedAt: '2026-10-01T00:00:00Z', fields: {} }, 'granola@kasia': { activatedAt: '2026-10-02T00:00:00Z', fields: {}, owner: 'kasia', reach: 'personal' } }));
+  r = await call('POST', '/import', { token: kasiaTurn, body });
+  ok('(h) with their own account they get their own copy', r.status === 200 && r.body.ok && L.read({ scopes: ['user:kasia'] }).some(x => x.conv === 'import:granola:g-9'), r.body);
 }
+
+// ─── a note the bot makes goes through the sharing gate too ─────────────────
+const T = await import('./team.js');
+T.setSharing('kasia@example.test', 'auto');
+const A = await import('./memory-asks.js');
+r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Vellmark starts the warehouse pilot on 4 November.', said: 'Vellmark starts the warehouse pilot on 4 November.' } });
+ok('a work fact the bot notes in automatic mode reaches the team at once', r.status === 200 && r.body.shared === 1, r.body);
+const crossed = L.read({ scopes: ['shared'] }).filter(x => x.tags?.sharedFact && /warehouse pilot/.test(x.text));
+ok('...as a fact in her name, not the note', crossed.length === 1 && crossed[0].origin === 'user:kasia' && crossed[0].source === 'note', crossed);
+r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Kasia has a job offer from a recruiter.', said: 'I have a job offer from a recruiter, keep that between us.' } });
+ok('what the person asked to keep between us stays, no question either', r.status === 200 && !r.body.shared && !r.body.asked, r.body);
+r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Kasia prefers remote work.', said: 'I prefer remote work, the launch is on 3 October.' } });
+ok('a fact about the person becomes a question even in automatic mode', r.status === 200 && r.body.asked === 1 && A.listAsks('kasia', { status: 'pending' }).some(a => /remote work/.test(a.text)), r.body);
+r = await call('POST', '/note', { token: groupTurn, body: { text: 'The pilot starts on 4 November.', said: 'The pilot starts on 4 November.' } });
+ok('a group note is the group\'s: no gate, nothing crosses', r.status === 200 && !r.body.shared && !r.body.asked, r.body);
+T.setSharing('kasia@example.test', 'ask');
 
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);

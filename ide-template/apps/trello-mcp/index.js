@@ -37,6 +37,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { loadCredentials } from '../_shared/broker-client.js';
+import { projectFile } from '../_shared/local-file.js';
 import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename, extname } from 'node:path';
@@ -610,9 +611,7 @@ async function handleAddAttachment({ card_id, file_path, url, name, mime_type } 
 
   let result;
   if (file_path) {
-    if (!existsSync(file_path))       throw new Error(`file not found: ${file_path}`);
-    if (!statSync(file_path).isFile()) throw new Error(`not a file: ${file_path}`);
-    const buffer   = readFileSync(file_path);
+    const buffer   = readFileSync(projectFile(file_path));
     const fileName = name || basename(file_path);
     const mimeType = mime_type || guessMime(fileName);
     result = await apiUpload(`/cards/${encodeURIComponent(card_id)}/attachments`, {

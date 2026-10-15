@@ -6,7 +6,7 @@
  * Real router on 127.0.0.1; the signed-in person comes from a test header in
  * place of the session cookie. Run: node lib/memory-v4-ui.test.mjs
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -66,7 +66,7 @@ const kasia = as('kasia@example.test');
 
 // ─── (a) who may ask ─────────────────────────────────────────────────────────
 ok('(a) signed out → 401', (await as(null)('GET', '/facts')).status === 401);
-ok('(a) not on the team → 403', (await as('stranger@example.test')('GET', '/facts')).status === 403);
+ok('(a) not on the team → refused', [401, 403].includes((await as('stranger@example.test')('GET', '/facts')).status));
 
 // ─── (b) reading ─────────────────────────────────────────────────────────────
 let r = await stan('GET', '/facts');
@@ -190,14 +190,41 @@ ok('(b) "ask what I remember" runs the turn\'s search for this person', r.body.h
 
 // ─── (c) privacy screen ──────────────────────────────────────────────────────
 r = await stan('GET', '/privacy');
-ok('(c) pending questions and what I shared', r.body.asks.length === 1 && r.body.sharedFromMe.some(x => x.id === sh.id));
-ok('(c) ...as the facts, never the conversation', r.body.teamMode === true && r.body.sharedFromMe.every(x => x.facts?.length && x.text === undefined) && !JSON.stringify(r.body.sharedFromMe).includes('Stan:'));
+ok('(c) pending questions and what I shared, one row per fact', r.body.asks.length === 1 && r.body.sharedFromMe.some(x => x.recordId === sh.id && x.text === 'Team: Orion kickoff Tuesday.'), r.body.sharedFromMe);
+ok('(c) ...as the facts, never the conversation', r.body.teamMode === true && r.body.mode === 'ask' && !JSON.stringify(r.body.sharedFromMe).includes('Stan:'));
+r = await stan('POST', '/sharing/mode', { mode: 'auto' });
+ok('(c) the person picks their sharing mode', r.body.ok && (await stan('GET', '/privacy')).body.mode === 'auto');
+r = await stan('POST', '/sharing/mode', { mode: 'everything' });
+ok('(c) ...from the three there are', r.status === 400);
+await stan('POST', '/sharing/mode', { mode: 'ask' });
 r = await kasia('GET', '/privacy');
 ok('(c) a teammate sees none of that', !r.body.asks.length && !r.body.sharedFromMe.length);
 r = await kasia('POST', `/asks/${askId}`, { decision: 'share' });
 ok('(c) nobody answers another person\'s question', r.status === 422);
 r = await stan('POST', `/asks/${askId}`, { decision: 'share' });
 ok('(c) the owner shares it', r.body.ok && L.read({ scopes: ['shared'] }).some(x => /Harbor budget/.test(x.text)));
+const q2 = A.addAsk('stan', { text: 'Vellmark pilot starts in November.', question: 'Share?', ts: '2026-09-24T11:00:00Z', source: 'web', fact: { title: 'Vellmark pilot start', text: 'Vellmark starts the pilot in November.', kind: 'fact', subject: 'Vellmark', concerns: 'a company or project', evidence: 'Vellmark pilot starts in November' }, reason: 'about Vellmark', key: 'vellmark pilot start' });
+const q3 = A.addAsk('stan', { text: 'Jarek wants more office days.', question: 'Share?', ts: '2026-09-24T11:00:00Z', source: 'web', fact: { title: 'Jarek wants office days', text: 'Jarek wants more office days.', kind: 'fact', subject: 'Jarek', concerns: 'another person', evidence: 'Jarek wants more office days' }, reason: 'about Jarek', key: 'jarek wants office days' });
+r = await stan('GET', '/privacy');
+ok('(c) a question says whom its fact concerns', r.body.asks.find(a => a.id === q3)?.aboutPerson === true && r.body.asks.find(a => a.id === q2)?.aboutPerson === false, r.body.asks);
+r = await stan('POST', '/asks/batch', { ids: [q2, q3], decision: 'keep' });
+ok('(c) several questions answered at once', r.body.ok && r.body.results.length === 2 && !A.listAsks('stan', { status: 'pending' }).length, r.body);
+r = await stan('POST', `/asks/${q2}`, { decision: 'share', rememberSubject: true });
+ok('(c) a question is answered once, even in a batch', r.status === 422);
+const q4 = A.addAsk('stan', { text: 'x', question: 'Share?', ts: '2026-09-24T12:00:00Z', source: 'web', fact: { title: 'Vellmark pilot scope', text: 'The Vellmark pilot covers two warehouses.', kind: 'fact', subject: 'Vellmark', concerns: 'a company or project', evidence: 'covers two warehouses' }, reason: 'about Vellmark', key: 'vellmark pilot scope' });
+r = await stan('POST', `/asks/${q4}`, { decision: 'share', rememberSubject: true });
+r = await stan('GET', '/privacy');
+const vf = r.body.sharedFromMe.find(x => x.title === 'Vellmark pilot scope');
+ok('(c) "share, and always for this subject": the fact is shared and the rule listed', !!vf && r.body.rules.some(x => x.subject === 'Vellmark' && x.decision === 'share'), r.body.rules);
+r = await kasia('POST', `/shared/${vf.id}/withdraw`);
+ok('(c) nobody withdraws another person\'s fact', r.status === 404);
+r = await stan('POST', `/shared/${vf.id}/withdraw`);
+const FS = await import('./memory-facts.js');
+ok('(c) the sharer takes a fact back', r.body.ok && !FS.forRecord('shared', vf.recordId).length && !FS.visible(['shared']).some(f => f.id === vf.id) && !L.read({ scopes: ['shared'] }).some(x => x.id === vf.recordId), r.body);
+r = await stan('POST', `/shared/${vf.id}/restore`);
+ok('(c) ...and can restore it', r.body.ok && FS.visible(['shared']).some(f => f.id === vf.id) && L.read({ scopes: ['shared'] }).some(x => x.id === vf.recordId), r.body);
+r = await stan('POST', '/sharing/rules/clear', { subject: 'Vellmark' });
+ok('(c) a rule can be dropped', r.body.ok && !(await stan('GET', '/privacy')).body.rules.length);
 
 // ─── (d) acting on records ───────────────────────────────────────────────────
 r = await stan('POST', `/records/${k1.id}/erase`);
@@ -234,7 +261,6 @@ ok('(d1) bulk: the same rule per record — done and refused', r.body.done.inclu
 const multi = await L.append({ scope: 'user:stan', source: 'migration', ts: '2026-09-18T12:00:00Z', conv: 'migration:memory/users/stan/topics/funds.md', text: 'Funds — Claims\n- Fund A: intro call done.\n- Fund B: passed.\n- Fund C: waiting on deck.',
   notes: [{ text: 'Fund A: intro call done.', kind: 'fact' }, { text: 'Fund B: passed.', kind: 'fact' }, { text: 'Fund C: waiting on deck.', kind: 'fact' }] });
 // A fact is its own thing with a stable id (lib/memory-facts.js); a legacy note's id is `<record>n<index>`.
-const FS = await import('./memory-facts.js');
 const fid = (rec, i) => `${rec.id}n${i}`;
 r = await stan('POST', '/facts/bulk', { op: 'hide', ids: [fid(multi, 1)] });
 ok('(d1b) hiding one fact leaves the record and its other facts', r.body.done.length === 1 && L.get(multi.id, ['user:stan']) && FS.forRecord('user:stan', multi.id).length === 2, r.body);
@@ -337,6 +363,32 @@ ok('(e) ...and can be removed', !r.body.rules.some(x => x.text === 'No meetings 
   r = await kasia('GET', '/facts?history=1&limit=500');
   ok('(f) a teammate never sees it', !r.body.items.some(x => /4 November/.test(x.text)));
 }
+
+// ─── one person's closed topic folds their own facts, never the team's ───────
+{
+  const F = await import('./memory-facts.js');
+  const { mkdirSync: md, writeFileSync: wf } = await import('node:fs');
+  const rec = await L.append({ scope: 'shared', source: 'note', ts: '2026-09-25T10:00:00Z', text: 'Quarrel project kickoff is set (SHARED-QUARREL).', tags: { entities: [{ name: 'Quarrel', kind: 'project' }] } });
+  F.apply('shared', [{ op: 'add', fact: { title: 'Quarrel kickoff', text: 'Quarrel project kickoff is set (SHARED-QUARREL).', kind: 'fact', entities: [{ name: 'Quarrel', kind: 'project' }] } }], { record: rec.id, standing: 'said', by: 'note', ts: '2026-09-25T10:00:00Z' });
+  // Stan's own digest closed the topic; Kasia's did not.
+  const dir = join(mem, 'users', 'stan', 'views'); md(dir, { recursive: true });
+  wf(join(dir, 'digest.json'), JSON.stringify({ at: '2026-10-01T00:00:00Z', items: [{ name: 'Quarrel', state: 'closed', line: 'Dropped.', date: '2026-10-01' }] }));
+  const pastFor = async (who) => ((await as(who)('GET', '/facts?history=1&limit=500')).body.items || []).find(f => /SHARED-QUARREL/.test(f.text))?.past;
+  const sp = await pastFor('stan@example.test'), kp = await pastFor('kasia@example.test');
+  ok('(digest) a shared fact reads the same to everyone, whoever closed its topic', sp === false && kp === false, { stan: sp, kasia: kp });
+}
+
+// ─── About the company: the team's card, kept by an admin ────────────────────
+writeFileSync(join(mem, 'MISSION.md'), '---\ncard: MISSION\n---\n\n# MISSION\n\n## About the company\n- Orion builds booking software for clinics.\n');
+r = await kasia('GET', '/prefs');
+ok('(co) a member reads the company card', r.body.company?.lines?.includes('Orion builds booking software for clinics.') && r.body.company.editable === false, r.body.company);
+r = await kasia('POST', '/prefs', { card: 'MISSION', op: 'add', text: 'Orion is moving to Berlin.' });
+ok('(co) ...but cannot change it', r.status === 403 && !/Berlin/.test(readFileSync(join(mem, 'MISSION.md'), 'utf8')), r);
+r = await stan('POST', '/prefs', { card: 'MISSION', op: 'add', text: 'Orion sells to private clinics in Poland and Germany.' });
+ok('(co) an admin adds a line', r.status === 200 && (await stan('GET', '/prefs')).body.company.lines.includes('Orion sells to private clinics in Poland and Germany.'), r);
+ok('(co) ...to the shared card, never a private one', /Poland and Germany/.test(readFileSync(join(mem, 'MISSION.md'), 'utf8')) && !existsSync(join(mem, 'users', 'stan', 'MISSION.md')));
+r = await stan('POST', '/prefs', { card: 'MISSION', op: 'remove', text: 'Orion sells to private clinics in Poland and Germany.' });
+ok('(co) ...and removes it', r.status === 200 && !(await stan('GET', '/prefs')).body.company.lines.some(l => /Poland/.test(l)), r);
 
 server.close();
 console.log(`memory-v4-ui: ${pass} passed, ${fail} failed`);

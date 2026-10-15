@@ -43,7 +43,7 @@ import { writeRecentSnapshot } from '../lib/recent-snapshot.js';
 import { saveAttachments, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from '../lib/attachments.js';
 import { requireActor } from '../lib/auth.js';
 import { CLAUDE_BIN } from '../lib/config.js';
-import { getUser, list as teamRoster } from '../lib/team.js';
+import { getUser, list as teamRoster, getTeamMode } from '../lib/team.js';
 import { preferredLanguage } from '../lib/memory-loader.js';
 import { openTabTurn, closeTabTurn } from './tab.js';
 
@@ -191,13 +191,19 @@ function maybeAutoTitle(actor, sessionId) {
     '--output-format', 'text',
   ], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv });
 
+  // A write to a child that exited first raises on stdin; without a
+  // listener that is an uncaught exception that takes workspace-api down.
+  proc.stdin.on('error', () => { /* the exit is reported on close */ });
+  proc.on('error', (err) => process.stderr.write(`[chat/auto-title] ${err.message}\n`));
   proc.stdin.write(prompt);
   proc.stdin.end();
 
   let out = '';
-  proc.stdout.on('data', (chunk) => { out += chunk.toString('utf8'); });
+  proc.stdout.setEncoding('utf8');
+  proc.stderr.setEncoding('utf8');
+  proc.stdout.on('data', (chunk) => { out += chunk; });
   proc.stderr.on('data', (chunk) => {
-    process.stderr.write(`[chat/auto-title] ${chunk.toString('utf8')}`);
+    process.stderr.write(`[chat/auto-title] ${chunk}`);
   });
   proc.on('close', (code) => {
     if (code !== 0) {
@@ -301,8 +307,12 @@ export default function chatRouter() {
   // Auth gate everything under /chat. /branding (in another router) stays open.
   router.use('/chat', requireActor);
   // Resolve the per-user storage key once per request (used everywhere below).
-  router.use('/chat', (req, _res, next) => {
+  router.use('/chat', (req, res, next) => {
     const u = getUser(req.actor);
+    // In team mode every person is on the roster; a session that is not gets
+    // no turn. The 'default' actor below is the solo workspace's: it has no
+    // private tree, so the scope guard has nothing to fence for it.
+    if (!u && getTeamMode()) return res.status(403).json({ error: 'Not on the team roster.' });
     req.chatActor     = u?.slug || 'default';
     req.chatActorName = u?.displayName || null;
     req.chatIsAdmin   = u?.role === 'admin';
@@ -325,7 +335,13 @@ export default function chatRouter() {
   // ≤1 concurrent turn per session (the UI only allows one); the map shape
   // is forward-compatible if that constraint relaxes.
   const activeBySession = new Map();
-  let currentGen = 0;
+  // One turn counter per session: a turn's finish() may only act (persist the
+  // reply, send `done`) while it is still that session's latest turn. The
+  // counter used to be shared by every session, so a turn anywhere — another
+  // person's, or the same person in a second tab — stopped the one streaming
+  // here from ever finishing.
+  const genBySession = new Map();
+  const nextGen = (sid) => { const g = (genBySession.get(sid) || 0) + 1; genBySession.set(sid, g); return g; };
 
   // ─── Sessions CRUD ──────────────────────────────────────────────────────────
 
@@ -446,7 +462,7 @@ export default function chatRouter() {
       if (active) {
         active.proc.kill('SIGTERM');
         activeBySession.delete(sid);
-        currentGen++;
+        nextGen(sid);
       }
 
       appendToSession(req.chatActor, sid, { role: 'system', text: '--- new topic ---', kind: 'reset' });
@@ -495,7 +511,7 @@ export default function chatRouter() {
 
     active.proc.kill('SIGTERM');
     activeBySession.delete(sid);
-    currentGen++;
+    nextGen(sid);
     res.json({ ok: true, stopped: true });
   });
 
@@ -555,7 +571,7 @@ export default function chatRouter() {
       prevActive.proc.kill('SIGTERM');
       activeBySession.delete(sid);
     }
-    const myGen = ++currentGen;
+    const myGen = nextGen(sid);
 
     let savedAttachments = [];
     try { savedAttachments = saveAttachments(ATTACHMENT_BUCKET, req.files); }
@@ -675,7 +691,7 @@ export default function chatRouter() {
     const finish = (kind, payload) => {
       closeTabTurn(tabToken);
       if (finished) return;
-      if (myGen !== currentGen) return;
+      if (myGen !== genBySession.get(sid)) return;
       finished = true;
       // Only clear the active entry when it's still ours. A fresh interrupt
       // turn may have replaced us moments ago; deleting unconditionally
@@ -755,7 +771,12 @@ export default function chatRouter() {
           onEvent: (event, data) => sendEvent(event, data),
         })
       : null;
-    proc = runClaudeTurn({
+    // The saved CLI session can be gone (its store cleaned, a redeploy, a
+    // file moved): the turn is then started once more without --resume, and
+    // the id forgotten, so the next turn replays the chat's own history
+    // instead of failing every message from now on.
+    let retriedFresh = false;
+    const spawnTurn = (resumeId) => runClaudeTurn({
       tabToken,
       actTurn,
       systemNote:    tabToken ? panelTurnRules(tabCtx) : '',   // the panel's rules: system prompt, not the user's message
@@ -764,7 +785,7 @@ export default function chatRouter() {
       // before it (a vague follow-up alone rarely finds anything).
       recallQuery:   message,
       recallHistory: handoffDialogue(req.chatActor, sid).slice(0, -1).slice(-2).map(m => m.text),
-      sessionId:     claudeSid,
+      sessionId:     resumeId,
       webSessionId:  sid,                // B3 v2: our manifest id → IDE_SESSION_ID for relay threading
       relayThread,                       // B3 v2: peers this thread is a relay channel with (reply→relay back)
       actor:         req.chatActor,      // PreToolUse scope-guard hook
@@ -786,7 +807,19 @@ export default function chatRouter() {
         sendEvent('tool_end', { id, ok, error: error || null });
       },
       onImage:     ({ mediaType, data }) => sendEvent('image', { mediaType, data }),
-      onError:     (msg) => finish('error', { error: msg }),
+      onError:     (msg) => {
+        if (resumeId && !retriedFresh && /No conversation found/i.test(String(msg))) {
+          retriedFresh = true;
+          process.stderr.write(`[chat] session ${String(resumeId).slice(0, 8)} is gone — starting the turn afresh\n`);
+          try { setClaudeSessionId(req.chatActor, sid, null, turnKind); }
+          catch (err) { process.stderr.write(`[chat] setClaudeSessionId: ${err.message}\n`); }
+          proc = spawnTurn(null);
+          const cur = activeBySession.get(sid);
+          if (cur && cur.gen === myGen) cur.proc = proc;
+          return;
+        }
+        finish('error', { error: msg });
+      },
       onDone: ({ sessionId: newClaudeSid }) => {
         // Phase 1 bug fix: persist claudeSessionId to the manifest EVERY turn,
         // not just on rotation. Otherwise _index.json's claudeSessionId stays
@@ -799,6 +832,7 @@ export default function chatRouter() {
         finish('done', { ok: true, session_id: newClaudeSid, sessionId: sid });
       },
     });
+    proc = spawnTurn(claudeSid);
     // The process is live and the prompt (incl. the undelivered set) was fed —
     // mark consumed so finish() advances the watermark on any terminal path.
     spawned = true;

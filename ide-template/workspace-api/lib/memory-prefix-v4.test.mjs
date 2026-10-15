@@ -29,6 +29,7 @@ const mem = join(ROOT, 'memory');
 for (const d of ['users/stan', 'users/kasia']) mkdirSync(join(mem, d), { recursive: true });
 writeFileSync(join(mem, 'AGENT_IDENTITY.md'), '# AGENT_IDENTITY\n\nName: Ada.\n');
 writeFileSync(join(mem, 'RULES.md'), '# RULES\n\n- Never deploy on Fridays.\n');
+writeFileSync(join(mem, 'MISSION.md'), '# MISSION\n\n## About the company\n- The company builds booking software for clinics.\n');
 writeFileSync(join(mem, 'INDEX.md'), '# INDEX\n\n- topics/pinecrest.md\n');
 writeFileSync(join(mem, 'users', 'stan', 'USER_PROFILE.md'), '# USER_PROFILE\n\n- Stan runs operations.\n');
 writeFileSync(join(mem, 'users', 'stan', 'RECENT_TELEGRAM.md'), '# RECENT\n\nStan: yesterday we talked about the boat.\n');
@@ -56,6 +57,7 @@ ok('(b) the product rules stay', /## How you talk/.test(stan) && /## Reply chann
 ok('(b) the v4 memory section replaces the v3 mechanics', /## Your memory/.test(stan) && !/## Card grammar/.test(stan) && !/## When to write, when to correct/.test(stan));
 ok('(b) no INDEX, no RECENT tails', !/## INDEX/.test(stan) && !/## RECENT_/.test(stan) && !/boat/.test(stan));
 ok('(b) identity and the team\'s rules load', /Name: Ada/.test(stan) && /Never deploy on Fridays/.test(stan));
+ok('(b) what the company does loads for everyone', /## MISSION/.test(stan) && /booking software for clinics/.test(stan));
 ok('(b) the person\'s own profile loads', /Stan runs operations/.test(stan));
 ok('(b) ...never a teammate\'s', !/interviewing/.test(stan) && !/cc Kasia/.test(stan));
 ok('(b) routines come from routines.json, retired ones left out', /## ROUTINES/.test(stan) && /Morning brief — Summarise email at 8:00\./.test(stan) && !/Old duty/.test(stan));
@@ -70,6 +72,7 @@ await L.append({ scope: 'shared', source: 'web', ts: '2026-09-21T11:00:00Z', tex
 const group = buildTurnPrefix({ actor: 'kasia', groupContext: true, groupId: '-100777', memoryDir: mem }).block;
 ok('(c) a group turn loads no private card, not even the sender\'s', !/## USER_PROFILE/.test(group) && !/interviewing/.test(group) && !/## ROUTINES/.test(group) && !/Lisbon/.test(group) && !/Pinecrest/.test(group));
 ok('(c) ...but what is going on for the group: its digest and the shared statuses', /## WHAT_IS_GOING_ON/.test(group) && /Northgate \(closed\): Ceased to exist on 2026-09-19\./.test(group) && /The office is closed this week\./.test(group), group.slice(group.indexOf('## WHAT_IS_GOING_ON'), group.indexOf('## WHAT_IS_GOING_ON') + 300));
+ok('(c) ...the company card too: the team\'s own context', /booking software for clinics/.test(group));
 ok('(c) ...and the group\'s own rules, no one\'s personal ones', /Answer in English in this group/.test(group) && !/cc Kasia/.test(group) && !/Keep answers short/.test(group));
 const noGid = buildTurnPrefix({ actor: 'kasia', groupContext: true, memoryDir: mem }).block;
 ok('(c) a group turn without a group id gets no rules card at all', !/## STANDING_RULES/.test(noGid));

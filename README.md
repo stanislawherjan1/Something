@@ -47,7 +47,7 @@ Your coworkers:
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups. A Marketplace of ready-made routines shows what they can take on, with more for each tool you connect; add your own or edit any of them. Each morning they plan your day at 06:00 in your own time zone.
 - **Write their own playbooks.** A *skill* is a markdown file describing how to handle a recurring task, editable right from the UI.
 - **Keep the task list moving.** Your `Tasks.md` becomes a list or board view with owner, priority, and deadline, kept current as work progresses.
-- **Work with your whole team.** Turn on collaborative mode: everyone signs in with their own account and a private space beside the shared one, and your coworker routes routines, tasks, and messages to the right person.
+- **Work with your whole team.** One coworker for everyone: each teammate brings their own tools and routines, the team shares a board and files, and work moves between people through it.
 
 <br/>
 
@@ -107,26 +107,23 @@ Proactive messages travel the same paths. When a job finishes or a reminder come
 ## One coworker, your whole team
 
 <p align="center">
-  <img src="assets/readme/team.png" alt="Collaborative mode switched on, teammates around it, each asking the coworker for something" width="820" />
+  <img src="assets/readme/team.png" alt="Collaborative mode switched on, four teammates around it: what each is doing through the coworker right now, their own tools and their own routine" width="820" />
 </p>
 
 <br/>
 
-Flip on **collaborative mode** and your coworker stops being only *yours*; it becomes the team's, while still knowing each of you as an individual. Everyone signs in with their own Google account, and an admin keeps the roster: invite people, set roles (admin or member), link their Telegram.
+Set it up once and the whole team works with it. Turn on **collaborative mode**, invite your people, and everyone gets the same coworker, in the web app, on Telegram, or in your team groups. It knows who is asking, what they're working on, and how they like to be reached.
 
-Now there's a shared workspace and a private one for each person, side by side:
+**Everyone gets their own.** Each teammate connects their own tools (their inbox, calendar, notetaker, Stripe or GitHub), sets their own routines (a day plan at 8:00, a stock check on Mondays, a recap on Thursdays), writes their own skills, and keeps their own files. The coworker uses them for that person only.
 
-- **Shared**: the files, the task board, and the team-wide memory everyone works from.
-- **Yours**: your own files and your own memory, scoped to you. A teammate can't read them, and your coworker won't go digging through them on someone else's behalf.
+**The team shares the rest.** The task board, the team's files, what everyone has learned, and the tools the admin connects for everyone. Ask *"what is everyone working on this week?"* and it answers from all of it.
 
-The default is collaboration, not secrecy: ask *"did Mara finish the report?"* and it answers from the shared work. Private memory is the exception, and it stays private.
+**Work moves between people.** Hand off a task, pass on a message, or tell the whole team at once, and it lands where each person will see it, in their language:
 
-Because it knows the whole team, it routes work to the right person, and carries messages between you:
+> **Mara:** Ask Jonas to chase the supplier about the invoice.<br/>
+> **Coworker:** Added to the board for Jonas, due Friday, and let Jonas know on Telegram.
 
-> **You:** Remind Mara to send the review tomorrow morning.<br/>
-> **Coworker:** Done. I'll ping Mara at 9:00 tomorrow, in her workspace, and on Telegram since that's how she likes to be reached.
-
-Routines and tasks can target one teammate or *everyone*, and a task's owner is a real face on the board. You can also talk *through* your coworker: it delivers your message into a colleague's workspace or Telegram, in their language, phrased like a person, not a forwarded memo.
+**Private stays private.** Each person's space is theirs, enforced on the server, with no admin bypass. Before something personal from a conversation reaches the team, the coworker asks.
 
 Solo setups are untouched: team mode off means no roles, no split, no routing, just the clean single-user workspace. Full design in **[docs/TEAM_MODE.md](docs/TEAM_MODE.md)**.
 
@@ -207,7 +204,7 @@ A workspace that started on the older card-based memory moves over from a banner
 
 > Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
-You activate each one from the Integrations dashboard, no redeploy, no `.env` editing. Credentials are encrypted at rest; removing an integration wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 <br/>
 

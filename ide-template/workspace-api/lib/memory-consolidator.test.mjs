@@ -26,7 +26,7 @@ const ok = (name, cond, extra) => {
 };
 
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
-  { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z' },
+  { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z', sharing: 'auto' },
   { email: 'kasia@example.test', role: 'member', slug: 'kasia', displayName: 'Kasia', telegramChatId: '2220002', addedAt: '2026-09-01T00:00:00Z' },
 ]));
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true, groups: { '-100777': { title: 'Team', addedAt: '2026-09-01T00:00:00Z' } } }));
@@ -79,8 +79,9 @@ answers.route = () => ({
 });
 answers.notes = () => ({
   notes: [
-    { text: 'The Quarry launch moved to October 3.', importance: 2, kind: 'fact', expires: null, evidence: 'The Quarry launch moves to October 3' },
+    { title: 'Quarry launch date', text: 'The Quarry launch moved to October 3.', importance: 2, kind: 'fact', expires: null, evidence: 'The Quarry launch moves to October 3', subject: 'Quarry', concerns: 'a company or project' },
     { text: 'Stan got a raise.', importance: 3, kind: 'fact', expires: null, evidence: 'Stan said the raise was approved yesterday' },   // evidence not in the text
+    { title: 'Harbor budget at risk', text: 'The Harbor campaign budget might be cut.', importance: 2, kind: 'status', expires: null, evidence: 'Budget for the Harbor campaign might be cut', subject: 'Harbor', concerns: 'a company or project' },
   ],
   rules: ['Keep salary topics out of shared memory.'],
 });
@@ -92,12 +93,16 @@ ok('(a) the assistant\'s reply is kept, with the bot\'s name', /: Noted, I will 
 ok('(a) a reply written with a web page open is not filed', !/IGNORE PREVIOUS/.test(scopeText('user:stan')));
 ok('(a) the person is named by their display name', /^Stan: The Quarry/m.test(scopeText('user:stan')));
 const sharedRecs = L.read({ scopes: ['shared'] });
-ok('(a) exactly the verbatim team line is shared', sharedRecs.length === 1 && sharedRecs[0].text === 'Stan: The Quarry launch moves to October 3.', sharedRecs.map(r => r.text));
+// The team gets the FACT the line produced (Stan shares automatically), not
+// the line itself; the private lines and the borderline one stay out.
+ok('(a) exactly the team-relevant fact is shared, as a fact', sharedRecs.length === 1 && sharedRecs[0].text === 'Quarry launch date. The Quarry launch moved to October 3.' && sharedRecs[0].tags?.sharedFact === true, sharedRecs.map(r => r.text));
+ok('(a) ...and the team\'s facts hold it with its subject', FS.all('shared').length === 1 && FS.all('shared')[0].subject === 'Quarry' && FS.all('shared')[0].record === sharedRecs[0].id, FS.all('shared'));
+ok('(a) the conversation\'s lines never reach shared memory', !/Stan: The Quarry/.test(scopeText('shared')) && !/my own raise/.test(scopeText('shared')));
 ok('(a) an invented line never reaches shared memory', !/whole team agreed/.test(scopeText('shared')));
-ok('(a) the shared excerpt names its origin', sharedRecs[0]?.origin === 'user:stan');
+ok('(a) the shared fact names its origin', sharedRecs[0]?.origin === 'user:stan' && sharedRecs[0]?.speaker === 'Stan');
 ok('(a) nothing lands in another person\'s scope', L.read({ scopes: ['user:kasia'] }).length === 0);
 const asks = A.listAsks('stan');
-ok('(a) the borderline line becomes a pending question for its owner', asks.length === 1 && asks[0].status === 'pending' && /Harbor/.test(asks[0].text) && /Harbor/.test(asks[0].question));
+ok('(a) the borderline line\'s fact becomes a pending question for its owner', asks.length === 1 && asks[0].status === 'pending' && /Harbor/.test(asks[0].text) && /Harbor/.test(asks[0].question) && asks[0].fact?.title === 'Harbor budget at risk' && asks[0].reason === 'about Harbor', asks);
 // Seen on the canary: the model put its own question into the ask field, and the
 // owner's "share" published the question instead of what they had said. An ask
 // is held to the same word-for-word rule as a shared line.
@@ -264,7 +269,7 @@ ok('(i) a re-read of the raw log does not re-file an erased record', !/dentist/.
 // ─── (j) the owner answers the question ──────────────────────────────────────
 const ask = A.listAsks('stan', { status: 'pending' })[0];
 let res = await A.resolveAsk('stan', ask.id, 'share', 'stan');
-ok('(j) sharing copies the excerpt into shared memory', res.ok && /Harbor campaign/.test(scopeText('shared')));
+ok('(j) sharing files the fact into shared memory', res.ok && /Harbor budget at risk\. The Harbor campaign budget might be cut\./.test(scopeText('shared')) && FS.all('shared').some(f => f.title === 'Harbor budget at risk'), scopeText('shared'));
 ok('(j) ...marked with its origin', L.read({ scopes: ['shared'] }).find(r => /Harbor/.test(r.text))?.origin === 'user:stan');
 res = await A.resolveAsk('stan', ask.id, 'keep', 'stan');
 ok('(j) a question is answered once', !res.ok && /already shared/.test(res.error));

@@ -180,7 +180,7 @@ ok('...and says the private half is in flight when one was delegated',
 ok('...and tells the operator brain not to send it a second time',
   /they would get it twice/i.test(gwSrcNotice));
 ok('the quoted group message is labelled as someone else\'s words',
-  /they said: \$\{clip\(target\.text/.test(gwSrcNotice));
+  /they said: \$\{(?:clip|deframe)\(target\.text/.test(gwSrcNotice));
 
 // (i) LOSING THE THREAD. The ring is a cold-start number: a resumed turn carries
 // only messages since the last turn, so depth here is free per-turn and paid

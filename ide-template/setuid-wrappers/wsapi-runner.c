@@ -15,8 +15,10 @@
  * propagate — node process runs at uid 1001 with no further escalation.
  *
  * Hardening:
- *   - No env passthrough is filtered (we WANT process.env to flow into
- *     workspace-api), but argv is — no extra args accepted.
+ *   - Only PM2's uid (coder) or root may start it.
+ *   - process.env flows into workspace-api, minus what env-guard.h removes
+ *     (interpreter and loader instructions such as NODE_OPTIONS); argv is
+ *     not passed through — no extra args accepted.
  *   - Hardcoded path to /opt/ide/workspace-api/index.js. Refuse to start
  *     if anything looks tampered.
  *   - Refuse to run if our own binary isn't setuid (defence against
@@ -65,9 +67,11 @@
 #define NODE_BIN "/usr/bin/node"
 #define WSAPI_INDEX "/opt/ide/workspace-api/index.js"
 
-extern char **environ;
+#include "env-guard.h"   /* declares environ */
 
 int main(int argc, char *argv[]) {
+    /* The uid that started us — getuid() before the switch below. */
+    const uid_t caller = getuid();
     (void)argc;
     (void)argv;
 
@@ -79,6 +83,13 @@ int main(int argc, char *argv[]) {
     }
     if ((self_stat.st_mode & S_ISUID) == 0 && getuid() != 0) {
         fprintf(stderr, "wsapi-runner: setuid bit missing on this binary; refusing to run\n");
+        return 1;
+    }
+
+    /* PM2 (coder) starts workspace-api; nothing else may. */
+    static const uid_t allowed_callers[] = { 0, ENV_GUARD_PM2_UID };
+    if (!env_guard_caller_ok(caller, allowed_callers, sizeof allowed_callers / sizeof allowed_callers[0])) {
+        fprintf(stderr, "wsapi-runner: not started by an allowed user (uid %u); refusing to run\n", (unsigned)caller);
         return 1;
     }
 
@@ -120,6 +131,11 @@ int main(int argc, char *argv[]) {
     /* Exec node with the workspace-api entry point. argv[0] is conventional
      * "node" so process listings + Node's own argv[0] reporting look right. */
     char *node_argv[] = { (char*)"node", (char*)WSAPI_INDEX, NULL };
+    if (env_guard_apply(caller) != 0) {
+        fprintf(stderr, "wsapi-runner: could not prepare the environment; refusing to run\n");
+        return 1;
+    }
+
     execve(NODE_BIN, node_argv, environ);
 
     /* Only reached on exec failure. */

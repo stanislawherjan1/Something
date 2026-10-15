@@ -750,11 +750,31 @@ proxy_set_header X-IDE-User $ide_user;   # nginx — overwrites with auth-servic
 - `lib/auth.js` reads the `ide_session` cookie, verifies the JWT against the same `SESSION_SECRET` auth-service used to sign it.
 - The actor email is set from the JWT claim, not from the header.
 - If a header IS present and disagrees with the cookie, both are dropped (fail-closed) and a stderr warning is logged.
-- This means an in-container forgery has to also forge a valid signed JWT — which requires `SESSION_SECRET`, which lives only in env (not in PROJECT_DIR or any volume readable by the bot).
+- This means an in-container forgery has to also forge a valid signed JWT — which requires `SESSION_SECRET`. In the container the secret is a file readable by workspace-api's uid alone (`/var/wsapi-store/session-secret`, written by entrypoint as root); the variable is dropped from the environment before code-server, PM2, the bot and its turns start, so no other process in the container holds it. auth-service keeps its own copy in its own container.
+
+✅ **Two local listeners are reachable by their users only**
+- The egress proxy's open listener (`egress-proxy:3130`, any public host, for the browser) answers the mcp user (the Playwright MCP now starts through `mcp-runner`) and workspace-api (OAuth exchanges); the docs-comments browser's debugging port (`127.0.0.1:9333`, which carries the operator's Google session) answers the mcp user, workspace-api and the keep-alive under PM2. Entrypoint sets both as iptables owner rules; a shell in a turn or in the bot gets a refused connection.
+- A non-admin teammate's Telegram DM is answered by a turn that runs as that teammate (`lib/integrations/member-dm.js`), never by the operator's assistant session.
+
+✅ **Admin-only controls stay admin-only**
+- An MCP tool that reads a local file (a Drive upload, a Trello attachment, an image to edit) takes it from the project directory only, resolved through symlinks first (`apps/_shared/local-file.js`); the group `[[SEND_FILE]]` path resolves the same way before its containment check.
+- Signing out ends the session everywhere it is checked: the UI records the sign-out (`POST /api/me/sign-out`), and a token issued before it — the cookie, a copy the extension holds — is refused by auth-service and workspace-api alike until a new sign-in.
+- `GET /api/integrations` needs a signed-in person and shows the credential summary (length, last characters) to admins only. The setup wizard, once an admin exists, is the admin's even before it is completed. A branding write needs a signed-in person even before the first admin exists; the public branding view names nobody.
+- A session belongs to someone on the roster: workspace-api checks the roster on every request, so a person removed from the team is a stranger at once (401 on the next call), not at their token's expiry; an empty roster (first run) refuses nobody.
+- A hosted MCP server is reached through the egress proxy, except one on the loopback address, which workspace-api calls directly: only the catalog (shipped, or the operator's local override) names a server's URL, never a setting a person types.
+- An integration's settings field only reaches the egress allow-list when it is a host name (no IP literal, wildcard or whitespace), and the egress proxy judges an IPv4 address written as IPv6 (`::ffff:…`, in either notation) as the IPv4 address it is.
+- The scope-guard hook refuses a Grep/Glob with no root and no literal prefix in team mode (it would walk every private tree), and recognises `users/*`, a bare `users`/`memory/users`/`.team/users` in a shell command.
+- `POST /api/bot/restart` and the docs-comments login (`connect-start`, `connect-done`, `reset`, the noVNC viewer and its WebSocket) answer admins only; a member sees the integration's status and nothing more. There is no web route that types into the bot's session.
+- In team mode a signed-in session that is not on the roster gets no chat turn (403), so no turn runs as the slug-less `default` actor outside the solo workspace.
+- `/api/files/raw` serves an SVG with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and every file with `X-Content-Type-Options: nosniff`: shown as an image it is unchanged, opened as a page it runs nothing.
 
 ✅ **`X-IDE-Actor` is trusted only from loopback**
 - In-container helpers (`workspace-api-mcp`) identify the turn's user by sending its `IDE_ACTOR_SLUG` as `X-IDE-Actor` — on `POST /api/internal/memory-write` and on `GET /api/memory/grep`, which scopes the search to that user's private memory tree.
 - `POST /api/internal/me/settings` (the bot's `set_my_settings`) changes only the turn's own person's time zone or reply language: loopback-only, the person comes from the verified turn token (solo: the primary admin), a group turn is refused, and a setting the person locked in Settings is refused. It can't touch name, role, Telegram link or anyone else's entry.
+- The bot's own token (the Telegram brain) is the operator's identity — the primary admin, resolved from the roster. An `X-IDE-Actor` header beside it is not consulted, so the brain reads and writes the operator's memory and nobody else's.
+- A private memory write (`memory-write` with `scope: private`) is filed for the turn's own person; an `owner` in the body that names anyone else is refused.
+- `/api/internal/notify` and `/api/internal/chat-session` take the sender from the caller's turn token (web-channel-mcp sends it), or from the body only for workspace-api's own loopback calls (a per-process `X-IDE-Internal` value); any other caller is anonymous and the routes fall back as for a surface with no per-user identity. `/api/internal/mcp-token/:id` answers a caller with a turn token only.
+- The routes the reminder monitor drives on someone's behalf — `/api/internal/invoke-turn`, `/reminder-deliver`, `/group-say` — also require the bot user's turn token (the monitor runs as that user); a turn's own token is not enough.
 - Neither Caddy nor nginx strips this header, and `/api/memory/*` is reachable through nginx. So workspace-api accepts it only when the TCP peer is `127.0.0.1` / `::1` (a browser request always arrives from the nginx container's address), and only if it is a well-formed slug. `/api/internal/*` is loopback-only as a whole; `/api/memory/grep` applies the same test inline, prefers the cookie actor when there is one, and ignores the header from any non-loopback peer.
 - Without that test any signed-in member could name a teammate's slug and read their private memory. Any new route that reads `X-IDE-Actor` must apply the same loopback rule.
 
@@ -875,15 +895,21 @@ cd clients/client-ide && ./rotate.sh
 
 | uid | name | Role | What it can read |
 |---|---|---|---|
-| 1000 | `coder` | code-server + terminal sessions | PROJECT_DIR (group `workspace`). **Cannot** read AES key, encrypted store, broker UDS, bot's `~/.claude/.credentials.json`, `~/.<bot>/integrations.env`, or any uid-1001/1002/1003 process's `/proc/<pid>/environ`. |
+| 1000 | `coder` | code-server + terminal sessions (the editor is reached only with an admin session; nginx asks auth-service with `?admin=1`) | PROJECT_DIR (group `workspace`). **Cannot** read AES key, encrypted store, broker UDS, bot's `~/.claude/.credentials.json`, `~/.<bot>/integrations.env`, or any uid-1001/1002/1003 process's `/proc/<pid>/environ`. |
 | 1001 | `wsapi` | workspace-api | AES master key, encrypted store. Decrypts on demand. |
 | 1002 | `mcp` | every node MCP subprocess | Only its own credentials, fetched via the broker UDS using a per-spawn nonce. |
 | 1003 | `bot` | tmux Claude + Telegram plugin + plugin-style MCPs | Bot home (`/home/bot/`) with Claude OAuth + integrations.env. **Cannot** read AES key, encrypted store, broker UDS, or coder/wsapi/mcp `/proc/<pid>/environ`. |
+| 1005 | `turn` | a solo workspace's web and headless Claude turns (started by workspace-api through `turn-runner solo`, mode 4750 root:wsapi) | PROJECT_DIR (group `workspace`), its own home `/home/turns/solo` (settings with the hooks, its own sessions) and the MCP config written for the turn into `/run/turns/solo`. **Cannot** read the AES key, the encrypted store, the session secret, the broker socket or the bot's `.claude.json`; its environment carries the CLI's credential and the turn's identity, none of workspace-api's secrets (`lib/claude.js` `turnEnv`). |
+| 1101–1124 | `turn-01`…`turn-24` | in team mode, one per person on the roster: every turn of that person (web, headless, relayed) runs as their slot (`turn-runner NN`) | as `turn`, plus their own private trees — `users/<slug>`, `memory/users/<slug>`, `.team/users/<slug>` are `turn-NN:priv-NN` 2770 (`priv-tree`, setuid root:wsapi 4750, the one root helper workspace-api calls). Another person's turn — shell included — **cannot** open them: privacy by path, enforced by the kernel, with the scope-guard hook as the model-facing fence on top. Sessions live in `/home/turns/NN`, 0700. |
+| 1130 | `turn-group` | a Telegram group's turn | as `turn`; in no `priv-*` group — a group turn has no private tree to read even at the kernel level. |
 
-Three groups bridge the uids:
+The groups that bridge the uids:
 - `workspace` (1100) — coder + wsapi + mcp + bot — shared PROJECT_DIR rw.
-- `wsapi-broker` (1101) — wsapi + mcp only — broker UDS access. Coder + bot are NOT in this group → cannot connect.
-- `botshare` (1102) — wsapi + bot only — `/home/bot/` credentials. Coder is NOT in this group → cannot read bot's secrets.
+- `wsapi-broker` (1101) — wsapi + mcp only — broker UDS access. Coder + bot are NOT in this group → cannot connect. A grant is bound to a connection key — `granola` (the workspace's) or `granola@ann` (Ann's own) — and a person's own servers are only ever written into that person's turn config (`/run/turns/<slot>`), so a sibling's nonce is never in reach; the remote bridge's token route refuses a personal key to any turn that is not its owner's; an OAuth callback for a personal connection must arrive in its owner's session as well as with its single-use state.
+- `botshare` (1102) — wsapi + bot only — `/home/bot/` credentials. Coder is NOT in this group → cannot read bot's secrets. The turn users are not in it either: each turn gets its MCP config written for it alone (`/run/turns/<slot>`), never the bot's file.
+- Read-only team integrations (`.team/integration-access.json`, written by workspace-api): the scope-guard hook refuses a write tool of a server connected for the team as read-only, in every turn, admins and the brain included; the catalog names a service's write tools, else the tool's name decides conservatively. A person's own connection is never read-only.
+- Locks (`.team/locks.json`): an admin's read-only marks on shared paths — enforced in the file API and the scope-guard hook for every turn, admins and the operator's brain included (write tools refused, shell best-effort), until an admin unlocks. Only setting and removing a lock is role-based; the path-based privacy fence is never relaxed by it.
+- `priv-01`…`priv-24` (1201–1224) — each slot's turn user + wsapi; bot and coder join the primary admin's at boot (`priv-tree grant`). A removed person's trees are archived to the project's `.archived-members/` (root 0700, hidden from the file API) before their slot is reused; a failed archive holds the slot until a retry succeeds. The root helpers never follow a link inside a private tree, and the turn runner starts only a root-owned CLI.
 
 #### Broker protocol
 
@@ -902,6 +928,8 @@ Four ~50-80-line C programs in `ide-template/setuid-wrappers/`, compiled in-imag
 - `monitor-runner` — drops to uid 1003 (`bot`), exec's a whitelisted script under `/opt/ide/`. Invoked by PM2 for `bot-reminders`, `bot-snapshot`, `bot-browser-watchdog`. Sets `PR_SET_NO_NEW_PRIVS`.
 - All four call `initgroups()` before `setuid` so supplementary groups stick.
 - All four refuse to run if their own setuid bit was lost (catches deploy regressions).
+- All four pass the caller's environment on, minus the variables that instruct an interpreter or the loader rather than configure the program (`NODE_OPTIONS`, `BASH_ENV`, exported bash functions, `LD_*` and similar; `env-guard.h`). A caller other than root or PM2's uid also gets the image's default `PATH`.
+- `wsapi-runner` and `bot-runner` start only for root or PM2's uid; `monitor-runner` also for workspace-api (which uses it to reach the bot's tmux session).
 
 ##### NoNewPrivs asymmetry
 

@@ -70,9 +70,11 @@
 #define BOT_SCRIPT "/opt/ide/bot.sh"
 #define BASH_BIN  "/bin/bash"
 
-extern char **environ;
+#include "env-guard.h"   /* declares environ */
 
 int main(int argc, char *argv[]) {
+    /* The uid that started us — getuid() before the switch below. */
+    const uid_t caller = getuid();
     /* Refuse if our own binary lost its setuid bit (means a deploy bug). */
     struct stat self_stat;
     if (stat("/proc/self/exe", &self_stat) != 0) {
@@ -81,6 +83,13 @@ int main(int argc, char *argv[]) {
     }
     if ((self_stat.st_mode & S_ISUID) == 0 && getuid() != 0) {
         fprintf(stderr, "bot-runner: setuid bit missing on this binary; refusing to run\n");
+        return 1;
+    }
+
+    /* PM2 (coder) starts the bot; nothing else may. */
+    static const uid_t allowed_callers[] = { 0, ENV_GUARD_PM2_UID };
+    if (!env_guard_caller_ok(caller, allowed_callers, sizeof allowed_callers / sizeof allowed_callers[0])) {
+        fprintf(stderr, "bot-runner: not started by an allowed user (uid %u); refusing to run\n", (unsigned)caller);
         return 1;
     }
 
@@ -135,8 +144,8 @@ int main(int argc, char *argv[]) {
      * inject explicitly. Same trick for any other inherited env we
      * want to cleanly override.
      *
-     * We DON'T zero out the rest of environ — bot.sh + claude legitimately
-     * need PATH, NODE_PATH, and a few platform vars passed through.
+     * The rest of environ passes through — bot.sh + claude need PATH and
+     * their settings — minus what env-guard.h removes just before exec.
      */
     if (setenv("HOME", BOT_HOME, 1) != 0) {
         perror("bot-runner: setenv HOME");
@@ -161,6 +170,11 @@ int main(int argc, char *argv[]) {
         bash_argv[idx++] = argv[i];
     }
     bash_argv[idx] = NULL;
+
+    if (env_guard_apply(caller) != 0) {
+        fprintf(stderr, "bot-runner: could not prepare the environment; refusing to run\n");
+        return 1;
+    }
 
     execve(BASH_BIN, bash_argv, environ);
     fprintf(stderr, "bot-runner: execve %s: %s\n", BASH_BIN, strerror(errno));

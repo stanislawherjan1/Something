@@ -5,7 +5,7 @@
       "id": "grok",
       "label": "Grok (xAI)",
       "logo": "/integrations/grok.svg",
-      "description": "Ask Grok with live X (Twitter) + web search — real-time takes, breaking news, fact-checks against current sources, second opinions.",
+      "description": "Ask Grok, with live X and web search, for current takes, breaking news, fact checks and second opinions.",
       "category": "ai",
       "fields": [
         {
@@ -19,11 +19,11 @@
       "steps": [
         {
           "title": "Sign in to xAI",
-          "body": "Open [console.x.ai](https://console.x.ai) and sign in with your X account.\n\nYou need a payment method on file (xAI doesn't offer a free tier)."
+          "body": "Open [console.x.ai](https://console.x.ai) and sign in with your X account. A payment method must be on file."
         },
         {
           "title": "Create an API key",
-          "body": "Sidebar → **API Keys** → **Create API Key**.\n\nName it something like `{{botDisplayName}} workspace`. Copy the key right away — xAI shows it only once."
+          "body": "Sidebar → **API Keys** → **Create API Key**. Copy the key right away — it is shown once."
         }
       ],
       "mcp": {
@@ -45,7 +45,7 @@
       "id": "openai",
       "label": "OpenAI (GPT)",
       "logo": "/integrations/openai.svg",
-      "description": "Ask GPT models (gpt-5, gpt-4.1, o-series) for second opinions, cross-checks, or specialised tasks. Your API key is billed per token by OpenAI directly.",
+      "description": "Ask GPT models for second opinions, cross-checks, drafts and specialised tasks from your conversations.",
       "category": "ai",
       "fields": [
         {
@@ -59,15 +59,15 @@
       "steps": [
         {
           "title": "Sign in to OpenAI",
-          "body": "Open [platform.openai.com](https://platform.openai.com) and sign in. You need a payment method on file — OpenAI is per-token billed, no free tier for API access."
+          "body": "Open [platform.openai.com](https://platform.openai.com) and sign in. A payment method must be on file."
         },
         {
           "title": "Create an API key",
-          "body": "Go to [API keys](https://platform.openai.com/api-keys) → **Create new secret key**. Name it `{{botDisplayName}} workspace`, copy the key right away (shown only once). Paste it below."
+          "body": "Go to [API keys](https://platform.openai.com/api-keys) → **Create new secret key**. Copy the key right away — it is shown once."
         },
         {
-          "title": "Set a spending cap (recommended)",
-          "body": "Go to [Billing → Limits](https://platform.openai.com/settings/organization/limits) and set a monthly hard cap. Keeps a runaway loop from burning your budget if the bot decides to chat with GPT a lot."
+          "title": "Set a spending cap",
+          "body": "Go to [Billing → Limits](https://platform.openai.com/settings/organization/limits) and set a monthly hard cap."
         }
       ],
       "mcp": {
@@ -89,7 +89,7 @@
       "id": "gemini-chat",
       "label": "Gemini",
       "logo": "/integrations/gemini-chat.svg",
-      "description": "Ask Google Gemini chat models (gemini-2.5-pro / -flash) for second opinions, long-context reads, and cross-checks. Separate from Gemini Image (which generates pictures) — same API key works for both if you activate them.",
+      "description": "Ask Gemini for second opinions, long reads of big documents, summaries and cross-checks.",
       "category": "ai",
       "fields": [
         {
@@ -97,17 +97,17 @@
           "label": "API key",
           "type": "secret",
           "placeholder": "AIza...",
-          "helper": "Starts with \"AIza\". From Google AI Studio. Same key works for the Gemini Image integration."
+          "helper": "Starts with \"AIza\". From Google AI Studio; the same key works for Gemini Image."
         }
       ],
       "steps": [
         {
           "title": "Open Google AI Studio",
-          "body": "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want billed.\n\nFree tier covers a lot of usage — no payment method needed to start."
+          "body": "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want billed."
         },
         {
           "title": "Create the key",
-          "body": "Click **Create API key** → pick a Cloud project (or accept the default). Copy the resulting key — it starts with `AIza`."
+          "body": "Click **Create API key** → pick a Cloud project (or accept the default). Copy the key."
         }
       ],
       "mcp": {
@@ -129,7 +129,7 @@
       "id": "gemini-image",
       "label": "Gemini Image",
       "logo": "/integrations/gemini.svg",
-      "description": "Generate images via Google's Imagen 3 and edit them via Gemini 2.0 Flash. Files land in project/generated/.",
+      "description": "Generate images from a description and edit existing ones with Gemini; the files land in your project.",
       "category": "ai",
       "fields": [
         {
@@ -143,11 +143,11 @@
       "steps": [
         {
           "title": "Open Google AI Studio",
-          "body": "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want to use for image generation.\n\nFree tier is enough to get going."
+          "body": "Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and sign in with the Google account you want billed."
         },
         {
           "title": "Create the key",
-          "body": "Click **Create API key** → pick a Cloud project (or accept the default). Copy the resulting key — it starts with `AIza`."
+          "body": "Click **Create API key** → pick a Cloud project (or accept the default). Copy the key."
         }
       ],
       "mcp": {
@@ -174,7 +174,7 @@
       "id": "seedream",
       "label": "Seedream (BytePlus)",
       "logo": "/integrations/seedream.svg",
-      "description": "Image generation via Seedream 4.5 + image editing / background removal via Seededit. Saves to project/generated/.",
+      "description": "Generate images, edit them and remove backgrounds with Seedream; the files land in your project.",
       "category": "ai",
       "fields": [
         {
@@ -188,11 +188,11 @@
       "steps": [
         {
           "title": "Open BytePlus ModelArk",
-          "body": "Go to [console.byteplus.com](https://console.byteplus.com) and sign in (or create an account). In the product menu, open **ModelArk**."
+          "body": "Go to [console.byteplus.com](https://console.byteplus.com), sign in and open **ModelArk** in the product menu."
         },
         {
           "title": "Create the key",
-          "body": "ModelArk → **API Keys** → **Create**. Copy the key — starts with `ak-`.\n\nDefault models are wired in already, no setup needed."
+          "body": "ModelArk → **API Keys** → **Create**. Copy the key."
         }
       ],
       "mcp": {
@@ -220,7 +220,7 @@
       "id": "parallel",
       "label": "Parallel Search",
       "logo": "/integrations/parallel.png",
-      "description": "Real-time web search and content extraction for research via Parallel's official hosted MCP server. Open server, no account needed — activate and it just works.",
+      "description": "Search the web and pull the full content of pages for research, comparisons and fact checks.",
       "category": "ai",
       "fields": [],
       "mcp": {
@@ -238,7 +238,7 @@
       "id": "cryptocom",
       "label": "Crypto.com",
       "logo": "/integrations/cryptocom.svg",
-      "description": "Real-time crypto prices, order books, conversions, and candlestick charts via Crypto.com's official hosted MCP server. Open market-data server — activate and it just works.",
+      "description": "Live crypto prices, order books, conversions between coins and candlestick charts from Crypto.com.",
       "category": "finance",
       "fields": [],
       "mcp": {
@@ -255,7 +255,7 @@
       "id": "telegram",
       "label": "Telegram",
       "logo": "/integrations/telegram.svg",
-      "description": "Chat with the assistant via a Telegram bot. The bot process restarts (~5s) when you activate or remove this.",
+      "description": "Talk to your coworker on Telegram: ask, delegate, get reminders and files, in private or in a group.",
       "category": "messaging",
       "process": "telegram-bot",
       "fields": [
@@ -277,11 +277,11 @@
       "steps": [
         {
           "title": "Create the bot with @BotFather",
-          "body": "On Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`.\n\n- Display name: **{{botDisplayName}}**\n- Username: must end with `bot` and be globally unique. Try `{{botName}}_bot`, `{{botName}}bot`, or `{{botName}}_team_bot`.\n\nBotFather replies with a token like `1234567890:AAE...` — paste it as the **Bot token** below."
+          "body": "On Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`.\n\n- Display name: **{{botDisplayName}}**\n- Username: must end with `bot` and be unique, e.g. `{{botName}}_bot`\n\nBotFather replies with a token like `1234567890:AAE...` — paste it as the **Bot token**."
         },
         {
           "title": "Set a profile picture (optional)",
-          "body": "Want {{botDisplayName}} to have a face in Telegram? Download one of these and upload it via @BotFather → menu → set bot's photo.",
+          "body": "Download one of these and set it via @BotFather → menu → set bot's photo.",
           "downloads": [
             {
               "label": "Bot avatar",
@@ -297,11 +297,11 @@
         },
         {
           "title": "Get your admin chat ID",
-          "body": "Open [@userinfobot](https://t.me/userinfobot) on Telegram and send `/start`.\n\nIt replies with your numeric ID — paste it as **Admin chat ID** below. Only this account will be able to chat with {{botDisplayName}}."
+          "body": "Open [@userinfobot](https://t.me/userinfobot) on Telegram and send `/start`. It replies with your numeric ID — paste it as **Admin chat ID**."
         },
         {
           "title": "Add teammates (optional)",
-          "body": "Each extra person sends `/start` to @userinfobot to get their ID. Paste them comma-separated in **Additional allowed IDs**.\n\nSkip if just you."
+          "body": "Each extra person sends `/start` to @userinfobot to get their ID. Paste them comma-separated in **Additional allowed IDs**."
         }
       ],
       "mcp": {
@@ -320,13 +320,14 @@
         "allowedHosts": [
           "api.telegram.org"
         ]
-      }
+      },
+      "personal": false
     },
     {
       "id": "shopify",
       "label": "Shopify",
       "logo": "/integrations/shopify.svg",
-      "description": "Read orders, products, inventory; create draft orders and products; manage fulfillments — all from chat.",
+      "description": "Orders, products, inventory and customers; draft orders, new products and fulfilments from chat.",
       "category": "commerce",
       "fields": [
         {
@@ -334,7 +335,7 @@
           "label": "Store domain",
           "type": "text",
           "placeholder": "yourstore.myshopify.com",
-          "helper": "Internal .myshopify.com domain — not your public domain."
+          "helper": "The .myshopify.com domain, not your public one."
         },
         {
           "name": "SHOPIFY_CLIENT_ID",
@@ -362,19 +363,19 @@
       "steps": [
         {
           "title": "Create a Shopify dev app",
-          "body": "Open [dev.shopify.com](https://dev.shopify.com), select your store, click **Create app**. Name it something memorable (e.g. `shopify-mcp`)."
+          "body": "Open [dev.shopify.com](https://dev.shopify.com), select your store and click **Create app**."
         },
         {
           "title": "Add Admin API scopes",
-          "body": "App → **Configuration** → **Admin API access scopes**. Tick all of these:\n\n- `read/write_customers`\n- `read/write_inventory`\n- `read/write_orders`\n- `read/write_products`\n- `read_locations`\n- `read/write_fulfillments`\n- `read/write_draft_orders`\n- `write_discounts`\n- `read/write_publications`\n\nSave, then click **Install app** to install it on your store."
+          "body": "App → **Configuration** → **Admin API access scopes**. Tick:\n\n- `read/write_customers`\n- `read/write_inventory`\n- `read/write_orders`\n- `read/write_products`\n- `read_locations`\n- `read/write_fulfillments`\n- `read/write_draft_orders`\n- `write_discounts`\n- `read/write_publications`\n\nSave, then click **Install app**."
         },
         {
           "title": "Find your .myshopify.com domain",
-          "body": "Your custom domain (`yourstore.com`) won't work for API calls — Shopify needs the internal one.\n\nLook at your Shopify Admin URL: `admin.shopify.com/store/`**`<handle>`**`/...`\n\nYour domain is `<handle>.myshopify.com`. Paste that as **Store domain**."
+          "body": "Your Shopify Admin URL is `admin.shopify.com/store/`**`<handle>`**`/...` — the store domain is `<handle>.myshopify.com` (a custom domain does not work for the API)."
         },
         {
           "title": "Copy Client ID and Secret",
-          "body": "App → **Settings** → **Credentials** → copy **Client ID** and **Client Secret** (the secret starts with `shpss_`).\n\nIgnore the `shpat_` token — that's the legacy system, we don't use it."
+          "body": "App → **Settings** → **Credentials** → copy **Client ID** and **Client Secret** (not the `shpat_` token)."
         }
       ],
       "mcp": {
@@ -402,7 +403,7 @@
       "id": "meta-ads",
       "label": "Meta Ads",
       "logo": "/integrations/meta.svg",
-      "description": "Facebook + Instagram ads, campaigns, audiences, page + IG insights, full Business Portfolio management.",
+      "description": "Facebook and Instagram ads: campaigns, ad sets, audiences and insights for pages and accounts.",
       "category": "marketing",
       "fields": [
         {
@@ -446,20 +447,20 @@
       ],
       "steps": [
         {
-          "title": "Create a Meta App (one-time)",
-          "body": "Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps** → **Create App** → **Business** type.\n\nLeave it in Development mode — fine for accounts you own. You can reuse this same app for every client."
+          "title": "Create a Meta App",
+          "body": "Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps** → **Create App** → **Business** type. Development mode is enough for accounts you own."
         },
         {
           "title": "Add a System User",
-          "body": "Open [business.facebook.com](https://business.facebook.com) → the client's Business Manager → **Business Settings** → **Users** → **System Users** → **Add**.\n\n- Name: e.g. `{{botName}}-ide-bot`\n- Role: **Admin**\n\nClick **Add Assets** → grant **Full Control** on the Ad Account, Facebook Page, and Instagram account."
+          "body": "Open [business.facebook.com](https://business.facebook.com) → **Business Settings** → **Users** → **System Users** → **Add** (role **Admin**). Click **Add Assets** → grant **Full Control** on the Ad Account, Facebook Page and Instagram account."
         },
         {
           "title": "Generate the access token",
-          "body": "Same screen — click the system user → **Generate New Token**. Select your Meta App.\n\nPermissions to tick:\n\n- `ads_management`\n- `ads_read`\n- `read_insights`\n- `business_management`\n- `catalog_management`\n- `pages_read_engagement`\n- `instagram_basic`\n- `instagram_manage_insights`\n\nClick **Generate** and copy immediately — this token never expires."
+          "body": "Click the system user → **Generate New Token** → select your app. Tick:\n\n- `ads_management`\n- `ads_read`\n- `read_insights`\n- `business_management`\n- `catalog_management`\n- `pages_read_engagement`\n- `instagram_basic`\n- `instagram_manage_insights`\n\nClick **Generate** and copy the token."
         },
         {
           "title": "Find the IDs",
-          "body": "All under **Business Settings**:\n\n- **Ad account ID** → Ad Accounts → click the account → copy with `act_` prefix\n- **Page ID** → Facebook Page → **About** → scroll to bottom\n- **Instagram ID** → Instagram Accounts → click → ID\n- **Business ID** → Business Info"
+          "body": "All under **Business Settings**:\n\n- **Ad account ID** → Ad Accounts → the account → copy with the `act_` prefix\n- **Page ID** → Facebook Page → **About** → bottom\n- **Instagram ID** → Instagram Accounts → the account → ID\n- **Business ID** → Business Info"
         }
       ],
       "mcp": {
@@ -485,7 +486,7 @@
       "id": "google-ads",
       "label": "Google Ads",
       "logo": "/integrations/google-ads.svg",
-      "description": "Campaigns, ad groups, keywords, RSAs, Keyword Planner, performance reports.",
+      "description": "Campaigns, ad groups, keywords and ads; Keyword Planner research and performance reports.",
       "category": "marketing",
       "fields": [
         {
@@ -493,7 +494,7 @@
           "label": "Developer token",
           "type": "secret",
           "placeholder": "22 alphanumeric chars",
-          "helper": "From ads.google.com/aw/apicenter — requires a Manager (MCC) account."
+          "helper": "From ads.google.com/aw/apicenter; needs a Manager (MCC) account."
         },
         {
           "name": "GOOGLE_ADS_LOGIN_CUSTOMER_ID",
@@ -508,25 +509,25 @@
           "type": "secret",
           "optional": true,
           "placeholder": "1//...",
-          "helper": "Generated once via OAuth consent flow. Skip for read-only access. Uses the platform OAuth client."
+          "helper": "Only for writes; made once through the OAuth flow."
         }
       ],
       "steps": [
         {
           "title": "Get a Developer Token",
-          "body": "Open [ads.google.com/aw/apicenter](https://ads.google.com/aw/apicenter) and copy the **Developer Token** (22 alphanumeric chars).\n\nYou need a **Manager (MCC) account** for this — without it the token won't work. New tokens start in Test status; apply for **Basic Access** on the same page if you need live data."
+          "body": "Open [ads.google.com/aw/apicenter](https://ads.google.com/aw/apicenter) and copy the **Developer Token**. This needs a **Manager (MCC) account**; a new token starts in Test status — apply for **Basic Access** on the same page for live data."
         },
         {
           "title": "Enable the Google Ads API",
-          "body": "Open [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Enable APIs** → search **Google Ads API** → **Enable**.\n\nUse the same Cloud project that powers your platform OAuth so Client ID/Secret are reused."
+          "body": "Open [console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Enable APIs** → **Google Ads API** → **Enable**. Use the Cloud project of your platform OAuth so the Client ID and Secret are reused."
         },
         {
           "title": "Find your Customer ID",
-          "body": "[ads.google.com](https://ads.google.com) → top-right of the dashboard shows it.\n\nStrip the dashes — `123-456-7890` becomes `1234567890`."
+          "body": "[ads.google.com](https://ads.google.com) → top right of the dashboard. Strip the dashes: `123-456-7890` becomes `1234567890`."
         },
         {
-          "title": "Refresh token (only for write tools)",
-          "body": "Reads and Keyword Planner work without it.\n\nFor writes (creating campaigns, keywords, ads), run a one-time Node script with `google-auth-library` — full snippet in **docs/INTEGRATIONS.md → Google Ads → Step 3**. Output is a `1//...` token; paste it."
+          "title": "Refresh token (writes only)",
+          "body": "Reads and Keyword Planner work without it. For writes, run the one-time Node script from **docs/INTEGRATIONS.md → Google Ads → Step 3** and paste the token it prints."
         }
       ],
       "mcp": {
@@ -555,7 +556,7 @@
       "id": "email-imap",
       "label": "Email (IMAP)",
       "logo": "/integrations/email.svg",
-      "description": "Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by exposure.",
+      "description": "Read your inbox, find and summarise mail, and draft or send replies from chat.",
       "category": "messaging",
       "multi": true,
       "itemLabel": "Account",
@@ -619,7 +620,7 @@
           "label": "Password",
           "type": "secret",
           "placeholder": "App password (16 chars for Gmail)",
-          "helper": "For Gmail / Workspace use an App Password (NOT your normal password). For Zoho / custom IMAP use your IMAP password."
+          "helper": "Gmail: an App Password. Zoho or custom IMAP: your IMAP password."
         },
         {
           "name": "EMAIL_ID",
@@ -627,39 +628,39 @@
           "type": "text",
           "optional": true,
           "default": "primary",
-          "helper": "Short id used to refer to this account in chat (e.g. work, personal). Defaults to \"primary\"."
+          "helper": "A short name for this account in chat, e.g. work."
         },
         {
           "name": "EMAIL_ALLOW_SEND",
-          "label": "Allow bot to send email on your behalf",
+          "label": "Sending email",
           "type": "select",
           "globalForMulti": true,
           "default": "no",
           "options": [
             {
               "value": "no",
-              "label": "No — drafts only (recommended)"
+              "label": "Drafts only"
             },
             {
               "value": "yes",
-              "label": "Yes — bot can send"
+              "label": "Send too"
             }
           ],
-          "helper": "Workspace-level setting that applies to every email account you add. When \"no\", the bot prepares drafts in your Drafts folder for you to review and send manually. Drafts always work; only outbound send is gated."
+          "helper": "Drafts only: it writes, you send."
         }
       ],
       "steps": [
         {
-          "title": "Gmail only — App Password",
-          "body": "Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (requires 2-Step Verification on).\n\n- Name it `{{botDisplayName}} IDE` → **Generate**\n- Copy the **16-char password**, strip the spaces (they're visual only)\n\nSkip this step for non-Gmail providers — just use your normal IMAP password."
+          "title": "App Password (Gmail)",
+          "body": "Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (2-Step Verification must be on) → **Generate** → copy the 16-character password without the spaces. Other providers: use your normal IMAP password."
         },
         {
           "title": "Pick the provider",
-          "body": "Gmail and Zoho auto-fill server settings.\n\nFor anything else, pick **Custom IMAP** — you'll get fields for IMAP host + port (check your provider's IMAP help page)."
+          "body": "Gmail and Zoho fill the server settings in. For anything else pick **Custom IMAP** and enter the IMAP host and port from your provider's help page."
         },
         {
           "title": "Fill the form",
-          "body": "- **Email address** — the inbox you want to read\n- **Password** — App Password from step 1 (Gmail), or your normal IMAP password\n- **Account label** — optional, only useful if you'll add more accounts later"
+          "body": "- **Email address** — the inbox to read\n- **Password** — the App Password (Gmail) or your IMAP password\n- **Account label** — optional"
         }
       ],
       "mcp": {
@@ -688,7 +689,7 @@
       "id": "ga4",
       "label": "Google Analytics 4",
       "logo": "/integrations/ga4.svg",
-      "description": "Traffic, events, conversions, user behaviour — query GA4 metrics from chat.",
+      "description": "Traffic, events, conversions and user behaviour from Google Analytics, answered in plain words.",
       "category": "marketing",
       "fields": [
         {
@@ -709,19 +710,19 @@
       "steps": [
         {
           "title": "Find your Property ID",
-          "body": "[analytics.google.com](https://analytics.google.com) → **Admin** → **Property Settings** → copy **Property ID**.\n\nIt's a plain number like `123456789`. **Not** the Measurement ID `G-XXXXXXXX`."
+          "body": "[analytics.google.com](https://analytics.google.com) → **Admin** → **Property Settings** → copy **Property ID** — a plain number, not the `G-XXXXXXXX` Measurement ID."
         },
         {
           "title": "Create a service account",
-          "body": "[console.cloud.google.com](https://console.cloud.google.com) → **IAM & Admin** → **Service Accounts** → **Create Service Account**.\n\nName it e.g. `mcp-{{botName}}`. No roles needed yet."
+          "body": "[console.cloud.google.com](https://console.cloud.google.com) → **IAM & Admin** → **Service Accounts** → **Create Service Account**. No roles needed."
         },
         {
           "title": "Download the JSON key",
-          "body": "Click the service account → **Keys** tab → **Add Key** → **Create new key** → **JSON** → **Create**.\n\nA `.json` file downloads. Open it in a text editor and copy **the entire contents** — that's what goes in the field above."
+          "body": "The service account → **Keys** → **Add Key** → **Create new key** → **JSON** → **Create**. Open the downloaded file and paste its entire contents."
         },
         {
           "title": "Grant the service account access in GA4",
-          "body": "[analytics.google.com](https://analytics.google.com) → **Admin** → **Account Access Management** → **+** → **Add**.\n\n- Email: copy `client_email` from the JSON (looks like `mcp-…@project.iam.gserviceaccount.com`)\n- Role: **Viewer**"
+          "body": "[analytics.google.com](https://analytics.google.com) → **Admin** → **Account Access Management** → **+** → **Add** the `client_email` from the JSON with the **Viewer** role."
         }
       ],
       "mcp": {
@@ -754,7 +755,7 @@
       "id": "signwell",
       "label": "E-Signature (SignWell)",
       "logo": "/integrations/signwell.jpg.png",
-      "description": "Send documents for e-signature directly from chat. Upload a PDF to the bot and tell it who should sign — it creates the document in SignWell and sends signing requests by email. Track status, send reminders, and download the signed PDF when done.",
+      "description": "Send a document for e-signature, see who signed, send reminders and collect the signed PDF.",
       "category": "productivity",
       "fields": [
         {
@@ -768,11 +769,11 @@
       "steps": [
         {
           "title": "Sign up for SignWell",
-          "body": "Go to [signwell.com](https://signwell.com) and create an account. **API access requires a paid plan.**"
+          "body": "Go to [signwell.com](https://signwell.com) and create an account. API access requires a paid plan."
         },
         {
           "title": "Copy your API key",
-          "body": "In SignWell: **Settings** → **API** → copy the key and paste it above."
+          "body": "**Settings** → **API** → copy the key."
         }
       ],
       "mcp": {
@@ -794,7 +795,7 @@
       "id": "github",
       "label": "GitHub",
       "logo": "/integrations/github.svg",
-      "description": "Read repos, issues, and pull requests via the official GitHub MCP server. Read-only by default; flip the toggle to let the bot commit, open PRs, and comment.",
+      "description": "Repositories, issues and pull requests; comments, commits and new PRs when you allow writes.",
       "category": "dev",
       "fields": [
         {
@@ -802,7 +803,7 @@
           "label": "Fine-grained PAT",
           "type": "secret",
           "placeholder": "github_pat_...",
-          "helper": "Generate at github.com/settings/personal-access-tokens/new. Pick the repos this bot should see, then grant the permissions you need (Contents: Read or Read & write, Issues, Pull requests, Metadata). Token-level permissions are the outer security limit — the toggles below can only narrow them further."
+          "helper": "Pick the repositories the bot may see and the permissions it needs."
         },
         {
           "name": "GITHUB_TOOLSETS",
@@ -816,22 +817,22 @@
             },
             {
               "value": "repos,issues",
-              "label": "Code + Issues"
+              "label": "Code and issues"
             },
             {
               "value": "repos,issues,pull_requests",
-              "label": "Code + Issues + PRs (recommended)"
+              "label": "Code, issues and PRs"
             },
             {
               "value": "repos,issues,pull_requests,actions",
-              "label": "+ Actions / CI"
+              "label": "Code, issues, PRs and Actions"
             },
             {
               "value": "repos,issues,pull_requests,actions,code_security,dependabot",
-              "label": "Everything (incl. security and Dependabot alerts)"
+              "label": "Everything, security alerts too"
             }
           ],
-          "helper": "Picks which groups of GitHub tools the bot exposes. Narrower = smaller attack surface and less context noise."
+          "helper": "Which groups of GitHub tools the bot gets."
         },
         {
           "name": "GITHUB_ALLOW_WRITE",
@@ -841,24 +842,24 @@
           "options": [
             {
               "value": "no",
-              "label": "No — read-only (recommended)"
+              "label": "Read only"
             },
             {
               "value": "yes",
-              "label": "Yes — bot can commit, open PRs, comment"
+              "label": "Read and write"
             }
           ],
-          "helper": "When \"no\", the MCP runs with --read-only and write tools are stripped before they reach the bot — it physically cannot modify anything even if it tried. Flip to \"yes\" only after you trust the bot's behaviour on a given repo. PAT-level scopes still apply on top: a read-only PAT will block writes regardless."
+          "helper": "Read only strips the write tools; a read-only token blocks writes anyway."
         }
       ],
       "steps": [
         {
           "title": "Generate a fine-grained PAT",
-          "body": "Open [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new).\n\n- **Token name**: `{{botDisplayName}} IDE`\n- **Expiration**: 90 days (or custom)\n- **Repository access**: pick the specific repos the bot should see — don't grant access to all repos\n- **Repository permissions** (only what you need):\n  - **Contents**: Read (or Read and write if you'll flip the write toggle)\n  - **Issues**: Read / Read and write\n  - **Pull requests**: Read / Read and write\n  - **Metadata**: Read (auto-required)\n\nClick **Generate token**, copy the `github_pat_…` string."
+          "body": "Open [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new).\n\n- **Repository access**: the repositories the bot should see\n- **Repository permissions**: **Contents**, **Issues** and **Pull requests** — Read, or Read and write if the bot may change things; **Metadata**: Read\n\nClick **Generate token** and copy it."
         },
         {
-          "title": "Paste + pick the capabilities",
-          "body": "Paste the PAT above. Leave **Capabilities** on the recommended preset unless you need Actions / code security. Keep **Allow write = No** for the first few sessions — flip it later if you want the bot to push commits."
+          "title": "Paste the token",
+          "body": "Paste the token. Leave **Capabilities** on the preset unless you need Actions or code security."
         }
       ],
       "mcp": {
@@ -886,7 +887,7 @@
       "id": "trello",
       "label": "Trello",
       "logo": "/integrations/trello.svg",
-      "description": "Read tasks, post, edit and delete comments, manage labels, move cards between columns, and attach or download files. The bot can pull a board's current state, comment on or tag a card, shift it to Done, drop a screenshot straight onto a card, or pull down files your team attached — all from chat.",
+      "description": "Boards, lists and cards: read a board, move cards, comment, set labels and add attachments.",
       "category": "tasks",
       "fields": [
         {
@@ -901,7 +902,7 @@
           "label": "Token",
           "type": "secret",
           "placeholder": "ATTAxxxxxxxx...",
-          "helper": "Click the \"Token\" link under the API key (in the small paragraph that says \"manually generate a Token\"), authorise read + write, then paste the long string here. NOT the \"Secret\" field — that's for OAuth 1 and we don't use it."
+          "helper": "The Token link under the API key; not the Secret."
         },
         {
           "name": "TRELLO_BOARDS",
@@ -909,21 +910,21 @@
           "type": "text",
           "optional": true,
           "placeholder": "acme:https://trello.com/b/BFqnhhsY/acme-board,personal:https://trello.com/b/...",
-          "helper": "Optional. Easiest: paste the full board URL from your browser. For multiple boards, give each a friendly name: name:url,name:url. For a single board you can paste just the URL (or just the ID). The bot then accepts those names anywhere a board is asked for."
+          "helper": "A board URL, or several as name:url, comma-separated."
         }
       ],
       "steps": [
         {
-          "title": "Create a Power-Up + copy the API key",
-          "body": "Open [trello.com/power-ups/admin](https://trello.com/power-ups/admin) → **New** → fill any name + workspace.\n\nOpen the new Power-Up → **API key** tab → **Generate**. Copy the **API key** (top field).\n\nIgnore the **Secret** below it — that's for OAuth 1, we don't use it."
+          "title": "Create a Power-Up and copy the API key",
+          "body": "Open [trello.com/power-ups/admin](https://trello.com/power-ups/admin) → **New** → any name and workspace. Open it → **API key** → **Generate** → copy the **API key** (not the Secret)."
         },
         {
           "title": "Generate the Token",
-          "body": "Same page, look for: *\"…you can manually generate a Token.\"*\n\nClick the word **Token** at the end. Authorise **read + write** → **Allow**. Copy the long string.\n\nDo **not** paste the Secret from step 1."
+          "body": "On the same page, click the word **Token** in \"…you can manually generate a Token\" → **Allow** → copy the string."
         },
         {
-          "title": "Optional — default boards",
-          "body": "Paste a board URL from your browser, or for multiple, name them:\n\n```\nacme:https://trello.com/b/BFqnhhsY/acme,personal:https://trello.com/b/Other/me\n```\n\nThen the bot accepts \"what's on acme?\" instead of pasting URLs."
+          "title": "Default boards (optional)",
+          "body": "Paste a board URL, or several with names:\n\n```\nacme:https://trello.com/b/BFqnhhsY/acme,personal:https://trello.com/b/Other/me\n```"
         }
       ],
       "mcp": {
@@ -948,7 +949,7 @@
       "id": "linear",
       "label": "Linear",
       "logo": "/integrations/linear.svg",
-      "description": "Issues, projects, and cycles via Linear's official hosted MCP server. Connects with one click — sign in to Linear and approve; no API keys to paste.",
+      "description": "Issues, projects and cycles: create and update issues, track progress and ask what is due.",
       "category": "dev",
       "fields": [
         {
@@ -971,7 +972,7 @@
       "id": "notion",
       "label": "Notion",
       "logo": "/integrations/notion.svg",
-      "description": "Pages, databases, and search via Notion's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Pages and databases: search, read, create and update them from chat.",
       "category": "tasks",
       "fields": [
         {
@@ -995,7 +996,7 @@
       "id": "todoist",
       "label": "Todoist",
       "logo": "/integrations/todoist.svg",
-      "description": "Tasks and projects via Todoist's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Tasks and projects: add, complete and reschedule tasks and ask what is due.",
       "category": "tasks",
       "fields": [
         {
@@ -1019,7 +1020,7 @@
       "id": "monday",
       "label": "monday.com",
       "logo": "/integrations/monday.svg",
-      "description": "Boards, items, and updates via monday.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Boards, items and updates: read a board, add items and post updates from chat.",
       "category": "tasks",
       "fields": [
         {
@@ -1042,7 +1043,7 @@
       "id": "supabase",
       "label": "Supabase",
       "logo": "/integrations/supabase.svg",
-      "description": "Database, auth, and edge functions via Supabase's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Your database, auth and edge functions: query tables, inspect schemas and manage projects.",
       "category": "dev",
       "fields": [
         {
@@ -1066,7 +1067,7 @@
       "id": "paypal",
       "label": "PayPal",
       "logo": "/integrations/paypal.svg",
-      "description": "Invoices, orders, and payouts via PayPal's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Invoices, orders and payouts: create invoices, check payments and list transactions.",
       "category": "commerce",
       "fields": [
         {
@@ -1089,7 +1090,7 @@
       "id": "miro",
       "label": "Miro",
       "logo": "/integrations/miro.svg",
-      "description": "Boards, frames, and stickies via Miro's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Boards, frames and sticky notes: read a board, add notes and tidy frames from chat.",
       "category": "productivity",
       "fields": [
         {
@@ -1113,7 +1114,7 @@
       "id": "calcom",
       "label": "Cal.com",
       "logo": "/integrations/calcom.svg",
-      "description": "Bookings, event types, and availability via Cal.com's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Bookings, event types and availability: see what is booked and find free slots.",
       "category": "meetings",
       "fields": [
         {
@@ -1136,7 +1137,7 @@
       "id": "calendly",
       "label": "Calendly",
       "logo": "/integrations/calendly.svg",
-      "description": "Scheduled events, invitees, and availability via Calendly's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Scheduled events, invitees and availability: see who booked what and when.",
       "category": "meetings",
       "fields": [
         {
@@ -1159,7 +1160,7 @@
       "id": "wix",
       "label": "Wix",
       "logo": "/integrations/wix.svg",
-      "description": "Sites, stores, orders, and CRM via Wix's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Your Wix sites, stores, orders and contacts: read and update them from chat.",
       "category": "commerce",
       "fields": [
         {
@@ -1182,7 +1183,7 @@
       "id": "klaviyo",
       "label": "Klaviyo",
       "logo": "/integrations/klaviyo.png",
-      "description": "Campaigns, flows, lists, and metrics via Klaviyo's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Campaigns, flows, lists and metrics: see what went out and how it performed.",
       "category": "marketing",
       "fields": [
         {
@@ -1205,7 +1206,7 @@
       "id": "mailchimp",
       "label": "Mailchimp",
       "logo": "/integrations/mailchimp.svg",
-      "description": "Audiences, campaigns, and reports via Mailchimp's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Audiences, campaigns and reports: see who is subscribed and how campaigns did.",
       "category": "marketing",
       "fields": [
         {
@@ -1228,7 +1229,7 @@
       "id": "cloudflare",
       "label": "Cloudflare",
       "logo": "/integrations/cloudflare.svg",
-      "description": "Manage Workers, KV, R2, D1, and account resources via Cloudflare's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Workers, KV, R2, D1 and your account's resources: inspect and manage them from chat.",
       "category": "dev",
       "fields": [
         {
@@ -1251,7 +1252,7 @@
       "id": "stripe",
       "label": "Stripe",
       "logo": "/integrations/stripe.svg",
-      "description": "Payments, invoices, customers, and subscriptions via Stripe's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Payments, invoices, customers and subscriptions: look things up and create invoices.",
       "category": "commerce",
       "fields": [
         {
@@ -1274,7 +1275,7 @@
       "id": "atlassian",
       "label": "Atlassian",
       "logo": "/integrations/atlassian.svg",
-      "description": "Jira issues and Confluence pages via Atlassian's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Jira issues and Confluence pages: search, read, create and update them from chat.",
       "category": "dev",
       "fields": [
         {
@@ -1297,7 +1298,7 @@
       "id": "airtable",
       "label": "Airtable",
       "logo": "/integrations/airtable.svg",
-      "description": "Bases, tables, and records via Airtable's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Bases, tables and records: search, read, add and update records from chat.",
       "category": "tasks",
       "fields": [
         {
@@ -1320,7 +1321,7 @@
       "id": "zapier",
       "label": "Zapier",
       "logo": "/integrations/zapier.svg",
-      "description": "Reach ~7,000 apps through your own Zapier account via Zapier's official hosted MCP. One-click connect; note Zapier meters MCP calls against your Zapier plan.",
+      "description": "Thousands of apps through your own Zapier account: run and chain actions across them.",
       "category": "productivity",
       "fields": [
         {
@@ -1343,7 +1344,7 @@
       "id": "sentry",
       "label": "Sentry",
       "logo": "/integrations/sentry.svg",
-      "description": "Errors, issues, and releases via Sentry's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Errors, issues and releases: what broke, how often and in which release.",
       "category": "dev",
       "fields": [
         {
@@ -1366,7 +1367,7 @@
       "id": "webflow",
       "label": "Webflow",
       "logo": "/integrations/webflow.svg",
-      "description": "Sites, CMS items, and publishing via Webflow's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Sites, CMS items and publishing: read and update content and publish changes.",
       "category": "content",
       "fields": [
         {
@@ -1389,7 +1390,7 @@
       "id": "netlify",
       "label": "Netlify",
       "logo": "/integrations/netlify.svg",
-      "description": "Sites, deploys, and forms via Netlify's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Sites, deploys and forms: see deploy status, trigger deploys and read form submissions.",
       "category": "dev",
       "fields": [
         {
@@ -1412,7 +1413,7 @@
       "id": "neon",
       "label": "Neon",
       "logo": "/integrations/neon.svg",
-      "description": "Serverless Postgres branches and queries via Neon's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Postgres branches and SQL queries on your Neon projects, from chat.",
       "category": "dev",
       "fields": [
         {
@@ -1435,7 +1436,7 @@
       "id": "amplitude",
       "label": "Amplitude",
       "logo": "/integrations/amplitude.svg",
-      "description": "Product analytics, charts, and cohorts via Amplitude's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Product analytics, charts and cohorts: ask how a feature or a segment is doing.",
       "category": "marketing",
       "fields": [
         {
@@ -1458,7 +1459,7 @@
       "id": "google-workspace",
       "label": "Google Workspace",
       "logo": "/integrations/gworkspace.svg",
-      "description": "Docs, Sheets, Calendar, Drive, Slides, and Tasks — one OAuth refresh token unlocks all six. Writes are enabled by default and can be flipped off from the Settings cog.",
+      "description": "Docs, Sheets, Calendar, Drive, Slides and Tasks: read, create and update them from chat.",
       "category": "productivity",
       "fields": [
         {
@@ -1491,28 +1492,28 @@
           "options": [
             {
               "value": "yes",
-              "label": "Yes — bot can create / edit / delete (default)"
+              "label": "Read and write"
             },
             {
               "value": "no",
-              "label": "No — read only"
+              "label": "Read only"
             }
           ],
-          "helper": "Adds write permissions on top of read — bot can create, edit, and delete on your behalf."
+          "helper": "Read and write lets the bot create, edit and delete for you."
         }
       ],
       "steps": [
         {
           "title": "Create an OAuth client",
-          "body": "[console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials** → **Create OAuth client ID** → **Web application**.\n\nAuthorised redirect URI: `https://developers.google.com/oauthplayground`\n\nSave, then copy **Client ID** + **Client Secret** into the fields above."
+          "body": "[console.cloud.google.com](https://console.cloud.google.com) → **APIs & Services** → **Credentials** → **Create OAuth client ID** → **Web application**, redirect URI `https://developers.google.com/oauthplayground`. Copy the **Client ID** and **Client Secret**."
         },
         {
           "title": "Enable the Workspace APIs",
-          "body": "Same project → **APIs & Services** → **Library**. Enable every API in the bundle:\n\n- **Google Docs API**\n- **Google Drive API**\n- **Google Sheets API**\n- **Google Calendar API**\n- **Google Slides API**\n- **Google Tasks API**\n\nMissing any of these → 403 from the corresponding tool."
+          "body": "Same project → **APIs & Services** → **Library** → enable:\n\n- **Google Docs API**\n- **Google Drive API**\n- **Google Sheets API**\n- **Google Calendar API**\n- **Google Slides API**\n- **Google Tasks API**"
         },
         {
           "title": "Generate the refresh token",
-          "body": "Open [developers.google.com/oauthplayground](https://developers.google.com/oauthplayground) → **⚙ gear** (top right) → tick **Use your own OAuth credentials** → paste Client ID + Secret.\n\nIn **Step 1** (left side), paste **all** these scopes (one per line):\n\n```\nhttps://www.googleapis.com/auth/documents\nhttps://www.googleapis.com/auth/drive\nhttps://www.googleapis.com/auth/spreadsheets\nhttps://www.googleapis.com/auth/calendar\nhttps://www.googleapis.com/auth/presentations\nhttps://www.googleapis.com/auth/tasks\n```\n\nClick **Authorize APIs** → sign in with the Google account whose data the bot should see → **Allow**.\n\nThen **Exchange authorization code for tokens** → copy the `refresh_token` (starts with `1//`)."
+          "body": "Open [developers.google.com/oauthplayground](https://developers.google.com/oauthplayground) → **⚙** → **Use your own OAuth credentials** → paste the Client ID and Secret. In **Step 1** paste these scopes:\n\n```\nhttps://www.googleapis.com/auth/documents\nhttps://www.googleapis.com/auth/drive\nhttps://www.googleapis.com/auth/spreadsheets\nhttps://www.googleapis.com/auth/calendar\nhttps://www.googleapis.com/auth/presentations\nhttps://www.googleapis.com/auth/tasks\n```\n\n**Authorize APIs** → sign in with the account the bot should see → **Allow** → **Exchange authorization code for tokens** → copy the `refresh_token`."
         }
       ],
       "mcp": {
@@ -1583,7 +1584,7 @@
       "id": "docs-comments",
       "label": "Docs Comments",
       "logo": "/integrations/docs-comments.svg",
-      "description": "Lets your coworker drop inline comments anchored to a specific text range in a Google Doc — the one thing the Docs/Drive API can't do, so it drives a real logged-in Chromium session. You log in once through an embedded browser window; the session lives in a persistent container-side profile so later comment calls just work. Replying to, resolving, and deleting comments is handled separately by the Google Workspace integration over the Drive API (no browser needed).",
+      "description": "Comments on a Google Doc, anchored to the exact passage, as a reviewer would leave them.",
       "category": "productivity",
       "fields": [
         {
@@ -1591,21 +1592,21 @@
           "label": "Google session",
           "type": "docs-comments-browser-login",
           "optional": true,
-          "helper": "Click Connect to open an embedded Chromium window and sign in to Google. The session lives in a persistent profile under /var/wsapi-store/docs-comments-profile and is reused across container restarts."
+          "helper": "Connect opens a browser window to sign in to Google; the session stays on your server."
         }
       ],
       "steps": [
         {
-          "title": "Click Connect to Google",
-          "body": "An embedded browser window opens in a modal. It's a real Chromium running inside the container — your normal Google login screen will appear (2FA, security key, whatever you have on)."
+          "title": "Connect to Google",
+          "body": "A browser window opens in this dialog with the normal Google sign-in."
         },
         {
           "title": "Sign in",
-          "body": "Use the account whose docs you want {{botDisplayName}} to comment on. The session — cookies, device-bound credentials, the lot — is saved to the container's persistent volume. Nothing leaves the server."
+          "body": "Sign in with the account whose documents {{botDisplayName}} should comment on. The session is saved on your server."
         },
         {
           "title": "Done",
-          "body": "Click Done in this dialog. The login Chromium is killed cleanly (so the profile flushes to disk), and the integration goes active. Subsequent add_comment tool calls reuse the saved session — no re-login until Google decides to rotate."
+          "body": "Click **Done**. The saved session is reused from now on."
         }
       ],
       "mcp": {
@@ -1647,13 +1648,14 @@
           "*.google.com.au"
         ]
       },
-      "tagline": "Google Docs comments"
+      "tagline": "Google Docs comments",
+      "personal": false
     },
     {
       "id": "x",
       "label": "X (twitterapi.io)",
       "logo": "/integrations/x.svg",
-      "description": "Read tweets, profiles, replies, followers, mentions — full X data via twitterapi.io. Read-only by design; no X account credentials required, no developer approval, just a twitterapi.io API key.",
+      "description": "Tweets, profiles, replies, followers and mentions on X: read and search them from chat.",
       "category": "marketing",
       "fields": [
         {
@@ -1667,11 +1669,11 @@
       "steps": [
         {
           "title": "Sign up for twitterapi.io",
-          "body": "Open [twitterapi.io](https://twitterapi.io) and create an account.\n\nNo X developer approval needed. You get **$0.10 free credit** to start (enough for ~600 tweets, plenty for testing)."
+          "body": "Open [twitterapi.io](https://twitterapi.io) and create an account. No X developer approval needed."
         },
         {
           "title": "Copy the API key",
-          "body": "Dashboard → **API Keys** → copy the long alphanumeric string and paste it above.\n\nThis key only works against twitterapi.io — it has nothing to do with your actual X account."
+          "body": "Dashboard → **API Keys** → copy the key. It is for twitterapi.io only, not your X account."
         }
       ],
       "mcp": {
@@ -1693,7 +1695,7 @@
       "id": "firecrawl",
       "label": "Firecrawl",
       "logo": "/integrations/firecrawl.svg",
-      "description": "Web scraping, crawling, search, and structured extraction via Firecrawl's official hosted MCP server. Connects with one click — sign in and approve; no API keys to paste.",
+      "description": "Scrape and crawl websites, search the web and pull structured data out of pages.",
       "category": "ai",
       "fields": [
         {
@@ -1716,7 +1718,7 @@
       "id": "clickup",
       "label": "ClickUp",
       "logo": "/integrations/clickup.svg",
-      "description": "Tasks, docs, comments and time tracking via ClickUp's official hosted MCP server. Connects with one click — sign in to ClickUp and approve; no API keys to paste. Without ClickUp's AI add-on, calls are capped per day.",
+      "description": "Tasks, docs, comments and time tracking: read, create and update them from chat.",
       "category": "tasks",
       "fields": [
         {
@@ -1739,7 +1741,7 @@
       "id": "deepl",
       "label": "DeepL",
       "logo": "/integrations/deepl.svg",
-      "description": "Translation, rewriting and glossaries via DeepL's official hosted MCP server. Connects with one click — sign in to DeepL and approve. Text and documents you translate are sent to DeepL; the Free plan caps each translation at 5,000 characters.",
+      "description": "Translate and rewrite text and whole documents between languages, with your glossaries.",
       "category": "productivity",
       "fields": [
         {
@@ -1762,7 +1764,7 @@
       "id": "tally",
       "label": "Tally",
       "logo": "/integrations/tally.svg",
-      "description": "Forms and submissions via Tally's official hosted MCP server. Connects with one click — sign in to Tally and approve. New forms stay private drafts until you publish them.",
+      "description": "Your forms and their submissions: read answers, list forms and create new ones.",
       "category": "marketing",
       "fields": [
         {
@@ -1785,7 +1787,7 @@
       "id": "granola",
       "label": "Granola",
       "logo": "/integrations/granola.svg",
-      "description": "Your meeting notes and transcripts via Granola's official hosted MCP server — read-only. Connects with one click — sign in to Granola and approve. On the free plan only the last 30 days of notes are available, without transcripts.",
+      "description": "Your Granola meeting notes and transcripts: find a meeting, read what was said and decided.",
       "category": "meetings",
       "fields": [
         {
@@ -1813,7 +1815,7 @@
       "id": "fireflies",
       "label": "Fireflies",
       "logo": "/integrations/fireflies.svg",
-      "description": "Your meeting transcripts, summaries and action items via Fireflies' official hosted MCP server. Connects with one click — sign in to Fireflies and approve. Reading is the point; the few tools that share, rename or move a meeting are used only after you say yes. The free plan is rate-limited (about 50 requests a day).",
+      "description": "Your Fireflies transcripts, summaries and action items: find a meeting and what came out of it.",
       "category": "meetings",
       "fields": [
         {
@@ -1841,7 +1843,7 @@
       "id": "fathom",
       "label": "Fathom",
       "logo": "/integrations/fathom.svg",
-      "description": "Your Fathom meeting recordings, transcripts and summaries via Fathom's official hosted MCP server — read-only. Connects with one click — sign in to Fathom and approve. Works on every plan, including free.",
+      "description": "Your Fathom recordings, transcripts and summaries: find a meeting and what was said.",
       "category": "meetings",
       "fields": [
         {
@@ -1869,7 +1871,7 @@
       "id": "otter",
       "label": "Otter.ai",
       "logo": "/integrations/otter.svg",
-      "description": "Your Otter conversations — search, transcripts and summaries — via Otter's official hosted MCP server, read-only. Connects with one click — sign in to Otter and approve; you choose which meetings it may see.",
+      "description": "Your Otter conversations, transcripts and summaries: search them and read what was said.",
       "category": "meetings",
       "fields": [
         {
@@ -1897,7 +1899,7 @@
       "id": "readai",
       "label": "Read AI",
       "logo": "/integrations/readai.svg",
-      "description": "Your Read AI meetings — summaries, chapters, action items, key questions and transcripts — via Read AI's official hosted MCP server. Connects with one click — sign in to Read AI and approve. Reading is the point; sharing a report is done only after you say yes. Read AI calls the server a beta.",
+      "description": "Your Read AI meeting summaries, chapters, action items and transcripts, searchable from chat.",
       "category": "meetings",
       "fields": [
         {
@@ -1925,7 +1927,7 @@
       "id": "krisp",
       "label": "Krisp",
       "logo": "/integrations/krisp.svg",
-      "description": "Your Krisp meeting notes, transcripts and action items via Krisp's official hosted MCP server — read-only. Connects with one click — sign in to Krisp and approve.",
+      "description": "Your Krisp meeting notes, transcripts and action items: find a meeting and what was agreed.",
       "category": "meetings",
       "fields": [
         {

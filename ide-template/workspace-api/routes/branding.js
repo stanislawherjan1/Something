@@ -39,12 +39,11 @@ function requireAdmin(req, res, next) {
     // No admins yet (fresh deploy, wizard not done, or seeded with members
     // only). Promote the authenticated actor — nginx auth_request has
     // already verified them against IDE_ALLOWED_EMAILS so they're trusted.
-    if (req.actor) {
-      try { team.ensureFirstAdmin(req.actor, 'auto-bootstrap'); }
-      catch (err) { process.stderr.write(`[branding] ensureFirstAdmin failed: ${err.message}\n`); }
-    } else {
-      req.actor = 'bootstrap';
-    }
+    // Still a signed-in person: the login page reads branding without a
+    // session, but nobody writes it without one.
+    if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+    try { team.ensureFirstAdmin(req.actor, 'auto-bootstrap'); }
+    catch (err) { process.stderr.write(`[branding] ensureFirstAdmin failed: ${err.message}\n`); }
     return next();
   }
   if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });

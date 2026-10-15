@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState, createElement } from 'react';
-import {
-  Repeat, CheckCircle2, ChevronRight, X,
-  Mail, CalendarClock, Clock, MessageCircle, Users, FileText, Receipt, DollarSign,
-  ListChecks, Bell, RefreshCw, Search, Star, Megaphone, Activity, Shield, Rocket,
-  Link as LinkIcon, BookOpen, TrendingUp, Eye, AlertTriangle, FolderOpen,
-  Sun, CloudSun, Plus, Pencil, Trash2, Loader2,
-} from 'lucide-react';
+import { Repeat, CheckCircle2, ChevronRight, X, Mail, CalendarClock, Clock, MessageCircle, Users, FileText, Receipt, DollarSign, ListChecks, Bell, RefreshCw, Search, Star, Megaphone, Activity, Shield, Rocket, Link as LinkIcon, BookOpen, TrendingUp, Eye, AlertTriangle, FolderOpen, Sun, CloudSun, Plus, Pencil, Trash2, Loader2, LayoutGrid } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import EditorHeader from '../EditorHeader.jsx';
 import TileBanner from './TileBanner.jsx';
@@ -17,6 +11,7 @@ import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationCon
 import { cn } from '@/lib/utils';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import useMe from '../useMe.js';
+import { Avatar } from './TeamDashboard.jsx';
 import { useMemoryStatus } from '../useMemoryStatus.js';
 
 // The RESPONSIBILITIES card (the bot's duties TOWARD this user) is per-user in team
@@ -549,7 +544,7 @@ function RoutineFormModal({ duty, onClose, onSaved }) {
   );
 }
 
-function RoleView({ fileEventNonce }) {
+function RoleView({ fileEventNonce, sidebarOpen }) {
   const { botDisplayName } = useBranding();
   const { me } = useMe();
   // With memory v4 on, routines are data of their own (routines.json via
@@ -605,7 +600,7 @@ function RoleView({ fileEventNonce }) {
         value={tab}
         onChange={pickTab}
         items={[
-          { id: 'mine', label: 'Your routines', count: isInitialLoad ? null : role.duties.length },
+          { id: 'mine', count: isInitialLoad ? null : role.duties.length, label: 'Your routines' },
           { id: 'marketplace', label: 'Marketplace' },
         ]}
       />
@@ -630,20 +625,30 @@ function RoleView({ fileEventNonce }) {
 
   // The Marketplace keeps its own full-height layout: the switch, the search and
   // the filter list stay put; only the list (and a long filter list) scroll.
+  // The tabs are a row of their own under the header — still, like it, while the list scrolls.
+  const header = (
+    <>
+      <EditorHeader icon={Repeat} title="Routines" sidebarOpen={sidebarOpen} />
+      {tabs && <div className="shrink-0 px-6 pb-3 pt-1">{tabs}</div>}
+    </>
+  );
   if (v4 && tab === 'marketplace') {
     return (
-      <div className="flex h-full min-h-0 flex-col gap-5 px-6 pt-2">
-        {tabs}
-        <RoutinesMarketplace onChanged={reload} />
-        {modals}
+      <div className="flex h-full min-h-0 flex-col">
+        {header}
+        <div className="flex min-h-0 flex-1 flex-col gap-5 px-6 pt-2">
+          <RoutinesMarketplace onChanged={reload} />
+          {modals}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-auto">
+    <div className="flex h-full min-h-0 flex-col">
+    {header}
+    <div className="min-h-0 flex-1 overflow-auto">
       <div className="flex min-h-full flex-col gap-5 px-6 pb-12 pt-2">
-        {tabs && <div className="sticky top-0 z-10 -mx-6 -mt-2 bg-background px-6 pb-2 pt-2">{tabs}</div>}
         {(<>
         {isInitialLoad && (
           <SkeletonList count={4} />
@@ -726,6 +731,7 @@ function RoleView({ fileEventNonce }) {
 
       {modals}
     </div>
+    </div>
   );
 }
 
@@ -739,12 +745,9 @@ function RoleView({ fileEventNonce }) {
 export default function ResponsibilitiesDashboard({ fileEventNonce, sidebarOpen }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <EditorHeader icon={Repeat} title="Routines" sidebarOpen={sidebarOpen} />
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
-          <RoleView fileEventNonce={fileEventNonce} />
-        </TooltipPrimitive.Provider>
-      </div>
+      <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
+        <RoleView fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />
+      </TooltipPrimitive.Provider>
     </div>
   );
 }

@@ -24,7 +24,7 @@ import { buildMemoryGraph } from '../lib/memory-graph.js';
 import { grepMemory } from '../lib/memory-grep.js';
 import { buildCachedPrefix, meetsCacheFloor } from '../lib/memory-loader.js';
 import { readLog, revert as revertEvent } from '../lib/memory-engine.js';
-import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS } from '../lib/recent-snapshot.js';
+import { writeRecentSnapshot, isSnapshotStale, SUPPORTED_CHANNELS, renderRecent } from '../lib/recent-snapshot.js';
 import { getTeamMode, primaryAdminSlug, getUser, isAdmin } from '../lib/team.js';
 import { resolveTurnToken } from '../lib/turn-identity.js';
 import { buildTurnPrefix } from '../lib/claude.js';
@@ -263,6 +263,24 @@ export default function memoryRouter() {
       } else {
         path = join(projectDir, 'memory', `RECENT_${channel.toUpperCase()}.md`);
       }
+      // Optional ?limit=N — the last N message sections (each starts with "## "
+      // on its own line). Frontmatter (between leading ---) is always kept.
+      const limit = req.query.limit != null ? Math.max(1, Math.min(200, Number(req.query.limit) || 50)) : null;
+      const lastSections = (text) => {
+        if (!limit) return text;
+        const fmEnd = text.indexOf('\n---\n', 4);
+        const frontmatter = fmEnd > 0 ? text.slice(0, fmEnd + 5) : '';
+        const body = fmEnd > 0 ? text.slice(fmEnd + 5) : text;
+        const tail = body.split(/(?=^## )/m).filter(s => s.trim()).slice(-limit).join('');
+        return frontmatter + (frontmatter ? '\n' : '') + tail;
+      };
+      // Memory v4 keeps no snapshot file: the tail comes from the live
+      // conversation, for the same person the file would have been for.
+      if (v4Mode() === 'on') {
+        const content = lastSections(renderRecent({ channel, slug: channel === 'web' ? me : null }));
+        return res.json({ channel, exists: !!content, snapshot_age_seconds: content ? 0 : null, bytes: content.length, content,
+          ...(content ? { snapshot_updated_at: new Date().toISOString() } : { note: 'no recent messages on this channel' }) });
+      }
       if (!existsSync(path)) {
         return res.json({
           channel,
@@ -276,19 +294,7 @@ export default function memoryRouter() {
       }
       const st = statSync(path);
       const ageMs = Date.now() - st.mtimeMs;
-      let content = readFileSync(path, 'utf8');
-      // Optional ?limit=N — truncate to last N message sections (each starts
-      // with "## " on its own line). Frontmatter (between leading ---) is
-      // always preserved.
-      const limit = req.query.limit != null ? Math.max(1, Math.min(200, Number(req.query.limit) || 50)) : null;
-      if (limit) {
-        const fmEnd = content.indexOf('\n---\n', 4);
-        const frontmatter = fmEnd > 0 ? content.slice(0, fmEnd + 5) : '';
-        const body = fmEnd > 0 ? content.slice(fmEnd + 5) : content;
-        const sections = body.split(/(?=^## )/m).filter(s => s.trim());
-        const tail = sections.slice(-limit).join('');
-        content = frontmatter + (frontmatter ? '\n' : '') + tail;
-      }
+      const content = lastSections(readFileSync(path, 'utf8'));
       res.json({
         channel,
         path,

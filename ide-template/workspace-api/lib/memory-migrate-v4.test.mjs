@@ -152,7 +152,7 @@ ok('(d) a person\'s pages and relationships land in their own scope', stanRecs.s
 ok('(d) nothing private crossed scopes', !shared.some(x => /sabbatical|interviewing|sister/.test(x.text)) && !stanRecs.some(x => /interviewing/.test(x.text)) && !kasiaRecs.some(x => /sabbatical/.test(x.text)));
 ok('(d) what shadow mode filed is still there', stanRecs.some(x => /filed during shadow mode/.test(x.text)));
 ok('(d) pages and generated files leave memory/', !existsSync(join(mem, 'concepts/pinecrest.md')) && !existsSync(join(mem, 'INDEX.md')) && !existsSync(join(mem, 'RECENT_WEB.md')) && !existsSync(join(mem, 'users/stan/INDEX.md')) && !existsSync(join(mem, 'users/stan/USER_RELATIONSHIPS.md')) && !existsSync(join(mem, 'patterns/weekly.md')));
-ok('(d) loaded cards stay byte-identical', readFileSync(join(mem, 'AGENT_IDENTITY.md'), 'utf8') === before['AGENT_IDENTITY.md'] && readFileSync(join(mem, 'users/stan/USER_PROFILE.md'), 'utf8') === before['users/stan/USER_PROFILE.md'] && existsSync(join(mem, 'TEAM.md')));
+ok('(d) loaded cards stay byte-identical', readFileSync(join(mem, 'AGENT_IDENTITY.md'), 'utf8') === before['AGENT_IDENTITY.md'] && readFileSync(join(mem, 'users/stan/USER_PROFILE.md'), 'utf8') === before['users/stan/USER_PROFILE.md']); // TEAM.md goes with 0008 (v3-leftovers.test)
 const RS = await import('./routines-store.js');
 ok('(d) duty cards leave once their duties live in routines.json', !existsSync(join(mem, 'users/stan/RESPONSIBILITIES.md')) && !existsSync(join(mem, 'users/kasia/RESPONSIBILITIES.md')));
 ok('(d) ...including a duty written outside the card\'s sections', RS.readRoutines('kasia').routines.some(x => x.title === 'Invoices'), RS.readRoutines('kasia'));

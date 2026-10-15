@@ -13,6 +13,15 @@ for one by name. Connecting a service adds the skill for it, so the coworker
 knows that service's habits from day one, and the same skills are what its
 routines run on.
 
+**The team's and yours.** In a team workspace the Skills screen has two tabs.
+**Team** skills are followed in everyone's conversations; an admin adds and
+changes them. **Yours** are followed only in your own conversations — anyone
+can add one, and nobody else sees it. Ask your coworker for a new skill and it
+lands in Yours; an admin is asked whether it is for the whole team or just for
+them. A service you connect for yourself brings its skill to Yours; one
+connected for the team brings it to Team. In a group conversation no new
+skills are made. A workspace without a team has one list.
+
 ---
 
 Skills are instruction files that tell Claude how to handle specific tasks. Unlike MCP servers (which provide tools), skills provide **behavioral guidelines** — rules, workflows, and constraints that shape how Claude acts when a particular topic comes up.
@@ -28,6 +37,18 @@ Skills are instruction files that tell Claude how to handle specific tasks. Unli
 ---
 
 ## Where skills live
+
+**Team and personal (team mode).** The team's skills are `PROJECT_DIR/.claude/skills/<name>/`;
+a person's own are `users/<slug>/.skills/<name>/` in their private tree. `priv-tree assign`
+links the person's turn home `~/.claude/skills` to their `.skills` (the CLI loads skills from
+the project and from HOME), and `bin/turn-slots.mjs` links the operator brain's to the primary
+admin's at boot. Writes to `.claude/skills` and `.claude/CLAUDE.md` are an admin's in team mode:
+the scope-guard hook refuses a member's or a group turn's write tools there, and the files API
+refuses a member's. `GET /api/skills` lists the team's (`scope: team`, `editable` for an admin
+or in solo) and the caller's own (`scope: personal`), with `teamMode` and `canEditTeam`;
+`/api/skills/raw?origin=personal` reads the caller's own. An integration's optional skill is
+installed by the connection's reach — a personal connection's into the owner's `.skills`, its
+`mcp__<server>__` tool names rewritten to `mcp__<server>-mine__` (`personaliseSkill`).
 
 Skills can exist in two locations — Claude checks both:
 

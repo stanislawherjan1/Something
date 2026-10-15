@@ -23,6 +23,7 @@ import { GoogleGenAI }           from '@google/genai';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join, resolve }         from 'path';
 import { loadCredentials } from '../_shared/broker-client.js';
+import { projectFile } from '../_shared/local-file.js';
 
 // Phase-2 broker — fetch credentials over UDS at startup if launched via
 // mcp-runner (uid 1002). No-op + return null when run standalone for
@@ -57,7 +58,7 @@ function saveBase64(b64, prefix, ext) {
 
 // Read a local file as base64 + mimeType for Gemini inline data
 function readLocalImage(filePath) {
-  const buf  = readFileSync(resolve(filePath));
+  const buf  = readFileSync(projectFile(filePath));
   const ext  = filePath.split('.').pop()?.toLowerCase() ?? 'jpeg';
   const mime = ext === 'png'  ? 'image/png'
              : ext === 'webp' ? 'image/webp'

@@ -22,8 +22,17 @@
 
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
+import { readFileSync } from 'node:fs';
+import { getUser, list as teamList } from './team.js';
 
-const SESSION_SECRET = process.env.SESSION_SECRET || '';
+// The secret arrives in the environment (dev, auth-service) or, in the
+// container, in a file entrypoint wrote for this uid alone — the variable
+// itself is dropped before the other users' processes start.
+const SESSION_SECRET_FILE = process.env.SESSION_SECRET_FILE || '/var/wsapi-store/session-secret';
+function readSecretFile() {
+  try { return readFileSync(SESSION_SECRET_FILE, 'utf8').trim(); } catch { return ''; }
+}
+export const SESSION_SECRET = process.env.SESSION_SECRET || readSecretFile();
 const SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || 'ide_session';
 
 if (!SESSION_SECRET) {
@@ -69,6 +78,10 @@ function fromCookie(req) {
     const payload = jwt.verify(token, SESSION_SECRET);
     const email = String(payload?.email || '').trim().toLowerCase();
     if (!email) return null;
+    // A token issued before the person last signed out is no longer theirs.
+    const cutoff = Date.parse(getUser(email)?.sessionsBefore || '') || 0;
+    if (cutoff && Number(payload.iat || 0) * 1000 < cutoff) return null;
+    if (!onTeam(email)) return null;   // taken off the team: the token is no session
     return email;
   } catch {
     return null;
@@ -111,7 +124,22 @@ export function attachActor(req, _res, next) {
   next();
 }
 
+/**
+ * A session belongs to someone on the roster. A token outlives a removal
+ * (its lifetime is hours), so the roster is the authority on every request:
+ * a person taken off the team is a stranger at once, not at the token's
+ * expiry. An empty roster (first run, before anyone was added) refuses nobody.
+ */
+export function onTeam(email) {
+  if (!email) return false;
+  let members;
+  try { members = teamList(); } catch { return true; }
+  if (!members.length) return true;
+  return Boolean(getUser(email));
+}
+
 export function requireActor(req, res, next) {
   if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+  if (!onTeam(req.actor)) return res.status(401).json({ error: 'Unauthorized.' });
   next();
 }

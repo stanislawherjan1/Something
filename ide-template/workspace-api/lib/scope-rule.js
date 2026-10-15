@@ -59,6 +59,42 @@ export function pathInScope(relPosix, { ownSlug = null } = {}) {
  * sender-scoped DM turn instead). Everything outside users/ + memory/users/ is
  * the shared team space and stays allowed.
  */
+/** A project-relative POSIX path with empty and dot segments dropped; '' for the root. */
+export function normalizeRel(relPosix) {
+  return String(relPosix || '').split('/').filter(p => p && p !== '.').join('/');
+}
+
+/**
+ * The lock that covers a path — its own entry or an ancestor folder's — from
+ * a locks map `{ "<path>": { by, at } }`, or null. Pure: the caller decides
+ * what a stale entry means.
+ */
+export function lockCovering(relPosix, locks) {
+  if (!locks || typeof locks !== 'object') return null;
+  const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
+  if (parts.some(p => p === '..')) return null;
+  for (let i = parts.length; i >= 1; i--) {
+    const key = parts.slice(0, i).join('/');
+    if (locks[key]) return { path: key, ...locks[key], inherited: i !== parts.length };
+  }
+  return null;
+}
+
+/**
+ * May an actor WRITE this project-relative path? In scope (pathInScope), and
+ * not under a lock — for everyone: a lock is read-only for admins and the
+ * operator's brain too, until an admin unlocks it. One rule for the file API
+ * and the hook; the message the two give is the lock's own ("Locked by
+ * <name>…"). `isAdmin` is accepted and changes nothing, like in pathInScope.
+ */
+export function pathWritable(relPosix, { ownSlug = null, isAdmin = false, locks = null } = {}) {
+  void isAdmin;
+  if (!pathInScope(relPosix, { ownSlug })) return { ok: false, why: 'scope' };
+  const hit = lockCovering(relPosix, locks);
+  if (hit) return { ok: false, why: 'locked', lock: hit };
+  return { ok: true };
+}
+
 export function pathInGroupScope(relPosix) {
   const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
   if (parts.some(p => p === '..')) return false;

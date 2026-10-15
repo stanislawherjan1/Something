@@ -23,6 +23,7 @@ import { PROJECT_DIR } from '../lib/config.js';
 import { requireActor } from '../lib/auth.js';
 import { actorScope, USERS_DIR } from '../lib/file-scope.js';
 import { getTeamMode, setProfile, setTelegram, setPreferences, getDefaultTimezone, find as findMember } from '../lib/team.js';
+import * as team from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { syncTelegramAllowedIds } from '../lib/integrations/telegram-sync.js';
 import * as userAvatars from '../lib/user-avatars.js';
@@ -83,6 +84,13 @@ function meEnvelope(req) {
 
 export default function meRouter() {
   const router = Router();
+
+  // Called by the UI as it signs out, before the cookie is cleared: tokens
+  // issued before now stop working everywhere the session is checked.
+  router.post('/me/sign-out', requireActor, (req, res) => {
+    try { team.markSignedOut(req.actor); } catch (err) { process.stderr.write(`[me] sign-out: ${err.message}\n`); }
+    res.json({ ok: true });
+  });
 
   router.get('/me', requireActor, (req, res) => {
     const scope = actorScope(req);

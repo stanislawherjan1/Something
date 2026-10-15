@@ -40,6 +40,7 @@ import { join } from 'node:path';
 import { createConnection } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { requireActor } from '../lib/auth.js';
+import { isAdmin } from '../lib/team.js';
 import { activate, isActive } from '../lib/integrations/store.js';
 import { syncMcpServers } from '../lib/integrations/runtime.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
@@ -437,6 +438,14 @@ export function attachVncUpgradeHandler(server, isAuthorised) {
 export default function docsCommentsLoginRouter() {
   const router = Router();
   router.use(requireActor);
+  // The status is on the integrations screen for everyone; starting, finishing
+  // or resetting the login, and the viewer onto the browser that holds the
+  // Google session, are the admin's — the same rule as PUT /integrations.
+  router.use((req, res, next) => {
+    if (req.method === 'GET' && req.path === '/status') return next();
+    if (!isAdmin(req.actor)) return res.status(403).json({ error: 'Only admins can change integrations.' });
+    next();
+  });
 
   router.get('/status', (_req, res) => {
     const profileFiles = existsSync(PROFILE_DIR) ? readdirSync(PROFILE_DIR).length : 0;

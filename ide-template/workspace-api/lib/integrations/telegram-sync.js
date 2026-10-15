@@ -17,12 +17,13 @@
  */
 
 import { appendFileSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { INTERNAL_TOKEN } from '../turn-identity.js';
+import { readFile, stat, realpath } from 'node:fs/promises';
 import { basename, resolve as resolvePath, relative as relativePath } from 'node:path';
 import { PROJECT_DIR } from '../config.js';
 import * as store from './store.js';
 import * as runtime from './runtime.js';
-import { telegramAllowedIds, list as teamList } from '../team.js';
+import { telegramAllowedIds, list as teamList, primaryAdminSlug } from '../team.js';
 import { listSessions } from '../sessions.js';
 import { appendToSession, readUndelivered } from '../chatHistory.js';
 
@@ -208,6 +209,13 @@ export async function editTelegramMessage(chatId, messageId, text) {
   return telegramApi('editMessageText', { chat_id: String(chatId).trim(), message_id: Number(messageId), text: body });
 }
 
+/** React to a message with one of Telegram's reaction emoji (the API rejects others). */
+export async function reactTelegramMessage(chatId, messageId, emoji) {
+  const e = String(emoji || '').trim();
+  if (!e || e.length > 8) return { ok: false, error: 'no emoji' };
+  return telegramApi('setMessageReaction', { chat_id: String(chatId), message_id: Number(messageId), reaction: [{ type: 'emoji', emoji: e }] });
+}
+
 export async function deleteTelegramMessage(chatId, messageId) {
   if (!validChat(chatId)) return { ok: false, error: 'invalid chat id' };
   if (!validMsg(messageId)) return { ok: false, error: 'invalid message id' };
@@ -277,10 +285,17 @@ export async function sendGroupDocument(chatId, filePath, { caption, logKind } =
 
   const raw = String(filePath == null ? '' : filePath).trim();
   if (!raw) return { ok: false, error: 'no file path' };
-  // Confine to PROJECT_DIR: resolve, then require it stays inside (no ../ escape,
-  // no absolute path to a secret elsewhere on the box).
-  const abs = resolvePath(PROJECT_DIR, raw);
-  const rel = relativePath(PROJECT_DIR, abs);
+  // Confine to PROJECT_DIR: resolve through symlinks, then require the real
+  // file to be inside (no ../ escape, no link in the project pointing at a
+  // file elsewhere on the box).
+  let abs, base;
+  try {
+    base = await realpath(PROJECT_DIR).catch(() => resolvePath(PROJECT_DIR));
+    abs = await realpath(resolvePath(PROJECT_DIR, raw));
+  } catch (err) {
+    return { ok: false, error: `file unreadable: ${err.message}` };
+  }
+  const rel = relativePath(base, abs);
   if (rel === '' || rel.startsWith('..')) return { ok: false, error: 'file is outside the project directory' };
 
   let data, info;
@@ -432,7 +447,12 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   // got mis-relayed to the teammate. So the admin always falls through to their
   // brain, which relays only on an explicit instruction ("tell Jan …"). Non-admin
   // teammates (whose DMs the identity-blind brain would misattribute) still route.
-  if (sender.role === 'admin') return { ok: true, routed: false, reason: 'admin (brain handles)' };
+  // Only the PRIMARY admin: the brain runs as them (their private memory, their
+  // own connections and skills). Another admin is a person like any other — a
+  // turn as them — or they would read the primary admin's private things.
+  let operator = null;
+  try { operator = primaryAdminSlug(); } catch { operator = null; }
+  if (sender.slug === operator) return { ok: true, routed: false, reason: 'operator (brain handles)' };
 
   // Only the sender's OWN relay sessions (leak-safe).
   let sessions;
@@ -440,7 +460,16 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
     sessions = listSessions(sender.slug, { archived: false })
       .filter(s => s.relayPeers && Object.keys(s.relayPeers).length);
   } catch { sessions = []; }
-  if (!sessions.length) return { ok: true, routed: false, reason: 'no relay thread' };
+  // A non-admin teammate's DM that is not an answer in a relay thread is a
+  // conversation with their OWN assistant: a turn as them (lib/integrations/
+  // member-dm.js), delivered back on Telegram. bot.sh is told it is handled,
+  // so the operator's brain never sees it.
+  const asMember = async () => {
+    try { (await import('./member-dm.js')).startMemberDm(sender, body); }
+    catch (err) { process.stderr.write(`[telegram-inbound] member turn for ${sender.slug} not started: ${err.message}\n`); }
+    return { ok: true, routed: true, reason: 'member turn' };
+  };
+  if (!sessions.length) return asMember();
 
   // Deterministic threading: match the Telegram reply-to against a stored
   // tgMessageId on one of the sender's relay messages. Capture the relay depth
@@ -460,7 +489,7 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
     // No deterministic reply-to. Route a non-admin teammate to their single
     // outstanding relay thread; refuse to guess across multiple.
     if (sessions.length === 1) dest = sessions[0];
-    else return { ok: true, routed: false, reason: 'ambiguous' };   // never guess across peers
+    else return asMember();   // never guess across peers: their own assistant answers instead
   }
 
   // Durable dedup (H6/RC-2): the in-memory _seenInbound set is wiped on a wsapi
@@ -509,7 +538,8 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
     const timer = setTimeout(() => ctl.abort(), 1200);
     return fetch(`http://127.0.0.1:${port}/api/internal/chat-session`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // Our own call: the route takes `from` from the body only with this.
+      headers: { 'Content-Type': 'application/json', 'X-IDE-Internal': INTERNAL_TOKEN },
       body: JSON.stringify({ recipient: peerSlug, from: sender.slug, fromSession: dest.id, body, relayDepth: matchedDepth + 1 }),
       signal: ctl.signal,
     }).then(r => r.ok).catch((err) => {

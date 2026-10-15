@@ -145,12 +145,12 @@ export const CARDS = [
     desc: "the team roster + each member's role",
   },
   {
-    // Optional, hand-written: what this bot is here to do (org context, mission).
-    // Nothing seeds or generates it; when an operator creates it, it classifies
-    // as a card instead of being mislabelled a topic.
+    // The company: what it does, for whom, how it works. "About the company"
+    // on the memory screen, beside each person's "About you"; everyone's turn
+    // reads it (a group's too: it is the team's own context, nothing private).
     id: 'MISSION', file: 'MISSION.md', tier: 'shared',
-    prefix: false, seed: false, machine: false, stale: 'none', adopt: false,
-    desc: 'what the bot is here to do: responsibilities, principles, org context',
+    prefix: true, seed: true, machine: false, stale: 'claims', adopt: false, v4: true,
+    desc: 'the company: what it does, for whom, its products, clients and ways of working',
   },
 ];
 

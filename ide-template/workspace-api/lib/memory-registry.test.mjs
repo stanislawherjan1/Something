@@ -41,7 +41,7 @@ ok('every card declares tier/prefix/seed/machine/stale/adopt/desc', CARDS.every(
 // The prefix order is the prompt-cache key for the whole fleet: any reorder
 // invalidates every cached prefix, so it is pinned here literally.
 const EXPECTED_ORDER = ['AGENT_IDENTITY', 'AGENT_TOOLS', 'RESPONSIBILITIES', 'RULES', 'INDEX',
-  'USER_INDEX', 'CHANNELS', 'USER_PROFILE', 'USER_PREFERENCES', 'RECENT_WEB', 'RECENT_TELEGRAM'];
+  'USER_INDEX', 'CHANNELS', 'USER_PROFILE', 'USER_PREFERENCES', 'RECENT_WEB', 'RECENT_TELEGRAM', 'MISSION'];
 ok('cached-prefix order is unchanged (cache key)',
   JSON.stringify(LOAD_ORDER.map(c => c.id)) === JSON.stringify(EXPECTED_ORDER));
 ok('every user-tier card is fenced out of group prefixes',

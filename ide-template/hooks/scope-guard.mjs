@@ -13,7 +13,7 @@
  *
  * Per-turn actor comes from env, set per-spawn by workspace-api/lib/claude.js:
  *   IDE_ACTOR_SLUG       — the current user's slug
- *   IDE_ACTOR_IS_ADMIN   — "1" (admin → everything) | "0"
+ *   IDE_ACTOR_IS_ADMIN   — "1" | "0" (not consulted by the path rule: privacy is by path, never by role)
  *
  * Fail-OPEN: any error (bad input, missing env, import fail) → allow. This is
  * defence-in-depth on a trusted team, NOT the hard guarantee (that's the v2
@@ -24,20 +24,27 @@
  * stderr back to the model and skips the tool.
  */
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, posix } from 'node:path';
 
 const PROJECT_DIR = process.env.PROJECT_DIR || '/home/coder/project';
+// A search that would walk the whole project (see pathsFromTool).
+const WHOLE_PROJECT = Symbol('whole-project');
+const PROJECT_ROOTS = [...new Set([PROJECT_DIR, '/home/coder/project'].map(r => posix.resolve(r)))];
 
 // Normalise an absolute-or-relative path to a project-relative POSIX path.
-// Returns null for paths clearly outside the project (we don't guard those).
+// Returns null for paths outside the project (we don't guard those). The path
+// is resolved first (relative ones against the project, where every turn
+// runs), so '//', '/./' and '..' segments land where the file system would put
+// them, and a leading dot that belongs to a name ('.team/…') is kept.
 function relInProject(p) {
   if (typeof p !== 'string' || !p.trim()) return null;
-  let s = p.trim();
-  if (s.startsWith(PROJECT_DIR)) s = s.slice(PROJECT_DIR.length);
-  else if (s.startsWith('/home/coder/project')) s = s.slice('/home/coder/project'.length);
-  else if (s.startsWith('/')) return null;     // some other absolute path — not ours
-  return s.replace(/^[./]+/, '');              // strip leading ./ or /
+  const abs = posix.resolve(PROJECT_DIR, p.trim());
+  for (const root of PROJECT_ROOTS) {
+    if (abs === root) return '';
+    if (abs.startsWith(`${root}/`)) return abs.slice(root.length + 1);
+  }
+  return null;
 }
 
 // The literal directory prefix of a glob/pattern, up to the first wildcard
@@ -72,6 +79,10 @@ function pathsFromTool(toolName, input) {
       const root = typeof input.path === 'string' ? input.path : '';
       push(input.path);
       push(joinRoot(root, literalPrefix(input.pattern)));
+      // No root and no literal prefix: the search starts at the project root
+      // and recurses every tree, the private ones included. Marked as a
+      // whole-project search; the fence below decides what to do with it.
+      if (!root && !literalPrefix(input.pattern)) out.push(WHOLE_PROJECT);
       break;
     }
     case 'Grep': {
@@ -80,6 +91,7 @@ function pathsFromTool(toolName, input) {
       const root = typeof input.path === 'string' ? input.path : '';
       push(input.path);
       push(joinRoot(root, literalPrefix(input.glob)));
+      if (!root && !literalPrefix(input.glob)) out.push(WHOLE_PROJECT);
       break;
     }
     case 'LS': case 'List':
@@ -88,16 +100,28 @@ function pathsFromTool(toolName, input) {
     case 'Bash': {
       // Best-effort ONLY — this does NOT make Bash isolation a hard guarantee
       // (tilde, $VAR, command substitution all slip through; v2 per-uid is the
-      // real close). Pull users/<slug> and memory/users/<slug> references at a
-      // shell word boundary (incl. redirects/operators < > ; & | : `) — not
-      // embedded in a URL like example.com/users/1.
+      // real close). Pull users/<slug>, memory/users/<slug> and
+      // .team/users/<slug> references at a shell word boundary (incl.
+      // redirects/operators < > ; & | : `) — not embedded in a URL like
+      // example.com/users/1.
       const cmd = typeof input.command === 'string' ? input.command : '';
-      const re = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?(?:memory\/)?users\/[A-Za-z0-9._-]+)/g;
+      // A slug position may also hold a wildcard ('users/*/notes.md'): the
+      // rule then sees a slug that is nobody's and denies it.
+      const re = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?(?:memory\/|\.team\/)?users\/[A-Za-z0-9._*?{}-]+)/g;
       let m; while ((m = re.exec(cmd))) out.push(m[1]);
+      // The tree itself, named without a slug ('ls users', 'cd users',
+      // 'grep -r x memory/users'): the whole tree, which is nobody's.
+      const bare = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?(?:memory\/|\.team\/)?users)\/?(?=$|[\s'"<>;&|`)])/g;
+      while ((m = bare.exec(cmd))) out.push(`${m[1]}/`);
       // Any reference to memory/ itself (ls memory, cat memory/RULES.md), for
       // the post-move fence below.
       const mem = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?memory)(?:\/[^\s'"<>;&|`]*)?(?=$|[\s'"<>;&|`)])/g;
       while ((m = mem.exec(cmd))) out.push(`${m[1]}/`);
+      // A word that climbs ('Reports/../users/bob/x', '../x'): the rule
+      // refuses any '..' — a detour is never a legitimate way to name a path
+      // inside the project, and from its root it leaves the project.
+      const climb = /(?:^|[\s'"=(<>;&|:`])((?:[^\s'"<>;&|`]*\/)?\.\.\/[^\s'"<>;&|`]*)/g;
+      while ((m = climb.exec(cmd))) out.push(m[1]);
       break;
     }
     default: break;
@@ -123,7 +147,7 @@ const LEGACY_MEMORY_DENIAL =
   + 'memory_timeline, or handed to you in the <<<MEMORY>>> block and WHAT_IS_GOING_ON; the person sees '
   + 'and edits it on the Memory screen. Questions about how memory is organised are answered from the '
   + 'rules (private by default; shared only what was shared or judged team-relevant; the person decides '
-  + 'on the Privacy tab), never from folders. Nothing here is damage to report or restore.';
+  + 'on the Sharing tab), never from folders. Nothing here is damage to report or restore.';
 const MEMORY_WRITE_DENIAL =
   'Blocked: memory/ is written through the memory_write tool, not by editing files. '
   + 'Use memory_write with op "remember" for a new fact, "supersede" when a fact CHANGED '
@@ -169,6 +193,16 @@ async function main() {
         process.stderr.write(MEMORY_WRITE_DENIAL);
         process.exit(2);
       }
+      // The team's skills and instructions are an admin's to change; a
+      // member's own skills live in their private tree, loaded by their turns
+      // only. A group turn changes neither.
+      const teamConfig = rel != null && /^\.claude\/(skills(\/|$)|CLAUDE\.md$)/.test(rel.split('/').filter(x => x && x !== '.').join('/'));
+      if (teamConfig && (groupCtx || process.env.IDE_ACTOR_IS_ADMIN === '0')) {
+        process.stderr.write(groupCtx
+          ? 'Blocked: a group conversation does not change the team\'s skills or instructions. Do it in a direct conversation.'
+          : `Blocked: the team's skills and instructions are changed by an admin. Write this skill for this person only, at users/${ownSlug || '<slug>'}/.skills/<name>/SKILL.md — only their own conversations load it.`);
+        process.exit(2);
+      }
     }
   }
 
@@ -184,6 +218,7 @@ async function main() {
     const input = data.tool_input || data.toolInput || {};
     if (existsSync(join(PROJECT_DIR, 'memory', '_engine', '.v4-migrated'))) {
       for (const p of pathsFromTool(toolName, input)) {
+        if (typeof p !== 'string') continue;
         const rel = relInProject(p);
         if (rel != null && LEGACY_MEMORY_RE.test(rel)) {
           process.stderr.write(LEGACY_MEMORY_DENIAL);
@@ -192,6 +227,87 @@ async function main() {
       }
     }
   }
+
+  // Read-only integrations: an admin connected a service for the team as
+  // read-only (.team/integration-access.json, written by workspace-api with
+  // the bot's config). Its write tools are refused in every turn — the
+  // catalog names them per service (`writeTools`); otherwise a tool whose name
+  // says it changes something counts. Reading is untouched.
+  {
+    const toolName = data.tool_name || data.toolName || '';
+    const m = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(toolName);
+    if (m) {
+      let access = {};
+      try { access = JSON.parse(readFileSync(join(PROJECT_DIR, '.team', 'integration-access.json'), 'utf8')) || {}; } catch { /* none read-only */ }
+      const server = m[1], tool = m[2];
+      if (access[server] === 'read') {
+        let writeTools = null;
+        try {
+          const cat = JSON.parse(readFileSync(new URL('../workspace-api/integrations.catalog.json', import.meta.url), 'utf8')).integrations;
+          const base = server.replace(/-mine$/, '');
+          const entry = cat.find(e => e.mcp?.name === base || (e.mcp?.services || []).some(x => x.name === base));
+          if (Array.isArray(entry?.writeTools)) writeTools = entry.writeTools;
+        } catch { /* no catalog here: the name decides */ }
+        const WRITE_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark)([_-]|$)/i;
+        const isWrite = writeTools ? writeTools.includes(tool) : WRITE_RE.test(tool);
+        if (isWrite) {
+          process.stderr.write(
+            `Blocked: ${server.replace(/-mine$/, '')} is connected for the team as read-only, so "${tool}" (a change) is not available. ` +
+            `Reading through it is fine. Tell the user plainly: "This connection is read-only for the team; an admin can allow changes on its page in Integrations." ` +
+            `Do not work around it.`,
+          );
+          process.exit(2);
+        }
+      }
+    }
+  }
+
+  // Locks: an admin marked shared paths read-only (.team/locks.json,
+  // lib/locks.js) — for everyone, this turn's actor included, admin or the
+  // operator's brain, until an admin unlocks it. A locked path may be read and
+  // not changed: the write tools are refused outright, Bash when it names a
+  // locked path next to something that writes. The sentence is the lock's
+  // own, the same the file API gives. Checked before the per-actor fence: a
+  // solo brain has no slug and still honours a lock.
+  {
+    const { lockCovering } = await import(new URL('../workspace-api/lib/scope-rule.js', import.meta.url));
+    const toolName = data.tool_name || data.toolName || '';
+    const input    = data.tool_input || data.toolInput || {};
+    let locks = {};
+    try { locks = JSON.parse(readFileSync(join(PROJECT_DIR, '.team', 'locks.json'), 'utf8')) || {}; } catch { /* no locks */ }
+    const lockedPaths = Object.keys(locks).filter(k => existsSync(join(PROJECT_DIR, k)));
+    if (lockedPaths.length) {
+      const live = Object.fromEntries(lockedPaths.map(k => [k, locks[k]]));
+      const refuse = (hit) => {
+        process.stderr.write(
+          `Blocked: "${hit.path}" is locked — read-only for everyone until an admin unlocks it. ` +
+          `Tell the user plainly: "This is locked. I can read it; an admin has to unlock it before anything changes." ` +
+          `Do not work around it (no copies elsewhere, no shell tricks).`,
+        );
+        process.exit(2);
+      };
+      if (WRITE_TOOLS.has(toolName)) {
+        for (const p of pathsFromTool(toolName, input)) {
+          const rel = relInProject(p);
+          const hit = rel != null ? lockCovering(rel, live) : null;
+          if (hit) refuse(hit);
+        }
+      } else if (toolName === 'Bash') {
+        const cmd = typeof input.command === 'string' ? input.command : '';
+        // Something in the command writes: a redirect, or a command that changes files.
+        const writes = /(^|[\s;&|(])(>|>>|mv|cp|rm|rmdir|sed\s+-i|tee|touch|mkdir|truncate|dd|chmod|chown|ln|install|rsync|unzip|tar)\b|>\s*['"]?\S/.test(cmd);
+        if (writes) {
+          const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const root = escRe(PROJECT_DIR.replace(/\/+$/, ''));
+          for (const key of lockedPaths) {
+            const re = new RegExp(`(?:^|[\\s'"=(<>;&|:\`])(?:${root}/|\\./)?${escRe(key)}(?=$|[/\\s'"<>;&|\`)])`);
+            if (re.test(cmd)) refuse({ path: key });
+          }
+        }
+      }
+    }
+  }
+
 
   // Everything below is the per-actor privacy fence: it needs an actor, so a
   // slug-less context (solo brain, an internal headless run) skips it.
@@ -204,8 +320,16 @@ async function main() {
   const toolName = data.tool_name || data.toolName || '';
   const input    = data.tool_input || data.toolInput || {};
 
-
   for (const p of pathsFromTool(toolName, input)) {
+    if (p === WHOLE_PROJECT) {
+      // Every tree at once, the other people's included. The shared space and
+      // one's own are searched by naming them.
+      process.stderr.write(
+        `Blocked: a search over the whole workspace would include other people's private spaces. ` +
+        `Search a folder instead: the shared files (name the folder), or your own files (users/${groupCtx ? '<slug>' : ownSlug}/).`,
+      );
+      process.exit(2);
+    }
     const rel = relInProject(p);
     if (rel == null) continue;
     const inScope = groupCtx

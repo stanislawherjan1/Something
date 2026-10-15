@@ -120,6 +120,20 @@ const OPEN_ALLOWED_PORTS = new Set(
 
 // True only for routable public unicast IPs.
 function isPublicIp(ip) {
+  if (net.isIPv6(ip)) {
+    const a = ip.toLowerCase();
+    // An IPv4 address carried in IPv6 — ::ffff:a.b.c.d, or the same in hex
+    // (::ffff:a9fe:a9fe) — is the IPv4 address, and is judged as such.
+    const mapped = a.match(/^(?:0*:)*ffff:(?:(\d+\.\d+\.\d+\.\d+)|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/);
+    if (mapped) {
+      if (mapped[1]) return isPublicIp(mapped[1]);
+      const hi = parseInt(mapped[2], 16), lo = parseInt(mapped[3], 16);
+      return isPublicIp(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
+    // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) also carry an IPv4 address
+    // that could be a private one; neither is needed here.
+    if (/^64:ff9b:/.test(a) || /^2002:/.test(a)) return false;
+  }
   if (net.isIPv4(ip)) {
     const o = ip.split('.').map(Number);
     if (o[0] === 0)   return false;                              // 0.0.0.0/8

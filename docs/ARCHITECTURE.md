@@ -367,9 +367,25 @@ MCPs reach their secrets without those secrets ever sitting in
 | 1001 | `wsapi` | `workspace-api` (HTTP backend) | encrypted credentials store at `/var/wsapi-store/credentials.json`; master AES key at `/run/secrets/integrations.key` (docker secret, mode 0400 wsapi-only); decrypts on-demand per request |
 | 1002 | `mcp` | every brokered MCP (Trello, Gdocs, Shopify, etc.) | own files; the broker UDS at `/var/wsapi-store/run/broker.sock` (group `wsapi-broker`); fetches its own credentials per-spawn via nonce; CANNOT read other integrations' creds |
 | 1003 | `bot` | `bot.sh` + tmux + claude session + telegram plugin (bun) | own files; `~/.bot/integrations.env` (mode 0660 group=botshare, written by wsapi); `~/.claude/.credentials.json` (Anthropic OAuth token, encrypted-store sourced); CANNOT read wsapi store directly |
+| 1005 | `turn` | a **solo** workspace's web and headless `claude -p` turns, started by workspace-api through `turn-runner solo` | PROJECT_DIR (group workspace); its own home `/home/turns/solo` (volume `turn-homes`: `settings.json` with the hooks, copied from the bootstrap template each boot; its own `.claude/projects` for sessions); the MCP config written for each turn into `/run/turns/solo` (root:turn 2730 — workspace-api writes, the turn reads, nobody else sees in). CANNOT read the store, its key, the session secret or the bot's `.claude.json` |
+| 1101–1124 | `turn-01`…`turn-24` | in **team mode**, one per person on the roster (their *slot*, assigned on add, lowest free; `lib/team.js`): every web, headless and relayed turn of that person runs as their slot (`turn-runner 07`) | as `turn`, plus the person's private trees — `users/<slug>`, `memory/users/<slug>`, `.team/users/<slug>` are `turn-NN:priv-NN` 2770, so another person's turn cannot open them at the kernel level. Home `/home/turns/NN`, run dir `/run/turns/NN` (root:priv-NN 2730) |
+| 1130 | `turn-group` | a Telegram group's turn (`turn-runner group`) | as `turn`; in no `priv-*` group — no private tree exists for it even at the kernel level |
 
 `workspace` (gid 1100), `wsapi-broker` (gid 1101), `botshare` (gid 1102)
-are the cross-uid bridges. Examples:
+and the per-person `priv-01`…`priv-24` (gids 1201–1224) are the cross-uid
+bridges. Each `priv-NN` holds its slot's turn user and `wsapi` (the engine
+reads and writes every private tree); `bot` and `coder` are added to the
+primary admin's at boot (`priv-tree grant`), so the operator's brain and the
+editor reach the operator's own tree and nobody else's. Ownership changes
+need root, so workspace-api asks `priv-tree` (setuid, root:wsapi 4750):
+`assign <slug> <slot>` on add and at every boot (`bin/turn-slots.mjs`,
+run by the entrypoint), `archive <slug>` when a person is removed — their
+trees move to the project's `.archived-members/<slug>-<time>/` as root 0700
+before the slot can be reused. If the archive fails, the slot is held
+(`.held-slots.json`) and every boot retries it; a tree an archive could only
+close in place is never handed to a newcomer with the same name. `priv-tree`
+walks and moves the trees by file descriptor and never follows a link. The pool is a build constant (24); the Team screen
+refuses the 25th person with the reason. Examples:
 - `workspace` (members: coder, wsapi, mcp) — for `PROJECT_DIR` files all
   three need (the user's working files).
 - `wsapi-broker` (members: wsapi, mcp) — for the broker socket. coder is
@@ -446,7 +462,7 @@ coverage matrix is in `SECURITY.md` "Encryption scope" section.
 
 | Hook | Event | What it does |
 |---|---|---|
-| `hooks/verify-denials.sh` | Stop | Scans the assistant's last text for absence-claim patterns ("nie mam X", "doesn't exist", "I don't see Y in my tools", …) and, if the model didn't run any lookup tool (Read/Bash/Glob/Grep/memory_grep) that turn, blocks the response and pushes a feedback string asking it to verify before claiming absence. Appends the offending quote to `memory/patterns/verification-failures.md` so `taste-recall` can show it back next session. |
+| `hooks/verify-denials.sh` | Stop | Scans the assistant's last text for absence-claim patterns ("nie mam X", "doesn't exist", "I don't see Y in my tools", …) and, if the model didn't run any lookup tool (Read/Bash/Glob/Grep/memory_grep) that turn, blocks the response and pushes a feedback string asking it to verify before claiming absence. On the older memory it also appends the offending quote to `memory/patterns/verification-failures.md`; after the move to memory v4 nothing is written there. |
 | `hooks/verify-telegram-reply.sh` | Stop | Detects Telegram-channel turns by `transcript_path` prefix (`/home/bot/*` = bot tmux, `/home/wsapi/*` = web). For Telegram turns, scans the current turn for any `mcp__plugin_telegram_telegram__*` tool use. If none, blocks the response and forces the model to reply via the Telegram MCP — closes the silent-failure mode where the response landed in the IDE transcript only and the operator saw nothing. Whitelists internal triggers (`[REMINDER]`, `[REPO_AUDIT_TRIGGER]`, etc.). Deliberate silence is declared by the model, not guessed from keywords: when the sender asked for no reply (in any language or wording), `global-claude.md` tells the model to end the turn with `[[SILENT]]` on its own line, and the hook lets a turn through if that marker appears in the assistant's text since the last trigger. |
 | `hooks/scope-guard.mjs` | PreToolUse (file tools + Bash) | In team mode, denies a turn access to another teammate's private files (`users/<slug>/`), private memory (`memory/users/<slug>/`) and app data (`.team/users/<slug>/` — chats, routines), and every turn raw access to group memory (`memory/groups/`), using the same scope rule as the file API — the same for admins. Fails open on its own errors. |
 | `hooks/skill-fence.mjs` | PreToolUse (Skill) | Blocks the CLI's built-in cloud-scheduling skills (`schedule` and similar), which cannot work from a self-hosted box and collide with the product's own "routines" vocabulary. |
@@ -1164,7 +1180,7 @@ scp Caddyfile "$HETZNER_HOST:$REMOTE_PATH/"
 ssh "$HETZNER_HOST" "cd $REMOTE_PATH && docker compose down"
 
 # 3. Rebuild services
-ssh "$HETZNER_HOST" "cd $REMOTE_PATH && docker compose build --no-cache auth-service"
+ssh "$HETZNER_HOST" "cd $REMOTE_PATH && docker compose build auth-service   # add --no-cache only to rebuild every layer"
 
 # 4. Start services
 ssh "$HETZNER_HOST" "cd $REMOTE_PATH && docker compose up -d"
@@ -1184,7 +1200,7 @@ git pull
 
 # Rebuild and restart
 docker compose down
-docker compose build --no-cache
+docker compose build                 # --no-cache = every layer again (deploy.sh --fresh)
 docker compose up -d
 
 # Check logs

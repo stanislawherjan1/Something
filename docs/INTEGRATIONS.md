@@ -4,9 +4,15 @@
 
 Integrations are the services your coworker can read and act on: calendars,
 email, documents, task boards, meeting notes, shops, ads, payments and more.
-Open **Integrations** in the sidebar and pick one.
+Open **Integrations** in the sidebar and pick one: every service has its own
+page, where you connect it, change a setting or a key in place (a stored key
+shows only its last characters and stays unless you type a new one), add or
+remove a mail account without touching the others, test the connection, or
+disconnect it.
 
-Most connect with one click: you are sent to the service to sign in, you
+Adding one asks whom it is for: an admin picks the whole team — and then
+whether the coworker may only read through it or also change things there —
+or just themselves; a member connects it for themselves. Most connect with one click: you are sent to the service to sign in, you
 approve, and you are back. A few ask for an API key the service gives you;
 paste it and you are done. Either way, nothing to install, nothing to restart.
 The key is stored encrypted on your own server and never leaves it.
@@ -22,9 +28,32 @@ today's call", "create a task for Ola". Connecting a service also adds a
 how-to for it, so the coworker knows that service's habits, and offers
 ready-made routines built on it.
 
-You can rotate a key or disconnect a service any time from the same screen. In
-a team workspace an admin connects a service once for the whole workspace, and
-the coworker then uses it for whoever asks.
+You can rotate a key or disconnect a service any time from the same screen.
+
+In a team workspace a connection has an **owner** and a **reach**. An admin
+connects a service **for the whole workspace** — the shop, the ads account,
+the shared inbox — and the coworker uses it for whoever asks. Anyone can also
+connect a service **just for themselves** — their own notetaker, task board,
+calendar, or their own key to a model: then only their own conversations reach
+it, nobody else's, not even the group's. Mail is both: the team's shared inbox
+and each person's own work mailbox side by side, each read by its owner's
+conversations. Only the two services bound to the coworker itself (its
+Telegram and Docs comments) are team-only. Both can exist side by side
+("Granola" and "your own Granola"), and if both are yours, both feed your memory
+each night, each read with its own sign-in. The screen has three tabs: **Team**
+(connected for everyone), **Yours** (your own accounts) and the
+**Marketplace**; a member sees a team service as available to them and
+connects their own with "Connect for me". A team
+connection is **read-only** or **read and write** — the admin chooses when
+connecting and can switch it on the service's page at any time: read-only
+means the coworker reads through it and never creates, sends or changes
+anything there, for anyone, until an admin allows it. Your own connection is
+always read and write — your account, your call. What a notetaker brings into memory is always its owner's: the admin
+who connected the workspace's, or you for your own. An admin sees, on each
+card, who has their own account of a service, and can disconnect it; a person
+who leaves takes their own connections with them; a person whose own
+connection an admin disconnects is told, with the reason when the admin
+gave one.
 
 ---
 
@@ -46,7 +75,8 @@ these tables mirror it. Two kinds:
 Provider-hosted **remote MCP servers**. Activation is a single popup: the user
 signs in to the provider and approves; the workspace-api OAuth broker registers
 itself (Dynamic Client Registration), completes PKCE on the client's own domain,
-and feeds the token to the MCP via a `headersHelper` — **no operator setup, no
+and the bot reaches the server through a local bridge (`apps/remote-mcp`) that
+takes a fresh token from the broker on every call — **no operator setup, no
 API keys**. See [Remote-MCP one-click OAuth](#remote-mcp-one-click-oauth) for how
 it works. `open` = no auth at all (keyless hosted server, instant-activate).
 
@@ -102,7 +132,7 @@ provider-side app the operator provisions; those steps are documented below.
 | **Google Workspace** | Docs, Sheets, Calendar, Drive, Slides, Tasks — one OAuth, six services |
 | **Docs Comments** | Drop inline comments anchored to a text range in a Google Doc |
 | **Email (IMAP)** | Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by default |
-| **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation) |
+| **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation). The bot reacts to messages with an emoji when it sees fit (👀 when it starts looking into something, 👍 for a short acknowledgement), in direct messages and in groups; `TELEGRAM_ACK_REACTION` in the deployment `.env` additionally makes it react to every direct message the moment it takes it on |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
 | **X (twitterapi.io)** | Read tweets, profiles, replies, followers, mentions |
@@ -151,6 +181,36 @@ project-data volume                            /home/coder/project/.integrations
                                                  audit.log          (0600, append-only JSONL)      restart
 ```
 
+**Owner and reach.** Every connection in the store carries `owner` (the slug
+of the person who connected it) and `reach`: `workspace` — keyed by the
+integration id (`granola`), connected by an admin, its MCP servers in every
+turn; `personal` — keyed `<id>@<slug>` (`granola@ann`), connected by a person
+for themselves (any catalog entry unless it says `personal: false`), its servers loaded in
+that person's turns only, named with `-mine` (`granola-mine`) so a workspace
+connection of the same service stands beside it. Same file, same encryption,
+same broker: a broker grant and a remote-bridge id carry the key, so the
+credentials served are that connection's alone, and `/internal/mcp-token/:key`
+answers a personal key only to a turn that is its owner's. The bot's own
+`.claude.json` holds the workspace set plus the operator's own connections
+(the brain is the operator's); every other turn gets its set written for it
+(`lib/claude.js` `turnMcpServers`, into the turn's own run directory) — a
+group's turn the workspace set alone. Connections from before owners existed
+are the workspace's, owned by the primary admin (filled in at boot). Legacy
+MCPs that take credentials in their environment stay workspace-only.
+
+**Access.** A workspace connection carries `access`: `write` (the default,
+and what a connection from before has) or `read`. Read-only is enforced by
+us, not the provider: `syncMcpServers` writes `.team/integration-access.json`
+(`{ "<server name>": "read" }`, group `workspace`), and the scope-guard hook
+refuses a write tool of such a server in every turn — the admin's and the
+brain's included — with a sentence that says an admin can allow changes on
+the service's page. Which tools are writes: the catalog entry's `writeTools`
+list when it has one, otherwise a tool whose name says it changes something
+(create, update, delete, send, post, move, …). A person's own connection is
+always `write`. Switching access is `PATCH /api/integrations/:id { access }`
+— no reconnect, no restart; a new connection takes `?access=read` on `PUT`
+and on `…/oauth/start`.
+
 **Three storage tiers:**
 
 1. **Master key** — owned by host root, mounted read-only into the container. Lives in `/srv/<ide>/secrets/`, deliberately separate from `.env` and from the project tree so the blast radius of any single backup leak is bounded.
@@ -181,12 +241,17 @@ whoever deploys the product**: no operator has to register an OAuth app anywhere
    `state`-validated. The broker exchanges the code, encrypts the tokens into the
    same credentials store, and `postMessage`s the opener so the dashboard flips
    the tile to Active without a reload.
-4. **Runtime** — `syncMcpServers` writes an `.mcp.json`/`~/.claude.json` entry
-   with `type: "http"` and a `headersHelper` (`bot/mcp-auth-helper.sh`). Claude
-   Code calls the helper to fetch the current bearer from the loopback route
-   `GET /api/internal/mcp-token/:id`, and **re-runs it once on a 401** (Claude
-   Code ≥ 2.1.193), so a silently-expired token refreshes mid-session. The broker
-   refreshes with the stored refresh token on demand.
+4. **Runtime** — `syncMcpServers` writes a `~/.claude.json` entry that starts
+   the local bridge `apps/remote-mcp` through `mcp-runner` (as the mcp user),
+   with the integration id and the hosted server's URL in its env. The bridge
+   asks `GET /api/internal/mcp-token/:id` (with the turn's token) for the
+   current bearer **on every call** and reconnects when it changes, so a token
+   that expires during a long-lived session (the Telegram brain lives for days;
+   access tokens for an hour) is replaced without a restart. The broker
+   refreshes with the stored refresh token before expiry. (The earlier
+   `headersHelper` entry handed the CLI a token once, at connect time; the
+   pinned CLI does not re-run it on a 401, so the tools went dead until the
+   bot was restarted.)
 
 **Egress split.** workspace-api has no direct outbound; the broker's OAuth
 fetches (discovery, registration, token) go through the egress **OPEN** listener
@@ -329,9 +394,14 @@ integration wipes all seven `mcpServers` entries in one go.
 
 ## Private per-operator integrations: `integrations.catalog.local.json`
 
-`workspace-api/integrations.catalog.local.json` is gitignored. At wsapi
-startup, `lib/integrations/catalog.js` reads it if present and merges its
-`integrations[]` with the main catalog (last-write-wins on id collision).
+`workspace-api/integrations.catalog.local.json` is gitignored.
+`lib/integrations/catalog.js` reads it if present and merges its
+`integrations[]` with the main catalog (last-write-wins on id collision), and
+reads it again whenever the file changes — an override takes effect without a
+restart. `INTEGRATIONS_CATALOG_LOCAL` names another path for it (tests use a
+temporary one). An entry whose MCP URL is on the loopback address is called
+directly, not through the egress proxy — that is how the stand-in notetaker of
+`test-fixtures/stub-notetaker/` is reached by the import suite and on the canary.
 
 The mechanism exists so an operator can ship an integration that's only
 relevant to ONE deployment without it showing up everywhere: a fork wrapper
@@ -499,10 +569,17 @@ Returns the full catalog merged with the active state for each entry:
       "fields": [...],
       "steps": [...],
       "mcp": {...},                            // catalog passthrough
-      "active": true,                          // store has creds for this id
+      "active": true,                          // the workspace's connection exists
       "activatedAt": "2026-05-02T10:30:00Z",
-      "credentialSummary": { "length": 64, "last4": "a3f2" },  // single
-      "itemCount": null                        // number for multi=true integrations
+      "credentialSummary": { "length": 64, "last4": "a3f2" },  // single, admins only
+      "itemCount": null,                       // number for multi=true integrations
+      "connectedBy": { "slug": "stan", "name": "Stan" },  // who connected the workspace's
+      "reach": "workspace",
+      "personal": true,                        // catalog: a person may connect their own
+      "mine": { "active": false, "activatedAt": null },   // the caller's own connection
+      "activeFor": [{ "slug": "ann", "name": "Ann" }],    // admins: who has their own
+      "canConnectWorkspace": true,             // the caller is an admin
+      "canConnectPersonal": true               // personal-capable, and the caller has a slug
     },
     ...
   ]
@@ -514,7 +591,17 @@ and returning only `{length, last4}`. Plaintext never crosses the wire.
 
 ### `PUT /api/integrations/:id`
 
-Activates an integration. Body:
+Activates an integration — the workspace's (admins), or with
+`?reach=personal` the caller's own (any member, any entry not marked `personal: false`;
+a connection that writes a file gets its own: mail's accounts list as
+`accounts@<slug>.json` in the secure directory (read through the broker), and a
+key a server reads by itself — Google Analytics' — in the person's private tree,
+`.team/users/<slug>/.integrations/`, 0640 to their private group, its settings
+only in their turn's own config;
+`403` for a member without `reach=personal`, `400` for a workspace-only
+entry with it). The same `?reach=personal` switch applies to `PATCH`,
+`DELETE` and `GET …/oauth/start`; `DELETE` also takes `&slug=` for an admin
+removing another person's. A personal change never restarts the bot. Body:
 
 ```jsonc
 // Single-set integration:
@@ -531,7 +618,7 @@ Activates an integration. Body:
 
 Responses:
 
-- `200 { ok: true, activatedAt, credentialSummary, restarting }` — `restarting: true` for Telegram.
+- `200 { ok: true, activatedAt, credentialSummary, reach, restarting }` — `restarting: true` for Telegram. `?access=read` makes a workspace connection read-only.
 - `400` — missing required field, `comingSoon` integration, or invalid body.
 - `404` — unknown id.
 - `409` — already active. Rotate via `DELETE` then `PUT`.
@@ -539,10 +626,34 @@ Responses:
 
 Rate-limited 5/min/IP via in-memory sliding window.
 
+### `GET /api/integrations/:id`
+
+One integration for its page: the catalog entry plus `workspaceActive`,
+`connectedBy`, `workspace` (admins: the stored fields, a non-secret in clear,
+a secret only as `{ length, last4 }`; a multi connection as `items[]` of the
+same), `mine` (the caller's own, same shape), `activeFor` (admins: who has
+their own), `canConnectWorkspace`, `canConnectPersonal`.
+
+### `POST /api/integrations/:id/items`, `PATCH …/items/:n`, `DELETE …/items/:n`
+
+The accounts of a multi connection (a mailbox each), edited in place: add one
+(`{ fields }`), change one (only the fields given; a secret left out is kept),
+remove one — the last removal removes the connection. `?reach=personal` for
+a person's own.
+
+### `POST /api/integrations/:id/test`
+
+Does the connection work: a remote-MCP one gets a fresh token from the
+provider (`reauth: true` when the sign-in expired), a stored-key one is
+decrypted and checked for its required fields. `{ ok, at, detail | error }`;
+never a secret.
+
 ### `PATCH /api/integrations/:id`
 
 Partial update of an active integration **without rotating credentials**.
-Body shape mirrors the catalog field declarations:
+`{ "access": "read" | "write" }` alone switches the team's access level (admins,
+workspace connections; no reconnect, no restart). Otherwise the body mirrors
+the catalog field declarations:
 
 ```jsonc
 // Single-set integration:
@@ -567,8 +678,11 @@ PUT/DELETE uses doesn't apply here.
 
 ### `DELETE /api/integrations/:id`
 
-Wipes the encrypted credentials, deletes any `writeFiles` outputs, removes
-the managed `mcpServers` entry, and triggers `pm2 restart` for Telegram.
+Wipes the encrypted credentials, deletes any `writeFiles` outputs (the
+workspace's), removes the managed `mcpServers` entry, and triggers `pm2
+restart` for Telegram. The OAuth client registration goes with the last
+connection of a service. A person who is removed from the roster loses their
+own connections the same way (`lib/team.js remove`).
 
 ### `GET /api/skills`
 

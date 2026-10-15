@@ -143,6 +143,11 @@ function expandPlaceholders(host, fields, items) {
   return [];
 }
 
+const HOST_NAME_RE = /^(?=.{1,253}$)(?!\d+(?:\.\d+){3}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/i;
+export function isHostName(v) {
+  return typeof v === 'string' && HOST_NAME_RE.test(v);
+}
+
 /**
  * Compute the union of platform allowlist + every active integration's
  * `mcp.allowedHosts`, with placeholders expanded from the active store.
@@ -172,9 +177,14 @@ export function computeAllowedHosts() {
 
     for (const host of cat.mcp.allowedHosts) {
       for (const expanded of expandPlaceholders(host, fields, items)) {
-        if (typeof expanded === 'string' && expanded) {
-          out.add(expanded.toLowerCase());
+        // A value that came from a settings field is only a host name when it
+        // looks like one: no IP literal, no wildcard, no whitespace or
+        // newline that would turn one line of the file into two.
+        if (!isHostName(expanded)) {
+          if (expanded) process.stderr.write(`[egress] ${id}: not a host name, skipped: ${JSON.stringify(String(expanded).slice(0, 80))}\n`);
+          continue;
         }
+        out.add(expanded.toLowerCase());
       }
     }
   }

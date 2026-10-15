@@ -2,10 +2,11 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   Brain, Search, History, Lock, Users, MessageCircle, Mail, Globe, ChevronRight, Pencil,
   Trash2, EyeOff, Plus, User, Building2, FolderKanban, Hash, Clock, CalendarClock,
-  Send, X, Check, CircleDot, Sparkles, Undo2, NotebookPen, Archive, ListChecks, Replace,
-  CalendarDays, Plane, Flag, Hourglass, Package, Plug,
-} from 'lucide-react';
+  Send, X, Check, CircleDot, Sparkles, Undo2, NotebookPen, Archive, Replace,
+  CalendarDays, Plane, Flag, Hourglass, Package, Plug, SlidersHorizontal, Cable, BookOpen, ShieldCheck, Calendar, ListChecks, FileText, Layers, UserRound, Briefcase } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import TileBanner from './TileBanner.jsx';
+import { TASK_COLUMNS, PeopleContext, Assignee, PriorityChip, shortDeadline } from './KanbanView.jsx';
 import { logoUrl, Toggle } from './IntegrationsDashboard.jsx';
 import EditorHeader from '../EditorHeader.jsx';
 import { Button } from '@/components/ui/button';
@@ -17,12 +18,12 @@ import { Skeleton } from '@/components/ui/Skeleton';
 /*
  * Memory (v4) — what the assistant remembers, for the signed-in person only:
  * short-term (right now + what it keeps track of), facts with the conversation
- * each came from, topics, preferences & rules, privacy, and the change log.
+ * each came from, topics, preferences & rules, sharing, and the change log.
  * Everything comes from /api/memory/v4/* and shows only what this person could
  * read; the actions (hide, erase, share, remove a rule) touch only their own.
  */
 
-const API = '/api/memory/v4';
+export const API = '/api/memory/v4';
 
 async function post(path, body) {
   const r = await fetch(`${API}${path}`, {
@@ -36,7 +37,7 @@ async function post(path, body) {
 }
 
 /* A memory is text, never rendered markdown — card lines that became records carry "**Name**" and "[[links]]". */
-const plain = (s) => String(s || '')
+export const plain = (s) => String(s || '')
   .replace(/\*\*([^*]+)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1').replace(/`([^`]+)`/g, '$1')
   .replace(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
 
@@ -44,7 +45,7 @@ const plain = (s) => String(s || '')
 
 const DAY = 86400_000;
 const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
-function dayLabel(ts) {
+export function dayLabel(ts) {
   const t = new Date(ts);
   const diff = Math.round((startOfDay(Date.now()) - startOfDay(t)) / DAY);
   const hm = t.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -52,7 +53,7 @@ function dayLabel(ts) {
   if (diff === 1) return `Yesterday ${hm}`;
   return t.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
-function groupLabel(ts) {
+export function groupLabel(ts) {
   const t = new Date(ts);
   const diff = Math.round((startOfDay(Date.now()) - startOfDay(t)) / DAY);
   if (diff === 0) return 'Today';
@@ -60,21 +61,21 @@ function groupLabel(ts) {
   if (diff < 7) return 'This week';
   return t.toLocaleDateString(undefined, { month: 'long', year: t.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 }
-const shortDate = (iso) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
-const daysUntil = (iso) => Math.round((startOfDay(`${iso}T12:00:00`) - startOfDay(Date.now())) / DAY);
+export const shortDate = (iso) => (iso ? new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+export const daysUntil = (iso) => Math.round((startOfDay(`${iso}T12:00:00`) - startOfDay(Date.now())) / DAY);
 
 // "Right now": a status reads as its title with what it is about and its day;
 // the full sentence the memory holds opens on click. A status without a title
 // (written before titles existed) shows its sentence on one line instead.
-const NOW_ICON = { meeting: CalendarDays, travel: Plane, deadline: Flag, waiting: Hourglass, stock: Package };
+export const NOW_ICON = { meeting: CalendarDays, travel: Plane, deadline: Flag, waiting: Hourglass, stock: Package };
 const NOW_GROUPS = ['Today', 'This week', 'Later', 'Ongoing'];
-function nowGroupOf(n) {
+export function nowGroupOf(n) {
   // A wait with no day yet is ongoing, not "later".
   if (!n.when && !n.expires) return 'Ongoing';
   const d = daysUntil((n.when || n.expires).slice(0, 10));
   return d <= 0 ? 'Today' : d <= 7 ? 'This week' : 'Later';
 }
-function nowWhen(n) {
+export function nowWhen(n) {
   const iso = n.when || n.expires;
   if (!iso) return '';
   const day = (x) => new Date(`${x.slice(0, 10)}T12:00:00`);
@@ -87,7 +88,7 @@ function nowWhen(n) {
   return d <= 0 ? 'until today' : `until ${wd(iso)}`;
 }
 
-function NowList({ now }) {
+export function NowList({ now }) {
   const [open, setOpen] = useState(null);
   const groups = NOW_GROUPS.map((g) => [g, now.filter((n) => nowGroupOf(n) === g)]).filter(([, xs]) => xs.length);
   return (
@@ -128,12 +129,14 @@ function NowList({ now }) {
 
 /* ────────────────────────────── small pieces ────────────────────────────── */
 
-function Section({ title, right, children }) {
+export function Section({ title, right, children }) {
   return (
     <section className="flex flex-col gap-2.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">{title}</h2>
-        {right && <div className="hidden sm:block">{right}</div>}
+      {/* One fixed height for the heading row, with or without a note on the
+          right, so every section's card starts at the same line. */}
+      <div className="flex h-5 items-center justify-between gap-3">
+        <h2 className="shrink-0 whitespace-nowrap text-[11px] font-semibold uppercase leading-none tracking-[0.1em] text-muted-foreground/70">{title}</h2>
+        {right && <div className="hidden leading-none sm:flex sm:items-center">{right}</div>}
       </div>
       {children}
     </section>
@@ -141,7 +144,40 @@ function Section({ title, right, children }) {
 }
 
 // The lists' outline while they load: a few ruled rows, date then text.
-function LoadingRows({ count = 6 }) {
+/** The banner tiles while they load: a quiet banner block with a chip, two lines and a meta line. */
+export function LoadingTiles({ count = 6, min = 250 }) {
+  return (
+    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}>
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex flex-col overflow-hidden rounded-[6px] border border-border/60 bg-card">
+          <div className="flex h-14 items-center bg-muted/40 px-4">
+            <Skeleton className="h-7 rounded-[6px] bg-background/70" style={{ width: `${44 + ((i * 13) % 30)}%` }} />
+          </div>
+          <div className="flex flex-col gap-2 px-4 py-3">
+            <Skeleton className="h-3" style={{ width: `${70 + ((i * 11) % 25)}%` }} />
+            <Skeleton className="h-3" style={{ width: `${40 + ((i * 17) % 30)}%` }} />
+            <Skeleton className="mt-2 h-2.5 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Short-term memory while it loads, in its own shape: the Right now list, then the tiles. */
+function LoadingOverview() {
+  return (
+    <div className="flex flex-col gap-7">
+      <LoadingSection rows={4} />
+      <div className="flex flex-col gap-2.5">
+        <div className="flex h-5 items-center"><Skeleton className="h-2.5 w-44" /></div>
+        <LoadingTiles count={4} />
+      </div>
+    </div>
+  );
+}
+
+export function LoadingRows({ count = 6 }) {
   return (
     <div className="overflow-hidden rounded-[6px] border border-border/60">
       {Array.from({ length: count }, (_, i) => (
@@ -154,11 +190,11 @@ function LoadingRows({ count = 6 }) {
   );
 }
 
-function Empty({ children }) {
+export function Empty({ children }) {
   return <div className="rounded-[6px] border border-dashed border-border/60 px-4 py-4 text-[12.5px] text-muted-foreground/70">{children}</div>;
 }
 
-const STATE_DOT = { active: 'bg-blue-600', paused: 'bg-background ring-2 ring-inset ring-blue-600', closed: 'bg-muted-foreground/30' };
+export const STATE_DOT = { active: 'bg-blue-600', paused: 'bg-background ring-2 ring-inset ring-blue-600', closed: 'bg-muted-foreground/30' };
 const SRC_ICON = { telegram: MessageCircle, web: Globe, group: Users, email: Mail, note: NotebookPen, review: ListChecks, migration: Archive };
 const SRC_LABEL = { telegram: 'Telegram conversation', web: 'web chat', group: 'team group', email: 'inbox check', note: 'saved note', review: 'daily review', migration: 'earlier memory', integration: 'meeting notes' };
 
@@ -167,7 +203,7 @@ function SourceIcon({ integration, className }) {
   if (!integration?.logo) return null;
   return <img src={logoUrl(integration.logo)} alt={integration.label} title={`From ${integration.label}${integration.title ? ` · ${integration.title}` : ''}`} className={cn('inline-block size-3.5 shrink-0 object-contain align-[-2.5px]', className)} />;
 }
-const KIND_ICON = { person: User, company: Building2, project: FolderKanban, topic: Hash };
+export const KIND_ICON = { person: UserRound, company: Briefcase, project: FolderKanban, topic: Hash };
 
 /* A checkbox in the page's own tones — the native one is a white box in dark mode. */
 function Tick({ checked, onChange, label, className }) {
@@ -187,7 +223,7 @@ const PILL_TONE = {
   accent: 'bg-blue-600/[0.07] text-blue-700 ring-blue-600/[0.28] dark:text-blue-300',
 };
 
-function Pill({ children, className, tone }) {
+export function Pill({ children, className, tone }) {
   return (
     // One neutral tag style, like the role badges: a hairline, no fill, no colour.
     <span className={cn('inline-flex items-center gap-1 rounded-[5px] px-1.5 py-[3px] text-[10.5px] font-medium leading-none ring-1 ring-inset', PILL_TONE[tone] || 'text-muted-foreground/80 ring-foreground/[0.12]', className)}>
@@ -196,13 +232,13 @@ function Pill({ children, className, tone }) {
   );
 }
 
-function ScopePill({ scope }) {
+export function ScopePill({ scope }) {
   if (scope === 'private') return <Pill><Lock className="size-2.5" strokeWidth={2.25} />Private</Pill>;
   if (scope === 'group') return <Pill><Users className="size-2.5" strokeWidth={2.25} />Group</Pill>;
   return <Pill><Users className="size-2.5" strokeWidth={2.25} />Shared</Pill>;
 }
 
-function TabBar({ value, onChange, tabs }) {
+export function TabBar({ value, onChange, tabs }) {
   return (
     <div className="flex items-end justify-between gap-4 border-b border-border/50">
       <div className="-mb-px flex items-end gap-5 overflow-x-auto [scrollbar-width:none] sm:mb-0 sm:gap-6 sm:overflow-visible [&::-webkit-scrollbar]:hidden">
@@ -271,49 +307,97 @@ function AddLine({ placeholder, initial = '', onSave, onCancel }) {
 
 /* ────────────────────────────── short-term memory ────────────────────────────── */
 
-const STATE_ORDER = { active: 0, paused: 1, closed: 2 };
+export const STATE_ORDER = { active: 0, paused: 1, closed: 2 };
 
 function Overview() {
   const { botDisplayName } = useBranding();
   const { data, loading } = useApi(`${API}/overview`);
-  if (loading && !data) return <LoadingRows />;
+  if (loading && !data) return <LoadingOverview />;
   const now = data?.now || [];
   const digest = [...(data?.digest?.items || [])].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
   const at = data?.digest?.at;
+  const rightNow = (
+    <Section title="Right now">
+      {now.length ? <NowList now={now} /> : <Empty>Nothing time-bound right now.</Empty>}
+    </Section>
+  );
+  // What is in motion: a tile each, with its own banner and its state on it,
+  // as the AI settings and integrations tiles are drawn; a tile opens to the line.
+  const tracking = (
+    <Section
+      title="What I'm keeping track of"
+      right={at && <span className="text-[11.5px] text-muted-foreground/55">Refreshed {dayLabel(at).toLowerCase()} · used by {botDisplayName} to plan</span>}
+    >
+      {digest.length ? (
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(250px,1fr))]">
+          {digest.map((d) => <TrackTile key={d.name} d={d} />)}
+        </div>
+      ) : <Empty>The list is built overnight from your conversations — it will appear after the first night.</Empty>}
+    </Section>
+  );
   return (
-    <div className="-mt-2 flex flex-col gap-7">
-      <Section title="Right now">
-        {now.length ? <NowList now={now} /> : <Empty>Nothing time-bound right now.</Empty>}
-      </Section>
-
-      <Section
-        title="What I'm keeping track of"
-        right={at && <span className="text-[11.5px] text-muted-foreground/55">Refreshed {dayLabel(at).toLowerCase()} · used by {botDisplayName} to plan</span>}
-      >
-        {digest.length ? (
-          <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
-            {digest.map((d) => (
-              <div key={d.name} className={cn('flex items-center gap-3 border-b border-border/30 px-4 py-2.5 last:border-b-0', d.state === 'closed' && 'opacity-55')}>
-                <span className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT[d.state])} />
-                <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
-                  <span className="truncate text-[12.5px] font-medium text-foreground/85 sm:w-44 sm:shrink-0">{d.name}</span>
-                  <span className="min-w-0 flex-1 text-[12px] leading-snug text-muted-foreground/80 sm:truncate sm:text-[12.5px]">{d.line}</span>
-                </div>
-                <span className="shrink-0 text-[11.5px] tabular-nums text-muted-foreground/55">{shortDate(d.date)}</span>
-              </div>
-            ))}
-          </div>
-        ) : <Empty>The list is built overnight from your conversations — it will appear after the first night.</Empty>}
-      </Section>
+    <div className="flex flex-col gap-7">
+      {rightNow}
+      {tracking}
     </div>
+  );
+}
+
+const TRACK_STATE = { active: 'Active', paused: 'Paused', closed: 'Closed' };
+function TrackTile({ d }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <button type="button" onClick={() => setOpen(!open)} className={cn('flex flex-col overflow-hidden rounded-[6px] border border-border/60 bg-card text-left transition-all hover:border-foreground/20 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]', d.state === 'closed' && 'opacity-60')}>
+      <div className="relative h-14 overflow-hidden">
+        <TileBanner icon={Layers} seed={`digest-${d.name}`} soft className="!absolute inset-0 h-full" />
+        <div className="relative flex h-14 items-center px-4">
+          <span className="inline-flex items-center gap-2 rounded-[6px] border border-border/60 bg-background/90 px-3 py-1.5 text-[12.5px] text-foreground/90 backdrop-blur">
+            <span className={cn('size-1.5 rounded-full', STATE_DOT[d.state])} />{TRACK_STATE[d.state] || d.state}
+            {d.date && <span className="tabular-nums text-muted-foreground/60">· {shortDate(d.date)}</span>}
+          </span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 px-4 py-3">
+        <span className="text-[13.5px] font-medium leading-snug text-foreground/90">{d.name}</span>
+        <span className={cn('text-[12.5px] leading-snug text-muted-foreground/80', !open && 'line-clamp-2')}>{d.line}</span>
+      </div>
+    </button>
   );
 }
 
 /* ────────────────────────────── facts ────────────────────────────── */
 
-function FactPills({ f }) {
+/**
+ * A fact's task, the way the board shows a card: the title, then who, by
+ * when and how urgent, with the column it sits in as a tag.
+ */
+export function TaskOfFact({ task, onOpen }) {
+  const done = task.status === 'done';
+  const column = TASK_COLUMNS.find((c) => c.key === task.status)?.name || task.status;
+  const people = task.owner ? { [task.owner]: { name: task.ownerName || task.owner, avatar: task.ownerAvatar || null } } : {};
+  return (
+    <PeopleContext.Provider value={people}>
+      <button type="button" onClick={onOpen} className={cn('mt-4 block w-full rounded-[6px] border border-border/55 bg-card p-3.5 text-left transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]', done && 'opacity-70')}>
+        <div className="flex items-start justify-between gap-3">
+          <span className={cn('text-[14px] leading-snug', done ? 'text-muted-foreground/70 line-through' : 'text-foreground/90')}>{task.title}</span>
+          <span className={cn('inline-flex shrink-0 items-center rounded-[5px] px-1.5 py-px text-[11px] font-medium leading-[18px] ring-1 ring-inset', task.status === 'in_progress' ? 'text-foreground/85 ring-foreground/25' : 'text-muted-foreground/70 ring-foreground/[0.1]')}>{column}</span>
+        </div>
+        {(task.owner || task.priority || task.deadline) && (
+          <div className="mt-3 flex items-center gap-2.5 text-[11.5px] text-muted-foreground/75">
+            <Assignee owner={task.owner} />
+            {task.deadline && <span className="inline-flex items-center gap-1 tabular-nums"><Calendar className="size-[12px]" strokeWidth={1.75} />{shortDeadline(task.deadline)}</span>}
+            {task.priority && <PriorityChip value={task.priority} />}
+          </div>
+        )}
+      </button>
+    </PeopleContext.Provider>
+  );
+}
+
+export function FactPills({ f }) {
   return (
     <>
+
       {f.kind === 'status' && !f.past && f.expires && <Pill><Clock className="size-2.5" strokeWidth={2.25} />until {shortDate(f.expires)}</Pill>}
       {/* The same fact said again later adds a source instead of a second line. */}
       {f.sources > 1 && <Pill>{f.sources} sources</Pill>}
@@ -351,7 +435,7 @@ function Transcript({ recordId, evidence }) {
         <div className="mb-1 rounded-[5px] border border-border/50 bg-muted/25 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/80">
           <div className="text-foreground/85">{mt.title || 'Meeting'}{mt.kind === 'transcript' ? ` · transcript${mt.of > 1 ? ` (part ${mt.part} of ${mt.of})` : ''}` : ' · notes'}</div>
           {mt.participants?.length > 0 && <div>With {mt.participants.join(', ')}</div>}
-          {mt.url && <a href={mt.url} target="_blank" rel="noreferrer" className="underline decoration-border hover:text-foreground/85">Open in {mt.integration?.label || 'the service'}</a>}
+          {mt.url && /^https?:\/\//i.test(mt.url) && <a href={mt.url} target="_blank" rel="noreferrer" className="underline decoration-border hover:text-foreground/85">Open in {mt.integration?.label || 'the service'}</a>}
         </div>
       )}
       {shown.map((m, i) => {
@@ -370,8 +454,9 @@ function Transcript({ recordId, evidence }) {
   );
 }
 
-function FactRow({ f, open, onToggle, onChanged, selecting = false, picked = false, onPick }) {
+export function FactRow({ f, open, onToggle, onChanged, selecting = false, picked = false, onPick }) {
   const SrcIcon = SRC_ICON[f.source] || MessageCircle;
+  const navigate = useNavigate();
   const [confirmErase, setConfirmErase] = useState(false);
   const [source, setSource] = useState(false);
   const [err, setErr] = useState(null);
@@ -435,6 +520,21 @@ function FactRow({ f, open, onToggle, onChanged, selecting = false, picked = fal
                   </li>
                 ))}
             </ol>
+          )}
+          {/* The task this fact produced, drawn as the board draws it; it opens there. */}
+          {f.task && <TaskOfFact task={f.task} onOpen={() => navigate('/tasks')} />}
+          {/* The notes and write-ups the conversation produced: each opens in the editor; a removed one says so. */}
+          {f.files?.length > 0 && (
+            <div className="mt-4 flex flex-col gap-1.5">
+              {f.files.map((x) => (
+                <button key={x.path} type="button" disabled={!x.exists} onClick={() => navigate(`/files/${x.path.split('/').map(encodeURIComponent).join('/')}`)}
+                  className={cn('inline-flex max-w-full items-center gap-2 self-start rounded-[6px] border border-border/55 bg-card px-3 py-2 text-left text-[12.5px] transition-colors', x.exists ? 'text-foreground/85 hover:border-foreground/30' : 'text-muted-foreground/55')}>
+                  <FileText className="size-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.75} />
+                  <span className="truncate">{x.path}</span>
+                  {!x.exists && <span className="shrink-0 text-[11px] text-muted-foreground/55">· gone</span>}
+                </button>
+              ))}
+            </div>
           )}
           {/* Three quiet actions. Erase (this fact alone) confirms in a modal, like deleting a routine;
               erasing the whole conversation lives where the conversation is shown (See source). */}
@@ -629,7 +729,7 @@ function FactsTab({ scope, history, filters }) {
   };
   const link = 'whitespace-nowrap text-[12px] text-muted-foreground/65 transition-colors hover:text-foreground/85 disabled:opacity-40 disabled:hover:text-muted-foreground/65';
   const header = (
-    <div className="-mt-2 flex min-h-4 flex-wrap items-center gap-x-4 gap-y-2 leading-4">
+    <div className="flex min-h-5 flex-wrap items-center gap-x-4 gap-y-2 leading-5">
       {filters}
       {selectable.length > 0 && (
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -658,8 +758,8 @@ function FactsTab({ scope, history, filters }) {
       {err && <p className="w-full text-[11.5px] text-destructive">{err}</p>}
     </div>
   );
-  if (loading && !data) return <>{header}<LoadingRows /></>;
-  if (!rows.length) return <>{header}<Empty>No facts yet. They are written from your conversations when a conversation ends.</Empty></>;
+  if (loading && !data) return <div className="flex flex-col gap-2.5">{header}<LoadingRows /></div>;
+  if (!rows.length) return <div className="flex flex-col gap-2.5">{header}<Empty>No facts yet. They are written from your conversations when a conversation ends.</Empty></div>;
   const groups = [...new Set(rows.map((f) => groupLabel(f.ts)))];
   return (
     <div className="flex flex-col gap-2.5">
@@ -685,30 +785,27 @@ function FactsTab({ scope, history, filters }) {
 
 /* ────────────────────────────── topics + timeline ────────────────────────────── */
 
-function TopicTile({ t, onOpen }) {
+const TOPIC_KIND_LABEL = { person: 'Person', company: 'Company', project: 'Project', topic: 'Topic' };
+export function TopicTile({ t, onOpen }) {
   const Icon = KIND_ICON[t.kind] || Hash;
-  // Same anatomy as the skill and routine tiles: icon + name, a short line,
-  // a meta line, and a quiet footer button.
+  // A banner like the AI settings tiles, the name on it — what the topic is
+  // matters more than what kind it is; kind, state and how much is known below.
   return (
-    <div className={cn('group flex flex-col rounded-[6px] border border-border/60 bg-card transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]', t.state === 'closed' && 'opacity-60')}>
-      <div className="flex flex-1 flex-col px-4 pt-4">
-        <div className="flex items-center gap-2">
-          <div className="flex size-5 shrink-0 items-center justify-center rounded bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
-            <Icon className="size-3 text-muted-foreground/80" strokeWidth={2} />
-          </div>
-          <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold text-foreground/90">{t.name}</span>
-          {t.state && <Pill>{t.state}</Pill>}
+    <button type="button" onClick={() => onOpen(t)} className={cn('flex flex-col overflow-hidden rounded-[6px] border border-border/60 bg-card text-left transition-all hover:border-foreground/20 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]', t.state === 'closed' && 'opacity-60')}>
+      <div className="relative h-14 overflow-hidden">
+        <TileBanner icon={Icon} seed={`topic-${t.key}`} soft className="!absolute inset-0 h-full" />
+        <div className="relative flex h-14 items-center px-4">
+          <span className="inline-flex max-w-full items-center gap-2 rounded-[6px] border border-border/60 bg-background/90 px-3 py-1.5 backdrop-blur">
+            <Icon className="size-3.5 shrink-0 text-muted-foreground/70" strokeWidth={1.75} />
+            <span className="truncate text-[14px] font-semibold text-foreground/90">{t.name}</span>
+          </span>
         </div>
-        <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">{plain(t.who || t.line) || 'Comes up in your conversations.'}</p>
-        <div className="mt-auto pt-3 text-[11.5px] text-muted-foreground/55">{t.n} memories · last mentioned {dayLabel(t.last).replace(/ \d{1,2}:\d{2}.*$/, '')}</div>
       </div>
-      <div className="px-4 pb-4 pt-3.5">
-        <button type="button" onClick={() => onOpen(t)}
-          className="inline-flex w-full items-center justify-center rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-all hover:bg-muted/55 hover:text-foreground/90 active:scale-[0.98]">
-          Open
-        </button>
+      <div className="flex flex-1 flex-col gap-1.5 px-4 py-3">
+        <span className="line-clamp-2 text-[12.5px] leading-snug text-muted-foreground/80">{plain(t.who || t.line) || 'Comes up in your conversations.'}</span>
+        <span className="mt-auto pt-2 text-[11.5px] text-muted-foreground/55">{TOPIC_KIND_LABEL[t.kind] || 'Topic'}{t.state ? ` · ${t.state}` : ''} · {t.n} memories · last mentioned {dayLabel(t.last).replace(/ \d{1,2}:\d{2}.*$/, '')}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -827,7 +924,7 @@ function MergeLine({ topic, candidates, onChanged }) {
   );
 }
 
-function TimelineModal({ topic, candidates, onClose, onChanged }) {
+export function TimelineModal({ topic, candidates, onClose, onChanged }) {
   const [all, setAll] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [err, setErr] = useState(null);
@@ -914,7 +1011,7 @@ function TimelineModal({ topic, candidates, onClose, onChanged }) {
 function TopicsTab({ kind }) {
   const { data, loading, reload } = useApi(`${API}/topics`);
   const [open, setOpen] = useState(null);
-  if (loading && !data) return <LoadingRows />;
+  if (loading && !data) return <LoadingTiles count={8} min={280} />;
   const all = data?.items || [];
   const list = all.filter((t) => kind === 'all' || t.kind === kind);
   if (!list.length) return <Empty>Topics appear once a name comes up in at least two conversations.</Empty>;
@@ -923,7 +1020,7 @@ function TopicsTab({ kind }) {
   const candidatesFor = (t) => (t.name.includes(' ') ? [] : all.filter((o) => o.key !== t.key && o.name.includes(' ') && o.name.toLowerCase().startsWith(`${t.name.toLowerCase()} `)));
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-3 grid-cols-[repeat(auto-fill,306px)] max-sm:grid-cols-1">
+      <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(280px,1fr))]">
         {list.map((t) => <TopicTile key={t.key} t={t} onOpen={setOpen} />)}
       </div>
       {open && <TimelineModal topic={open} candidates={candidatesFor(open)} onClose={() => setOpen(null)} onChanged={reload} />}
@@ -997,6 +1094,13 @@ function PrefsTab() {
           reload();
         }}
         addLabel={`A standing rule for ${botDisplayName}, e.g. “short answers in chat”`} />
+      {data.company && (
+        <PrefCard title="About the company" scope="shared" lines={data.company.lines.map((t) => ({ text: t }))} kb={data.company.kb} budgetKb={data.company.budgetKb}
+          onAdd={data.company.editable ? card('MISSION') : undefined}
+          onRemove={data.company.editable ? async (l) => { try { await post('/prefs', { op: 'remove', card: 'MISSION', text: l.text }); } catch (e) { window.alert?.(`Could not remove the line: ${e.message}`); } reload(); } : undefined}
+          addLabel="What the company does, for whom, how"
+          footer={!data.company.editable && <span className="text-[11px] text-muted-foreground/55">Admins keep this card</span>} />
+      )}
       <PrefCard title="Team rules" scope="shared" lines={data.team.lines.map((t) => ({ text: t }))} kb={data.team.kb} budgetKb={data.team.budgetKb}
         footer={!data.team.editable && <span className="text-[11px] text-muted-foreground/55">Admins change team rules</span>} />
       <div className="rounded-[6px] border border-dashed border-border/60 px-4 py-3 text-[12px] leading-relaxed text-muted-foreground/75">
@@ -1028,13 +1132,12 @@ function SourcesTab() {
   const [err, setErr] = useState(null);
   const flip = async (s) => {
     setBusy(s.id); setErr(null);
-    try { await post(`/sources/${encodeURIComponent(s.id)}`, { on: !s.on }); reload(); } catch (e) { setErr(e.message); } finally { setBusy(null); }
+    try { await post(`/sources/${encodeURIComponent(s.key || s.id)}`, { on: !s.on }); reload(); } catch (e) { setErr(e.message); } finally { setBusy(null); }
   };
-  if (loading && !data) return <LoadingRows />;
+  if (loading && !data) return <LoadingColumns left={[4]} right={[3]} />;
   const items = data?.items || [];
   const hour = String(data?.hour ?? 2).padStart(2, '0');
-  return (
-    <div className="flex flex-col gap-4">
+  const feeds = (
       <div className="flex flex-col rounded-[6px] border border-border/60 bg-card">
         <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
           <span className="text-[13px] font-semibold text-foreground/90">What feeds my memory</span>
@@ -1060,7 +1163,7 @@ function SourcesTab() {
         {items.length ? (
           <ul className="divide-y divide-border/25 border-t border-border/25">
             {items.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+              <li key={s.key || s.id} className="flex items-center gap-3 px-4 py-3">
                 <img src={logoUrl(s.logo)} alt="" className={cn('size-5 shrink-0 object-contain', !s.on && 'opacity-50 grayscale')} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-[13px] font-medium text-foreground/90">{s.label}{!s.on && <Pill>off</Pill>}</div>
@@ -1075,8 +1178,8 @@ function SourcesTab() {
           <p className="px-4 py-3 text-[12.5px] text-muted-foreground/60">Nothing connected yet that can feed memory.</p>
         )}
       </div>
-      {err && <p className="text-[12px] text-destructive">{err}</p>}
-      {(data?.available || []).length > 0 && (
+  );
+  const could = (data?.available || []).length > 0 && (
         <div className="flex flex-col rounded-[6px] border border-border/60 bg-card">
           <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
             <span className="text-[13px] font-semibold text-foreground/90">Could feed my memory</span>
@@ -1095,7 +1198,11 @@ function SourcesTab() {
             ))}
           </ul>
         </div>
-      )}
+  );
+  return (
+    <div className="flex flex-col gap-4">
+      {err && <p className="text-[12px] text-destructive">{err}</p>}
+      <Columns left={feeds} right={could || null} narrow={<>{feeds}{could}</>} />
     </div>
   );
 }
@@ -1111,62 +1218,227 @@ function FactLines({ facts, muted }) {
   );
 }
 
-function PrivacyTab() {
+/* ────────────────────────────── sharing ────────────────────────────── */
+
+const MODES = [
+  ['ask', 'Ask me first', 'Work facts from your private chats wait here until you say so.'],
+  ['auto', 'Share work facts by itself', 'Facts about projects, companies and the team’s work go to the team. Anything about you or another person still asks.'],
+  ['never', 'Never by itself', 'Nothing crosses unless you share it by hand.'],
+];
+
+const COLUMN_MIN = 240 + 230 + 48;   // text + actions + padding and gaps, in px
+const COLUMN_GAP = 28;               // the gutter between the two columns (gap-7)
+
+/**
+ * True while the node is at least `min` px wide — the panel's own width, not
+ * the window's. Takes the node itself (from a callback ref), so it attaches
+ * when the element appears, not only on the first render.
+ */
+function useWide(node, min) {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= min));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [node, min]);
+  return wide;
+}
+
+/**
+ * Two real columns when the panel is wide enough for a row in each (see
+ * COLUMN_MIN), one column in `narrow` order otherwise. Real columns, not grid
+ * rows, so a shorter column never waits for the taller one.
+ */
+export function Columns({ left, right, narrow }) {
+  const [box, setBox] = useState(null);
+  const wide = useWide(box, COLUMN_MIN * 2 + COLUMN_GAP);
+  return (
+    <div ref={setBox} className="flex flex-col gap-7">
+      {wide ? (
+        <div className="grid grid-cols-2 items-start gap-7" style={{ columnGap: COLUMN_GAP }}>
+          <div className="flex flex-col gap-7">{left}</div>
+          <div className="flex flex-col gap-7">{right}</div>
+        </div>
+      ) : narrow}
+    </div>
+  );
+}
+
+/** A section while it loads: the heading's line, then ruled rows. */
+function LoadingSection({ rows = 5 }) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <Skeleton className="h-2.5 w-36" />
+      <LoadingRows count={rows} />
+    </div>
+  );
+}
+
+/** The two-column tabs load in their own shape: `left`/`right` are the row counts per section. */
+export function LoadingColumns({ left = [5], right = [6] }) {
+  const col = (ns) => ns.map((n, i) => <LoadingSection key={i} rows={n} />);
+  return <Columns left={col(left)} right={col(right)} narrow={col([...left, ...right])} />;
+}
+
+/** The person's choice of what reaches the team by itself: three rows, one ticked. */
+function ModeCard({ mode, onChange }) {
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
+      {MODES.map(([v, label, hint]) => (
+        <button key={v} type="button" role="radio" aria-checked={mode === v} onClick={() => mode !== v && onChange(v)}
+          className={cn('flex w-full items-start gap-3 border-b border-border/30 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30', mode === v && 'bg-muted/25')}>
+          <span className={cn('mt-[3px] flex size-4 shrink-0 items-center justify-center rounded-full border', mode === v ? 'border-foreground/80' : 'border-border')}>
+            {mode === v && <span className="size-2 rounded-full bg-foreground" />}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[13px] font-medium leading-5 text-foreground/90">{label}</span>
+            <span className="block text-[12px] leading-snug text-muted-foreground/70">{hint}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The first few rows of a list, the rest behind "See N more" at the card's foot. */
+function Fold({ items, limit = 5, children }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? items : items.slice(0, limit);
+  return (
+    <>
+      {shown.map(children)}
+      {items.length > limit && (
+        <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-center gap-1 border-t border-border/30 px-4 py-2 text-[12px] text-muted-foreground/70 hover:bg-muted/30 hover:text-foreground">
+          {open ? 'Show less' : `See ${items.length - limit} more`}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** One fact as a row: its title over its sentence, the pills, then the actions on the right. */
+function ShareRow({ f, source, ts, children, muted = false }) {
+  return (
+    <div className="flex flex-col items-start gap-2.5 border-b border-border/30 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        {f.title
+          ? <p className={cn('text-[13px] font-medium leading-5', muted ? 'text-muted-foreground/80' : 'text-foreground/90')}>{f.title}</p>
+          : null}
+        <p className={cn('text-[12.5px] leading-snug', f.title ? 'text-muted-foreground/80' : muted ? 'text-muted-foreground/80' : 'text-foreground/85')}>{plain(f.text)}</p>
+        <p className="mt-1 whitespace-nowrap text-[11px] text-muted-foreground/55">{source ? `from your ${SRC_LABEL[source] || 'conversation'} · ` : ''}{dayLabel(ts)}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Sharing — what from this person's private chats reaches the team, and how.
+ * Their mode, the facts waiting for their answer, the facts they shared (each
+ * one a row, takeable back), the rules they set, then hidden and erased.
+ */
+function SharingTab() {
   const { data, loading, reload } = useApi(`${API}/privacy`);
   const [err, setErr] = useState(null);
+  const [undo, setUndo] = useState(null);   // { id, title } of the fact just made private
   const run = async (fn) => { setErr(null); try { await fn(); reload(); refetch(`${API}/facts?history=1&limit=500`); } catch (e) { setErr(e.message); } };
-  if (loading && !data) return <LoadingRows />;
+  if (loading && !data) return <LoadingColumns left={[3, 3]} right={[6]} />;
   if (!data) return <Empty>Could not load.</Empty>;
-  const row = 'flex flex-col items-start gap-2.5 border-b border-border/30 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:gap-4';
-  return (
-    <div className="flex flex-col gap-7">
-      {err && <p className="text-[12px] text-destructive">{err}</p>}
-      <Section title={`Waiting for your OK · ${data.asks.length}`} right={<span className="text-[11.5px] text-muted-foreground/55">Stays private until you decide</span>}>
-        {data.asks.length ? (
-          <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
-            {data.asks.map((a) => (
-              <div key={a.id} className={row}>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] leading-snug text-foreground/85">{a.question || a.text}</p>
-                  <p className="mt-0.5 line-clamp-2 text-[11.5px] text-muted-foreground/60">“{a.text}” · {dayLabel(a.ts)}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Button variant="outline" size="sm" onClick={() => run(() => post(`/asks/${a.id}`, { decision: 'share' }))}><Send />Share with team</Button>
-                  <Button variant="ghost" size="sm" onClick={() => run(() => post(`/asks/${a.id}`, { decision: 'keep' }))}><Check />Keep private</Button>
-                </div>
+  const asks = data.asks || [];
+  const rules = data.rules || [];
+  const subjectOf = (a) => a.fact?.subject && !a.aboutPerson ? a.fact.subject : null;
+  const settings = (
+    <>
+      {/* Solo workspace: there is no team to share with; the mode and the lists are noise. */}
+      {data.teamMode && (
+        <>
+          <Section title="What reaches the team by itself">
+            <ModeCard mode={data.mode || 'ask'} onChange={(mode) => run(() => post('/sharing/mode', { mode }))} />
+          </Section>
+          {/* The standing rules the person set from a question ("and always for Vellmark"), beside the mode they refine. */}
+          <Section title="Your rules">
+            {rules.length ? (
+              <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
+                {rules.map((r) => (
+                  <div key={r.subject} className="flex items-center gap-4 border-b border-border/30 px-4 py-3 last:border-b-0">
+                    <p className="min-w-0 flex-1 text-[13px] leading-5 text-foreground/85">{r.decision === 'share' ? 'Always share work facts about ' : 'Keep everything about '}<span className="font-medium">{r.subject}</span>{r.decision === 'share' ? '' : ' private'}</p>
+                    <Button variant="ghost" size="xs" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => run(() => post('/sharing/rules/clear', { subject: r.subject }))}><X />Remove</Button>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : <Empty>No rules yet. Answer a question with “always for …” and it appears here.</Empty>}
+          </Section>
+        </>
+      )}
+
+    </>
+  );
+  const waiting = (
+    <>
+      <Section title={`Waiting for your OK · ${asks.length}`}
+        right={asks.length > 1
+          ? <span className="flex items-center gap-1">
+              <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={() => run(() => post('/asks/batch', { ids: asks.map((a) => a.id), decision: 'share' }))}><Send />Share all</Button>
+              <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-foreground" onClick={() => run(() => post('/asks/batch', { ids: asks.map((a) => a.id), decision: 'keep' }))}><Lock />Keep all</Button>
+            </span>
+          : <span className="text-[11.5px] text-muted-foreground/55">Stays private until you decide</span>}>
+        {asks.length ? (
+          <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
+            <Fold items={asks}>{(a) => (
+              <ShareRow key={a.id} f={a.fact ? { ...a.fact, aboutPerson: a.aboutPerson } : { text: a.text }} reason={a.reason} source={a.source} ts={a.ts}>
+                {/* The two answers keep every row's action column the same width; the
+                    standing rule ("and always for this subject") is a quiet line under them. */}
+                <span className="flex flex-col items-end gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <Button variant="outline" size="sm" onClick={() => run(() => post(`/asks/${a.id}`, { decision: 'share' }))}><Send />Share</Button>
+                    <Button variant="ghost" size="sm" onClick={() => run(() => post(`/asks/${a.id}`, { decision: 'keep' }))}><Lock />Keep private</Button>
+                  </span>
+                  {subjectOf(a) && (
+                    <button type="button" className="max-w-[240px] truncate text-[11.5px] text-muted-foreground/60 hover:text-foreground hover:underline" title={`Share this, and every work fact about ${subjectOf(a)} from now on`}
+                      onClick={() => run(() => post(`/asks/${a.id}`, { decision: 'share', rememberSubject: true }))}>Share, and always for {subjectOf(a)}</button>
+                  )}
+                </span>
+              </ShareRow>
+            )}</Fold>
           </div>
         ) : <Empty>Nothing waiting.</Empty>}
       </Section>
 
-      {/* Solo workspace: there is no team to share with, so the section is noise. */}
+    </>
+  );
+  const sharedList = (whole) => (
+    <>
       {data.teamMode && (
-        <Section title="Shared from your private chats" right={<span className="text-[11.5px] text-muted-foreground/55">Last 14 days</span>}>
-          <p className="-mt-1 text-[12.5px] leading-relaxed text-muted-foreground/70">
-            Work facts you mentioned privately that the team can now see. Personal things, salaries and anything you asked to keep quiet never land here.
-          </p>
+        <Section title="Shared with the team" right={<span className="text-[11.5px] text-muted-foreground/55">Last 60 days</span>}>
+          {undo && (
+            <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-muted/30 px-4 py-2 text-[12.5px]">
+              <span className="min-w-0 truncate text-foreground/85">Made private: {undo.title}</span>
+              <Button variant="ghost" size="xs" className="shrink-0" onClick={() => run(async () => { await post(`/shared/${undo.id}/restore`); setUndo(null); })}><Undo2 />Undo</Button>
+            </div>
+          )}
           {data.sharedFromMe.length ? (
             <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
-              {data.sharedFromMe.map((x) => (
-                <div key={x.id} className={row}>
-                  <div className="min-w-0 flex-1">
-                    <FactLines facts={x.facts} />
-                    <p className="mt-1 text-[11.5px] text-muted-foreground/55">From your {SRC_LABEL[x.source] || 'conversation'} · {dayLabel(x.ts)}</p>
-                  </div>
-                  <Button variant="outline" size="sm" className="shrink-0" onClick={() => run(() => post(`/records/${x.id}/hide`))}><Lock />Make private</Button>
-                </div>
-              ))}
+              {/* In its own column the list runs whole; in one column it folds like the rest. */}
+              <Fold items={data.sharedFromMe} limit={whole ? Infinity : 5}>{(x) => (
+                <ShareRow key={x.id} f={x} source={x.source} ts={x.ts}>
+                  <Button variant="outline" size="sm" onClick={() => run(async () => { await post(`/shared/${x.id}/withdraw`); setUndo({ id: x.id, title: x.title || plain(x.text).slice(0, 60) }); })}><Lock />Make private</Button>
+                </ShareRow>
+              )}</Fold>
             </div>
           ) : <Empty>Nothing shared from your private chats recently.</Empty>}
         </Section>
       )}
 
+    </>
+  );
+  const hidden = (
+    <>
       {data.hidden.length > 0 && (
         <Section title="Hidden">
           <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
-            {data.hidden.map((h) => (
-              <div key={h.id} className={row}>
+            <Fold items={data.hidden}>{(h) => (
+              <div key={h.id} className="flex flex-col items-start gap-2.5 border-b border-border/30 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
                   {h.facts?.length
                     ? <FactLines facts={h.facts} muted />
@@ -1175,28 +1447,41 @@ function PrivacyTab() {
                 </div>
                 <Button variant="outline" size="sm" className="shrink-0" onClick={() => run(() => post(`/records/${h.id}/unhide`))}><Undo2 />Restore</Button>
               </div>
-            ))}
+            )}</Fold>
           </div>
         </Section>
       )}
 
+    </>
+  );
+  const erased = (
+    <>
       <Section title="Erased">
         {data.erased.length ? (
           <div className="overflow-hidden rounded-[6px] border border-border/60 bg-card">
-            {data.erased.map((r, i) => (
-              <div key={i} className={row}>
+            <Fold items={data.erased}>{(r, i) => (
+              <div key={i} className="flex items-center gap-4 border-b border-border/30 px-4 py-3 last:border-b-0">
                 <EyeOff className="hidden size-3.5 shrink-0 text-muted-foreground/55 sm:block" strokeWidth={1.75} />
                 <p className="min-w-0 flex-1 text-[13px] text-muted-foreground/80">{r.removed} record{r.removed === 1 ? '' : 's'} erased by {r.by}; nothing about {r.removed === 1 ? 'it' : 'them'} is kept.</p>
                 <span className="shrink-0 text-[11.5px] text-muted-foreground/55">{dayLabel(r.ts)}</span>
               </div>
-            ))}
+            )}</Fold>
           </div>
         ) : <Empty>Nothing erased.</Empty>}
       </Section>
+    </>
+  );
+  return (
+    <div className="flex flex-col gap-7">
+      {err && <p className="text-[12px] text-destructive">{err}</p>}
+      {/* Everything the person sets and answers on the left; what the team has
+          from them — usually the longest list — on the right, whole. */}
+      {data.teamMode
+        ? <Columns left={<>{settings}{waiting}{hidden}{erased}</>} right={sharedList(true)} narrow={<>{settings}{waiting}{sharedList(false)}{hidden}{erased}</>} />
+        : <>{waiting}{hidden}{erased}</>}
     </div>
   );
 }
-
 /* ────────────────────────────── changes ────────────────────────────── */
 
 const CHANGE_ICON = { file: MessageCircle, share: Send, keep_private: Lock, note: NotebookPen, hide: EyeOff, unhide: Undo2, redact: Trash2, review: ListChecks, dismiss_topic: Trash2, restore_topic: Undo2, hide_fact: EyeOff, unhide_fact: Undo2, erase_fact: Trash2, alias: Replace };
@@ -1255,8 +1540,9 @@ function ChangesTab() {
 
 export default function MemoryV4View({ sidebarOpen }) {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [tab, setTab] = useState(params.get('tab') || 'short');
-  const [query, setQuery] = useState('');
+  // "privacy" was the tab's earlier name; links to it still open Sharing.
+  const [tab, setTab] = useState((params.get('tab') || (params.get('q') ? 'facts' : 'short')).replace(/^privacy$/, 'sharing'));
+  const [query, setQuery] = useState(params.get('q') || '');
   const [scope, setScope] = useState('all');
   const [history, setHistory] = useState(false);
   const [kind, setKind] = useState('all');
@@ -1277,44 +1563,73 @@ export default function MemoryV4View({ sidebarOpen }) {
     </div>
   );
 
+  // The pages, split in two: what is remembered, and how.
+  const MAIN = [
+    ['short', 'Short-term memory'],
+    ['facts', 'Facts', facts?.items ? facts.items.filter((f) => !f.past).length : undefined],   // what the tab shows by default: past ones sit behind the toggle
+    ['topics', 'Topics', topics?.items?.length],
+  ];
+  const MORE = [
+    ['sources', 'Sources', undefined, Cable],
+    ['prefs', 'Preferences & rules', undefined, BookOpen],
+    ...(privacy?.teamMode === false ? [] : [['sharing', 'Sharing', privacy?.asks?.length, ShieldCheck]]),
+    ['changes', 'Changes', undefined, History],
+  ];
+  const inMore = MORE.some(([id]) => id === tab);
+
+  const body = (
+    <>
+      {tab === 'short' && <Overview />}
+      {tab === 'facts' && (query ? <SearchResults query={query} /> : (
+        (() => { const filters = (
+          <>
+            <FilterLinks value={scope} onChange={setScope} options={[['all', 'All'], ['shared', 'Shared'], ['private', 'Only mine']]} />
+            <span className="h-3.5 w-px bg-border" />
+            <ToggleLink on={history} onChange={setHistory} icon={History}>Past &amp; superseded</ToggleLink>
+          </>
+        ); return <FactsTab scope={scope} history={history} filters={filters} />; })()
+      ))}
+      {/* Each main tab opens the same way: a 20px first row (a section's
+          heading, or the filters), then its card 10px below. */}
+      {tab === 'topics' && (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex min-h-5 flex-wrap items-center gap-x-4 gap-y-2 leading-5">
+            <FilterLinks value={kind} onChange={setKind} options={[['all', 'All'], ['project', 'Projects'], ['person', 'People'], ['company', 'Companies'], ['topic', 'Topics']]} />
+          </div>
+          <TopicsTab kind={kind} />
+        </div>
+      )}
+      {tab === 'prefs' && <PrefsTab />}
+      {tab === 'sources' && <SourcesTab />}
+      {tab === 'sharing' && <SharingTab />}
+      {tab === 'changes' && <ChangesTab />}
+    </>
+  );
+
+  const iconLink = ([id, label, count, Icon]) => (
+    <button key={id} type="button" onClick={() => setTab(id)} aria-label={label} className={cn('group/nav relative flex size-8 items-center justify-center rounded-[6px] transition-colors', tab === id ? 'bg-muted/70 text-foreground' : 'text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85')}>
+      <span role="tooltip" className="pointer-events-none absolute right-0 top-full z-30 mt-1.5 hidden w-max rounded bg-popover px-2.5 py-1.5 text-[12px] font-normal leading-none text-popover-foreground/90 shadow-md ring-1 ring-foreground/10 group-hover/nav:block">{label}</span>
+      <Icon className="size-4" strokeWidth={1.75} />
+      {id === 'sharing' && count ? <span className="absolute right-1 top-1 size-1.5 rounded-full bg-red-500" aria-label="Questions wait" /> : null}
+    </button>
+  );
+
+  // Three tabs for what is remembered; the pages about how, as quiet icons on the right.
+  const navEl = (
+    <div className="relative">
+      <TabBar value={inMore ? null : tab} onChange={setTab} tabs={MAIN} />
+      <div className="absolute bottom-1 right-0 flex items-center gap-1">{MORE.map(iconLink)}</div>
+    </div>
+  );
+
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <EditorHeader icon={Brain} title="Memory" meta={meta} sidebarOpen={sidebarOpen} />
+      {/* The navigation is a still row under the header, like the header itself, while the page scrolls. */}
+      <div className="shrink-0 px-4 pt-2 sm:px-6">{navEl}</div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className="flex flex-col gap-6 px-4 pb-12 pt-2 sm:px-6">
-          <TabBar
-            value={tab}
-            onChange={setTab}
-            tabs={[
-              ['short', 'Short-term memory'],
-              ['sources', 'Sources', sourcesTab?.items?.filter((s) => s.on).length || undefined],
-              ['facts', 'Facts', facts?.items ? facts.items.filter((f) => !f.past).length : undefined],   // what the tab shows by default: past ones sit behind the toggle
-              ['topics', 'Topics', topics?.items?.length],
-              ['prefs', 'Preferences & rules'],
-              ['privacy', 'Privacy', privacy?.asks?.length],
-              ['changes', 'Changes'],
-            ]}
-          />
-          {tab === 'topics' && (
-            <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-              <FilterLinks value={kind} onChange={setKind} options={[['all', 'All'], ['project', 'Projects'], ['person', 'People'], ['company', 'Companies'], ['topic', 'Topics']]} />
-            </div>
-          )}
-          {tab === 'short' && <Overview />}
-          {tab === 'facts' && (query ? <SearchResults query={query} /> : (
-            <FactsTab scope={scope} history={history} filters={(
-              <>
-                <FilterLinks value={scope} onChange={setScope} options={[['all', 'All'], ['shared', 'Shared'], ['private', 'Only mine']]} />
-                <span className="h-3.5 w-px bg-border" />
-                <ToggleLink on={history} onChange={setHistory} icon={History}>Past &amp; superseded</ToggleLink>
-              </>
-            )} />
-          ))}
-          {tab === 'topics' && <TopicsTab kind={kind} />}
-          {tab === 'prefs' && <PrefsTab />}
-          {tab === 'sources' && <SourcesTab />}
-          {tab === 'privacy' && <PrivacyTab />}
-          {tab === 'changes' && <ChangesTab />}
+        <div className="flex flex-col gap-6 px-4 pb-12 pt-4 sm:px-6">
+          {body}
         </div>
       </div>
     </div>

@@ -196,7 +196,8 @@ export function resolve() {
       logo:        lmt ? 'file' : 'default',
     },
     updatedAt: file.updatedAt || null,
-    updatedBy: file.updatedBy || null,
+    // Who last changed it is kept in the file for the audit trail, not shown:
+    // this view is served to the login page, before anyone has signed in.
   };
 }
 

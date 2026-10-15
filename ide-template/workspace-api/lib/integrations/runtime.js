@@ -19,11 +19,12 @@
  * restart because it doesn't re-read its config mid-session.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, chmodSync, chownSync, cpSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, chmodSync, chownSync, cpSync, readdirSync, statSync, renameSync, copyFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as catalog from './catalog.js';
 import * as store from './store.js';
-import { issueGrant } from './broker.js';
+import { primaryAdminSlug } from '../team.js';
+import { issueGrant, grantIntegration } from './broker.js';
 
 // Phase-2 broker isolation. MCPs no longer get plaintext credentials in
 // their spawn env — they get a nonce + integration id, and fetch the
@@ -32,7 +33,6 @@ import { issueGrant } from './broker.js';
 // MCP /proc/<pid>/environ.
 const MCP_RUNNER_BIN = process.env.MCP_RUNNER_BIN || '/usr/local/bin/mcp-runner';
 const BROKER_SOCKET  = process.env.BROKER_SOCKET || '/var/wsapi-store/run/broker.sock';
-const AUTH_HELPER_BIN = process.env.MCP_AUTH_HELPER_BIN || '/opt/ide/mcp-auth-helper.sh';
 
 const HOME = process.env.HOME || '/home/coder';
 const CLAUDE_CONFIG = process.env.CLAUDE_CONFIG_PATH || join(HOME, '.claude.json');
@@ -76,17 +76,30 @@ function resolvePath(s) {
     .replaceAll('{bot}',         bot);
 }
 
+// The file is the bot's whole CLI config, not only our mcpServers block. A
+// read that does not parse is not an empty config: writing "our block only"
+// back over it would drop everything else (the always-on servers entrypoint
+// wrote, the CLI's own settings). So the pass stops, and a copy of what was
+// there is kept beside the file for the operator.
 function readClaudeConfig() {
   if (!existsSync(CLAUDE_CONFIG)) return {};
-  try { return JSON.parse(readFileSync(CLAUDE_CONFIG, 'utf8')); }
+  const raw = readFileSync(CLAUDE_CONFIG, 'utf8');
+  try { return JSON.parse(raw); }
   catch (err) {
-    process.stderr.write(`[integrations-runtime] cannot parse ${CLAUDE_CONFIG}: ${err.message}\n`);
-    return {};
+    const keep = `${CLAUDE_CONFIG}.unreadable-${Date.now()}`;
+    try { copyFileSync(CLAUDE_CONFIG, keep); } catch {}
+    throw new Error(`cannot parse ${CLAUDE_CONFIG} (${err.message}); left as is, copy at ${keep}`);
   }
 }
 
+// Written to a temporary name and renamed into place, so the bot's CLI (which
+// reads this file when it starts a server) never sees a half-written one.
 function writeClaudeConfig(cfg) {
-  writeFileSync(CLAUDE_CONFIG, JSON.stringify(cfg, null, 2));
+  const tmp = `${CLAUDE_CONFIG}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  try { chmodSync(tmp, 0o660); } catch {}
+  try { renameSync(tmp, CLAUDE_CONFIG); }
+  catch (err) { try { unlinkSync(tmp); } catch {} throw err; }
   // Phase-3 H4 invariant: when CLAUDE_CONFIG_PATH points at
   // /home/bot/.claude.json, coder uid 1000 must NOT be able to read it.
   // entrypoint.sh pre-seeds the file mode 0660 group=botshare, and the
@@ -115,173 +128,150 @@ function writeClaudeConfig(cfg) {
  * differs from what was on disk before. Caller uses this to decide whether
  * a bot restart is actually needed (vs. an idempotent re-save).
  */
-export function syncMcpServers() {
-  const cfg = readClaudeConfig();
-  const existing = cfg.mcpServers || {};
-  const before = JSON.stringify(existing);
-
-  // Step 1 — keep manual entries.
-  const next = {};
-  for (const [name, entry] of Object.entries(existing)) {
-    if (entry && !entry[MANAGED_MARKER]) next[name] = entry;
+/**
+ * The MCP server entries one connection contributes, keyed by server name.
+ * A personal connection (`granola@ann`) names its servers with `-mine`
+ * (`granola-mine`: "your own Granola"), so a person whose workspace also has
+ * the integration sees both, told apart by name; its broker grant and bridge
+ * id carry the key, so the credentials served are that person's alone.
+ * `existing` lets a still-valid broker nonce be reused instead of reminted.
+ */
+function serverEntriesFor(key, existing = {}) {
+  const out = {};
+  const cat = catalog.get(key);
+  if (!cat || !cat.mcp) return out;          // Telegram has no MCP — handled separately
+  const personal = store.isPersonalKey(key);
+  const nameOf = (n) => (personal ? `${n}-mine` : n);
+  const nonceFor = (name) => {
+    const n = existing[name]?.env?.BROKER_NONCE;
+    return grantIntegration(n) === key ? n : issueGrant(key);
+  };
+  if (cat.mcp.type === 'http') {
+    const { name, url } = cat.mcp;
+    if (!name || !url) return out;
+    const needsAuth = (cat.fields || []).some(f => f.type === 'remote-mcp-oauth');
+    const transport = cat.mcp.transport === 'sse' ? 'sse' : 'http';
+    if (needsAuth) {
+      out[nameOf(name)] = {
+        command: MCP_RUNNER_BIN,
+        args:    ['remote'],
+        env: {
+          REMOTE_MCP_ID:        key,
+          REMOTE_MCP_URL:       url,
+          REMOTE_MCP_TRANSPORT: transport,
+          WORKSPACE_API_PORT:   process.env.WORKSPACE_API_PORT || '3001',
+        },
+        [MANAGED_MARKER]: true,
+      };
+      return out;
+    }
+    out[nameOf(name)] = { type: transport, url, [MANAGED_MARKER]: true };
+    return out;
   }
-
-  // Step 2 — rebuild managed entries from catalog + active store.
-  //
-  // Default path: each MCP is spawned via /usr/local/bin/mcp-runner
-  // (setuid root, drops to uid 1002 before exec'ing node). Plaintext
-  // credentials NEVER go into the spawn env — each spawn gets a
-  // single-use BROKER_NONCE that lets the MCP fetch its creds from the
-  // in-process broker over UDS at startup. Bot at uid 1000 cannot read
-  // mcp-uid /proc/<pid>/environ AND cannot connect to the broker UDS
-  // (group-gated), so even with shell access the bot never sees these
-  // values.
-  //
-  // Legacy path: integrations whose `mcp.command` is set to anything
-  // other than `node` (today only `ga4` which spawns the Python
-  // `ga4-mcp-server` binary) skip mcp-runner — the wrapper only knows
-  // how to launch node MCPs under /opt/ide/apps/. Legacy spawns inject
-  // plaintext env directly, same as pre-Phase-2. ga4 doesn't carry user
-  // secrets in its env (just the numeric GA4_PROPERTY_ID + a path to a
-  // file) so this is acceptable; full coverage requires a generalised
-  // mcp-runner that can launch arbitrary whitelisted commands.
-  for (const id of store.activeIds()) {
-    const cat = catalog.get(id);
-    if (!cat || !cat.mcp) continue;          // Telegram has no MCP — handled separately
-
-    // ─── Remote path (`mcp.type: "http"`) ───────────────────────────────
-    // The MCP server is hosted by the provider; nothing spawns locally, so
-    // no mcp-runner and no broker nonce. Claude Code connects over HTTPS
-    // (through the egress proxy — the host must be in mcp.allowedHosts) and
-    // gets its Authorization header from mcp-auth-helper.sh, which asks
-    // wsapi for a fresh access token at connect time. Only the short-lived
-    // access token ever reaches the Claude Code process; refresh tokens
-    // stay in the encrypted store (lib/integrations/oauth.js).
-    if (cat.mcp.type === 'http') {
-      const { name, url } = cat.mcp;
-      if (!name || !url) continue;
-      // Open servers (no remote-mcp-oauth field — e.g. Microsoft Learn,
-      // Context7) need no Authorization header, so no helper: an entry
-      // whose helper 401s at wsapi would flip the server to "needs auth".
-      const needsAuth = (cat.fields || []).some(f => f.type === 'remote-mcp-oauth');
-      next[name] = {
-        // Most providers speak Streamable HTTP; a few (Square) are SSE-only —
-        // the catalog marks those with `transport: "sse"`.
-        type: cat.mcp.transport === 'sse' ? 'sse' : 'http',
-        url,
-        ...(needsAuth ? { headersHelper: `${AUTH_HELPER_BIN} ${id}` } : {}),
-        [MANAGED_MARKER]: true,
-      };
-      continue;
+  const { extraEnv = {}, inheritEnv = [], services } = cat.mcp;
+  // Legacy MCPs (a command other than node) take their credentials in the
+  // environment, decrypted here. A person's own lands only in their turn's
+  // config file (0640 to their private group) — never the bot's, unless it
+  // is the operator's own — and its key file sits in their private tree.
+  const isLegacy = cat.mcp.command && cat.mcp.command !== 'node';
+  if (isLegacy) {
+    let plain;
+    try { plain = store.decryptFor(key); }
+    catch (err) {
+      process.stderr.write(`[integrations-runtime] decrypt ${key} failed: ${err.message}\n`);
+      return out;
     }
-
-    const { extraEnv = {}, inheritEnv = [], services } = cat.mcp;
-    const isLegacy = cat.mcp.command && cat.mcp.command !== 'node';
-
-    // ─── Legacy path (ga4 + future non-node MCPs) ───────────────────────
-    if (isLegacy) {
-      let plain;
-      try { plain = store.decryptFor(id); }
-      catch (err) {
-        process.stderr.write(`[integrations-runtime] decrypt ${id} failed: ${err.message}\n`);
-        continue;
-      }
-      const legacyEnv = {};
-      for (const [k, v] of Object.entries(extraEnv)) {
-        legacyEnv[k] = typeof v === 'string' ? resolvePath(v) : v;
-      }
-      for (const varName of inheritEnv) {
-        const v = process.env[varName];
-        if (typeof v === 'string' && v) legacyEnv[varName] = v;
-      }
-      for (const [catalogField, envName] of Object.entries(cat.mcp.envMap || {})) {
-        if (plain[catalogField] != null && plain[catalogField] !== '') {
-          legacyEnv[envName] = plain[catalogField];
-        }
-      }
-      const { command, args = [], name } = cat.mcp;
-      if (!name || !command) continue;
-      next[name] = {
-        command,
-        args: args.map(a => typeof a === 'string' ? resolvePath(a) : a),
-        env: legacyEnv,
-        [MANAGED_MARKER]: true,
-      };
-      continue;
-    }
-
-    // Build the non-secret part of the env that's safe to pass at spawn
-    // time. `extraEnv` is static catalog defaults (model names, output
-    // dirs, etc. — no secrets). `inheritEnv` pulls platform-level env
-    // vars from workspace-api's process (e.g. GOOGLE_CLIENT_ID for the
-    // google-ads OAuth flow — those are platform-shared, not per-tenant
-    // secrets). User-supplied fields (the actual credentials) are NOT
-    // here — they arrive via the broker.
-    const baseEnv = {
-      BROKER_SOCKET,
-      BROKER_INTEGRATION_ID: id,
-      // Force Node's dns.lookup to return IPv4 first. Post-egress-pivot
-      // we route raw TCP (IMAP, SMTP) through the egress-proxy via HTTP
-      // CONNECT. Imapflow + nodemailer pre-resolve the hostname client-
-      // side and send the resolved IP in the CONNECT line. Our
-      // bot-net network is IPv4-only (no IPv6 subnet), and the proxy's
-      // IP allow-list (resolved from allowed-hosts.txt) is A-records
-      // only — an AAAA result would fail the dial entirely OR escape
-      // the cache. Forcing ipv4first on every MCP keeps the resolved
-      // family consistent with what we route + cache.
-      NODE_OPTIONS: '--dns-result-order=ipv4first',
-    };
+    const legacyEnv = {};
     for (const [k, v] of Object.entries(extraEnv)) {
-      baseEnv[k] = typeof v === 'string' ? resolvePath(v) : v;
+      legacyEnv[k] = typeof v === 'string' ? (isDeclaredFile(cat, v) ? fileFor(key, v) : resolvePath(v)) : v;
     }
     for (const varName of inheritEnv) {
       const v = process.env[varName];
-      if (typeof v === 'string' && v) baseEnv[varName] = v;
+      if (typeof v === 'string' && v) legacyEnv[varName] = v;
     }
-
-    // Bundle shape (`mcp.services: [...]`) — one catalog entry, multiple
-    // mcpServers entries. Each service-MCP gets its OWN nonce (single-use
-    // means same-nonce-twice fails), but they all reference the same
-    // integration id since they share one credential set in the store.
-    if (Array.isArray(services) && services.length > 0) {
-      for (const svc of services) {
-        if (!svc?.name) continue;
-        // svc.name is the service id (gdocs, gsheets…). mcp-runner
-        // templates it to /opt/ide/apps/<svc.name>-mcp/index.js.
-        next[svc.name] = {
-          command: MCP_RUNNER_BIN,
-          args:    [svc.name],
-          env: {
-            ...baseEnv,
-            BROKER_NONCE: issueGrant(id),
-          },
-          [MANAGED_MARKER]: true,
-        };
+    for (const [catalogField, envName] of Object.entries(cat.mcp.envMap || {})) {
+      if (plain[catalogField] != null && plain[catalogField] !== '') {
+        legacyEnv[envName] = plain[catalogField];
       }
-      continue;
     }
-
-    // Single shape — `mcp.name` is the integration id (or a near-variant
-    // — e.g. gemini-image's mcp.name is "nano-banana"). mcp-runner
-    // resolves /opt/ide/apps/<mcp.name>-mcp/index.js.
-    const { name } = cat.mcp;
-    if (!name) continue;
-
-    next[name] = {
+    const { command, args = [], name } = cat.mcp;
+    if (!name || !command) return out;
+    out[nameOf(name)] = {
+      command,
+      args: args.map(a => typeof a === 'string' ? resolvePath(a) : a),
+      env: legacyEnv,
+      [MANAGED_MARKER]: true,
+    };
+    return out;
+  }
+  const baseEnv = {
+    BROKER_SOCKET,
+    BROKER_INTEGRATION_ID: key,
+    NODE_OPTIONS: '--dns-result-order=ipv4first',
+  };
+  for (const [k, v] of Object.entries(extraEnv)) {
+    // A path to a file this connection owns is that connection's (a person's own gets theirs).
+    baseEnv[k] = typeof v === 'string' ? (isDeclaredFile(cat, v) ? fileFor(key, v) : resolvePath(v)) : v;
+  }
+  for (const varName of inheritEnv) {
+    const v = process.env[varName];
+    if (typeof v === 'string' && v) baseEnv[varName] = v;
+  }
+  const names = Array.isArray(services) && services.length > 0 ? services.map(svc => svc?.name).filter(Boolean) : (cat.mcp.name ? [cat.mcp.name] : []);
+  for (const svcName of names) {
+    const name = nameOf(svcName);
+    out[name] = {
       command: MCP_RUNNER_BIN,
-      args:    [name],
+      args:    [svcName],
       env: {
         ...baseEnv,
-        BROKER_NONCE: issueGrant(id),
+        BROKER_NONCE: nonceFor(name),
       },
       [MANAGED_MARKER]: true,
     };
   }
+  return out;
+}
 
+// A person's own servers for their turns: minted once and kept here, so the
+// nonce in each turn's config stays the same live grant (lib/claude.js).
+const personalCache = new Map();   // slug → { keys: string, servers }
+/** The MCP servers of one person's own connections (`-mine` names), for their turns. */
+export function personalServers(slug) {
+  const keys = store.personalIds(slug);
+  const sig = keys.join('|');
+  const hit = personalCache.get(slug);
+  if (hit && hit.keys === sig && Object.values(hit.servers).every(e => !e.env?.BROKER_NONCE || grantIntegration(e.env.BROKER_NONCE))) return hit.servers;
+  let servers = {};
+  for (const key of keys) servers = { ...servers, ...serverEntriesFor(key, hit?.servers || {}) };
+  personalCache.set(slug, { keys: sig, servers });
+  return servers;
+}
+/** Drop a person's cached set (their connections changed). */
+export function forgetPersonalServers(slug) { personalCache.delete(slug); }
+
+/**
+ * Write the bot's `.claude.json`: the workspace connections' servers, plus
+ * the operator's own (the brain is the operator's; `-mine` names). Members'
+ * personal servers never land here — they reach their turns through
+ * lib/claude.js, written per turn into that turn's own config.
+ */
+export function syncMcpServers() {
+  const cfg = readClaudeConfig();
+  const existing = cfg.mcpServers || {};
+  const before = JSON.stringify(existing);
+  const next = {};
+  for (const [name, entry] of Object.entries(existing)) {
+    if (entry && !entry[MANAGED_MARKER]) next[name] = entry;
+  }
+  const keys = [...store.workspaceIds()];
+  let operator = null;
+  try { operator = primaryAdminSlug(); } catch { /* no roster */ }
+  if (operator && operator !== 'default') keys.push(...store.personalIds(operator));
+  for (const key of keys) Object.assign(next, serverEntriesFor(key, existing));
   cfg.mcpServers = next;
   const after = JSON.stringify(next);
   const changed = before !== after;
-
   if (changed) {
     try {
       writeClaudeConfig(cfg);
@@ -290,8 +280,27 @@ export function syncMcpServers() {
       throw err;
     }
   }
-
+  writeAccessMap();
   return { changed };
+}
+
+// Which servers are read-only for the team — `.team/integration-access.json`,
+// `{ "<server name>": "read" }`, group `workspace` 0664 so every turn's
+// scope-guard hook reads it and refuses the write tools of those servers.
+const ACCESS_FILE = () => join(process.env.PROJECT_DIR || '/home/coder/project', '.team', 'integration-access.json');
+export function writeAccessMap() {
+  try {
+    const map = store.readOnlyServers((key) => Object.keys(serverEntriesFor(key, {})));
+    const f = ACCESS_FILE();
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(`${f}.tmp`, JSON.stringify(map, null, 2), { mode: 0o664 });
+    try { chmodSync(`${f}.tmp`, 0o664); } catch { /* dev */ }
+    renameSync(`${f}.tmp`, f);
+    return map;
+  } catch (err) {
+    process.stderr.write(`[integrations-runtime] access map not written: ${err.message}\n`);
+    return null;
+  }
 }
 
 /**
@@ -356,12 +365,41 @@ function discoverOptionalSkills(optDir) {
  *
  * Returns the list of skill names installed in this call.
  */
+/**
+ * A copied skill made a person's own: its tool names point at their server
+ * (`mcp__trello__x` → `mcp__trello-mine__x`), and its files take the private
+ * tree's modes (dirs 2770, files 0660) so their turn reads them.
+ */
+export function personaliseSkill(dir, server) {
+  const walk = (p) => {
+    const st = statSync(p);
+    if (st.isDirectory()) {
+      try { chmodSync(p, 0o2770); } catch { /* dev */ }
+      for (const name of readdirSync(p)) walk(join(p, name));
+      return;
+    }
+    if (server && /\.(md|txt|json|ya?ml)$/i.test(p)) {
+      const text = readFileSync(p, 'utf8');
+      const esc = server.replace(/[-.*+?^$()|[\]\\{}]/g, (c) => `\\${c}`);
+      const next = text.replace(new RegExp(`mcp__${esc}__`, 'g'), `mcp__${server}-mine__`);
+      if (next !== text) writeFileSync(p, next);
+    }
+    try { chmodSync(p, 0o660); } catch { /* dev */ }
+  };
+  walk(dir);
+}
+
 export function installOptionalSkill(id) {
   const optDir = process.env.OPTIONAL_SKILLS_DIR || '/opt/ide/skills/optional';
   if (!existsSync(optDir)) return [];
 
   const projectDir = process.env.PROJECT_DIR || '/home/coder/project';
-  const destRoot = join(projectDir, '.claude', 'skills');
+  // A skill follows its connection: the workspace's goes to the team's skills,
+  // a person's own to their private skills (users/<slug>/.skills, which only
+  // their turns load), naming their own server (`<name>-mine`).
+  const owner = catalog.slugOf(id);
+  const destRoot = owner ? join(projectDir, 'users', owner, '.skills') : join(projectDir, '.claude', 'skills');
+  const server = catalog.get(id)?.mcp?.name;
   const installed = [];
 
   // A skill's `requires:` may name the catalog id (email-imap, ga4, meta-ads) or
@@ -378,6 +416,7 @@ export function installOptionalSkill(id) {
     try {
       mkdirSync(dirname(dest), { recursive: true });
       cpSync(skill.src, dest, { recursive: true });
+      if (owner) personaliseSkill(dest, server);
       installed.push(skill.name);
     } catch (err) {
       process.stderr.write(`[integrations-runtime] failed to install ${skill.name}: ${err.message}\n`);
@@ -397,9 +436,28 @@ export function installOptionalSkill(id) {
  * Called from routes after store.activate so the file is in place before
  * the MCP first spawns.
  */
+/**
+ * The on-disk path of a declared file for one connection: the workspace's
+ * is the catalog's path; a person's own gets their slug before the
+ * extension (`accounts.json` → `accounts@ann.json`), in the same secure
+ * directory — read by the mcp uid through its group, never by a turn.
+ */
+export function fileFor(key, template) {
+  const p = resolvePath(template);
+  const slug = catalog.slugOf(key);
+  if (!slug) return p;
+  // A file a server reads by itself (not through the broker) — GA4's key —
+  // goes into the person's private tree, readable by their turns only.
+  if (template.startsWith('{dataDir}')) return join(process.env.PROJECT_DIR || '/home/coder/project', '.team', 'users', slug, '.integrations', p.split('/').pop());
+  return p.replace(/(\.[A-Za-z0-9]+)?$/, (m) => `@${slug}${m}`);
+}
+const isDeclaredFile = (cat, v) => (cat?.mcp?.writeFiles || []).some(spec => spec.path === v);
+
 export function applyFiles(id) {
   const cat = catalog.get(id);
   if (!cat?.mcp?.writeFiles) return;
+  // The bot's own files (shell-env) are the workspace's only.
+  if (catalog.slugOf(id) && cat.mcp.writeFiles.some(spec => spec.format === 'shell-env')) return;
 
   let plain;
   try { plain = store.decryptFor(id); }
@@ -408,17 +466,21 @@ export function applyFiles(id) {
   for (const spec of cat.mcp.writeFiles) {
     const content = renderFile(spec, plain);
     if (content == null) continue;
-    const path = resolvePath(spec.path);
+    const path = fileFor(id, spec.path);
     try {
       mkdirSync(dirname(path), { recursive: true });
+      // In a person's private tree: the turn user reads it through the tree's group.
+      const inPrivate = catalog.slugOf(id) && path.includes('/.team/users/');
+      if (inPrivate) { try { chmodSync(dirname(path), 0o2770); } catch { /* dev */ } }
       // Special handling for shell-env: merge into existing file rather
       // than overwrite. The same env file is shared with setup.js
       // (CLAUDE_CODE_OAUTH_TOKEN), so a naive overwrite wipes those lines.
       if (content && typeof content === 'object' && content.__mergeShellEnv) {
         mergeShellEnv(path, content.fields, content.plain, spec.mode || 0o600);
       } else {
-        writeFileSync(path, content, { mode: spec.mode || 0o600 });
-        chmodSync(path, spec.mode || 0o600);
+        const mode = inPrivate ? 0o640 : (spec.mode || 0o600);
+        writeFileSync(path, content, { mode });
+        chmodSync(path, mode);
       }
       // Phase-2: files under {secureFiles}/ get chgrp wsapi-broker (1101)
       // so the mcp uid (1002) can read them via group access. The dir
@@ -614,7 +676,7 @@ export function unlinkFiles(id) {
   const cat = catalog.get(id);
   if (!cat?.mcp?.writeFiles) return;
   for (const spec of cat.mcp.writeFiles) {
-    const path = resolvePath(spec.path);
+    const path = fileFor(id, spec.path);
     try {
       if (existsSync(path)) unlinkSync(path);
     } catch (err) {

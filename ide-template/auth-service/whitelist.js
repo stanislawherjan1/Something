@@ -44,7 +44,9 @@ function readFile() {
             const email = String(e?.email || '').trim().toLowerCase();
             if (!email) continue;
             const role = e?.role === 'admin' ? 'admin' : 'member';
-            map.set(email, role);
+            // sessionsBefore: set by workspace-api when the person signs out;
+            // a token issued before it is no longer accepted.
+            map.set(email, { role, sessionsBefore: Date.parse(e?.sessionsBefore || '') || 0 });
         }
         return map;
     } catch (err) {
@@ -67,7 +69,7 @@ function get() {
     // (typically the only person on a fresh deploy) can manage the team
     // before .allowed-emails.json exists.
     const envMap = new Map();
-    for (const email of ENV_FALLBACK) envMap.set(email, 'admin');
+    for (const email of ENV_FALLBACK) envMap.set(email, { role: 'admin', sessionsBefore: 0 });
     cache = { ts: now, byEmail: envMap };
     return envMap;
 }
@@ -81,7 +83,16 @@ function isAllowed(email) {
 function roleOf(email) {
     const e = String(email || '').trim().toLowerCase();
     if (!e) return null;
-    return get().get(e) || null;
+    return get().get(e)?.role || null;
+}
+
+/** Was this token issued before the person last signed out? */
+function signedOutSince(email, issuedAtSeconds) {
+    const e = String(email || '').trim().toLowerCase();
+    const cutoff = get().get(e)?.sessionsBefore || 0;
+    // `iat` is whole seconds: compare in seconds, so a session issued in the same
+    // second as (but after) the sign-out is not refused.
+    return !!cutoff && Number(issuedAtSeconds || 0) < Math.floor(cutoff / 1000);
 }
 
 function size() {
@@ -97,4 +108,4 @@ function source() {
     return 'empty';
 }
 
-module.exports = { isAllowed, roleOf, size, source };
+module.exports = { isAllowed, roleOf, signedOutSince, size, source };

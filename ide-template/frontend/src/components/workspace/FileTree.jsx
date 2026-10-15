@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ChevronRight, Folder, FolderOpen, Trash2, Pencil, Download,
-  FilePlus, FolderPlus,
+  FilePlus, FolderPlus, Lock, LockOpen, LockKeyhole,
   FileText, FileCode2, File as FileIcon, Image as ImageIcon, Table2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { invalidate } from '@/lib/useApi';
+import useMe from './useMe.js';
 import { SkeletonFileRow } from './SkeletonLoader.jsx';
 import { useBranding } from './identity.jsx';
 import ContextMenu from './ContextMenu.jsx';
@@ -57,7 +59,7 @@ export default function FileTree({ rootPath = '', selected, onSelect, onRequestD
   );
 }
 
-function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry, onEmptyChange }) {
+function DirNode({ path, rootPath = '', depth, initiallyOpen = false, locked = null, selected, onSelect, onRequestDelete, onMove, onCreate, creating, onCreateSubmit, onCreateCancel, showHidden, fileEventNonce, isCreating, optimisticEntry, onEmptyChange }) {
   const [open, setOpen] = useState(initiallyOpen);
 
   // Auto-open when a create starts inside us so the new InlineCreateRow is
@@ -126,9 +128,15 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
     }
   }, [path, showHidden]);
 
+  const [localNonce, setLocalNonce] = useState(0);
+  useEffect(() => {
+    const bump = () => setLocalNonce((n) => n + 1);
+    window.addEventListener('ide:files-changed', bump);
+    return () => window.removeEventListener('ide:files-changed', bump);
+  }, []);
   useEffect(() => {
     if (open) load();
-  }, [open, load, fileEventNonce]);
+  }, [open, load, fileEventNonce, localNonce]);
 
   const onRowClick = () => {
     setOpen(o => !o);
@@ -182,6 +190,7 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
           selected={selected?.path === path}
           path={path}
           type="dir"
+          locked={locked}
           onDelete={() => onRequestDelete?.({ path, type: 'dir' })}
           onRename={onMove ? (newName) => onMove({
             from: path,
@@ -225,6 +234,7 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
                     path={fullPath}
                     rootPath={rootPath}
                     depth={depth + 1}
+                    locked={e.locked}
                     selected={selected}
                     onSelect={onSelect}
                     onRequestDelete={onRequestDelete}
@@ -243,6 +253,7 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
                     name={e.name}
                     depth={depth + 1}
                     technical={e.technical}
+                    locked={e.locked}
                     selected={selected?.path === fullPath}
                     onSelect={onSelect}
                     onDelete={() => onRequestDelete?.({ path: fullPath, type: 'file' })}
@@ -261,7 +272,7 @@ function DirNode({ path, rootPath = '', depth, initiallyOpen = false, selected, 
   );
 }
 
-function FileRow({ path, name, depth, technical, selected, onSelect, onDelete, onRename }) {
+function FileRow({ path, name, depth, technical, locked, selected, onSelect, onDelete, onRename }) {
   return (
     <RowButton
       depth={depth}
@@ -272,6 +283,7 @@ function FileRow({ path, name, depth, technical, selected, onSelect, onDelete, o
       muted={technical}
       path={path}
       type="file"
+      locked={locked}
       onDelete={onDelete}
       onRename={onRename}
       draggablePath={path}
@@ -279,7 +291,13 @@ function FileRow({ path, name, depth, technical, selected, onSelect, onDelete, o
   );
 }
 
-function RowButton({ depth, onClick, onDoubleClick, icon: Icon, label, chevron, selected, muted, path, type, onDelete, onRename, onNewFile, onNewFolder, draggablePath }) {
+function RowButton({ depth, onClick, onDoubleClick, icon: Icon, label, chevron, selected, muted, path, type, locked: lockedProp, onDelete, onRename, onNewFile, onNewFolder, draggablePath }) {
+  const { me } = useMe();
+  // The mark flips the moment Lock / Unlock is clicked; the listing that
+  // follows (the parent's refetch) then takes over.
+  const [optimisticLock, setOptimisticLock] = useState(undefined);
+  useEffect(() => { setOptimisticLock(undefined); }, [lockedProp]);
+  const locked = optimisticLock === undefined ? lockedProp : optimisticLock;
   const [dragging, setDragging] = useState(false);
   const [menu, setMenu]         = useState(null);  // { x, y } | null
   const [editing, setEditing]   = useState(false);
@@ -317,12 +335,33 @@ function RowButton({ depth, onClick, onDoubleClick, icon: Icon, label, chevron, 
     a.remove();
   };
 
+  // A lock: an admin made this shared path read-only for members. Admins lock
+  // and unlock from the row menu; a path under a locked folder is covered by
+  // the folder's lock (shown greyed, nothing to undo here). A member sees the
+  // icon and, on hover, who locked it. Private paths have no lock to set.
+  const isPrivate = /^users\//.test(path || '');
+  const canLock = me?.isAdmin && path && !isPrivate;
+  const setLock = async (on) => {
+    setOptimisticLock(on ? { path, by: me?.slug || null, byName: me?.displayName || 'you', inherited: false } : null);
+    try {
+      const r = await fetch(`/api/files/${on ? 'lock' : 'unlock'}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+    } catch (err) { console.warn('[files] lock', err.message); }
+    // The listing carries the lock marks; the file watcher does not fire for them.
+    invalidate('/api/files/tree');
+    window.dispatchEvent(new CustomEvent('ide:files-changed'));
+  };
+  const readOnly = !!locked;
+  const lockTitle = locked ? `Locked by ${locked.byName || 'an admin'}. Read-only until an admin unlocks it.` : undefined;
+
   const menuItems = [];
-  if (onNewFile)   menuItems.push({ id: 'new-file',   label: 'New file',   icon: FilePlus,   onSelect: onNewFile });
-  if (onNewFolder) menuItems.push({ id: 'new-folder', label: 'New folder', icon: FolderPlus, onSelect: onNewFolder });
-  if (onRename)    menuItems.push({ id: 'rename',     label: 'Rename',     icon: Pencil,     onSelect: () => setEditing(true) });
+  if (onNewFile && !readOnly)   menuItems.push({ id: 'new-file',   label: 'New file',   icon: FilePlus,   onSelect: onNewFile });
+  if (onNewFolder && !readOnly) menuItems.push({ id: 'new-folder', label: 'New folder', icon: FolderPlus, onSelect: onNewFolder });
+  if (onRename && !readOnly)    menuItems.push({ id: 'rename',     label: 'Rename',     icon: Pencil,     onSelect: () => setEditing(true) });
   if (path)        menuItems.push({ id: 'download',   label: 'Download',   icon: Download,   onSelect: triggerDownload });
-  if (onDelete) menuItems.push({ id: 'delete',   label: 'Delete',   icon: Trash2,   danger: true, onSelect: onDelete });
+  if (canLock && !locked) menuItems.push({ id: 'lock', label: 'Lock', icon: Lock, onSelect: () => setLock(true) });
+  if (canLock && locked && !locked.inherited) menuItems.push({ id: 'unlock', label: 'Unlock', icon: LockOpen, onSelect: () => setLock(false) });
+  if (onDelete && !readOnly) menuItems.push({ id: 'delete',   label: 'Delete',   icon: Trash2,   danger: true, onSelect: onDelete });
 
   return (
     <div
@@ -330,6 +369,7 @@ function RowButton({ depth, onClick, onDoubleClick, icon: Icon, label, chevron, 
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu}
+      title={lockTitle}
       className={cn(
         'group relative flex items-center rounded-md',
         'transition-colors duration-150',
@@ -409,6 +449,7 @@ function RowButton({ depth, onClick, onDoubleClick, icon: Icon, label, chevron, 
             {displayLabel}
           </span>
         )}
+        {locked && <LockKeyhole className={cn('size-3 shrink-0', locked.inherited ? 'text-zinc-400 dark:text-zinc-600' : 'text-zinc-500 dark:text-zinc-400')} strokeWidth={1.75} aria-label="Locked" />}
       </button>
       {onDelete && !editing && (
         <button

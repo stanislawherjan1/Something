@@ -24,6 +24,7 @@ if ! git pull --ff-only; then
 fi
 
 found=0
+failed=()
 for d in clients/*/; do
     name="$(basename "$d")"
     [ "$name" = "example-client" ] && continue
@@ -31,11 +32,23 @@ for d in clients/*/; do
     found=1
     echo ""
     echo "→ Redeploying ${name} ..."
-    ( cd "$d" && ./deploy.sh )
+    # One client's failure must not stop the others, but it must not be lost
+    # either: the exit code used to be dropped here, so a deploy that failed
+    # mid-list still ended in "Update complete".
+    ( cd "$d" && ./deploy.sh ) || failed+=("$name")
 done
 
 if [ "$found" -eq 0 ]; then
     echo "No deployment found in clients/. Run ./install.sh first."
+    exit 1
+fi
+
+if [ ${#failed[@]} -gt 0 ]; then
+    echo ""
+    echo "✗ Update finished with ${#failed[@]} failed deploy(s):"
+    for name in "${failed[@]}"; do
+        echo "  • ${name}  — re-run: (cd clients/${name} && ./deploy.sh)"
+    done
     exit 1
 fi
 

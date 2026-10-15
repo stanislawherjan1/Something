@@ -22,18 +22,27 @@ import {
   appendFileSync, chmodSync, unlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { PROJECT_DIR } from './config.js';
+import { v4Mode } from './memory-ledger.js';
 import * as integrationsStore from './integrations/store.js';
 
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
 const AUDIT     = join(PROJECT_DIR, '.allowed-emails.audit.log');
 const CONFIG    = join(PROJECT_DIR, '.team-config.json');
+// Slots whose last holder left but whose private trees could not be archived:
+// the uid stays out of the pool until the archive goes through.
+const HELD      = join(PROJECT_DIR, '.held-slots.json');
 
 // admin — full management; member — uses AI, owns their files; observer —
 // read-only (zero actions). Observer enforcement lands in a later phase; it's
 // accepted as data now so the registry shape is final.
 const VALID_ROLES = new Set(['admin', 'member', 'observer']);
+// The turn-user pool (setuid-wrappers/turn-runner.c, the Dockerfile): one
+// slot per person on the roster. A build constant — enlarging it is a change
+// to the image.
+export const TURN_POOL_SIZE = Number(process.env.TURN_POOL_SIZE || 24);
 // Where a teammate prefers to be reached for relays. 'both' = web thread (always
 // the record) + a Telegram ping; 'telegram' = prefer TG; 'web' = web only.
 const VALID_SURFACES = new Set(['web', 'telegram', 'both']);
@@ -183,6 +192,10 @@ export function list() {
     preferredSurface: VALID_SURFACES.has(e.preferredSurface) ? e.preferredSurface : null,
     // Shared so a teammate's bot can relay to this person in their language.
     preferredLanguage: normalizeLang(e.preferredLanguage),
+    // A session token issued before this moment is no longer accepted: set
+    // when the person signs out, so the token the browser (or the extension)
+    // still holds ends with the sign-out rather than at its expiry.
+    sessionsBefore:   e.sessionsBefore || null,
     // Locked = the person fixed it in Settings and the bot may not change it.
     // Unlocked (the default) = the bot changes it when the person asks.
     languageLocked: e.languageLocked === true,
@@ -191,6 +204,13 @@ export function list() {
     timezoneLocked: e.timezoneLocked === true,
     timezoneFrom: typeof e.timezoneFrom === 'string' ? e.timezoneFrom.slice(0, 200) : null,
     timezoneSetAt: e.timezoneSetAt || null,
+    // What from this person's private conversations may reach the team by
+    // itself: 'ask' (nothing without them), 'auto' (facts about the work), 'never'.
+    sharing: ['ask', 'auto', 'never'].includes(e.sharing) ? e.sharing : 'ask',
+    // The person's turn slot (1…TURN_POOL_SIZE): the uid their turns run as and
+    // the group that owns their private trees (lib/turn-slots.js). Null until
+    // assigned (add, or the boot reconcile).
+    slot: Number.isInteger(e.slot) && e.slot >= 1 && e.slot <= TURN_POOL_SIZE ? e.slot : null,
     // Reflect v2 scope routing: when true, org-classified non-sensitive facts
     // from THIS person's private DMs auto-promote to shared team memory (with an
     // audit trail) instead of prompting them for consent each time. A one-time
@@ -207,6 +227,31 @@ export function find(email) {
 /** Enriched identity for an email: { email, slug, role, displayName, ... } or null. */
 export function getUser(email) {
   return find(email);
+}
+
+/** The person's own choice of what may reach the team by itself. */
+export function setSharing(email, mode) {
+  if (!['ask', 'auto', 'never'].includes(mode)) throw new Error('mode must be ask, auto or never');
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) throw new Error(`${e} is not on the team.`);
+  entries[idx] = { ...entries[idx], sharing: mode };
+  writeRaw(entries);
+  appendAudit('sharing_mode', e, { mode });
+  return mode;
+}
+
+/** The person signed out: tokens issued before now are no longer accepted. */
+export function markSignedOut(email) {
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) return false;
+  entries[idx] = { ...entries[idx], sessionsBefore: new Date().toISOString() };
+  writeRaw(entries);
+  appendAudit('sign_out', e, {});
+  return true;
 }
 
 /** Path-safe slug for an email, or null if not on the team. */
@@ -351,6 +396,10 @@ export function add({ email, role = 'member', addedBy, displayName }) {
   const taken = new Set(withProfiles(entries).map(x => x.slug));
   const slug = uniqueSlug(slugify(localPart), taken);
 
+  // A turn slot — the uid the person's turns run as. The lowest free one;
+  // when the pool is full nothing is added, and the message says why.
+  const slot = freeSlot(entries);
+  if (!slot) throw new Error(`This workspace supports up to ${TURN_POOL_SIZE} people; the operator can enlarge the pool.`);
   const entry = {
     email:       e,
     role,
@@ -358,14 +407,18 @@ export function add({ email, role = 'member', addedBy, displayName }) {
     displayName: (displayName && String(displayName).trim()) || deriveDisplayName(localPart),
     addedAt:     new Date().toISOString(),
     addedBy:     normalize(addedBy) || null,
+    slot,
   };
   entries.push(entry);
   writeRaw(entries);
-  appendAudit('add', e, { role, slug, addedBy: entry.addedBy });
+  appendAudit('add', e, { role, slug, slot, addedBy: entry.addedBy });
   writeTeamRoster();
+  // The person's private trees become their slot's (kernel-level privacy).
+  ownTrees(slug, slot);
   // New teammate starts with a well-formed RESPONSIBILITIES card (the bot's duties
   // toward them) instead of a lazily-created one that could drift in format.
-  seedPrivateCard(slug, 'RESPONSIBILITIES');
+  // Duties live in routines.json once memory has moved to v4.
+  if (v4Mode() !== 'on') seedPrivateCard(slug, 'RESPONSIBILITIES');
   return entry;
 }
 
@@ -413,10 +466,94 @@ export function remove({ email, actor }) {
   const removed = entries[idx];
   entries.splice(idx, 1);
   writeRaw(entries);
-  appendAudit('remove', e, { role: removed.role, actor: actorEmail || null });
+  appendAudit('remove', e, { role: removed.role, slot: removed.slot || null, actor: actorEmail || null });
   writeTeamRoster();
+  // Their private trees leave the project before the slot can be reused —
+  // whoever gets the uid next must not inherit what the kernel let it read.
+  const slug = removed.slug || withProfiles([removed])[0]?.slug;
+  if (slug && archiveTrees(slug) === false && Number.isInteger(removed.slot)) {
+    writeHeld([...readHeld(), { slot: removed.slot, slug, since: new Date().toISOString() }]);
+  }
+  // Their own integration connections go with them (the credentials are
+  // theirs); the MCP sets that named them are rebuilt on the next turn.
+  if (slug) {
+    try {
+      const gone = integrationsStore.removePersonalAll(slug);
+      if (gone.length) import('./integrations/runtime.js').then(r => { r.forgetPersonalServers(slug); r.syncMcpServers(); }).catch(() => {});
+    } catch (err) { process.stderr.write(`[team] ${slug}'s connections not removed: ${err.message}\n`); }
+  }
   return removed;
 }
+
+/* ─── Turn slots: one uid per person ─────────────────────────────────────── */
+
+function readHeld() {
+  try { const v = JSON.parse(readFileSync(HELD, 'utf8')); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function writeHeld(held) {
+  ensureProjectDir();
+  if (!held.length) { try { unlinkSync(HELD); } catch {} return; }
+  writeFileSync(HELD, JSON.stringify(held, null, 2), { mode: 0o660 });
+}
+
+/** The lowest slot no entry holds (nor a departed person's unarchived trees), or null when the pool is full. */
+function freeSlot(entries) {
+  const taken = new Set([...entries, ...readHeld()].map(x => x.slot).filter(n => Number.isInteger(n)));
+  for (let n = 1; n <= TURN_POOL_SIZE; n++) if (!taken.has(n)) return n;
+  return null;
+}
+
+/** The slot of a person by slug — null when they have none (yet). */
+export function slotOf(slug) {
+  return list().find(m => m.slug === slug)?.slot || null;
+}
+
+/**
+ * Every person on the roster gets a slot and owns their trees — at boot (the
+ * entrypoint runs this as root through bin/turn-slots.mjs) and when
+ * workspace-api starts. Idempotent. Returns what it did.
+ */
+export function reconcileSlots() {
+  const entries = readRaw();
+  const out = { assigned: [], owned: [], granted: null, released: [] };
+  // A held slot comes back once its departed holder's trees are archived.
+  const held = readHeld();
+  if (held.length) {
+    const still = held.filter(h => archiveTrees(h.slug) === false);
+    out.released = held.filter(h => !still.includes(h)).map(h => h.slot);
+    if (out.released.length) writeHeld(still);
+  }
+  let changed = false;
+  for (const e of entries) {
+    if (Number.isInteger(e.slot) && e.slot >= 1 && e.slot <= TURN_POOL_SIZE) continue;
+    const slot = freeSlot(entries);
+    if (!slot) { process.stderr.write(`[team] no turn slot left for ${e.email} — the pool holds ${TURN_POOL_SIZE}
+`); continue; }
+    e.slot = slot; changed = true; out.assigned.push({ email: e.email, slot });
+  }
+  if (changed) writeRaw(entries);
+  for (const m of withProfiles(entries)) {
+    if (!m.slot) continue;
+    if (ownTrees(m.slug, m.slot)) out.owned.push(m.slug);
+  }
+  const admin = withProfiles(entries).find(m => m.role === 'admin' && m.slot);
+  if (admin && privTree(['grant', String(admin.slot).padStart(2, '0')])) out.granted = admin.slot;
+  return out;
+}
+
+// The root helper (setuid-wrappers/priv-tree.c): the one way workspace-api
+// changes who owns a private tree. Absent outside the container (dev, tests):
+// then nothing is owned and the model-facing hook is the only fence, as before.
+const PRIV_TREE_BIN = process.env.PRIV_TREE_BIN || '/usr/local/bin/priv-tree';
+// true = done, false = the helper refused or failed, null = no helper here.
+function privTree(args) {
+  if (!existsSync(PRIV_TREE_BIN)) return null;
+  try { execFileSync(PRIV_TREE_BIN, args, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 30_000 }); return true; }
+  catch (err) { process.stderr.write(`[team] priv-tree ${args.join(' ')}: ${String(err.stderr || err.message).trim()}
+`); return false; }
+}
+function ownTrees(slug, slot) { return privTree(['assign', slug, String(slot).padStart(2, '0')]); }
+function archiveTrees(slug) { return privTree(['archive', slug]); }
 
 /**
  * Self-service profile edit — a user sets their OWN displayName. Preserves
@@ -908,7 +1045,9 @@ const TEAM_ROSTER = join(PROJECT_DIR, 'memory', 'TEAM.md');
  */
 export function writeTeamRoster() {
   try {
-    if (!getTeamMode()) {
+    // Nothing reads TEAM.md after the move to memory v4 (the turn's own roster
+    // line names the people): the file only made the memory tree look busier.
+    if (v4Mode() === 'on' || !getTeamMode()) {
       if (existsSync(TEAM_ROSTER)) { unlinkSync(TEAM_ROSTER); return true; }
       return false;
     }
@@ -932,7 +1071,7 @@ purpose: Team roster — who is in this workspace (display name, slug, role). Ea
 
 # Team
 
-The people sharing this workspace. Use it to recognise teammates and for attribution. A person's profile, preferences, and notes are their OWN private memory at \`memory/users/<slug>/\` — never assume this roster reveals their personal facts, and never open another teammate's private memory (it's tool-guard blocked unless it's the current user or you're an admin).
+The people sharing this workspace. Use it to recognise teammates and for attribution. A person's profile, preferences, and notes are their OWN private memory at \`memory/users/<slug>/\` — never assume this roster reveals their personal facts, and never open another teammate's private memory (the tool guard allows only the current user's own — admins included).
 
 When you relay a message to someone (web_send_message), compose it in their **Language** and use the **Contact** column as a hint for where they like to be reached — the system handles the actual delivery (the web thread is always the record; Telegram is an extra ping when they prefer it and are linked). Language + Contact are SHARED here precisely because *your* bot can't read *their* private memory — so anything needed to reach a teammate correctly lives in this roster, not in their private cards.
 

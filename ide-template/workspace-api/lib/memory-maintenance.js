@@ -22,6 +22,7 @@ import * as facts from './memory-facts.js';
 import { check as checkInvariants } from './memory-invariants.js';
 import { updateDigest, updateProfiles } from './memory-views.js';
 import { atomicWrite } from './atomic-write.js';
+import { seedLinks } from './memory-task-links.js';
 import { pruneBackups } from './migrate.js';
 import { list as rosterList, listGroups, memberGroupsOf } from './team.js';
 
@@ -132,6 +133,10 @@ export async function runNightly({ at = Date.now() } = {}) {
     return out;
   });
 
+
+  // Tasks the day left without a link to the fact behind them get one careful
+  // look (lib/memory-task-links.js seedLinks): a few model calls a night.
+  await step('taskLinks', () => seedLinks({ now: at, log: (m) => run.errors.push(m) }));
 
   // What must hold in memory, checked on the real data (lib/memory-invariants.js):
   // read-only; each violation goes to the run's errors, so it is seen.

@@ -126,7 +126,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // The turn's token is what proves `from`; wsapi ignores the claim without it.
+          headers: { 'Content-Type': 'application/json', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
           body: JSON.stringify({ title, body, recipient, from, fromSession, channel }),
         });
         const sJson = await sRes.json().catch(() => ({}));
@@ -142,7 +143,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (wantWebToast) {
         const nRes = await fetch(NOTIFY_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
           body: JSON.stringify({
             kind: 'bot',
             title,

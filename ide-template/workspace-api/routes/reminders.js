@@ -65,19 +65,27 @@ function acquireLock() {
   }
 }
 
-function writeReminders(reminders) {
+// Read-modify-write under one hold. The lock used to be taken by the write
+// alone, with the read done before it: a cancel that waited on the monitor's
+// settle then wrote the array it had read BEFORE the wait, undoing whatever
+// the monitor had just settled.
+function withLock(fn) {
   const held = acquireLock();
-  try {
-    const tmp = `${REMINDERS_FILE}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
-    try {
-      writeFileSync(tmp, JSON.stringify(reminders, null, 2));
-      renameSync(tmp, REMINDERS_FILE);   // atomic swap (mirrors reminder-mcp)
-    } catch (err) {
-      try { unlinkSync(tmp); } catch { /* nothing to clean */ }
-      throw err;
-    }
-  } finally {
+  try { return fn(); }
+  finally {
     if (held) { try { unlinkSync(LOCK_FILE); } catch { /* already gone */ } }
+  }
+}
+
+// Caller holds the lock.
+function writeReminders(reminders) {
+  const tmp = `${REMINDERS_FILE}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(reminders, null, 2));
+    renameSync(tmp, REMINDERS_FILE);   // atomic swap (mirrors reminder-mcp)
+  } catch (err) {
+    try { unlinkSync(tmp); } catch { /* nothing to clean */ }
+    throw err;
   }
 }
 
@@ -142,20 +150,26 @@ export default function remindersRouter() {
     try {
       const id = typeof req.body?.id === 'string' ? req.body.id.trim() : '';
       if (!id) return res.status(400).json({ ok: false, error: 'id required' });
-      const reminders = readReminders();
-      const idx = reminders.findIndex(r => r.id === id);
-      if (idx === -1) return res.status(404).json({ ok: false, error: 'reminder not found' });
-      const r = reminders[idx];
-      if (r.kind === 'system') {
-        return res.status(403).json({ ok: false, error: 'system reminders cannot be cancelled here' });
-      }
       const me = actorSlug(req);
-      if (me && !isAdmin(req) && (r.setBy || '') !== me) {
-        return res.status(403).json({ ok: false, error: 'only the person who set it (or an admin) can cancel this reminder' });
-      }
-      reminders.splice(idx, 1);
-      writeReminders(reminders);
-      return res.json({ ok: true, id });
+      const admin = isAdmin(req);
+      // Read inside the lock: the array written back must be the one nobody
+      // else has changed since.
+      const [status, body] = withLock(() => {
+        const reminders = readReminders();
+        const idx = reminders.findIndex(r => r.id === id);
+        if (idx === -1) return [404, { ok: false, error: 'reminder not found' }];
+        const r = reminders[idx];
+        if (r.kind === 'system') {
+          return [403, { ok: false, error: 'system reminders cannot be cancelled here' }];
+        }
+        if (me && !admin && (r.setBy || '') !== me) {
+          return [403, { ok: false, error: 'only the person who set it (or an admin) can cancel this reminder' }];
+        }
+        reminders.splice(idx, 1);
+        writeReminders(reminders);
+        return [200, { ok: true, id }];
+      });
+      return res.status(status).json(body);
     } catch (err) {
       process.stderr.write(`[reminders] cancel failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });

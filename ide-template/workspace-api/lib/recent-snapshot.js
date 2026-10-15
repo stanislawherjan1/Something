@@ -32,6 +32,7 @@ import { PROJECT_DIR } from './config.js';
 import { atomicWrite } from './atomic-write.js';
 import { getTeamMode, primaryAdminSlug, dmOwnerSlug } from './team.js';
 import { USERS_DIR } from './scope-rule.js';
+import { v4Mode } from './memory-ledger.js';
 
 const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/conversation.jsonl';
 const MEMORY_DIR = join(PROJECT_DIR, 'memory');
@@ -302,6 +303,13 @@ export function writeRecentSnapshot({
   if (!cfg) throw new Error(`unknown channel: ${channel}`);
   const updatedAt = new Date().toISOString();
 
+  // Memory v4 reads no RECENT_* card: the tail is rendered on demand
+  // (renderRecent) and the files from before the move are removed.
+  if (v4Mode() === 'on') {
+    removeSnapshots(channel);
+    return { channel, skipped: 'memory v4' };
+  }
+
   // Per-user web snapshots (team mode only).
   if (channel === 'web' && getTeamMode()) {
     const byUser = listWebSessionsByUser();
@@ -373,6 +381,36 @@ export function writeRecentSnapshot({
  *
  * Returns true | false. Pure check, no IO side effects beyond stat().
  */
+/** Every RECENT_<CHANNEL>.md, flat and per person. */
+function removeSnapshots(channel) {
+  const file = `RECENT_${channel.toUpperCase()}.md`;
+  const paths = [join(MEMORY_DIR, file)];
+  try {
+    for (const e of readdirSync(join(MEMORY_DIR, USERS_DIR), { withFileTypes: true })) {
+      if (e.isDirectory() && /^[a-z0-9-]+$/.test(e.name)) paths.push(join(MEMORY_DIR, USERS_DIR, e.name, file));
+    }
+  } catch { /* no users yet */ }
+  for (const p of paths) { try { if (existsSync(p)) unlinkSync(p); } catch { /* best-effort */ } }
+}
+
+/**
+ * The recent tail of a channel, rendered from the live conversation without
+ * writing a file (memory v4). `slug` = whose web tail in team mode; Telegram
+ * is the one bot's conversation, and the caller decides who may read it.
+ */
+export function renderRecent({ channel = 'web', slug = null, maxMessages = DEFAULT_MAX_MESSAGES, maxChars = DEFAULT_MAX_CHARS } = {}) {
+  const cfg = CHANNELS[channel];
+  if (!cfg) throw new Error(`unknown channel: ${channel}`);
+  let messages;
+  if (channel === 'web' && getTeamMode()) {
+    messages = slug && /^[a-z0-9-]+$/.test(slug) ? readMessagesFrom(listWebSessionsByUser().get(slug) || []) : [];
+  } else {
+    messages = cfg.readMessages ? cfg.readMessages() : readJsonl(cfg.sourcePath);
+  }
+  if (!messages.length) return '';
+  return renderSnapshot(cfg, channel, messages, maxMessages, maxChars, new Date().toISOString()).content;
+}
+
 export function isSnapshotStale({ channel = 'web', idleSeconds = 600 } = {}) {
   const cfg = CHANNELS[channel];
   if (!cfg) return false;

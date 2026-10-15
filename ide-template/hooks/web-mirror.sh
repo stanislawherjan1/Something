@@ -89,6 +89,7 @@ fi
 # user's Telegram delivery already succeeded by the time this hook runs.
 curl -sS -m 3 -X POST "$NOTIFY_URL" \
     -H 'Content-Type: application/json' \
+    -H "X-IDE-Turn: ${IDE_TURN_ID:-}" \
     -d "$JSON" > /dev/null 2>&1 || true
 
 exit 0

@@ -319,7 +319,7 @@ app.get('/auth/me', (req, res) => {
         // keep reading their profile (and stay "logged in" in the UI) for
         // the JWT TTL after being kicked off the team. Cache TTL on the
         // whitelist resolver bounds propagation lag to ~30s.
-        if (!whitelist.isAllowed(payload.email)) {
+        if (!whitelist.isAllowed(payload.email) || whitelist.signedOutSince(payload.email, payload.iat)) {
             res.clearCookie(SESSION_COOKIE);
             return res.status(401).json({ error: 'Access revoked' });
         }
@@ -347,9 +347,14 @@ app.get('/auth/verify', (req, res) => {
         // Belt-and-braces: a session can outlive a removal from the whitelist
         // (8 h JWT TTL). Re-check on every verify so a removed user is locked
         // out within the cache TTL (30 s) instead of waiting for cookie expiry.
-        if (!whitelist.isAllowed(payload.email)) {
+        if (!whitelist.isAllowed(payload.email) || whitelist.signedOutSince(payload.email, payload.iat)) {
             res.clearCookie(SESSION_COOKIE);
             return res.status(401).send('Access revoked');
+        }
+        // ?admin=1 — the gate for the editor (code-server), a whole-workspace
+        // shell that is an admin's tool. A member keeps the workspace app.
+        if (req.query.admin === '1' && whitelist.roleOf(payload.email) !== 'admin') {
+            return res.status(403).send('Admins only');
         }
         res.setHeader('X-IDE-User', payload.email);
         return res.status(200).send('OK');

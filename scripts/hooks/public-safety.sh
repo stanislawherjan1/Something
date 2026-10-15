@@ -12,7 +12,15 @@
 # Exit: 0 = allow, 2 = block (stderr is shown to the model).
 
 PAYLOAD=$(cat)
-command -v jq >/dev/null 2>&1 || exit 0
+# Without jq the command cannot be read, so the gate cannot run. Anything
+# that looks like a push is blocked rather than waved through; every other
+# command is allowed, so a missing jq surfaces at the first push, with a
+# message, instead of silently disabling the check.
+if ! command -v jq >/dev/null 2>&1; then
+    printf '%s' "$PAYLOAD" | grep -qE 'git.{0,40}push' || exit 0
+    echo "Blocked: this hook needs jq to read the command (apt install jq / brew install jq); a push is not let through unchecked." >&2
+    exit 2
+fi
 CMD=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.command // empty' 2>/dev/null)
 [ -z "$CMD" ] && exit 0
 printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+push\b' || exit 0

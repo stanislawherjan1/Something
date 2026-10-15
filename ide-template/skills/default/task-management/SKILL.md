@@ -16,10 +16,13 @@ the workspace API on loopback with the **Bash tool (`curl`)**:
 
 | Action | Call |
 |---|---|
-| **List** | `curl -s http://localhost:3001/api/tasks` |
-| **Add** | `curl -s -X POST http://localhost:3001/api/tasks -H 'Content-Type: application/json' -d '{"title":"…"}'` |
-| **Update / move** | `curl -s -X PATCH http://localhost:3001/api/tasks/<id> -H 'Content-Type: application/json' -d '{"status":"done"}'` |
-| **Delete** | `curl -s -X DELETE http://localhost:3001/api/tasks/<id>` |
+| **List** | `curl -s -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks` |
+| **Add** | `curl -s -X POST -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks -H 'Content-Type: application/json' -d '{"title":"…"}'` |
+| **Update / move** | `curl -s -X PATCH -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks/<id> -H 'Content-Type: application/json' -d '{"status":"done"}'` |
+| **Delete** | `curl -s -X DELETE -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks/<id>` |
+
+The `X-IDE-Turn` header tells the API whose turn this is (the person you are
+talking to); always send it, exactly as written.
 
 - **List returns** `{ ok, teamMode, me, people: {slug→{name,avatar}}, tasks: [...] }`.
   **Always list before adding or changing** — find an existing task to update
@@ -63,22 +66,48 @@ task; a task can be *assigned* to a teammate without notifying them — see belo
 
 ## Assigning a task — `owner`
 
-`owner` is **who's responsible**, not who created it. Pass a teammate's roster
-**slug** — valid slugs are in the `people` map of the list response. Default the
-owner to the person asking, and **resolve their slug yourself from context**: the
-HTTP call carries no logged-in identity, so the API can't expand "me" or auto-fill
-a creator. Only assign someone else when the user says so ("assign this to Jan" →
-`"owner":"jan"`). Leave `owner` out if nobody owns it yet. **Assigning does NOT
+`owner` is **who's responsible**, not who created it. **Leave `owner` out and the
+task is the person asking's** — the API fills it in from the turn header. Pass a
+teammate's roster **slug** (valid slugs are in the `people` map of the list
+response) only when the user assigns someone else ("assign this to Jan" →
+`"owner":"jan"`), and `"owner": null` only when they say nobody owns it yet. In a
+group conversation nothing is filled in: name the owner or leave it unowned.
+**Assigning does NOT
 notify the teammate** — it just records ownership; to ping them, that's a relay or
 a reminder with a recipient, separate from the board. Full rules →
 `references/templates.md`.
 
+## Linking a task to what memory holds — `record` / `fact`
+
+When the task comes from something remembered — a request, a decision, a
+deadline in your memory block or in `memory_search` results — pass the
+excerpt's id: `"record": "<id from the [… · id …] line>"` (or `"fact": "<fact id>"`
+when you have one). The board and memory then point at each other: the Memory
+screen shows the task and its state under the fact, the board shows where the
+task came from, and when the task is done that fact is closed by itself. Leave it
+out when the task is new.
+
+## Whether something got done: the board decides
+
+Memory excerpts carry the state of the task they led to (`↳ task "…": done on
+… / in progress / not started`). A fact that something was asked for never
+means it is still open. When someone asks whether a thing was done, sent or
+finished and no excerpt says, list the board before answering — and answer from
+the board, never "I don't know" while a task for it exists.
+
 ## Adding a task
 
-1. `curl -s http://localhost:3001/api/tasks` — check for an existing task to update instead.
+1. `curl -s -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks` — check for an existing task to update instead.
 2. POST → Backlog, unless work has already started (`"status":"in_progress"`).
 3. `title` is imperative and self-contained; `priority` and `deadline` when known (omit otherwise); `owner` per above.
+   **`record` whenever memory is where the task comes from:** if the request,
+   decision or deadline behind this task is in your memory block or in a
+   `memory_search` result, copy that excerpt's id (the `id …` in its header
+   line) into `"record"`. This is not optional: without it the board and memory
+   drift apart and you will later be asked about work that is done. A brand-new
+   request with nothing in memory → no `record`.
 4. Set reminders per `references/reminder-rules.md` (deadline within 14d → silent day-before; beyond 14d → ask; blocker → ask when to remind).
+5. **The board is the only record of a task.** Never `memory_note` it, never file it as a status or a "keeping track of" item: memory would keep asking about a task the board already shows as done. Memory keeps the fact or decision behind it, if there is one ("the client wants the deck by Friday"), and the nightly filing does that by itself.
 
 ## Moving a task
 

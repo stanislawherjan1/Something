@@ -25,6 +25,10 @@ import {
 import { subscribe } from '../lib/watcher.js';
 import { requireActor } from '../lib/auth.js';
 import { actorScope, actorCanAccess } from '../lib/file-scope.js';
+import * as locks from '../lib/locks.js';
+import { list as rosterList, getTeamMode } from '../lib/team.js';
+import { relative, resolve, sep } from 'node:path';
+import { PROJECT_DIR } from '../lib/config.js';
 
 export default function filesRouter() {
   const router = Router();
@@ -36,6 +40,34 @@ export default function filesRouter() {
     if (actorCanAccess(abs, req)) return true;
     res.status(403).json({ error: 'forbidden' });
     return false;
+  };
+  const rel = (abs) => { const r = relative(resolve(PROJECT_DIR), abs); return !r || r === '.' ? '' : r.split(sep).join('/'); };
+  const nameOf = (slug) => { try { return rosterList().find(m => m.slug === slug)?.displayName || slug || 'an admin'; } catch { return slug || 'an admin'; } };
+  // A lock's sentence — the one the bot says too when it is refused.
+  const lockedMessage = (hit) => `Locked by ${nameOf(hit.by)}. Read-only until an admin unlocks it.`;
+  // Writable for this actor: in scope, and not locked — a lock is read-only
+  // for everyone, admins included; unlocking is the way to change it. A
+  // folder with a locked item inside cannot be moved or deleted either.
+  const writable = (abs, req, res) => {
+    if (!inScope(abs, req, res)) return false;
+    const r = rel(abs);
+    // The team's skills and instructions are an admin's (anyone's in solo);
+    // a member keeps skills of their own under users/<slug>/.skills.
+    if (/^\.claude\/(skills(\/|$)|CLAUDE\.md$)/.test(r) && getTeamMode() && !actorScope(req).isAdmin) {
+      res.status(403).json({ error: 'The team\'s skills are changed by an admin. Your own skills go in your Personal Files, under .skills.' });
+      return false;
+    }
+    const hit = locks.covering(r);
+    if (hit) {
+      res.status(403).json({ error: lockedMessage(hit), locked: { path: hit.path, by: hit.by, byName: nameOf(hit.by) } });
+      return false;
+    }
+    const inside = r ? locks.list().find(l => l.exists && l.path.startsWith(`${r}/`)) : null;
+    if (inside) {
+      res.status(403).json({ error: `"${inside.path}" inside it is locked by ${nameOf(inside.by)}. Unlock it first.`, locked: { path: inside.path, by: inside.by, byName: nameOf(inside.by) } });
+      return false;
+    }
+    return true;
   };
 
   // Defense-in-depth — nginx auth_request already gates /api/* upstream, but
@@ -65,6 +97,16 @@ export default function filesRouter() {
       if (err.code === 'ENOTDIR') return res.status(400).json({ error: 'not a directory' });
       return res.status(500).json({ error: err.message });
     }
+    // Each entry says whether a lock covers it — its own, or a folder's above
+    // it (then `inherited`) — so the tree can show the icon and the sentence.
+    const all = locks.readLocks();
+    if (Object.keys(all).length) {
+      const base = rel(abs);
+      for (const e of entries) {
+        const hit = locks.covering(base ? `${base}/${e.name}` : e.name);
+        if (hit) e.locked = { path: hit.path, by: hit.by, byName: nameOf(hit.by), inherited: hit.inherited };
+      }
+    }
     res.json({ path: displayPath(abs), entries });
   });
 
@@ -77,11 +119,14 @@ export default function filesRouter() {
 
     const result = readTextFile(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
+    // Whether it can be changed: a lock (its own or a folder's) makes it read-only for everyone.
+    const hit = locks.covering(rel(abs));
     res.json({
       path: relPath.replace(/^\/+/, ''),
       size: result.size,
       mtime: result.mtime,
       content: result.content,
+      ...(hit ? { locked: { path: hit.path, by: hit.by, byName: nameOf(hit.by) } } : {}),
     });
   });
 
@@ -105,6 +150,10 @@ export default function filesRouter() {
     let dirsWalked = 0, contentScanned = 0;
 
     const queue = [{ abs: rootAbs, rel: '' }];
+    // The person's own Personal Files: users/ is left out of the walk (it is
+    // not part of the shared tree), so their own folder is walked by name.
+    const own = actorScope(req).slug;
+    if (own) { const ownAbs = resolveSafePath(`users/${own}`); if (ownAbs && actorCanAccess(ownAbs, req)) queue.push({ abs: ownAbs, rel: `users/${own}` }); }
     while (queue.length && results.length < MAX_RESULTS && dirsWalked < MAX_DIRS) {
       const { abs, rel } = queue.shift();
       dirsWalked++;
@@ -149,7 +198,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
-    if (!inScope(abs, req, res)) return;
+    if (!writable(abs, req, res)) return;
     const result = makeDir(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, '') });
@@ -162,7 +211,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
-    if (!inScope(abs, req, res)) return;
+    if (!writable(abs, req, res)) return;
     const result = createFile(abs, content ?? '');
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, ''), size: result.size, mtime: result.mtime });
@@ -176,8 +225,8 @@ export default function filesRouter() {
     const absTo   = resolveSafePath(to);
     if (!absFrom) return res.status(400).json({ error: 'invalid from' });
     if (!absTo)   return res.status(400).json({ error: 'invalid to' });
-    if (!inScope(absFrom, req, res)) return;
-    if (!inScope(absTo, req, res)) return;
+    if (!writable(absFrom, req, res)) return;
+    if (!writable(absTo, req, res)) return;
     const result = movePath(absFrom, absTo);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ from: from.replace(/^\/+/, ''), to: to.replace(/^\/+/, '') });
@@ -188,7 +237,7 @@ export default function filesRouter() {
     if (!relPath) return res.status(400).json({ error: 'path is required' });
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
-    if (!inScope(abs, req, res)) return;
+    if (!writable(abs, req, res)) return;
     const result = deletePath(abs);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({ path: relPath.replace(/^\/+/, '') });
@@ -201,7 +250,7 @@ export default function filesRouter() {
     }
     const abs = resolveSafePath(relPath);
     if (!abs) return res.status(400).json({ error: 'invalid path' });
-    if (!inScope(abs, req, res)) return;
+    if (!writable(abs, req, res)) return;
 
     const result = writeTextFile(abs, content);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
@@ -210,6 +259,33 @@ export default function filesRouter() {
       size: result.size,
       mtime: result.mtime,
     });
+  });
+
+  // Locks: admins mark shared files and folders read-only for members.
+  const requireAdmin = (req, res) => {
+    if (actorScope(req).isAdmin) return true;
+    res.status(403).json({ error: 'Only an admin can lock or unlock.' });
+    return false;
+  };
+  router.get('/files/locks', (req, res) => {
+    const items = locks.list().map(l => ({ ...l, byName: nameOf(l.by) }));
+    res.json({ locks: items, canManage: actorScope(req).isAdmin });
+  });
+  router.post('/files/lock', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const relPath = typeof req.body?.path === 'string' ? req.body.path : '';
+    const abs = relPath ? resolveSafePath(relPath) : null;
+    if (!abs) return res.status(400).json({ error: 'path is required' });
+    try {
+      const entry = locks.lock(rel(abs), actorScope(req).slug);
+      res.json({ ok: true, path: rel(abs), by: entry.by, at: entry.at });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+  router.post('/files/unlock', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const relPath = typeof req.body?.path === 'string' ? req.body.path : '';
+    if (!relPath) return res.status(400).json({ error: 'path is required' });
+    res.json({ ok: true, removed: locks.unlock(relPath) });
   });
 
   router.get('/files/raw', (req, res) => {
@@ -224,6 +300,13 @@ export default function filesRouter() {
     res.setHeader('Content-Type',   result.mime);
     res.setHeader('Content-Length', result.size);
     res.setHeader('Cache-Control',  'private, max-age=60');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // An SVG is a document: opened in a tab it would run its scripts in the
+    // workspace's origin. As an <img> it renders the same without them, so
+    // the response forbids script and is sandboxed when opened directly.
+    if (result.mime === 'image/svg+xml') {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    }
     result.stream.on('error', () => res.end());
     result.stream.pipe(res);
   });

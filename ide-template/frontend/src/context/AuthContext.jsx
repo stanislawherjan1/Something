@@ -56,6 +56,9 @@ export function AuthProvider({ children }) {
             window.location.href = `${window.location.pathname}?auth=login`;
             return;
         }
+        // Tell the workspace first: tokens issued before now stop working
+        // everywhere (a copy in the extension included), not only in this tab.
+        await fetch('/api/me/sign-out', { method: 'POST', credentials: 'include' }).catch(() => {});
         await fetch('/auth/session', { method: 'DELETE', credentials: 'include' });
         setUser(null);
     }

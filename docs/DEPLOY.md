@@ -158,6 +158,16 @@ docker compose up --build -d
 docker compose logs -f
 ```
 
+### Volumes that outlive a container
+
+`bot-home` (the brain's home), `turn-homes` (one home per turn user — the
+hooks' settings and each person's sessions) and the store are named volumes
+and survive a redeploy. `turn-homes` replaced the single `turn-home` volume
+with the per-person turn users; a host upgraded from before keeps an orphaned
+`<stack>_turn-home` volume — `docker volume rm` it once the new stack is
+healthy. Web conversations started before the upgrade are not resumed (their
+transcripts sat in the shared sessions directory); chat starts them afresh.
+
 ### Partial deploys
 
 Pass a service name to rebuild only one container (faster — skips unrelated services):
@@ -169,6 +179,9 @@ Pass a service name to rebuild only one container (faster — skips unrelated se
 ```
 
 No argument = full deploy (all services rebuilt and swapped).
+
+`./deploy.sh rollback` puts the previous image generation back without a
+build — see [Troubleshooting](#troubleshooting).
 
 ### Hot-patching a single backend file (no rebuild)
 
@@ -353,6 +366,10 @@ curl https://<YOUR_DOMAIN>/auth/health
 # Expected: {"ok":true}
 ```
 
+`deploy.sh` and the container's own `HEALTHCHECK` both require code-server
+(`:8080`) **and** workspace-api (`:3001/api/health`) to answer; a container
+whose backend never came up is reported as unhealthy, not as ready.
+
 ### CORS headers
 ```bash
 curl -I -H "Origin: https://<YOUR_DOMAIN>" https://<YOUR_DOMAIN>/auth/health
@@ -430,8 +447,33 @@ cd clients/<your-client> && ./deploy.sh   # rebuild on the server, swap containe
 - Activated integrations stay active — their credentials live in the encrypted store, not in the image.
 - The bot restarts (~5–10 s); memory and project files survive.
 - Idempotent: safe to re-run if a deploy is interrupted.
+- `deploy.sh` exits non-zero when the health check does not pass within its
+  window (nothing is stamped as deployed); `update.sh` carries on with the
+  remaining clients, then lists the ones that failed and exits non-zero.
 
 > Watch this repository's releases for security fixes. A public deployment that lags behind a published fix is exposed — a public patch is also a public disclosure.
+
+### Builds, disk and `--fresh`
+
+The image is built on the client's own server. `deploy.sh` sends the build
+context as one compressed stream over one SSH session (it used to open a
+connection per file: on a slow or distant link that alone took a quarter of an
+hour). A routine `./deploy.sh` reuses the layer cache: the packages, browser, CLI and VS Code extensions are shared
+with the running image and only the layers whose files changed are rebuilt —
+minutes, not forty of them, and a few hundred MB of disk, not a second copy of
+the image. `./deploy.sh --fresh` rebuilds every layer (a base-package refresh,
+or a layer you suspect is stale); at its peak that holds the running image, a
+full build cache and the new image compressed and unpacked — about four times
+the image's compressed size — so deploy.sh measures free space first, frees what
+is unused, drops the `:previous` generation if it must, and stops before the
+build when it still would not fit.
+
+Host upkeep that keeps this working: `bin/ensure-server.sh` schedules a weekly
+prune of build cache nobody used for ten days (plus a journal cap), and every
+container's log is rotated (20 MB × 3, set in `docker-compose.yml`). If a
+deploy still dies with `no space left on device`: `docker system df` on the
+host, `docker builder prune -af`, then remove image tags nothing runs
+(`docker ps` shows the one in use) — or move to a bigger disk.
 
 ### Data migrations
 
@@ -478,6 +520,24 @@ The new member just signs in with Google at the workspace URL — the OAuth redi
 
 ## Troubleshooting
 
+**A deploy shipped something broken — roll back:**
+
+Every deploy tags the images it is about to replace as `<image>:previous`
+on the server (one generation is kept; the tag moves on the next deploy), and
+keeps the matching `.deploy-manifest.json` beside it. To put that generation
+back:
+
+```bash
+cd clients/<your-client> && ./deploy.sh rollback
+```
+
+No upload, no build: compose recreates the containers from the previous
+images (a few seconds), the manifest is restored so `verify-drift.sh` reports
+the commit that is actually running, and the health check runs as usual. The
+pm2 crashloop watch is skipped (that image already passed it). A host that has
+never deployed since this was added has no `:previous` tag yet, and the
+command says so. Fix forward afterwards with a normal `./deploy.sh`.
+
 **401 in iframe:**
 ```bash
 docker logs <IDE_NAME>-auth --tail=50
@@ -510,7 +570,7 @@ The IDE shows files from the wrong location — usually the root of My Drive ins
    ```
 2. If it's empty, set `CORPORATE_FOLDER_ID` in `clients/<client>/.env`:
    ```env
-   CORPORATE_FOLDER_ID=1yHUow9qWZ1NKluEk-i3MDsSKP_pOs1uk
+   CORPORATE_FOLDER_ID=<folder-id>
    # ^ get this from the Drive URL: drive.google.com/drive/folders/<THIS_PART>
    ```
 3. Redeploy `code-server` (not just `frontend` — rclone runs inside this container):

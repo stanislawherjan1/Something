@@ -38,9 +38,9 @@ When an MCP tool returns "not available" / "browser not reachable" / "ENETUNREAC
 
 ## Your own workspace files vs system dotfiles
 
-These ARE yours to edit freely (per File Operations in `~/.claude/CLAUDE.md`):
-- `~/project/.claude/CLAUDE.md`
-- `~/project/.claude/skills/`
+These ARE yours to edit (per File Operations in `~/.claude/CLAUDE.md`):
+- `~/project/.claude/CLAUDE.md` and `~/project/.claude/skills/` — the team's; in a team, only when an admin asks (a member's write there is refused)
+- `~/project/users/<slug>/.skills/` — this person's own skills, loaded only in their conversations (`~/.claude/skills` points at it)
 
 Memory is not a folder you edit: changes go through `memory_write` / `memory_note` only.
 

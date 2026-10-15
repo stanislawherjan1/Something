@@ -26,16 +26,18 @@ fi
 CHANGED=$(git diff --name-only "$BASE...$HEAD")
 [ -z "$CHANGED" ] && exit 0
 
-# Shipped code: everything that ends up in a deployment or the installer.
-# Tests and CI config are not user-facing behaviour.
+# Shipped code: everything that ends up in a deployment, the installer or the
+# browser extension. Tests and CI config are not user-facing behaviour.
 CODE=$(echo "$CHANGED" \
-    | grep -E '^(ide-template/|install\.sh$|update\.sh$|bin/|scripts/)' \
+    | grep -E '^(ide-template/|chrome-extension/|install\.sh$|update\.sh$|bin/|scripts/)' \
     | grep -vE '\.test\.(mjs|js)$|^ide-template/scripts/test-' \
     | grep -vE '(^|/)README\.md$|^ide-template/PROJECT_STRUCTURE\.md$')
 
-# Documentation: the docs tree, the top-level guides, per-component READMEs.
+# Documentation: only what the doc map in CLAUDE.md points at — the docs
+# tree, the root README and workspace-api's README. Any other README (a
+# skill's, an MCP's) is part of the code it sits next to, not a docs decision.
 DOCS=$(echo "$CHANGED" \
-    | grep -E '^docs/.*\.md$|^README\.md$|^CONTRIBUTING\.md$|(^|/)README\.md$|^ide-template/PROJECT_STRUCTURE\.md$')
+    | grep -E '^docs/.*\.md$|^README\.md$|^ide-template/workspace-api/README\.md$')
 
 if [ -z "$CODE" ]; then
     echo "check-docs-impact: no shipped code changed — ok"

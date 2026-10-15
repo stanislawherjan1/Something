@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search, Brain } from 'lucide-react';
+import { Plug, CheckCircle2, AlertTriangle, Lock, X, Loader2, ArrowRight, Trash2, Clock, Plus, ChevronDown, Download, Copy, Check as CheckIcon, HelpCircle, Settings as SettingsIcon, Search, Brain, Users, Sparkles, BrainCircuit, MessageSquareText, ShoppingBag, Store, CreditCard, Wallet, Landmark, Receipt, Megaphone, BarChart3, Mail, Video, Mic, NotebookPen, CalendarDays, FileText, ListTodo, KanbanSquare, CheckSquare, GitBranch, MessageCircle, Send, AtSign, PenLine, Image, Globe, Code2, Terminal, Database, Boxes, Puzzle, User, LayoutGrid, Eye, Info } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,10 @@ import TileBanner from './TileBanner.jsx';
 import StatusTag from './StatusTag.jsx';
 import EditorHeader from '../EditorHeader.jsx';
 import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
-import { useBranding } from '../identity';
+import { useIntegrationToasts, IntegrationToasts } from './integrationToasts.jsx';
+import { Avatar } from './TeamDashboard.jsx';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem } from '@/components/ui/dropdown-menu';
+import { useBranding, BrandedImage } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
 
 import useMe from '../useMe.js';
@@ -23,7 +26,7 @@ import { Plus as PlusIcon } from 'lucide-react';
  * the Telegram bot's display name). Missing keys leave the placeholder
  * intact rather than throwing — the catalog can omit fields safely.
  */
-function interpolate(text, vars) {
+export function interpolate(text, vars) {
   if (typeof text !== 'string') return text;
   return text.replace(/\{\{(\w+)\}\}/g, (m, k) =>
     vars && vars[k] != null ? String(vars[k]) : m
@@ -37,9 +40,9 @@ function interpolate(text, vars) {
  * user is meant to paste somewhere, and a copy button beats reach-for-
  * the-mouse selection for non-technical users.
  */
-function StepBody({ body }) {
+export function StepBody({ body }) {
   return (
-    <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/90 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:font-medium [&_strong]:text-foreground/80">
+    <div className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground/90 [&_p]:my-1.5 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:my-0.5 [&_strong]:font-medium [&_strong]:text-foreground/70">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -48,7 +51,7 @@ function StepBody({ body }) {
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-foreground underline decoration-foreground/35 underline-offset-[3px] transition-colors hover:decoration-foreground"
+              className="text-foreground/85 underline decoration-foreground/25 underline-offset-[3px] transition-colors hover:text-foreground hover:decoration-foreground/60"
             >
               {children}
             </a>
@@ -108,6 +111,22 @@ function CopyableCode({ children }) {
 // in the marketplace: nothing to paste either way.
 const isOneClick = (integration) => integration?.mcp?.type === 'http';
 
+// What a category looks like on its marketplace banner: a few icons drawn as
+// the halftone, the same way an active tile draws its logo.
+const CATEGORY_ICONS = {
+  ai:           [Sparkles, BrainCircuit, MessageSquareText],
+  commerce:     [ShoppingBag, Store, CreditCard],
+  finance:      [Wallet, Landmark, Receipt],
+  marketing:    [Megaphone, BarChart3, Mail],
+  meetings:     [Video, Mic, NotebookPen],
+  productivity: [CalendarDays, FileText, ListTodo],
+  tasks:        [KanbanSquare, CheckSquare, GitBranch],
+  messaging:    [MessageCircle, Send, AtSign],
+  content:      [PenLine, Image, Globe],
+  dev:          [Code2, Terminal, Database],
+  other:        [Plug, Boxes, Puzzle],
+};
+
 const CATEGORY_LABELS = {
   ai:           'AI',
   commerce:     'Commerce',
@@ -128,6 +147,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // server 403s the writes — this gates the UI to match).
   const { me } = useMe();
   const isAdmin = !!me?.isAdmin;
+  // Solo is a team of one: no Team / Yours split, no access to choose.
+  const solo = me?.teamMode === false;
   const { data, loading, error, reload: reloadApi } = useApi('/api/integrations');
   // Which connected integrations feed this person's memory (Memory → Sources).
   const { data: sourcesData, reload: reloadSources } = useApi('/api/memory/v4/sources');
@@ -157,7 +178,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   useEffect(() => {
     if (!activateId) { setActivating(null); return; }
     const match = integrations.find(i => i.id === activateId);
-    if (!match || !isAdmin) return;               // members can't activate
+    if (!match || !(isAdmin || match.canConnectPersonal)) return;   // a member adds their own only
     if (isRemoteMcpOauth(match)) {
       const next = new URLSearchParams(searchParams);
       next.delete('activate');
@@ -178,86 +199,30 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // Lightweight local toasts — immediate feedback for one-click/open activations
   // so the user always knows what happened (the SSE toast stream is for
   // server-pushed events, too heavy for a click confirmation).
-  const [toasts, setToasts] = useState([]);
-  const toastSeq = useRef(0);
-  const dismissToast = useCallback((id) => setToasts(t => t.filter(x => x.id !== id)), []);
-  const pushToast = useCallback((text, kind = 'ok', opts = {}) => {
-    const { ttl = 4500, logo = null, label = null } = opts;
-    const id = ++toastSeq.current;
-    setToasts(t => [...t, { id, text, kind, logo, label }]);
-    if (ttl) setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), ttl);
-    return id;
-  }, []);
-  // A single progress toast for the bot restart the activation triggers —
-  // replaces the old in-modal RestartingBanner/DoneBanner so every path funnels
-  // through toasts. Bar fills over the restart window, then flips to "ready".
-  const pushRestartToast = useCallback(() => {
-    const id = ++toastSeq.current;
-    setToasts(t => [...t, { id, kind: 'progress', text: `Updating ${botDisplayName}…`, duration: RESTART_WINDOW_MS }]);
-    setTimeout(() => {
-      setToasts(t => t.map(x => x.id === id ? { ...x, kind: 'ok', text: `${botDisplayName} is ready` } : x));
-      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2500);
-    }, RESTART_WINDOW_MS);
-  }, [botDisplayName]);
+  const { toasts, pushToast, pushRestartToast, pushActivationToast, dismissToast } = useIntegrationToasts(botDisplayName);
 
-  // Rich activation bar: left = logo + name + a circle that ticks to a check
-  // once connected; right = the bot-restart status with a progress bar that
-  // fills over the restart window, then flips to "ready". The bar lingers a
-  // beat after the restart finishes, then dismisses.
-  const pushActivationToast = useCallback((integration, restarting = true, mode = 'install') => {
-    const id = ++toastSeq.current;
-    setToasts(t => [...t, {
-      id, kind: 'activation', mode,
-      logo: integration.logo, label: integration.label || integration.id,
-      left: 'pending', right: restarting ? 'restarting' : 'idle',
-      duration: RESTART_WINDOW_MS,
-    }]);
-    // left: circle → check after a short beat
-    setTimeout(() => setToasts(t => t.map(x => x.id === id ? { ...x, left: 'done' } : x)), 550);
-    if (restarting) {
-      setTimeout(() => {
-        setToasts(t => t.map(x => x.id === id ? { ...x, right: 'ready' } : x));
-        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 1800);   // lingers after restart
-      }, RESTART_WINDOW_MS);
-    } else {
-      setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
-    }
-  }, []);
-
+  // Adding: one-click and open servers ask whose the connection is first
+  // (ConnectChoiceModal); a key-based one asks inside its own form.
+  const [connectChoice, setConnectChoice] = useState(null);
   const openActivate = useCallback((integration) => {
-    const label = integration.label || integration.id;
-    // Remote-MCP OAuth entries skip the fields modal entirely: the whole
-    // activation is the provider consent popup → server-side callback
-    // (routes/integrations.js). The popup must open synchronously inside
-    // this click handler or popup blockers eat it.
-    if (isRemoteMcpOauth(integration)) {
-      // The popup postMessages us on success (handled below). As a fallback for
-      // when it can't reach the opener, revalidate once when it closes — a
-      // single scoped refetch, NOT a blanket focus listener (that caused the
-      // page to refresh on every tab switch).
-      openOAuthPopup(integration, reload);
-      return;
-    }
-    // Open (no-auth) MCP servers have nothing to configure — activate directly,
-    // no modal, no popup. Toast gives immediate feedback (no scroll jump).
-    if (isOpenServer(integration)) {
-      fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {} }),
-      }).then(async (r) => {
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) { pushToast(d.error || `Couldn't activate ${label}.`, 'error', { logo: integration.logo, label }); return; }
-        pushActivationToast(integration, !!d.restarting);
-        reload();
-      }).catch(() => pushToast(`Couldn't reach the server — ${label} not activated.`, 'error', { logo: integration.logo, label }));
+    if (isRemoteMcpOauth(integration) || isOpenServer(integration)) {
+      if (isAdmin && !solo) { setConnectChoice(integration); return; }
+      if (solo) {
+        startOneClick(integration, { reach: 'workspace', access: 'write' }, reload)
+          .then((d) => { if (d !== null) { pushActivationToast(integration, !!d?.restarting); reload(); } })
+          .catch((err) => pushToast(`Could not connect: ${err.message}`, 'error', { logo: integration.logo, label: integration.label }));
+        return;
+      }
+      // A member gets their own account only — nothing to ask, go straight there.
+      startOneClick(integration, { reach: 'personal', access: 'write' }, reload)
+        .then((d) => { if (d !== null) { pushActivationToast(integration, !!d?.restarting); reload(); } })
+        .catch((err) => pushToast(`Could not connect: ${err.message}`, 'error', { logo: integration.logo, label: integration.label }));
       return;
     }
     const next = new URLSearchParams(searchParams);
     next.set('activate', integration.id);
     setSearchParams(next);
-  }, [searchParams, setSearchParams, reload, pushToast, dismissToast, pushRestartToast]);
+  }, [searchParams, setSearchParams, isAdmin, solo, reload, pushActivationToast, pushToast]);
 
   const closeActivate = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -277,7 +242,7 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
       const integ = integrations.find(i => i.id === e.data.id);
       const label = integ?.label || 'Integration';
       if (e.data.ok) pushActivationToast(integ || { label, logo: null }, true);
-      else pushToast(`${label} didn't connect. Try again.`, 'error', { logo: integ?.logo, label });
+      else pushToast('Could not connect. Try again.', 'error', { logo: integ?.logo, label });
       reload();
     };
     window.addEventListener('message', onMessage);
@@ -293,6 +258,11 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // operator see at-a-glance "how much of Marketing do I have" without
   // having to mentally subtract the Active tab from the catalog.
   const active   = integrations.filter(i => i.active);
+  // Two shelves: Team (connected for everyone) and Yours (your own accounts).
+  // A service connected both ways is on both, with its own line on each.
+  const mine     = integrations.filter(i => i.mine?.active);
+  // Solo: everything connected, the workspace's and the owner's own, in one list.
+  const connected = integrations.filter(i => i.active || i.mine?.active);
   // Entries with a `home` elsewhere (set up on another page) are
   // set up there; the marketplace lists them only once they are active.
   const catalog  = useMemo(() => integrations.filter(i => !i.home || i.active), [integrations]);
@@ -307,8 +277,10 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
     if (initialTabSet.current) return;
     if (!data) return;
     initialTabSet.current = true;
-    if (searchParams.get('tab') !== 'marketplace') setTab(active.length === 0 ? 'marketplace' : 'active');
-  }, [data, active.length]);
+    // The URL's tab wins; otherwise the first shelf with something on it.
+    if (['marketplace', 'mine', 'team'].includes(searchParams.get('tab'))) return;
+    setTab(solo ? (connected.length ? 'team' : 'marketplace') : active.length ? 'team' : mine.length ? 'mine' : 'marketplace');
+  }, [data, active.length, mine.length]);
 
   // Marketplace state — search + category filter for the Available pane.
   const [query, setQuery]       = useState('');
@@ -317,7 +289,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
   // the operator has no active integrations yet (nothing else to show);
   // otherwise land on Active so they see their current setup first.
   // `?tab=marketplace&category=meetings` opens the Marketplace on a category (Memory → Sources links here).
-  const [tab, setTab] = useState(searchParams.get('tab') === 'marketplace' ? 'marketplace' : 'active');  // 'active' | 'marketplace'
+  // 'team' (connected for everyone) | 'mine' (your own accounts) | 'marketplace'
+  const [tab, setTab] = useState(['marketplace', 'mine', 'team'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'team');
 
   // Category facets: walk the catalog list, group by `category`, count.
   // Order is fixed so the chip row doesn't reshuffle as users activate/
@@ -369,15 +342,25 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
         title="Integrations"
         sidebarOpen={sidebarOpen}
       />
+      {/* The tabs are a row of their own under the header — still, like it, while the grid scrolls. */}
+      {data && (active.length > 0 || catalog.length > 0) && (
+        <div className="shrink-0 px-6 pb-3 pt-1">
+                  <Tabs
+                    value={tab}
+                    onChange={setTab}
+                    items={[
+                      ...(solo ? [{ id: 'team', count: connected.length, label: 'Connected' }] : [
+                        { id: 'team', count: active.length, label: 'Team' },
+                        { id: 'mine', count: mine.length, label: 'Yours' },
+                      ]),
+                      { id: 'marketplace', count: catalog.length, label: 'Marketplace' },
+                    ]}
+                  />
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
-          {!isAdmin && (
-            <div className="flex max-w-2xl items-center gap-2 rounded-[6px] border border-border/50 bg-muted/20 px-4 py-2.5 text-[12.5px] text-muted-foreground/80">
-              <Lock className="size-3.5 shrink-0" strokeWidth={1.75} />
-              Read-only: your workspace admins manage integrations.
-            </div>
-          )}
           {isInitialLoad && <SkeletonCardGrid count={6} width={320} banner />}
 
           {error && !data && (
@@ -404,51 +387,45 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
                   times so we don't lose state (search query / category) on
                   switch; hide the inactive panel via `hidden` instead of
                   unmounting it. */}
-              <Tabs
-                value={tab}
-                onChange={setTab}
-                items={[
-                  { id: 'active',      label: 'Active',      count: active.length },
-                  { id: 'marketplace', label: 'Marketplace', count: catalog.length },
-                ]}
-              />
 
-              <div className={cn(tab !== 'active' && 'hidden')}>
-                {active.length > 0 ? (
-                  <div className="grid gap-3 grid-cols-[repeat(auto-fill,320px)] max-sm:grid-cols-1">
-                    {active.map((integration) => (
-                      <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
-                        <IntegrationTile
-                          integration={integration}
-                          ready={ready}
-                          canManage={isAdmin}
-                          memorySource={memorySources.find((s) => s.id === integration.id) || null}
-                          onMemorySource={(on) => setMemorySource(integration.id, on)}
-                          onActivate={() => openActivate(integration)}
-                          onRemove={() => setRemoving(integration)}
-                          onSettings={() => setSettingsFor(integration)}
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2 rounded-[6px] border border-border/40 bg-muted/15 px-6 py-12 text-center">
-                    <Plug className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
-                    <div className="text-[13.5px] font-medium text-foreground/85">No active integrations yet</div>
-                    <p className="max-w-sm text-[12.5px] text-muted-foreground/75">
-                      Browse the Marketplace and activate the ones you'd like your coworker to use.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setTab('marketplace')}
-                      className="mt-1 inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-opacity hover:opacity-95"
-                    >
-                      Open Marketplace
-                      <ArrowRight className="size-3.5" strokeWidth={2} />
-                    </button>
-                  </div>
-                )}
-              </div>
+              {(solo ? [['team', connected]] : [['team', active], ['mine', mine]]).map(([shelf, items]) => (
+                <div key={shelf} className={cn(tab !== shelf && 'hidden')}>
+                  {items.length > 0 ? (
+                    <div className="grid gap-3 grid-cols-[repeat(auto-fill,320px)] max-sm:grid-cols-1">
+                      {items.map((integration) => (
+                        <motion.div key={`${shelf}-${integration.id}`} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
+                          <IntegrationTile
+                            integration={integration}
+                            shelf={solo ? (integration.active ? 'team' : 'mine') : shelf}
+                            solo={solo}
+                            ready={ready}
+                            canManage={shelf === 'team' ? isAdmin : true}
+                            memorySource={shelf === 'mine' || isAdmin ? (memorySources.find((s) => s.id === integration.id) || null) : null}
+                            onMemorySource={(on) => setMemorySource(integration.id, on)}
+                            onActivate={() => openActivate(integration)}
+                            onRemove={() => setRemoving(integration)}
+                            onSettings={() => setSettingsFor(integration)}
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[calc(100dvh-14rem)] flex-col items-center justify-center gap-2 rounded-[6px] border border-border/40 bg-muted/15 px-6 py-12 text-center">
+                      <Plug className="size-6 text-muted-foreground/45" strokeWidth={1.5} />
+                      <div className="text-[13.5px] font-medium text-foreground/85">{solo ? 'Nothing connected yet' : shelf === 'team' ? 'Nothing connected for the team yet' : 'Nothing of your own yet'}</div>
+                      <p className="max-w-sm text-[12.5px] text-muted-foreground/75">
+                        {shelf === 'team'
+                          ? (isAdmin ? 'Browse the Marketplace and connect the services the whole team should use.' : 'An admin connects services for the team; they show up here.')
+                          : 'A notetaker, a calendar or a task board from the Marketplace — used in your conversations only.'}
+                      </p>
+                      <button type="button" onClick={() => setTab('marketplace')} className="mt-2 inline-flex items-center gap-1.5 rounded-[6px] border border-border/55 bg-background px-3 py-1.5 text-[12.5px] text-foreground/80 transition-colors hover:bg-muted/40">
+                        Open the Marketplace
+                        <ArrowRight className="size-3.5" strokeWidth={2} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
 
               <div className={cn(tab !== 'marketplace' && 'hidden')}>
                 <Marketplace
@@ -509,9 +486,16 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           {[
             ['install bar', () => pushActivationToast({ logo: '/integrations/notion.svg', label: 'Notion' }, true, 'install')],
             ['remove bar', () => pushActivationToast({ logo: '/integrations/notion.svg', label: 'Notion' }, true, 'remove')],
-            ['✓ ok', () => pushToast('Notion connected', 'ok')],
+            ['✓ ok', () => pushToast('Notion connected', 'ok', { logo: '/integrations/notion.svg', label: 'Notion' })],
             ['⟳ restart', () => pushRestartToast()],
-            ['✕ error', () => pushToast("Couldn't activate Notion. Try again.", 'error', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            ['✕ error', () => pushToast('Could not connect. Try again.', 'error', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            // The service page's own messages: a test, a saved setting, the team's access, a person's connection.
+            ['test ok', () => pushToast('Test passed: the provider accepted the sign-in.', 'ok', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            ['test fail', () => pushToast('Test failed: the sign-in has expired. Reconnect.', 'error', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            ['saved', () => pushToast('Changes saved', 'ok', { logo: '/integrations/github.svg', label: 'GitHub' })],
+            ['read-only', () => pushToast('Read-only for the team', 'ok', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            ['write on', () => pushToast('Read and write for the team', 'ok', { logo: '/integrations/notion.svg', label: 'Notion' })],
+            ['person off', () => pushToast("Ann's own Notion disconnected", 'neutral', { logo: '/integrations/notion.svg', label: 'Notion' })],
           ].map(([label, fn]) => (
             <button
               key={label}
@@ -530,64 +514,12 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
           check on the left and the bot-restart status + progress line on the
           right; error/ok/progress rows share the same shell with a status icon
           and message. Nothing renders in a corner — one consistent surface. */}
-      {toasts.length > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex flex-col items-center gap-2 px-4">
-          {toasts.map((t) => (
-            <motion.div
-              key={t.id}
-              initial={{ y: 24, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 24, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="pointer-events-auto relative w-[calc(100%-1rem)] max-w-3xl overflow-hidden rounded-[6px] border border-border/60 bg-card/95 shadow-[0_8px_30px_rgba(0,0,0,0.10)] backdrop-blur sm:w-[75%] lg:w-[60%]"
-            >
-              {t.kind === 'activation' ? (
-                <div className="flex w-full items-center justify-between gap-2.5 px-3.5 py-2.5 sm:gap-4 sm:px-5 sm:py-3">
-                  <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                    <Logo src={t.logo} alt={t.label} fill={!!t.logoFill} size="size-8 sm:size-9" imgSize="size-5" />
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-foreground/90 sm:text-[14px]">{t.label}</div>
-                      <div className="mt-0.5 flex items-center gap-1 text-[11.5px] sm:text-[12px]">
-                        {t.left === 'pending'
-                          ? <><Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/60" strokeWidth={2.2} /><span className="text-muted-foreground/70">{t.mode === 'remove' ? 'Removing…' : 'Installing…'}</span></>
-                          : t.mode === 'remove'
-                            ? <><CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground/70" strokeWidth={2.2} /><span className="font-medium text-muted-foreground/85">Removed</span></>
-                            : <><CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="font-medium text-emerald-600 dark:text-emerald-400">Installed</span></>}
-                      </div>
-                    </div>
-                  </div>
-                  {t.right !== 'idle' && (
-                    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-                      {t.right === 'restarting'
-                        ? <><Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground/70" strokeWidth={2.2} /><span className="text-[12px] text-muted-foreground/85 sm:text-[13px]"><span className="hidden sm:inline">{botDisplayName} </span>restarting…</span></>
-                        : <><CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} /><span className="text-[12px] text-muted-foreground/85 sm:text-[13px]"><span className="hidden sm:inline">{botDisplayName} </span>ready</span></>}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex w-full items-center gap-2.5 px-3.5 py-2.5 sm:gap-3 sm:px-5">
-                  {t.logo
-                    ? <Logo src={t.logo} alt={t.label} fill={!!t.logoFill} size="size-8 sm:size-9" imgSize="size-5" />
-                    : t.kind === 'error'
-                      ? <AlertTriangle className="size-4 shrink-0 text-destructive" strokeWidth={2.2} />
-                      : (t.kind === 'pending' || t.kind === 'progress')
-                        ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground/70" strokeWidth={2.2} />
-                        : <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.2} />}
-                  <span className={cn('min-w-0 flex-1 text-[13px] font-medium', t.kind === 'error' ? 'text-destructive' : 'text-foreground/85')}>{t.text}</span>
-                  <button type="button" onClick={() => dismissToast(t.id)} className="-mr-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:text-foreground" aria-label="Dismiss">
-                    <X className="size-3.5" strokeWidth={2} />
-                  </button>
-                </div>
-              )}
-              {(t.kind === 'activation' ? t.right === 'restarting' : t.kind === 'progress') && (
-                <div className="absolute inset-x-0 bottom-0 h-[3px] bg-border/30">
-                  <motion.div className="h-full bg-foreground/40" initial={{ width: '0%' }} animate={{ width: '100%' }} transition={{ duration: (t.duration || RESTART_WINDOW_MS) / 1000, ease: 'linear' }} />
-                </div>
-              )}
-            </motion.div>
-          ))}
-        </div>
+      {connectChoice && (
+        <ConnectChoiceModal integration={connectChoice} isAdmin={isAdmin} onClose={() => setConnectChoice(null)}
+          onPopupClosed={reload}
+          onSuccess={(d) => { setConnectChoice(null); pushActivationToast(connectChoice, !!d?.restarting); reload(); }} />
       )}
+      <IntegrationToasts toasts={toasts} botDisplayName={botDisplayName} dismissToast={dismissToast} />
     </div>
   );
 }
@@ -694,9 +626,12 @@ function Marketplace({
           const group = items.filter(i => (i.category || 'other') === f.id);
           if (!group.length) return null;
           return [
-            <div key={`h-${f.id}`} id={`category-${f.id}`} className={cn('col-span-full flex items-center gap-2 px-0.5 scroll-mt-4', idx > 0 && 'mt-3.5')}>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{f.label}</span>
-              <span className="text-[10.5px] tabular-nums text-muted-foreground/45">{group.length}</span>
+            // Each category: its name, then a low, light banner under it — the
+            // halftone of an active tile, drawn from the category's own icons.
+            <div key={`h-${f.id}`} id={`category-${f.id}`} className={cn('col-span-full relative flex h-16 items-center gap-2 overflow-hidden rounded-[6px] border border-border/50 px-4 scroll-mt-4', idx > 0 && 'mt-3.5')}>
+              <TileBanner icon={(CATEGORY_ICONS[f.id] || CATEGORY_ICONS.other)[0]} seed={`category-${f.id}`} scale={1.8} soft className="!absolute inset-0 h-full" />
+              <span className="relative text-[11px] font-semibold uppercase tracking-wider text-foreground/80">{f.label}</span>
+              <span className="relative text-[10.5px] tabular-nums text-muted-foreground/60">{group.length}</span>
             </div>,
             ...group.map((integration) => (
               <motion.div key={integration.id} layout transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}>
@@ -737,7 +672,9 @@ function Marketplace({
 // Compact horizontal row for the Marketplace grid — logo + name (+ inline
 // Beta/Active/Soon tag) + one-line description + a round action button. Denser
 // than the card so far more fits at once.
-function CompactTile({ integration, ready, canManage = true, onActivate, onRemove }) {
+function CompactTile({ integration, ready, canManage: canManageProp = true, onActivate, onRemove }) {
+  // A member may add a personal-capable service for themselves.
+  const canManage = canManageProp || (!!integration.canConnectPersonal && !integration.mine?.active);
   const isActive     = integration.active;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
@@ -764,7 +701,7 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
         </div>
       </div>
 
-      {!canManage   ? <span className={idle}><Lock className="size-3.5" strokeWidth={1.75} /></span>
+      {!canManage   ? <span className={idle} title="Connected by an admin for the team" />
        : isComingSoon ? <span className={idle}><Clock className="size-3.5" strokeWidth={1.75} /></span>
        : cantActivate ? <span className={idle} title="Encryption not configured"><Lock className="size-3.5" strokeWidth={1.75} /></span>
        : isActive     ? (
@@ -785,9 +722,53 @@ function CompactTile({ integration, ready, canManage = true, onActivate, onRemov
   );
 }
 
-function IntegrationTile({ integration, ready, canManage = true, showStatus = true, memorySource = null, onMemorySource = null, onActivate, onRemove, onSettings }) {
+/**
+ * Who has a service, at the name's height: the organisation's mark when it is
+ * connected for the whole workspace, and the faces of the people who
+ * connected their own account — the viewer first. Hovering any of it opens a
+ * small card that says exactly that: for whom, connected by whom. Nothing
+ * when nobody has it. Both marks at once is normal: a workspace connection
+ * and someone's own of the same service live side by side.
+ */
+/** The organisation's square mark, as the sidebar draws it. */
+export function OrgMark({ orgIcon, className }) {
+  return (
+    <span className={cn('flex shrink-0 items-center justify-center overflow-hidden rounded-[2px] border border-border/60 bg-background', className)}>
+      {orgIcon ? <BrandedImage src={orgIcon} alt="" className="size-full object-contain" /> : <Users className="size-3 text-muted-foreground/75" strokeWidth={2} />}
+    </span>
+  );
+}
+
+export function WhoHasIt({ integration, me }) {
+  const branding = useBranding();
+  const people = [...(integration.activeFor || [])];
+  if (integration.mine?.active && me && !people.some(p => p.slug === me.slug)) people.unshift({ slug: me.slug, name: me.displayName || 'You', avatarUrl: me.avatarUrl || null, you: true });
+  const ws = integration.active ? integration.connectedBy : null;
+  if (!ws && !people.length) return null;
+  const orgIcon = branding.iconUrl || branding.logoUrl;
+  const title = [ws ? `Whole team · ${integration.access === 'read' ? 'read-only' : 'read & write'}` : null, ...people.map(p => `${p.you ? 'You' : p.name} · own`)].filter(Boolean).join('\n');
+  return (
+    <div className="flex shrink-0 items-center" title={title} aria-label={title}>
+      {ws && <OrgMark orgIcon={orgIcon} className="mr-1.5 size-5" />}
+      {people.length > 0 && (
+        <span className="flex items-center -space-x-1.5">
+          {people.slice(0, 3).map((p) => <Avatar key={p.slug} name={p.name} avatarUrl={p.avatarUrl} className="size-5 text-[9px] ring-2 ring-card" />)}
+          {people.length > 3 && <span className="flex size-5 items-center justify-center rounded-full bg-muted/60 text-[9px] font-medium text-muted-foreground/80 ring-2 ring-card">+{people.length - 3}</span>}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function IntegrationTile({ integration, shelf = 'team', solo = false, ready, canManage = true, showStatus = true, memorySource = null, onMemorySource = null, onActivate, onRemove, onSettings }) {
   const navigate = useNavigate();
-  const isActive     = integration.active;
+  const { me } = useMe();
+  const branding = useBranding();
+  const isActive     = shelf === 'mine' ? !!integration.mine?.active : integration.active;
+  // A member's team tile has nothing to do: no footer at all (unless the
+  // service feeds their memory, whose switch is theirs).
+  const quiet        = !canManage && shelf === 'team' && isActive && !memorySource;
+  const page         = `/integrations/${encodeURIComponent(integration.id)}?tab=${shelf === 'mine' ? 'me' : 'team'}`;
   const isComingSoon = !!integration.comingSoon;
   const cantActivate = !ready && !isActive && !isComingSoon;
   const hasSettings  = isActive && (integration.fields || []).some(f => f.globalForMulti);
@@ -808,7 +789,7 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
         isActive ? 'h-24 items-center pt-0 pb-0' : 'pt-4 pb-3',
       )}>
         {isActive && (
-          <TileBanner image={logoUrl(integration.logo)} mode="dark" seed={integration.id} soft className="!absolute inset-0 h-full" />
+          <TileBanner image={logoUrl(integration.logo)} seed={integration.id} soft className="!absolute inset-0 h-full" />
         )}
         <div className="relative">
           <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} dim={isComingSoon || cantActivate} />
@@ -818,6 +799,15 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           {isActive && (
             <StatusTag tone="active">Active</StatusTag>
           )}
+          {/* Beside Active, for whom: the organisation's mark and "for team", or your avatar and "for you". */}
+          {isActive && !solo && (
+            <StatusTag tone="plain" className="text-foreground/80">
+              {shelf === 'mine'
+                ? <Avatar name={me?.displayName || me?.email} email={me?.email} avatarUrl={me?.avatarUrl} className="!size-[11px] text-[7px]" />
+                : <OrgMark orgIcon={branding.iconUrl || branding.logoUrl} className="size-[11px] rounded-[2px]" />}
+              {shelf === 'mine' ? 'Yours' : 'Team'}
+            </StatusTag>
+          )}
           {isComingSoon && (
             <StatusTag tone="soon">Soon</StatusTag>
           )}
@@ -826,15 +816,19 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
 
       {isActive && <div className="h-3.5" />}
       {/* Body */}
-      <div className="flex flex-1 flex-col px-4">
-        <div className="text-[14.5px] font-semibold text-foreground/90">{integration.label}</div>
+      <div className={cn('flex flex-1 flex-col px-4', quiet && 'pb-4')}>
+        <div className="min-w-0 truncate text-[14.5px] font-semibold text-foreground/90">{integration.label}</div>
         <div className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">
           {isComingSoon ? (integration.comingSoonReason || integration.description) : integration.description}
         </div>
 
-        {isActive && showStatus && (
+        {isActive && showStatus && canManage && (
           <div className="mt-3 flex items-center gap-2 rounded-[6px] bg-muted/40 px-2.5 py-1.5">
-            {integration.multi ? (
+            {shelf === 'mine' ? (
+              integration.multi
+                ? <span className="text-[11.5px] text-foreground/75">{(integration.mine?.itemCount ?? 0)} {(integration.itemLabel || 'item').toLowerCase()}{(integration.mine?.itemCount ?? 0) === 1 ? '' : 's'}</span>
+                : <span className="font-mono text-[11.5px] text-foreground/70">{'••••'}{integration.mine?.summary?.last4 || ''}</span>
+            ) : integration.multi ? (
               <span className="text-[11.5px] text-foreground/75">
                 {(integration.itemCount ?? 0)} {(integration.itemLabel || 'item').toLowerCase()}{(integration.itemCount ?? 0) === 1 ? '' : 's'}
               </span>
@@ -845,23 +839,35 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             )}
             <span className="text-[11px] text-muted-foreground/60">·</span>
             <span className="text-[11px] text-muted-foreground/70">
-              {integration.activatedAt ? `activated ${formatRelative(new Date(integration.activatedAt))}` : 'stored'}
+              {(shelf === 'mine' ? integration.mine?.activatedAt : integration.activatedAt) ? `activated ${formatRelative(new Date(shelf === 'mine' ? integration.mine.activatedAt : integration.activatedAt))}` : 'stored'}
             </span>
           </div>
         )}
       </div>
 
       {/* Footer — action (read-only for non-admins) */}
-      <div className="px-4 pb-4 pt-3.5">
+      {!quiet && <div className="px-4 pb-4 pt-3.5">
         {!canManage ? (
           <div className="flex items-center gap-2">
+          {shelf === 'team' && isActive ? (
+            null
+          ) : integration.canConnectPersonal && !isComingSoon ? (
+            <button
+              type="button"
+              onClick={() => (integration.mine?.active ? navigate(`/integrations/${encodeURIComponent(integration.id)}?tab=me`) : onActivate?.())}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+            >
+              {integration.mine?.active ? 'Manage' : 'Connect for me'}
+              <ArrowRight className="size-3.5" strokeWidth={2} />
+            </button>
+          ) : (
           <button
             type="button" disabled
             className="inline-flex w-full cursor-default items-center justify-center gap-1.5 rounded-[6px] border border-border/40 bg-muted/20 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/55"
           >
-            <Lock className="size-3.5" strokeWidth={1.75} />
-            {isActive ? 'Connected' : isComingSoon ? 'Coming soon' : 'Admins only'}
+            {isComingSoon ? 'Coming soon' : 'Team only'}
           </button>
+          )}
           {isActive && memorySource && (
             <div className="flex h-8 shrink-0 items-center gap-2 rounded-[6px] bg-muted/40 px-2.5" title={memorySource.on ? 'Feeds memory nightly' : 'Not feeding memory'}>
               <Brain className={cn('size-3.5', memorySource.on ? 'text-foreground/80' : 'text-muted-foreground/50')} strokeWidth={1.75} />
@@ -881,23 +887,13 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
           </button>
         ) : isActive ? (
           <div className="flex items-center gap-2">
-            {hasSettings && (
-              <button
-                type="button"
-                onClick={onSettings}
-                title="Settings"
-                aria-label="Settings"
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-muted/40 text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
-              >
-                <SettingsIcon className="size-3.5" strokeWidth={1.75} />
-              </button>
-            )}
             <button
               type="button"
-              onClick={onRemove}
-              className="inline-flex flex-1 items-center justify-center rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
+              onClick={() => navigate(page)}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-[6px] bg-muted/40 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground/90"
             >
-              Remove
+              Manage
+              <ArrowRight className="size-3.5" strokeWidth={2} />
             </button>
             {/* A source of memory (a meeting notetaker): the same switch as on
                 Memory → Sources — each person's own, so not admin-gated. */}
@@ -931,11 +927,11 @@ function IntegrationTile({ integration, ready, canManage = true, showStatus = tr
             onClick={onActivate}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background transition-all hover:opacity-95 active:scale-[0.98]"
           >
-            {isOneClick(integration) ? 'One-click connect' : 'Activate'}
+            {isOneClick(integration) ? 'One-click connect' : 'Connect'}
             <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" strokeWidth={2} />
           </button>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -964,7 +960,7 @@ export function logoUrl(src) {
 
 // `fill`: the logo is a full square app icon with its own background (the
 // catalog's `logoFill`) — it covers the tile instead of sitting on white.
-function Logo({ src, alt, dim, fill = false, size = 'size-12', imgSize = 'size-7' }) {
+export function Logo({ src, alt, dim, fill = false, size = 'size-12', imgSize = 'size-7' }) {
   const [errored, setErrored] = useState(false);
   const url = logoUrl(src);
   // Logo tile is always a solid-white square in both themes. The brand
@@ -997,7 +993,28 @@ function Logo({ src, alt, dim, fill = false, size = 'size-12', imgSize = 'size-7
 
 // ─── Field input (shared by single + multi forms) ──────────────────────────
 
-function FieldInput({ field, value, onChange, disabled, inputId }) {
+/** A small (i) beside a label; the text shows on hover. */
+export function InfoTip({ text, className }) {
+  if (!text) return null;
+  return (
+    <span className={cn('group relative inline-flex items-center', className)}>
+      <Info className="size-3.5 text-muted-foreground/55 transition-colors group-hover:text-foreground/80" strokeWidth={2} aria-label={text} />
+      <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 hidden w-max max-w-[340px] rounded bg-popover px-3 py-2 text-[12px] font-normal leading-snug text-popover-foreground/90 shadow-md ring-1 ring-foreground/10 group-hover:block">{text}</span>
+    </span>
+  );
+}
+
+/** A field's name, with its hint as an info tip beside it rather than a line under the input. */
+function FieldLabel({ inputId, field }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <label htmlFor={inputId} className="text-[13px] font-medium text-foreground/85">{field.label}</label>
+      <InfoTip text={field.helper} />
+    </div>
+  );
+}
+
+export function FieldInput({ field, value, onChange, disabled, inputId }) {
   const common = {
     id: inputId,
     autoComplete: 'off',
@@ -1005,6 +1022,9 @@ function FieldInput({ field, value, onChange, disabled, inputId }) {
     placeholder: field.placeholder || '',
     value: value || '',
     onChange: (e) => onChange(e.target.value),
+    // A stored secret shows masked (••••abcd): focusing it selects the whole of it,
+    // so typing or pasting replaces it instead of landing next to the dots.
+    onFocus: (e) => { if (String(e.target.value || '').includes('\u2022')) e.target.select?.(); },
     disabled,
   };
   const inputCls = 'rounded border border-border/60 bg-background px-3.5 py-2.5 font-mono text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10 disabled:opacity-60';
@@ -1035,9 +1055,7 @@ function FieldInput({ field, value, onChange, disabled, inputId }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-[13px] font-medium text-foreground/85">
-        {field.label}
-      </label>
+      <FieldLabel inputId={inputId} field={field} />
       {field.type === 'json' ? (
         <textarea
           {...common}
@@ -1045,26 +1063,13 @@ function FieldInput({ field, value, onChange, disabled, inputId }) {
           className="resize-y rounded border border-border/60 bg-background px-3.5 py-2.5 font-mono text-[12px] leading-relaxed text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10 disabled:opacity-60"
         />
       ) : field.type === 'select' ? (
-        <select
-          id={inputId}
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className="rounded border border-border/60 bg-background px-3.5 py-2.5 text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10 disabled:opacity-60"
-        >
-          {(field.options || []).map(opt => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        <Pick id={inputId} value={value || field.default || ''} options={(field.options || []).map(opt => ({ value: opt.value, label: opt.label }))} onChange={onChange} disabled={disabled} />
       ) : (
         <input
           {...common}
           type={field.type === 'secret' ? 'password' : 'text'}
           className={inputCls}
         />
-      )}
-      {field.helper && (
-        <div className="text-[11.5px] text-muted-foreground/70">{field.helper}</div>
       )}
     </div>
   );
@@ -1122,9 +1127,7 @@ function StorageStateField({ field, value, onChange, disabled, inputId }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-[13px] font-medium text-foreground/85">
-        {field.label}
-      </label>
+      <FieldLabel inputId={inputId} field={field} />
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -1166,9 +1169,6 @@ function StorageStateField({ field, value, onChange, disabled, inputId }) {
             Parsed: {parsed.cookies} cookie{parsed.cookies === 1 ? '' : 's'}, {parsed.origins} origin{parsed.origins === 1 ? '' : 's'}. Backend will filter to the allowed-domain set before saving.
           </span>
         </div>
-      )}
-      {field.helper && (
-        <div className="text-[11.5px] text-muted-foreground/70">{field.helper}</div>
       )}
     </div>
   );
@@ -1272,9 +1272,7 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={inputId} className="text-[13px] font-medium text-foreground/85">
-        {field.label}
-      </label>
+      <FieldLabel inputId={inputId} field={field} />
       <div className="flex items-center gap-3">
         <button
           id={inputId}
@@ -1302,9 +1300,6 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
             Retry
           </button>
         </div>
-      )}
-      {field.helper && (
-        <div className="text-[11.5px] text-muted-foreground/70">{field.helper}</div>
       )}
 
       {open && vncUrl && (
@@ -1359,7 +1354,138 @@ function DocsCommentsBrowserLoginField({ field, value, onChange, disabled, input
 
 // ─── Activate Modal ────────────────────────────────────────────────────────
 
+/**
+ * Who a new connection is for — asked in the add flow. An admin picks the
+ * whole team (then read-only or read and write) or just themselves; a member
+ * gets their own only, so sees the line but no choice. Workspace-only
+ * services (catalog without `personal`) offer the team alone.
+ */
+/** One of our dropdowns in the form's input style: an icon + label trigger, options with icons. */
+export function Pick({ id, value, options, onChange, disabled }) {
+  const current = options.find(o => o.value === value) || options[0];
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button id={id} type="button" disabled={disabled} className="flex min-w-0 flex-1 items-center gap-2.5 rounded border border-border/60 bg-background px-3.5 py-2.5 text-left text-[13px] text-foreground outline-none transition-all focus-visible:border-foreground/60 focus-visible:ring-2 focus-visible:ring-foreground/10 data-[state=open]:border-foreground/60 disabled:opacity-60">
+          {current.icon}
+          <span className="min-w-0 flex-1 truncate">{current.label}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground/70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={6} className="rounded p-1">
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map(o => (
+            <DropdownMenuRadioItem key={o.value} value={o.value} disabled={o.disabled} title={o.title} className="rounded-[3px] text-[13px]">
+              {o.icon}
+              <span>{o.label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function ReachChoice({ integration, isAdmin, reach, access, onReach, onAccess, disabled }) {
+  const { me: viewer } = useMe();
+  // Solo: one person, nothing to choose.
+  if (viewer?.teamMode === false) return null;
+  const { iconUrl, logoUrl } = useBranding();
+  const { me } = useMe();
+  const canPersonal = !!integration.personal;
+  const meMark = <Avatar name={me?.displayName || me?.email} email={me?.email} avatarUrl={me?.avatarUrl} className="!size-4 text-[8px]" />;
+  const whom = [
+    ...(isAdmin ? [{ value: 'workspace', label: 'The whole team', icon: <OrgMark orgIcon={iconUrl || logoUrl} className="size-4" /> }] : []),
+    { value: 'personal', label: isAdmin ? 'Just me' : 'Just you', icon: meMark, disabled: isAdmin && !canPersonal, title: isAdmin && !canPersonal ? 'Not available for this service' : undefined },
+  ];
+  const rights = [
+    { value: 'read', label: 'Read only', icon: <Eye className="size-4 text-muted-foreground/80" strokeWidth={1.9} /> },
+    { value: 'write', label: 'Read and write', icon: <PenLine className="size-4 text-muted-foreground/80" strokeWidth={1.9} /> },
+  ];
+  // After the credentials: an ACCESS row — for whom, and (for the team) what the bot may do.
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/70">Access</div>
+      <div className="flex items-center gap-3">
+        <Pick id="reach" value={isAdmin ? reach : 'personal'} options={whom} onChange={onReach} disabled={disabled || !isAdmin} />
+        {isAdmin && reach === 'workspace' && <Pick id="access" value={access} options={rights} onChange={onAccess} disabled={disabled} />}
+      </div>
+    </div>
+  );
+}
+
+/** The query a new connection's request carries: whose it is and, for the team, the access. */
+export const reachQuery = (reach, access) => (reach === 'personal' ? '?reach=personal' : `?access=${access}`);
+
+/**
+ * The one-click add flow: the same choice, then the provider's sign-in (or a
+ * plain Connect for an open server). The sign-in opens from the click itself,
+ * or popup blockers eat it.
+ */
+/**
+ * Start a one-click connection: the provider's sign-in (popup, or the page
+ * itself when popups are blocked) — resolves null — or, for an open server,
+ * the activation itself — resolves the server's answer. Throws on failure.
+ */
+export async function startOneClick(integration, { reach, access }, onPopupClosed) {
+  if (isRemoteMcpOauth(integration)) {
+    const ok = openOAuthPopup(integration, onPopupClosed, { reach, access });
+    if (!ok) window.location.assign(`/api/integrations/${encodeURIComponent(integration.id)}/oauth/start${reachQuery(reach, access)}`);
+    return null;
+  }
+  const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}${reachQuery(reach, access)}`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: {} }) });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
+}
+
+export function ConnectChoiceModal({ integration, isAdmin, onClose, onSuccess, onPopupClosed }) {
+  const [reach, setReach] = useState(isAdmin ? 'workspace' : 'personal');
+  const [access, setAccess] = useState('read');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const oauth = isRemoteMcpOauth(integration);
+  const go = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const data = await startOneClick(integration, { reach, access }, onPopupClosed);
+      if (data === null) { onClose(); return; }
+      onSuccess(data, reach);
+    } catch (err) { setError(err.message); setBusy(false); }
+  };
+  return (
+    <ModalShell onClose={onClose} ariaLabel={`Connect ${integration.label}`}>
+      <div className="w-full max-w-xl overflow-hidden modal-panel">
+        <div className="flex items-center gap-3 border-b border-border/50 px-6 py-4">
+          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} size="size-9" imgSize="size-5" />
+          <div className="text-[15px] font-semibold text-foreground">Connect {integration.label}</div>
+        </div>
+        <div className="flex flex-col gap-5 px-6 py-5">
+          <ReachChoice integration={integration} isAdmin={isAdmin} reach={reach} access={access} onReach={setReach} onAccess={setAccess} disabled={busy} />
+          {error && <div className="rounded-[6px] border border-destructive/25 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">{error}</div>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border/50 px-6 py-3">
+          <div className="flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-[6px] px-3.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/85 disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={go} disabled={busy} className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3.5 py-1.5 text-[13px] font-medium text-background transition-all hover:opacity-95 disabled:opacity-50">
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            {oauth ? `Sign in to ${integration.label}` : 'Connect'}
+          </button>
+          </div>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 export function ActivateModal({ integration, onClose, onSuccess }) {
+  const { me } = useMe();
+  const isAdmin = !!me?.isAdmin;
+  // Solo is a team of one: no Team / Yours split, no access to choose.
+  const solo = me?.teamMode === false;
+  const [reach, setReach] = useState(isAdmin ? 'workspace' : 'personal');
+  const [access, setAccess] = useState('read');
   const branding = useBranding();
   // Step interpolation context — supports {{botDisplayName}}, {{botName}},
   // {{title}}, {{botAvatarUrl}}, {{logoUrl}}, {{iconUrl}} in step.title /
@@ -1472,7 +1598,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
       const body = isMulti
         ? { items: items.map(v => ({ fields: { ...v, ...globalVals } })) }
         : { fields: { ...single, ...globalVals } };
-      const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, {
+      const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}${reachQuery(reach, solo ? 'write' : access)}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(body),
@@ -1500,14 +1626,35 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [single, browserLoginField, phase]);
 
+  // The escape hatch when the steps aren't enough — drops a help prompt into
+  // the chat composer (NOT auto-sent). The prompt tells the bot NOT to ask for
+  // keys in chat — those belong only in the form.
+  const askForHelp = () => {
+    const stepsBlock = (integration.steps || []).map((s, i) => {
+      const title = interpolate(s.title, stepVars);
+      const body  = interpolate(s.body,  stepVars);
+      return `## ${i + 1}. ${title}\n\n${body}`;
+    }).join('\n\n');
+    const prompt =
+`I'm activating the **${integration.label}** integration. Walk me through it step by step. These are the instructions from the activation form:
+
+${stepsBlock}
+
+Please guide me through these one at a time. Ask whatever you need about my account / company / setup to help me move forward.
+
+Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll put those directly into the form in the workspace. You only help me find them and understand what each field means.`;
+    window.dispatchEvent(new CustomEvent('ide:chat-prefill', { detail: { text: prompt } }));
+    onClose();
+  };
+
   return (
     <ModalShell onClose={onClose} ariaLabel={`Activate ${integration.label}`}>
       <form onSubmit={submit} className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden modal-panel">
         {/* Header — logo + title only, no description */}
         <div className="flex items-center gap-3.5 border-b border-border/50 px-8 py-5">
-          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} />
+          <Logo src={integration.logo} alt={integration.label} fill={!!integration.logoFill} size="size-10" imgSize="size-6" />
           <div className="min-w-0 flex-1 text-[17px] font-semibold text-foreground">
-            Activate {integration.label}
+            Connect {integration.label}
           </div>
           <button
             type="button"
@@ -1519,7 +1666,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
           </button>
         </div>
 
-        {/* Body — two columns: instructions on left (sticky), form on right (independently scrollable). */}
+        {/* Body — two columns: the how-to on the left, the form on the right (each scrolls on its own). */}
         <div className="grid flex-1 overflow-y-auto md:grid-cols-2 md:overflow-hidden">
           {/* Left column — stepped instructions */}
           {integration.steps?.length > 0 && (
@@ -1533,11 +1680,11 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
                   return (
                     <li key={i} className={cn('flex gap-3 py-3.5', !isLast && 'border-b border-border/50', i === 0 && 'pt-0')}>
                       {/* A quiet step number — the title carries the step, not a black badge. */}
-                      <div className="w-5 shrink-0 pt-px text-[13px] font-medium tabular-nums text-muted-foreground/55">
+                      <div className="w-5 shrink-0 pt-px text-[13px] tabular-nums text-muted-foreground/45">
                         {i + 1}.
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[13.5px] font-medium text-foreground/90">{interpolate(step.title, stepVars)}</div>
+                        <div className="text-[13.5px] font-medium text-foreground/85">{interpolate(step.title, stepVars)}</div>
                         <StepBody body={interpolate(step.body, stepVars)} />
                         {Array.isArray(step.downloads) && step.downloads.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
@@ -1564,38 +1711,6 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
                 })}
               </ol>
 
-              {/* Escape hatch when the steps aren't enough — drops a help
-                  prompt into the chat composer (NOT auto-sent). User can
-                  refine before sending. The prompt explicitly tells the
-                  bot NOT to ask for any keys/secrets in chat — those
-                  belong only in the form on the right. */}
-              <button
-                type="button"
-                onClick={() => {
-                  const stepsBlock = (integration.steps || []).map((s, i) => {
-                    const title = interpolate(s.title, stepVars);
-                    const body  = interpolate(s.body,  stepVars);
-                    return `## ${i + 1}. ${title}\n\n${body}`;
-                  }).join('\n\n');
-                  const prompt =
-`I'm activating the **${integration.label}** integration. Walk me through it step by step. These are the instructions from the activation form:
-
-${stepsBlock}
-
-Please guide me through these one at a time. Ask whatever you need about my account / company / setup to help me move forward.
-
-Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll put those directly into the form on the right side of the workspace. You only help me find them and understand what each field means.`;
-                  window.dispatchEvent(new CustomEvent('ide:chat-prefill', { detail: { text: prompt } }));
-                  onClose();
-                }}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[6px] border border-border/60 bg-background px-3 py-2.5 text-[12.5px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 active:scale-[0.99]"
-              >
-                <HelpCircle className="size-3.5" strokeWidth={1.75} />
-                Ask {branding.botDisplayName} for help
-              </button>
-              <div className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground/65">
-                Drops a help prompt in the chat. Keys still go in the form on the right, never paste them in chat.
-              </div>
             </div>
           )}
 
@@ -1704,11 +1819,8 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
               </div>
             )}
 
-            <div className="mt-auto flex items-start gap-2 rounded bg-muted/30 px-3.5 py-3 text-[11.5px] leading-relaxed text-muted-foreground/85">
-              <Lock className="mt-0.5 size-3 shrink-0 text-muted-foreground/55" strokeWidth={2} />
-              <span>
-                Stored encrypted on the server (AES-256-GCM). After activation only the last 4 characters are visible. To rotate, remove and activate again.
-              </span>
+            <div className="pt-3">
+              <ReachChoice integration={integration} isAdmin={isAdmin} reach={reach} access={access} onReach={setReach} onAccess={setAccess} disabled={busy} />
             </div>
           </div>
         </div>
@@ -1718,7 +1830,16 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
           {phase === 'restarting' && <RestartingBanner />}
           {phase === 'done' && !restartFailed && <DoneBanner />}
           {restartFailed && <RestartFailedBanner />}
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              {integration.steps?.length > 0 && (
+                <button type="button" onClick={askForHelp} title="Drops a help prompt in the chat. Keys still go in the form, never in chat." className="inline-flex items-center gap-1.5 rounded-[6px] px-2.5 py-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground/85">
+                  <HelpCircle className="size-3.5" strokeWidth={1.75} />
+                  Ask {branding.botDisplayName} for help
+                </button>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -1758,9 +1879,10 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                     ? 'Restarting bot…'
                     : phase === 'done'
                       ? (restartFailed ? 'Saved' : 'Done')
-                      : 'Activate'}
+                      : 'Connect'}
               </button>
             )}
+            </div>
           </div>
         </div>
       </form>
@@ -1980,7 +2102,7 @@ function PermissionRow({ field, value, onChange, disabled }) {
 // `title`/`body`/`confirmLabel`/`busyLabel`/`doneLabel` are optional copy
 // overrides — defaults keep the Integrations "Remove" wording; AI-Settings
 // Telegram reuses this dialog with "Disconnect" wording.
-export function RemoveDialog({ integration, onClose, onSuccess, title, body, confirmLabel, busyLabel }) {
+export function RemoveDialog({ integration, onClose, onSuccess, title, body, confirmLabel, busyLabel, query = '' }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -1988,7 +2110,8 @@ export function RemoveDialog({ integration, onClose, onSuccess, title, body, con
     setError(null);
     setBusy(true);
     try {
-      const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}`, { method: 'DELETE' });
+      // `query`: a person's own connection (`?reach=personal`), else the workspace's.
+      const resp = await fetch(`/api/integrations/${encodeURIComponent(integration.id)}${query}`, { method: 'DELETE' });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
       // Close immediately; the dashboard toasts the result + restart progress.
@@ -2091,7 +2214,7 @@ function itemSummary(vals, fields) {
   return '';
 }
 
-function formatRelative(date) {
+export function formatRelative(date) {
   const diff = Date.now() - date.getTime();
   const m = Math.floor(diff / 60_000);
   if (m < 1)  return 'just now';

@@ -32,7 +32,7 @@ import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
 import { isAllowedGroup, getGroup, userByChatId, recordGroupMember, addGroup, touchGroupMeta } from '../team.js';
 import { activeIds } from './store.js';
-import { sendTelegramMessage, sendGroupDocument, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups } from './telegram-sync.js';
+import { sendTelegramMessage, sendGroupDocument, getBotUserId, sendChatAction, downloadTelegramFile, getChatAdministrators, syncTelegramGroups, reactTelegramMessage } from './telegram-sync.js';
 import { runClaudeTurn } from '../claude.js';
 import { isUsageLimit, parseResetAt, resetDelayMs } from '../usage-limit.js';
 import { injectBotFrame } from '../bot-inject.js';
@@ -709,9 +709,12 @@ function classify(group, ctxMsgs, newIds) {
     const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc.kill('SIGKILL'); } catch {} resolve(r); };
     const timer = setTimeout(() => finish({ ok: false, reason_enum: 'classify-timeout' }), CLASSIFY_TIMEOUT);
 
+    proc.stdin.on('error', () => { /* the child exited first; close reports it */ });
     proc.stdin.write(userTurn); proc.stdin.end();
-    proc.stdout.on('data', c => { out += c.toString('utf8'); });
-    proc.stderr.on('data', c => process.stderr.write(`[group-watcher/haiku] ${c.toString('utf8')}`));
+    proc.stdout.setEncoding('utf8');
+    proc.stderr.setEncoding('utf8');
+    proc.stdout.on('data', c => { out += c; });
+    proc.stderr.on('data', c => process.stderr.write(`[group-watcher/haiku] ${c}`));
     proc.on('error', err => finish({ ok: false, reason_enum: 'classify-error', error: err.message }));
     proc.on('close', (code) => {
       if (code !== 0) return finish({ ok: false, reason_enum: 'classify-error', error: `exit ${code}` });
@@ -999,6 +1002,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     `When a reply needs real work first (tools, several steps), don't leave the group on "typing…" for minutes: as your FIRST output, before any tool, write a short heads-up that conveys two things: that you've seen it and are on it, and — specifically — what you're about to check or do next. Write it in ${replyLang}, in your own natural words, different every time; do not use a fixed or templated opener. Then put \`[[SEND]]\` on its own to fire it immediately, and keep working; your text after it becomes the full reply. You can use \`[[SEND]]\` to break your output into separate messages this way — a couple at most, not a play-by-play. For a quick answer that needs no tools, just reply directly with no marker.`,
     '',
     `SENDING A FILE (PDF, doc, sheet, image): your text messages CANNOT carry an attachment. To deliver a file INTO THIS GROUP, emit \`[[SEND_FILE <absolute path>]]\` on its own — the system uploads that file (it must live under the project directory) and removes the marker. To deliver a file to ${senderName}'s PRIVATE DM instead, emit \`[[SEND_FILE_DM <absolute path>]]\` — same rules, goes only to the person whose message you are answering. CHOOSING THE DESTINATION: "send it to ME" (in any language) means their DM — default to \`[[SEND_FILE_DM]]\`; upload into the group only when they clearly want it shared with everyone here — and NEVER deliver the same file to both unless explicitly asked. NEVER say you have sent, attached, or delivered a file — to the group OR to a DM — unless you actually emitted the matching marker in THIS reply; claiming a send you did not make is the worst possible failure here. If a file cannot be produced or delivered, say so plainly.`,
+    'REACTING: you may react to the message you are answering with an emoji, the way a colleague would — emit `[[REACT <emoji>]]` on its own line: 👀 when you are starting on something that takes a moment, 👍 or 🫡 to acknowledge, 🎉 🏆 for good news, 🤔 🤯 💯 ⚡ 😁 🤣 😎 🗿 🦄 👾 🕊 when the moment calls for it — pick what fits, vary it. It can stand alone (with `[[SILENT]]` or no text) or go with a reply — but when all you would say is the emoji, react and write nothing; never post the same emoji as text after reacting with it. One per turn, not on every message, and only Telegram\'s own reaction set (👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 😢 🎉 🤩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 😡) — anything else is refused.',
     'MAKING A PDF: use the `render_pdf` tool (pdf-mcp) — give it a markdown file or inline markdown and it returns a clean, correctly typeset PDF (tables, accents and Unicode all render right). NEVER hand-write raw PDF bytes or a Python PDF builder — that path produces blank pages and broken tables. After rendering, call `preview_pdf` and Read the returned image to SEE the result before you deliver it, especially when asked to check it visually. Then deliver it with the `[[SEND_FILE ...]]` marker above.',
     target && target.imagePath ? `\n\nThe "← NEW" message includes an IMAGE attachment. Read this file to SEE it before you reply (use the Read tool — it renders the image): ${target.imagePath}` : '',
     target && target.docPath ? `\n\nThe "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
@@ -1070,12 +1074,16 @@ const SEND_FILE_DM_RE = /`{0,3}\[\[\s*SEND_FILE_DM\s+([^\]\n]+?)\s*\]\]`{0,3}/i;
 const PRIVATE_TASK_RE = /`{0,3}\[\[\s*PRIVATE_TASK\s+([\s\S]+?)\s*\]\]`{0,3}/i;
 // Every marker kind, likewise uncapped — the last-resort scrub must never be
 // able to miss something the capture above could match.
-const ANY_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM)\b[\s\S]*?\]\]`{0,3}/gi;
+const ANY_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE|SEND_FILE_DM|REACT)\b[\s\S]*?\]\]`{0,3}/gi;
+// [[REACT <emoji>]] — a reaction on the message being answered, instead of or
+// beside a reply (👀 "looking into it", 👍 "noted"). The emoji must be one
+// Telegram accepts; anything else the API rejects and nothing happens.
+const REACT_RE = /`{0,3}\[\[\s*REACT\s+(\S{1,8}?)\s*\]\]`{0,3}/i;
 // An OPEN marker with no terminator yet. While one is pending, nothing after it
 // may be released: the stream may still be mid-marker, or the turn may have
 // been killed inside one. Either way the bytes after `[[NAME` are instruction,
 // not prose, and must never reach the group.
-const OPEN_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE_DM|SEND_FILE|SEND|SILENT)\b/i;
+const OPEN_MARKER_RE = /`{0,3}\[\[\s*(?:PRIVATE_TASK|SEND_FILE_DM|SEND_FILE|SEND|SILENT|REACT)\b/i;
 
 // How much of `buf` is safe to emit: everything up to an unterminated marker.
 function emittablePrefixLength(buf) {
@@ -1097,6 +1105,14 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
     let filesDm = 0;   // subset of `files` that went to the requester's DM (observability)
     let privateTask = null, capturedSessionId = null;
+    let reaction = null;   // ONE [[REACT …]] per turn (first wins), stripped from the text
+    const extractReaction = () => {
+      let m;
+      while ((m = text.match(REACT_RE))) {
+        if (!reaction) reaction = m[1];
+        text = text.slice(0, m.index) + text.slice(m.index + m[0].length);
+      }
+    };
     // Capture ONE [[PRIVATE_TASK …]] marker (first wins) and strip every
     // occurrence from the outgoing text. Requires the closing ]] — a
     // still-streaming partial marker waits, same as SEND/SEND_FILE.
@@ -1221,7 +1237,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
     try {
       proc = runClaudeTurn(groupTurnParams(group, ctxMsgs, target, {
         sessionId: session && session.sessionId ? session.sessionId : undefined,   // Phase 1: resume the group's persistent session
-        onText: (t) => { bumpAlive(); text += t; extractPrivateTask(); if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
+        onText: (t) => { bumpAlive(); text += t; extractPrivateTask(); extractReaction(); if (text.trim() && !isSilentPrefix(text)) startTyping(); flushFiles(); flushSends(); },
         onToolStart: (info) => { bumpAlive(); startTyping(); process.stderr.write(`[group-brain] tool: ${info && info.name ? info.name : JSON.stringify(info)}\n`); },
         onToolEnd: () => { bumpAlive(); }, onImage: () => { bumpAlive(); },
         onError: (e) => finish({ ok: false, error: String(e).slice(0, 200) }),
@@ -1244,7 +1260,8 @@ function groupCompose(group, ctxMsgs, target, session = null) {
             return finish({ ok: false, error: 'unparsed-marker' });
           }
           clearUsageLimitHold();   // a turn completed → whatever limit we were holding for is over
-          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, sessionId: capturedSessionId });
+          extractReaction();
+          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, reaction, sessionId: capturedSessionId });
         },
       }, { resumed: !!(session && session.sessionId) }));
       startTyping();   // typing from turn start — the gate already decided this message is for the bot
@@ -1656,6 +1673,20 @@ async function flush(chatId) {
   const cleaned = String(reply.text || '').trim().replace(/^`+|`+$/g, '').trim();
   const emptyFinal = !cleaned || /^\[\[\s*silent\s*\]\]$/i.test(cleaned);
   const acted = reply.parts > 0 || reply.files > 0;   // sent something (a part, or a file attachment)
+  // A reaction on the message being answered — a light "seen"/"noted" that may
+  // stand on its own. Best-effort: a refused emoji is logged, nothing else.
+  let reacted = false;
+  if (reply.reaction) {
+    const r = await reactTelegramMessage(chatId, target.message_id, reply.reaction).catch((err) => ({ ok: false, error: err.message }));
+    reacted = !!r.ok;
+    if (!r.ok) process.stderr.write(`[group-watcher] reaction ${reply.reaction} on ${chatId}/${target.message_id} refused: ${r.error}\n`);
+  }
+  if (emptyFinal && !acted && reacted) {
+    // Answered with a reaction only: the dialogue is live, nothing to post.
+    lastDialogue.set(chatId, { fromId: String(target.from_id), ts: Date.now() });
+    fireDelegate();
+    return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: 'reaction-only', preview: clip(target.text, 120) });
+  }
   if (emptyFinal && !acted) {
     // The brain deliberately passed → close the engaged-dialogue window: the
     // conversation is over as far as it's concerned, so plain chatter from the
@@ -1708,12 +1739,14 @@ async function flush(chatId) {
     // say it is handled, say who is already writing the private half, and say
     // not to act.
     try {
-      const gName = clip((group && group.title) || chatId, 40);
-      const who = clip(target.from_name || target.from_username || target.who || 'someone', 30);
+      // deframe, not clip: a title, a name or a message from the group must not
+      // be able to close this frame early and open another one.
+      const gName = deframe((group && group.title) || chatId, 40);
+      const who = deframe(target.from_name || target.from_username || target.who || 'someone', 30);
       const disposition = reply.privateTask
         ? 'ALREADY HANDLED — and the private half is being written right now and will be delivered to their DM by the system. Do NOT write it yourself: they would get it twice.'
         : 'ALREADY HANDLED — this is a record of finished work, not a request to you. Do not act on it and do not message them about it.';
-      const frame = `[GROUP chat_id=${chatId} "${gName}" from=${who} | they said: ${clip(target.text, 280)} || you replied in the group: ${clip(reply.text, 380)} || ${disposition}]`.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
+      const frame = `[GROUP chat_id=${chatId} "${gName}" from=${who} | they said: ${deframe(target.text, 280)} || you replied in the group: ${deframe(reply.text, 380)} || ${disposition}]`.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ');
       injectBotFrame(frame).catch(() => {});
     } catch { /* awareness is best-effort */ }
   }

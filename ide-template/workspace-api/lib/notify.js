@@ -52,7 +52,7 @@ function visibleTo(n, viewerSlug) {
  * connect so a freshly opened tab sees what it just missed. Returns a
  * detacher to call on req close. `viewer` ({ slug, isAdmin }) scopes which
  * notifications this subscriber receives: global ones always, recipient-
- * targeted ones only if they're the recipient (or an admin).
+ * targeted ones only if they're the recipient.
  */
 export function subscribe(res, viewer = {}) {
   const sub = { res, slug: viewer.slug || null, isAdmin: !!viewer.isAdmin };

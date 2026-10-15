@@ -62,8 +62,8 @@ for (const [method, path] of [['get', '/memory/v4/changes'], ['get', '/memory/v4
 }
 // What the image needs and deploy.sh must upload — a missing directory here
 // boots an image with no migrations and no embedder, and nothing says so.
-ok('deploy.sh uploads the migrations', /mirror_dir workspace-api\/migrations/.test(deploySh));
-ok('deploy.sh uploads the migrate CLI', /mirror_dir workspace-api\/bin/.test(deploySh));
+ok('deploy.sh uploads the migrations', /mirror workspace-api\/migrations/.test(deploySh));
+ok('deploy.sh uploads the migrate CLI', /mirror workspace-api\/bin/.test(deploySh));
 ok('deploy.sh uploads the embedder worker', /apps\/embedder\/worker\.mjs/.test(deploySh));
 ok('the image installs the embedder and its model', /COPY apps\/embedder/.test(dockerfile) && /COPY models \/opt\/ide\/models/.test(dockerfile));
 ok('the migrations router is mounted', /app\.use\('\/api', migrationsRouter\(\)\)/.test(index));

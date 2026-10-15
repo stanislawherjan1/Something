@@ -1,0 +1,41 @@
+{
+ "teamMode": false,
+ "people": [
+  {
+   "email": "sam@example.test",
+   "role": "admin",
+   "slug": "sam",
+   "displayName": "Sam",
+   "addedAt": "2026-09-01T00:00:00Z"
+  }
+ ],
+ "connections": [
+  {
+   "id": "granola",
+   "owner": "sam",
+   "reach": "workspace",
+   "access": "read",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"g-sam\"}"
+   }
+  },
+  {
+   "id": "github",
+   "owner": "sam",
+   "reach": "workspace",
+   "access": "write",
+   "fields": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "github_pat_x",
+    "GITHUB_TOOLSETS": "repos,issues,pull_requests",
+    "GITHUB_ALLOW_WRITE": "no"
+   }
+  }
+ ],
+ "groups": [],
+ "notetakers": {
+  "sam": [
+   "granola"
+  ]
+ },
+ "_about": "A workspace archetype of the test programme (plan 8.1): roster, connections, groups. Synthetic people and companies."
+}

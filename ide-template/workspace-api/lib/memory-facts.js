@@ -95,6 +95,7 @@ export function eventsFromNotes(scope) {
         ...(n.title ? { title: n.title } : {}), text: n.text, kind: n.kind || 'fact',
         ...(n.about ? { about: n.about } : {}), ...(n.when ? { when: n.when } : {}), ...(n.expires ? { expires: n.expires } : {}),
         ...(n.subject ? { subject: n.subject } : {}), ...(n.whenFrom ? { whenFrom: n.whenFrom } : {}),
+        ...(n.concerns ? { concerns: n.concerns } : {}),
         importance: n.importance || null, ...(n.evidence ? { evidence: n.evidence } : {}), ...(n.undated ? { undated: true } : {}),
         standing: r.source === 'note' ? 'note' : 'legacy', by: r.source,
         ...(r.tags?.entities?.length ? { entities: r.tags.entities } : {}),
@@ -130,7 +131,7 @@ function fold(scope, events) {
     // conversation the fact came from and the fact goes, remark or no remark.
     else if (e.op === 'update') { (f.updates ||= []).push({ ts: e.ts, text: String(e.text || ''), ...(e.record ? { record: e.record } : {}) }); if (e.ts > f.lastSeen) f.lastSeen = e.ts; }
     else if (e.op === 'retire') { f.retired = e.ts; if (e.why) f.retiredWhy = e.why; }
-    else if (e.op === 'amend') { for (const k of ['title', 'text', 'kind', 'about', 'when', 'expires', 'key', 'subject', 'whenFrom', 'entities', 'namesJudged']) if (e[k] !== undefined) { if (e[k] === null) delete f[k]; else f[k] = e[k]; } }
+    else if (e.op === 'amend') { for (const k of ['title', 'text', 'kind', 'about', 'when', 'expires', 'key', 'subject', 'whenFrom', 'entities', 'namesJudged', 'concerns', 'task', 'files']) if (e[k] !== undefined) { if (e[k] === null) delete f[k]; else f[k] = e[k]; } }
     else if (e.op === 'hide') { f.hidden = true; f.hiddenAt = e.ts; f.hiddenBy = e.by || null; if (e.why) f.hiddenWhy = e.why; }
     else if (e.op === 'unhide') { delete f.hidden; delete f.hiddenAt; delete f.hiddenBy; delete f.hiddenWhy; }
   }
@@ -252,7 +253,7 @@ import { atSentence, fullText, FACT_CHARS } from './memory-text.js';
 const pickFields = (c) => ({
   ...(c.title ? { title: String(c.title).slice(0, 80) } : {}), text: atSentence(c.text, FACT_CHARS), kind: c.kind || 'fact',
   ...(c.subject ? { subject: String(c.subject).slice(0, 80) } : {}), ...(c.whenFrom ? { whenFrom: String(c.whenFrom).slice(0, 120) } : {}),
-  ...(c.about ? { about: c.about } : {}), ...(c.when ? { when: c.when } : {}), ...(c.expires ? { expires: c.expires } : {}),
+  ...(c.concerns ? { concerns: String(c.concerns).slice(0, 40) } : {}), ...(c.about ? { about: c.about } : {}), ...(c.when ? { when: c.when } : {}), ...(c.expires ? { expires: c.expires } : {}),
   importance: c.importance || null, ...(c.evidence ? { evidence: String(c.evidence).slice(0, 400) } : {}),
   ...(Array.isArray(c.entities) && c.entities.length ? { entities: c.entities.slice(0, 5) } : {}),
   ...(['said', 'found', 'note'].includes(c.standing) ? { standing: c.standing } : {}),
@@ -354,7 +355,10 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
   return serial(() => {
     materialise(scope);
     const ev = [];
-    const res = { added: 0, confirmed: 0, replaced: [], superseded: [], updated: [], repeats: [], ids: [], titles: [] };
+    // `linkable`: for each candidate (by position, and by its text), the fact that
+    // now stands for it — new, replaced (a merge may reword it), updated or merely
+    // confirmed — so a caller can tie things to it.
+    const res = { added: 0, confirmed: 0, replaced: [], superseded: [], updated: [], repeats: [], ids: [], titles: [], linkable: {}, fresh: {} };
     const pending = (t) => String(t?.id || '').startsWith('pending-');
     // One conversation filed in parts (a long window in chunks, a meeting's
     // notes and transcript) is still ONE conversation: a thing it says twice
@@ -367,7 +371,9 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
       if (!convOf) convOf = new Map(ledger.read({ scopes: [scope], includeHidden: true }).map(r => [r.id, r.conv]));
       return convOf.get(t.record) === conv;
     };
+    let di = -1;   // the candidate's position: plan() answers one decision per candidate, in order
     for (let d of decisions) {
+      di++;
       // A remark on a fact that is only being added in this same batch has
       // nothing to attach to yet: it stands as a fact of its own.
       if (d.op === 'update' && pending(d.target)) d = { op: 'add', fact: d.fact };
@@ -380,20 +386,20 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
         const more = (ownNames || []).filter(e => e?.name && !have.has(nameKey(e.name)));
         const patch = { ...(fact.title ? { title: fact.title } : {}), text: atSentence(fact.text, FACT_CHARS), ...(fact.kind ? { kind: fact.kind } : {}), ...(fact.about ? { about: fact.about } : {}), ...(fact.when ? { when: fact.when } : {}), ...(fact.expires ? { expires: fact.expires } : {}), ...(more.length ? { entities: [...(d.target.entities || []), ...more].slice(0, 8) } : {}) };
         ev.push({ op: 'amend', id: d.target.id, ts, ...patch });
-        res.ids.push(d.target.id); res.repeats.push(d.target.title || d.target.text);
+        res.ids.push(d.target.id); res.repeats.push(d.target.title || d.target.text); if (d.fact?.text) res.linkable[d.fact.text] = d.target.id; res.linkable[di] = d.target.id;
         continue;
       }
       if (d.op === 'confirm') {
         if (pending(d.target)) continue;
         ev.push({ op: 'confirm', id: d.target.id, ...(record ? { record } : {}), ts });
-        res.confirmed++; res.repeats.push(d.target.title || d.target.text);
+        res.confirmed++; res.repeats.push(d.target.title || d.target.text); if (d.fact?.text) res.linkable[d.fact.text] = d.target.id; res.linkable[di] = d.target.id;
       } else if (d.op === 'update') {
         ev.push({ op: 'update', id: d.target.id, ts, text: atSentence(d.fact.text, FACT_CHARS), ...(record ? { record } : {}) });
         // A correction that names someone new puts the fact on their timeline too.
         const have = new Set((d.target.entities || []).map(e => nameKey(typeof e === 'string' ? e : e?.name)));
         const more = (d.fact.entities || []).filter(e => e?.name && !have.has(nameKey(e.name)));
         if (more.length) ev.push({ op: 'amend', id: d.target.id, ts, entities: [...(d.target.entities || []), ...more].slice(0, 8) });
-        res.updated.push(d.target.title || d.target.text); res.ids.push(d.target.id);
+        res.updated.push(d.target.title || d.target.text); res.ids.push(d.target.id); if (d.fact?.text) res.linkable[d.fact.text] = d.target.id; res.linkable[di] = d.target.id;
       } else if (d.op === 'add' || d.op === 'replace') {
         const old = d.op === 'replace' && !String(d.target.id).startsWith('pending-') ? d.target : null;
         // A fact that takes another's place is dated by the later of the two
@@ -420,7 +426,7 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
         // Superseded: the old fact is no longer true; the new one does not inherit its sources.
         const gone = d.supersedes && !String(d.supersedes.id).startsWith('pending-') ? d.supersedes : null;
         if (gone) { ev.push({ op: 'replace', id: gone.id, by: id, ts, why: 'superseded' }); res.superseded.push(gone.title || gone.text); }
-        res.added++; res.ids.push(id); if (d.fact.title) res.titles.push(d.fact.title);
+        res.added++; res.ids.push(id); if (d.fact.title) res.titles.push(d.fact.title); if (d.fact.text) res.linkable[d.fact.text] = id; res.linkable[di] = id; res.fresh[di] = true;
       }
     }
     appendEvents(scope, ev);
@@ -437,6 +443,8 @@ export async function remember(scope, cands, opts = {}) {
 function event(scope, e) { return serial(() => { materialise(scope); appendEvents(scope, [e]); }); }
 
 export function hide(scope, id, by, { why = null, ts = new Date().toISOString() } = {}) { return event(scope, { op: 'hide', id, ts, by: by || null, ...(why ? { why } : {}) }); }
+/** A fact that no longer holds, with why: struck through on the screen, out of the bot's reach. */
+export function retire(scope, id, by, { why = null, ts = new Date().toISOString() } = {}) { return event(scope, { op: 'retire', id, ts, by: by || null, ...(why ? { why } : {}) }); }
 export function unhide(scope, id, by, { ts = new Date().toISOString() } = {}) { return event(scope, { op: 'unhide', id, ts, by: by || null }); }
 export function amend(scope, id, patch, { ts = new Date().toISOString() } = {}) { return event(scope, { op: 'amend', id, ts, ...patch }); }
 export function replaceWith(scope, oldId, newId, { ts = new Date().toISOString() } = {}) { return event(scope, { op: 'replace', id: oldId, by: newId, ts }); }

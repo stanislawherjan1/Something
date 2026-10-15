@@ -22,13 +22,13 @@ import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteT
 import { routeGroupMessage, sayInGroup } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
-import { consolidateIdle } from '../lib/memory-consolidator.js';
+import { idleMs, consolidateIdle } from '../lib/memory-consolidator.js';
 import { v4Write, v4SupersedeFallback } from '../lib/memory-v4-writes.js';
 import { runClaudeTurn } from '../lib/claude.js';
 import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
-import { resolveTurnToken } from '../lib/turn-identity.js';
+import { resolveTurnToken, isInternalCall } from '../lib/turn-identity.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -115,6 +115,31 @@ function loopbackOnly(req, res, next) {
   return res.status(403).json({ error: 'loopback only' });
 }
 
+// The routes the reminder monitor drives — run a turn as a teammate, deliver
+// to a teammate, speak in a group — act on someone's behalf, so being on
+// loopback is not enough: every turn with a shell is on loopback too. The
+// monitor runs as the bot user and presents the token only that user can read
+// (lib/turn-identity.js); a turn workspace-api starts cannot read it.
+// Who a message is FROM, for /notify and /chat-session. A turn names itself
+// with its token (web-channel-mcp sends X-IDE-Turn); workspace-api's own
+// loopback calls name the sender in the body under X-IDE-Internal. Anything
+// else is anonymous — the routes then fall back as they always did for a
+// surface with no per-user identity (the operator in team mode). A group
+// turn speaks for no one in particular.
+function provenSender(req, claimed) {
+  const h = (n) => (typeof req.headers[n] === 'string' ? req.headers[n] : '');
+  const turn = resolveTurnToken(h('x-ide-turn'));
+  if (turn) return turn.group ? null : turn.actor;
+  if (isInternalCall(h('x-ide-internal'))) return claimed;
+  return null;
+}
+
+function botOnly(req, res, next) {
+  const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
+  if (turn && turn.source === 'bot') return next();
+  return res.status(403).json({ ok: false, error: 'not the reminder monitor' });
+}
+
 export default function internalRouter() {
   const router = Router();
 
@@ -143,6 +168,21 @@ export default function internalRouter() {
   // dashboard can show Reconnect; the helper then emits nothing and the MCP
   // server simply stays unavailable for that turn.
   router.get('/internal/mcp-token/:id', loopbackOnly, async (req, res) => {
+    // Handed to a turn's MCP (the helper runs inside the turn and sends its
+    // token); a process on loopback without a turn gets nothing.
+    const turn = resolveTurnToken(typeof req.headers['x-ide-turn'] === 'string' ? req.headers['x-ide-turn'] : '');
+    if (!turn) {
+      return res.status(403).json({ ok: false, error: 'no turn identity' });
+    }
+    // `granola@ann` is Ann's own connection: only a turn that is Ann's gets
+    // its token — never a group's, never another person's.
+    const at = String(req.params.id).indexOf('@');
+    if (at !== -1) {
+      const owner = String(req.params.id).slice(at + 1);
+      if (turn.group || !turn.actor || turn.actor !== owner) {
+        return res.status(403).json({ ok: false, error: 'not this turn\'s connection' });
+      }
+    }
     try {
       const token = await oauthBroker.getFreshToken(req.params.id);
       return res.json({ Authorization: `Bearer ${token}` });
@@ -210,14 +250,18 @@ export default function internalRouter() {
   // Team roster for the reminder MCP's set-time name→slug resolution +
   // validation (the MCP is a separate process with no in-process team.js). Same
   // loopback trust boundary as /internal/operator-identity.
-  router.get('/internal/roster', loopbackOnly, (_req, res) => {
+  router.get('/internal/roster', loopbackOnly, (req, res) => {
     try {
       const op = getTeamMode() ? primaryAdminSlug() : null;
+      // A teammate's Telegram chat id is what a forged inbound message would
+      // need: only the bot gets it; everyone else (the reminders MCP) the rest.
+      const bot = resolveTurnToken(String(req.get('x-ide-turn') || ''))?.source === 'bot';
       const members = teamList().map(m => ({
         slug: m.slug,
         displayName: m.displayName || m.slug,
         role: m.role,
-        telegramChatId: m.telegramChatId || null,
+        ...(bot ? { telegramChatId: m.telegramChatId || null } : {}),
+        telegramLinked: !!m.telegramChatId,
         preferredSurface: m.preferredSurface || null,
         preferredLanguage: m.preferredLanguage || null,
         isOperator: !!op && m.slug === op,
@@ -235,7 +279,7 @@ export default function internalRouter() {
   // double-fires them. Each remaining teammate gets a recipient-scoped web toast
   // (notify.visibleTo) + their Telegram if linked & preferred. '*everyone*' is
   // expanded late (live roster). Best-effort per leg; never throws.
-  router.post('/internal/reminder-deliver', loopbackOnly, async (req, res) => {
+  router.post('/internal/reminder-deliver', loopbackOnly, botOnly, async (req, res) => {
     const { recipients, channel, title, body } = req.body || {};
     try {
       if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
@@ -290,7 +334,7 @@ export default function internalRouter() {
   // answer it), plus Telegram per `channel`. An empty reply or `[[SILENT]]` sends
   // nothing, which is the normal outcome of a check that found nothing. If the
   // model already messaged them itself (web_send_message), nothing is re-sent.
-  router.post('/internal/invoke-turn', loopbackOnly, (req, res) => {
+  router.post('/internal/invoke-turn', loopbackOnly, botOnly, (req, res) => {
     const { actor, message, deliver } = req.body || {};
     try {
       if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
@@ -328,7 +372,8 @@ export default function internalRouter() {
   });
 
   router.post('/internal/notify', loopbackOnly, (req, res) => {
-    const { kind, title, body, meta, id, recipient, from } = req.body || {};
+    const { kind, title, body, meta, id, recipient } = req.body || {};
+    const from = provenSender(req, req.body?.from);
     if (typeof title !== 'string' && typeof body !== 'string') {
       return res.status(400).json({ ok: false, error: 'title or body required (strings)' });
     }
@@ -366,7 +411,8 @@ export default function internalRouter() {
   // /internal/notify call (also fired by the MCP) gets the session_id
   // back via its meta so the UI can wire click → switch session.
   router.post('/internal/chat-session', loopbackOnly, async (req, res) => {
-    const { title, body, recipient, from, fromSession, channel, relayDepth } = req.body || {};
+    const { title, body, recipient, fromSession, channel, relayDepth } = req.body || {};
+    const from = provenSender(req, req.body?.from);
     // C1 loop guard — how many relay hops produced this message. An originating
     // relay is 0; each Telegram relay-back increments it. Stored on the delivery
     // so routeTelegramInbound can bound a two-Telegram-user ping-pong.
@@ -557,7 +603,10 @@ export default function internalRouter() {
   // middleware (loopback) for EVERY inbound DM; routeTelegramInbound decides
   // whether it belongs to a relay thread (and is a no-op otherwise, so a normal
   // Telegram DM is untouched). Loopback-only — same trust boundary as the rest.
-  router.post('/internal/telegram-inbound', loopbackOnly, async (req, res) => {
+  // Telegram traffic is the bot's to report: a message routed here starts a turn
+  // AS the teammate it names, so only the bot (its turn token) may post one —
+  // never another turn, a group turn or an MCP on the same loopback.
+  router.post('/internal/telegram-inbound', loopbackOnly, botOnly, async (req, res) => {
     const { chat_id, text, message_id, reply_to_message_id } = req.body || {};
     try {
       const out = await routeTelegramInbound({ chat_id, text, message_id, reply_to_message_id });
@@ -573,7 +622,7 @@ export default function internalRouter() {
   // traffic). routeGroupMessage allow-lists, dedups, buffers and gates via the
   // relevance watcher — Phase 1 is OBSERVE-ONLY (logs a decision, never sends).
   // ACK immediately and never block the plugin's middleware on our work.
-  router.post('/internal/group-message', loopbackOnly, (req, res) => {
+  router.post('/internal/group-message', loopbackOnly, botOnly, (req, res) => {
     res.status(202).json({ ok: true });
     try { routeGroupMessage(req.body || {}); }
     catch (err) { process.stderr.write(`[internal] group-message failed: ${err.message}\n`); }
@@ -585,7 +634,7 @@ export default function internalRouter() {
   // groups your people own"). addGroup → CHANNELS card; restartBot re-seeds the
   // group into access.json so the operator can reply into it from a DM; the
   // [GROUP] inject tells the operator brain it just joined.
-  router.post('/internal/group-joined', loopbackOnly, (req, res) => {
+  router.post('/internal/group-joined', loopbackOnly, botOnly, (req, res) => {
     res.status(202).json({ ok: true });
     try {
       const { chat_id, title, creator_id, added_by_id } = req.body || {};
@@ -660,9 +709,15 @@ export default function internalRouter() {
       return res.status(403).json({ ok: false, error: 'this is a group conversation — only shared memory can be written here' });
     }
     const scope = inGroup ? 'shared' : (body.scope === 'private' ? 'private' : 'shared');
-    // A private write defaults to the ACTOR's own tree; the engine refuses any
-    // other owner anyway (same rule that guards reads).
-    const owner = scope === 'private' ? (body.owner || actor) : undefined;
+    // A private write goes to the turn's own person. An `owner` in the body is
+    // accepted only when it names that same person (solo: the primary admin):
+    // the v4 writes below do not go through the engine's scope check, so the
+    // rule is applied here, ahead of both paths.
+    const self = actor || primaryAdminSlug() || null;
+    if (body.owner && String(body.owner) !== self) {
+      return res.status(403).json({ ok: false, error: 'a private note is written for the person in this conversation only' });
+    }
+    const owner = scope === 'private' ? self : undefined;
     // supersede / retire / revert / rename search every file the actor can READ,
     // and the sender of a group message can read their own private tree — so in
     // a group turn they ran over it and returned private lines (`replaced`,
@@ -729,7 +784,13 @@ export default function internalRouter() {
   // watermarks server-side, so the monitor can poke it every tick. loopback only.
   router.post('/internal/memory/consolidate', loopbackOnly, async (req, res) => {
     try {
-      return res.json(await consolidateIdle({ force: false }));
+      // ?idle=0: file what is quiet NOW, without the idle wait (a canary test
+      // checking what the night will do). Loopback only, like the rest.
+      // The two test levers (file what is quiet now, trace the tick) are the
+      // bot's alone: the trace holds lines of everyone's conversations.
+      const bot = resolveTurnToken(String(req.get('x-ide-turn') || ''))?.source === 'bot';
+      const now = bot && req.query.idle === '0' ? Date.now() + idleMs() : Date.now();
+      return res.json(await consolidateIdle({ force: false, now, trace: bot && req.query.trace === '1' }));
     } catch (err) {
       process.stderr.write(`[internal] memory consolidate failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
@@ -741,7 +802,7 @@ export default function internalRouter() {
   // purely reactive before this: a turn could only begin from an inbound
   // message, so "I'll get back to you" could not be honoured. The group
   // registry authorises the chat, not the caller. loopback only.
-  router.post('/internal/group-say', loopbackOnly, async (req, res) => {
+  router.post('/internal/group-say', loopbackOnly, botOnly, async (req, res) => {
     const { chat_id: chatId, text, frame } = req.body || {};
     try {
       const out = await sayInGroup({ chatId, text, frame });

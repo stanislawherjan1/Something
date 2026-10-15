@@ -23,6 +23,8 @@ for name in sorted(servers.keys()):
 
 Filter out infrastructure-level MCPs that aren't user-facing capabilities: `memory`, `playwright`, `reminders`, `tasks`, `web-channel`. Those are plumbing, not features. (`workspace-api` stays — `memory_search` / `memory_timeline` are real capabilities.)
 
+In a team, a server named `<name>-mine` is this person's own account; the plain name is the team's. Present them that way ("your own Granola", "the team's Shopify"); a team connection may be read-only — say so when it is. The list above comes from the bot's config; in a person's web turn your own tools are the truth, so prefer them when they differ.
+
 ## Step 2 — read the user's own description
 
 Open `~/project/.claude/CLAUDE.md` and find the `## Context` section. Extract which integrations the user described and what they wrote about each.

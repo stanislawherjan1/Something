@@ -10,15 +10,26 @@ their own Google account.
 From then on there are two spaces side by side. **Shared** holds the files,
 the task board and the memory the whole team works from. **Yours** holds your
 own files and your own memory, which no teammate can read, and which the
-coworker never reads on someone else's behalf. Admins manage the roster; they
-cannot look into what is yours. Ask "did Mara finish the report?" and it
+coworker never reads on someone else's behalf — on the server each person's
+work even runs under a separate system account, so one person's commands
+cannot touch another's files. Admins manage the roster; they cannot look
+into what is yours. A workspace holds up to 24 people. Ask "did Mara finish the report?" and it
 answers from the shared work, so collaboration is the default and privacy is
 the exception that holds.
+
+An admin can **lock** a shared file or folder: everyone still reads it, and
+nobody changes it — not members, not admins, not the coworker — until an
+admin unlocks it. Whoever tries hears "Locked by <name>. Read-only until an
+admin unlocks it." A locked folder covers everything inside it. Locks live in
+the row menu of the file list, and a locked row carries a keyhole.
 
 Each person links their own Telegram, so a message from you is from you. Add
 the coworker to a team group and it listens there as the team's, remembering
 the group's own conversation and never anyone's private memory. Reminders and
 tasks go to the person they are for.
+
+
+To switch collaboration off, remove everyone else from the team first — the screen tells you who. When you switch it on, you choose for each service you had connected whether the team uses it or it stays yours alone, and what your coworker remembered from before stays yours — a new teammate starts without your history.
 
 ---
 
@@ -46,7 +57,20 @@ root and toggled by an admin:
 
 Toggle: `PUT /api/team/mode { enabled: boolean, mergePersonal?: boolean }`
 (admin-only). Enabling is the deliberate gate that surfaces every collaborative
-affordance. Turning it **off** while teammates have personal files prompts a
+affordance. **Turning it off is refused (409, with `others`) while anyone but the
+caller is on the roster** — solo is one person; the Team screen lists them with
+Remove (removal archives their private trees and their own connections).
+**Turning it on** asks, on the Team screen, who uses each connection the owner
+had: the whole team (it stays a workspace connection) or just them
+(`POST /api/integrations/:id/make-personal` re-encrypts it as `<id>@<slug>`,
+its file and server name follow). Switching on also hands the owner what solo
+left in shared memory — the migration's records, never shared on purpose — as
+their private memory (`lib/memory-solo.js`), so a new member does not find the
+owner's history there; facts shared on purpose and other people's stay shared.
+In solo the Integrations screen is one list
+with nothing to choose, and the Skills screen one list.
+
+Turning it **off** while you have personal files prompts a
 decision (the UI's "disable" modal):
 
 - **Merge** — move the **caller's own** `users/<slug>/` files up into the shared
@@ -173,7 +197,10 @@ promotes to a **private** topic page under `memory/users/<slug>/topics/`.
 `AGENT_*` + `RULES` + `INDEX`, then the **current user's** `USER_PROFILE` +
 `USER_PREFERENCES` + recent snapshots from `memory/users/<slug>/` (team mode).
 `USER_RELATIONSHIPS` / `USER_REFLECTIONS` are stored private but recalled
-on demand, not in the prefix.
+on demand, not in the prefix. This table is the older memory; after the move to
+memory v4 only `USER_PROFILE` / `USER_PREFERENCES` stay private cards, the
+shared `MISSION` card says what the company does, and the rest is removed (see
+MEMORY.md).
 
 **Deciding where a new fact goes** (the `memory_write` tool's routing rules): ask **"would
 this be useful to a DIFFERENT teammate?"**
@@ -233,6 +260,51 @@ mode the AI infers the recipient from the request (exactly like a relay):
 **Permissions:** only an admin can target `"everyone"` or other people; a member
 can only remind themselves. If the tool refuses, the bot says an admin is needed
 and offers to remind just the asker.
+
+When the bot lists or cancels reminders, each person — admins included — works
+with the ones that concern them: their own, those they are a recipient of, and
+team-wide ones. A teammate's personal reminders stay theirs.
+
+**A teammate's own Telegram DMs.** When a non-admin teammate writes to the bot
+on Telegram and the message is not a reply inside a relay thread, it is answered
+by a turn that runs **as that teammate** — their identity, their private memory
+and files, the tools a web turn of theirs has — never by the operator's
+assistant session. One conversation is kept per teammate (the turn resumes it),
+the reply goes back on Telegram, and the exchange is recorded in a "Telegram"
+chat in their web history. (`lib/integrations/member-dm.js`.)
+
+**Locks.** An admin marks a shared path read-only (`.team/locks.json`,
+`lib/locks.js`; `POST /api/files/lock|unlock` admin-only, `GET /api/files/locks`).
+One rule decides a write — `pathWritable` in `lib/scope-rule.js`: in scope,
+and not under a lock — for everyone, admins and the operator's brain
+included; unlocking is the only way to change a locked path. The file API
+refuses write, create, mkdir, move (either end) and delete with the lock's
+sentence, and refuses moving or deleting a folder that holds a locked item;
+the scope-guard hook refuses Write/Edit/MultiEdit/NotebookEdit under a lock
+in every turn (checked before the per-actor fence, so a solo brain honours
+it too) and, best-effort, a shell command that names a locked path next to
+a redirect or a file-changing command (`mv`, `cp`, `rm`, `sed -i`, `tee`,
+`touch`, …). Reads are untouched. A lock whose path is gone never blocks and
+is dropped on the next write; private trees and the root cannot be locked.
+The tree marks covered entries (`locked: { path, by, byName, inherited }`)
+and the row menu offers Lock / Unlock to admins.
+
+**One turn user per person.** Each person on the roster has a *slot* (1–24),
+assigned when they are added: the Linux user their turns run as (`turn-NN`) and
+the group (`priv-NN`) that owns their private trees — `users/<slug>`,
+`memory/users/<slug>`, `.team/users/<slug>`. Another person's turn, shell
+included, cannot open them; workspace-api (in every `priv-*` group) still can,
+and the operator's brain and editor are let into the operator's own. The
+operator is the **primary admin** — the first admin on the roster; the Telegram
+brain runs as them, so only their Telegram DMs reach it. Every other person,
+a second admin included, is answered on Telegram by a turn as themselves
+(`routeTelegramInbound` → member-dm), never by the brain. A group's
+turn runs as `turn-group`, in no private group at all. When a person is
+removed their trees are archived out of the project (root-only) before the
+slot is reused; a workspace holds up to 24 people (the pool is a build
+constant — the Team screen says so on the 25th). Each slot has its own home
+and sessions, so a turn cannot read another person's transcript either.
+Details: `docs/ARCHITECTURE.md` "The uids", `docs/SECURITY.md`.
 
 **Delivery routing** when a reminder fires (the monitor expands `"everyone"` to
 the live roster):
@@ -438,7 +510,7 @@ and excluded from Drive sync.
 | `GET/POST/DELETE /api/team/telegram-groups` | Registered Telegram groups (admin-gated). |
 | `GET /api/reminders`, `POST /api/reminders/cancel` | Actor-scoped reminder board. |
 | `GET/POST/PATCH/DELETE /api/tasks` | Shared task board (DELETE removes a task for good; finished work moves to Done). |
-| `GET /internal/roster` | Loopback — roster for the reminder/tasks MCP name→slug resolution. |
+| `GET /internal/roster` | Loopback — roster for the reminder MCP's name→slug resolution. |
 | `POST /internal/reminder-deliver` | Loopback — fan-out of a fired reminder to teammates. |
 | `POST /internal/group-message` | Loopback — a diverted group message into the relevance watcher. |
 | `POST /internal/group-joined` | Loopback — bot added to a group → roster-gated auto-register. |
@@ -446,7 +518,7 @@ and excluded from Drive sync.
 
 ### Related skills
 
-- `task-management` — drives the shared board via the tasks MCP.
+- `task-management` — drives the shared board through the tasks API (`/api/tasks`).
 - `reminders` — per-recipient reminders + delivery model.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how these pieces sit in the overall

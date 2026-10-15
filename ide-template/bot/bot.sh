@@ -103,9 +103,17 @@ if [ -f "/home/coder/.claude.json" ] && [ ! -f "$BOT_HOME/.claude.json" ]; then
 fi
 
 if [ ! -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
-    log "ERROR: $CLAUDE_CONFIG_DIR/.credentials.json missing. workspace-api should have hydrated it from the encrypted store. Check setup wizard."
+    # Wait for the file rather than exit: workspace-api hydrates it from the
+    # encrypted store a moment after the token is pasted, and the entrypoint
+    # starts this stack as soon as the token exists in ANY form — so this
+    # script can run before the hydrated copy is there. An exit here made PM2
+    # restart the bot until max_restarts (50) and then give up, so the bot
+    # never came up when the token did land; and every restart sent the same
+    # Telegram message again.
+    log "WARN: $CLAUDE_CONFIG_DIR/.credentials.json missing — waiting for workspace-api to hydrate it from the encrypted store (set the Anthropic login in the setup wizard if it never does)."
     notify "I can't start until my Anthropic login is set up — you can add it on the workspace settings page."
-    exit 1
+    while [ ! -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; do sleep 5; done
+    log "Credentials present — continuing start-up."
 fi
 
 # 2. Provision Telegram Token (always overwrite to ensure env updates apply)
@@ -147,11 +155,18 @@ except Exception:
     # the pairing prompt ("run /telegram:access pair …" — an operator-side Claude
     # Code command) would only ever reach STRANGERS and roster members whose id
     # isn't linked yet; both should get silence, not instructions they can't use.
+    # ackReaction: optional — with TELEGRAM_ACK_REACTION set (one of Telegram's
+    # fixed reaction emoji) the plugin reacts to every DM it takes on, at
+    # once. Off by default: the bot reacts when it sees fit (the react tool),
+    # not to every message. Group messages never reach this handler anyway
+    # (Patch 4f diverts them first).
+    ACK_JSON=$(ACK="${TELEGRAM_ACK_REACTION:-}" python3 -c 'import json,os; a=os.environ.get("ACK",""); print(json.dumps(a) if a else "")' 2>/dev/null)
     cat > "$CLAUDE_CONFIG_DIR/channels/telegram/access.json" <<EOF
 {
   "dmPolicy": "allowlist",
   "allowFrom": [${IDS_JSON}],
-  "groups": ${GROUPS_JSON},
+  "groups": ${GROUPS_JSON},${ACK_JSON:+
+  "ackReaction": ${ACK_JSON},}
   "pending": {}
 }
 EOF
@@ -614,11 +629,14 @@ else:
 # replying "nothing attached"). Anchored on the marker + the unique trailing comment —
 # NOT brace-counting, because the bot.use(...) block nests too deep for that.
 group_existing_pattern = re.compile(
-    r'\n?// CC-BOT-PATCH: telegram group message diversion\n.*?// group traffic handled by the watcher[^\n]*\n\}\);\n',
+    r'\n?(?:// )?// CC-BOT-PATCH: telegram group message diversion\n.*?// group traffic handled by the watcher[^\n]*\n\}\);\n',
     re.DOTALL,
 )
 if group_existing_pattern.search(content):
     content = group_existing_pattern.sub('', content)
+    # The block is injected as "// // CC-BOT-PATCH…"; the strip used to match from
+    # the second "//", leaving a bare "//" line behind on every start. Take those too.
+    content = re.sub(r'(?m)^//[ \t]*\n', '', content)
     changed = True
     print('[bot] telegram group diversion: stripped stale block (reapplying current body)')
 tg_group_marker = '// CC-BOT-PATCH: telegram group message diversion'
@@ -1109,88 +1127,51 @@ if restart_menu_marker not in content:
 else:
     print('[bot] /restart slash menu entry: already patched')
 
-# ── Patch 6: /correct slash command (verification-failure logger) ─────
-# Operator-typed `/correct <text>` appends a dated bullet to
-# ~/project/memory/patterns/verification-failures.md. Use after the bot
-# falsely claimed a skill/file/tool doesn't exist (or any verification
-# slip) — the appended entry feeds into the cached prefix so the model
-# sees its own historical failures and self-reinforces against repeating.
-#
-# Admin-only (gated on TELEGRAM_ADMIN_CHAT_ID, same as /restart). Patches
-# the plugin source to register the command + adds /correct to the
-# setMyCommands slash menu.
-#
-# Idempotency: marker check + remove old version before reinjecting, so
-# the bot.sh runs idempotently on every container restart.
+# ── Patch 5c: the bot's turn token on its reports to workspace-api ─────
+# /internal/telegram-inbound, group-message and group-joined accept only the
+# bot's own turn token (a forged inbound message would start a turn as the
+# teammate it names). The blocks above were injected before that rule; this
+# adds the header to their fetches in place — a plain substitution, so it is
+# idempotent (the old form is gone once replaced) — and a reader of the token
+# file, read per call because the token changes with every restart.
+turn_hdr_marker = '// CC-BOT-PATCH: bot turn token reader'
+if turn_hdr_marker not in content:
+    reader = (
+        '\n// ' + turn_hdr_marker + '\n'
+        'const __ideTurn = (): string => {\n'
+        '  for (const p of [`${process.env.HOME || "/home/bot"}/.${process.env.BOT_NAME || "bot"}/turn-id`, "/home/bot/.bot/turn-id"]) {\n'
+        '    try { const t = require("fs").readFileSync(p, "utf8").trim(); if (t) return t; } catch (_) {}\n'
+        '  }\n'
+        '  return "";\n'
+        '};\n'
+    )
+    m_bot = re.search(r'^const bot = new Bot\([^)]*\)', content, re.MULTILINE)
+    if m_bot:
+        content = content[:m_bot.end()] + reader + content[m_bot.end():]
+        changed = True
+        print('[bot] turn token reader: patched')
+    else:
+        print('[bot] WARNING: turn token reader anchor (const bot = new Bot) not found')
+_old_hdr = re.compile(r'(fetch\("http://127\.0\.0\.1:3001/api/internal/(?:telegram-inbound|group-message|group-joined)", \{\s*method: "POST", headers: \{ "Content-Type": "application/json") \}')
+content, _n_hdr = _old_hdr.subn(lambda m: m.group(1) + ', "X-IDE-Turn": __ideTurn() }', content)
+if _n_hdr:
+    changed = True
+    print(f'[bot] turn token header: added to {_n_hdr} report(s)')
+
+# ── Patch 6: REMOVE the legacy /correct command ──────────────────────
+# `/correct <text>` appended operator corrections to memory/patterns/ for a
+# skill that no longer exists; nothing read the file. This block only STRIPS
+# what an older image injected (the command and its slash-menu entry), so a
+# patched plugin loses both on the next start. It never adds.
 correct_marker = '// CC-BOT-PATCH: correct command v1'
 content, _correct_removed = _strip_marked_blocks(content, '// ' + correct_marker)
 if _correct_removed:
     changed = True
-
-correct_inject = (
-    '// ' + correct_marker + '\n'
-    '{\n'
-    '  const __adminChatId: string = String(process.env.TELEGRAM_ADMIN_CHAT_ID || "");\n'
-    '  const __patternsFile: string = (process.env.HOME || "/home/coder") + "/project/memory/patterns/verification-failures.md";\n'
-    '  bot.command("correct", async (ctx) => {\n'
-    '    if (!__adminChatId || String(ctx.chat?.id) !== __adminChatId) return;\n'
-    '    const raw = String(ctx.message?.text || "").replace(/^\\/correct(@\\S+)?\\s*/, "").trim();\n'
-    '    if (!raw) {\n'
-    '      try { await ctx.reply("Usage: /correct <what the bot got wrong>\\nExample: /correct claimed no skill for shopify-orders — exists at ~/.claude/skills/shopify-orders/"); } catch (_) {}\n'
-    '      return;\n'
-    '    }\n'
-    '    try {\n'
-    '      const { mkdir, appendFile, stat } = await import("fs/promises");\n'
-    '      const path = await import("path");\n'
-    '      await mkdir(path.dirname(__patternsFile), { recursive: true });\n'
-    '      // If the file is new, seed minimal frontmatter so taste-recall picks it up.\n'
-    '      let isNew = false;\n'
-    '      try { await stat(__patternsFile); } catch { isNew = true; }\n'
-    '      if (isNew) {\n'
-    '        const header = "---\\npattern: avoid\\ntrigger: claiming absence (skill/file/tool) without verification\\nreason: bot has historically claimed it lacks capabilities it actually has; this log surfaces those misses so the model learns\\n---\\n\\n# Verification failures\\n\\nOperator-logged misses where the bot falsely claimed something didn\'t exist. Each entry: date + what was claimed vs. what was actually true.\\n\\n";\n'
-    '        await appendFile(__patternsFile, header);\n'
-    '      }\n'
-    '      const today = new Date().toISOString().slice(0, 10);\n'
-    '      await appendFile(__patternsFile, `- ${today}: ${raw}\\n`);\n'
-    '      await ctx.reply(`Logged to memory/patterns/verification-failures.md:\\n${today}: ${raw}`);\n'
-    '    } catch (e: any) {\n'
-    '      try { await ctx.reply(`Could not append: ${e?.message || e}`); } catch (_) {}\n'
-    '    }\n'
-    '  });\n'
-    '}\n\n'
-)
-# Anchor: same as /restart — just before plugin\'s first `bot.command("start"`.
-pattern = re.compile(r"^(bot\.command\(['\"]start['\"])", re.MULTILINE)
-new_content, n = pattern.subn(lambda m: correct_inject + m.group(1), content, count=1)
-if n > 0:
-    content = new_content
+_correct_menu = re.compile(r"^[ \t]*\{ command: 'correct', description: '[^']*' \},\n", re.MULTILINE)
+content, _n_menu = _correct_menu.subn('', content)
+if _correct_removed or _n_menu:
     changed = True
-    print('[bot] correct command: patched (v1, pre-bot.on)')
-else:
-    print('[bot] WARNING: correct command pattern (bot.command start) not found')
-
-# ── Patch 6b: append /correct to plugin's setMyCommands list ──────────
-correct_menu_marker = "{ command: 'correct',"
-if correct_menu_marker not in content:
-    # Anchor after the /restart menu entry we already added in Patch 5b.
-    plugin_menu_pattern_6b = re.compile(
-        r"(\{ command: 'restart', description: '[^']+' \},)\n(\s+\],)",
-        re.MULTILINE,
-    )
-    insertion = (
-        r"\1\n"
-        r"              { command: 'correct', description: 'Log a bot verification failure to memory (admin only)' },\n"
-        r"\2"
-    )
-    new_content, n = plugin_menu_pattern_6b.subn(insertion, content, count=1)
-    if n > 0:
-        content = new_content
-        changed = True
-        print('[bot] /correct slash menu entry: patched into plugin setMyCommands')
-    else:
-        print('[bot] WARNING: /correct slash menu anchor (post-/restart) not found — slash menu may not show entry')
-else:
-    print('[bot] /correct slash menu entry: already patched')
+    print('[bot] /correct command: removed')
 
 # ── Patch 7: REMOVE the legacy /memory slash command ─────────────────
 # Memory is written in the conversation through the memory_write tool:
@@ -1352,7 +1333,7 @@ fi
 # Export the operator's slug so the brain's web_send_message relays carry
 # from=<operator>: that's what gives the RECIPIENT an attributed chat title
 # AND toast ("📨 Message from <op>") instead of an anonymous bubble (F3).
-# Also IDE_ACTOR_IS_ADMIN=1 so scope-guard.mjs short-circuits (its line 109)
+# Also IDE_ACTOR_IS_ADMIN=1 for the role checks (the scope guard itself ignores it)
 # and the slug NEVER fences the operator brain out of shared/other files —
 # the brain keeps full access exactly as before. The slug is FETCHED from
 # wsapi (not derived in bash) so it can't drift from team.js's slugify /
@@ -1366,7 +1347,7 @@ if command -v curl >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
         if printf '%s' "$OP_SLUG" | grep -qE '^[a-z0-9-]+$'; then
             export IDE_ACTOR_SLUG="$OP_SLUG"
             export IDE_ACTOR_IS_ADMIN=1
-            log "Operator identity: IDE_ACTOR_SLUG=$OP_SLUG IDE_ACTOR_IS_ADMIN=1 (relays attributed; scope-guard admin-passthrough)."
+            log "Operator identity: IDE_ACTOR_SLUG=$OP_SLUG IDE_ACTOR_IS_ADMIN=1 (relays attributed; private trees fenced by path as for everyone)."
         else
             log "Operator identity: not in team mode (or no slug) — leaving IDE_ACTOR_SLUG unset (solo/legacy)."
         fi
