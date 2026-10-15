@@ -1,12 +1,16 @@
 ---
 // The footer, shared by every page.
 import GithubStars from './GithubStars.astro';
+import { LINKEDIN } from '../lib/links';
 ---
   <footer class="foot">
     <div class="wrap">
       <span class="brand"><img src="/favicon.svg" alt="" />Something<span class="by">by stan corp</span></span>
       <div class="foot-right">
         <span class="foot-note">Self-hosted. Yours. <a href="https://github.com/stanislawherjan1/Something/blob/main/LICENSE" target="_blank" rel="noopener">Open source under AGPL-3.0</a>.</span>
+        <a class="li" href={LINKEDIN} target="_blank" rel="noopener" aria-label="LinkedIn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM7.12 20.45H3.56V9h3.56v11.45ZM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0Z"/></svg>
+        </a>
         <GithubStars />
       </div>
     </div>
@@ -20,6 +24,10 @@ import GithubStars from './GithubStars.astro';
   .foot .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .foot-note { font-size: 12.5px; color: var(--mf-80); }
   .foot-right { display: flex; align-items: center; gap: 16px; }
+  /* LinkedIn: an icon-only ghost button, the height of the GitHub one beside it. */
+  .li { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-right: -12px; border-radius: 6px; color: var(--fg-85); transition: background .15s, color .15s; }
+  .li:hover { background: color-mix(in oklab, var(--foreground) 5%, transparent); color: var(--foreground); }
+  .li svg { width: 15px; height: 15px; }
   @media (max-width: 620px) {
     .foot { margin-top: 88px; }
     .foot .wrap { flex-direction: column; align-items: flex-start; gap: 14px; }

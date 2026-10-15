@@ -206,7 +206,6 @@ const scenarios = [
       composer.classList.remove('typing');
       send.classList.remove('on', 'press');
 
-      add('<span class="day">Today</span>', 'day-row');
       // Typed into the composer first, then sent: the bubble rises into the chat.
       await sleep(reduced ? 0 : 500); if (!alive()) return;
       composer.classList.add('typing');
@@ -222,6 +221,8 @@ const scenarios = [
       send.classList.remove('on', 'press');
       composer.classList.remove('typing');
       typed.textContent = '';
+      // The day appears with the first message, as in the chat.
+      add('<span class="day">Today</span>', 'day-row');
       add(`<div class="bubble">${s.ask}</div>`, 'row-user');
       const bot = add('', 'row-bot');
       const think = document.createElement('div');

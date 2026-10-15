@@ -1,17 +1,18 @@
 ---
 // The team section: one switch in the middle. When collaborative mode turns
-// on, the team appears around it, each face with what they just asked.
+// on, the team appears around it, each face with what they just asked, and
+// under it their own space: their tools and their routine (as in the README art).
 // Bubbles are the chat's.
 
-// [photo, name, ask, x, y] — x/y: the face's offset from the switch, px.
+// [photo, name, ask, x, y, tools, routine] — x/y: the face's offset from the switch, px.
 // Portraits: p* from Unsplash (Unsplash License); tom, lena generated (no real person).
-const people: [string, string, string, number, number][] = [
-  ['p1', 'Mara', 'Draft the newsletter from what we shipped', -335, -215],
-  ['p2', 'Leo', 'How did the launch campaign do?', 345, -225],
-  ['tom', 'Tom', 'What did the café chain order last time?', -355, 0],
-  ['p3', 'Ivy', 'Book the photographer for Thursday', 360, -5],
-  ['p4', 'Jonas', 'Chase the supplier about the invoice', -325, 215],
-  ['lena', 'Lena', 'Remind me about the stock count', 335, 210],
+const people: [string, string, string, number, number, string[], string][] = [
+  ['p1', 'Mara', 'Draft the newsletter from what we shipped', -335, -215, ['email', 'notion'], 'Newsletter · Fri'],
+  ['p2', 'Leo', 'How did the launch campaign do?', 345, -225, ['meta', 'ga4'], 'Ads review · Mon'],
+  ['tom', 'Tom', 'What did the café chain order last time?', -355, 0, ['shopify', 'gdrive'], 'Stuck orders · daily'],
+  ['p3', 'Ivy', 'Book the photographer for Thursday', 360, -5, ['gcalendar', 'granola'], 'Day plan · 8:00'],
+  ['p4', 'Jonas', 'Chase the supplier about the invoice', -325, 215, ['stripe', 'email'], 'Invoices · Mon'],
+  ['lena', 'Lena', 'Remind me about the stock count', 335, 210, ['gsheets', 'gtasks'], 'Stock check · Mon'],
 ];
 ---
 <section id="team">
@@ -22,16 +23,16 @@ const people: [string, string, string, number, number][] = [
           Set it up once.<br />
           The whole team gets it.
         </h2>
-        <p class="lead">You install it. Everyone else opens the app or writes on Telegram, and works with the same agent you’d run from a terminal, without ever seeing one.</p>
+        <p class="lead">You install it. Everyone else opens the app or writes on Telegram, each with a space of their own: their tools, their routines, their memory. What’s private stays private.</p>
         <div class="toggle" aria-hidden="true">
           <span class="sw"><span></span></span>
           <span class="tlabel">Collaborative mode</span>
         </div>
       </div>
-      {people.map(([n, name, ask, x, y], i) => (
+      {people.map(([n, name, ask, x, y, tools, routine], i) => (
         <div class={`mate ${x < 0 ? 'left' : 'right'}`} style={`--x:${x}px; --y:${y}px; --d:${i}`} aria-hidden="true">
           <img class="face" src={`/people/${n}.jpg`} alt="" width="48" height="48" loading="lazy" />
-          <span class="bubble"><b>{name}</b>{ask}</span>
+          <span class="bubble"><b>{name}</b>{ask}<span class="own">{tools.map((t) => <img src={`/integrations/${t}.svg`} alt="" />)}{routine}</span></span>
         </div>
       ))}
     </div>
@@ -69,7 +70,7 @@ const people: [string, string, string, number, number][] = [
     width: min(660px, 100%); display: flex; flex-direction: column; align-items: center; text-align: center;
   }
   .team-title { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.08; font-weight: 600; letter-spacing: -0.035em; color: var(--fg-90); text-wrap: balance; }
-  .center .lead { margin-top: 16px; font-size: 16px; max-width: 600px; }
+  .center .lead { margin-top: 16px; font-size: 16px; max-width: 500px; }
 
   .toggle {
     margin-top: 28px;
@@ -95,25 +96,31 @@ const people: [string, string, string, number, number][] = [
     transition: transform .4s cubic-bezier(.3,1.5,.5,1), opacity .2s ease;
   }
   .bubble {
-    max-width: 190px; padding: 8px 12px; border-radius: 6px; background: var(--card); border: 1px solid var(--hair);
+    max-width: 210px; padding: 8px 12px; border-radius: 6px; background: var(--card); border: 1px solid var(--hair);
     font-size: 13px; line-height: 1.45; color: var(--fg-85); box-shadow: 0 8px 20px -14px rgba(0,0,0,.2);
     opacity: 0; transform: translateY(6px); transition: opacity .3s ease, transform .3s ease;
   }
   .bubble b { display: block; margin-bottom: 1px; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); }
+  /* Their own space: the tools they connected and their routine, under a hairline. */
+  .own { display: flex; align-items: center; gap: 5px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--hair); font-size: 11.5px; line-height: 14px; color: var(--muted-foreground); white-space: nowrap; }
+  .own img { width: 13px; height: 13px; object-fit: contain; }
+  .own img:last-of-type { margin-right: 2px; }
   .tstage.on .face { transform: none; opacity: 1; transition-delay: calc(.5s + var(--d) * .32s); }
   .tstage.on .bubble { opacity: 1; transform: none; transition-delay: calc(.7s + var(--d) * .32s); }
   /* Going back off: everything leaves at once. */
   .tstage:not(.on) .face, .tstage:not(.on) .bubble { transition-delay: 0s; transition-duration: .25s; }
 
+  /* Tablets: the switch on top, the team in two even columns under it. */
   @media (max-width: 1100px) {
-    .tstage { height: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-    .center { position: static; translate: none; margin-bottom: 20px; }
-    .mate, .mate.left { position: static; translate: none; flex-direction: row; width: 100%; max-width: 360px; }
+    .tstage { height: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 340px)); justify-content: center; gap: 14px 20px; }
+    .center { position: static; translate: none; grid-column: 1 / -1; justify-self: center; margin-bottom: 20px; }
+    .mate, .mate.left { position: static; translate: none; flex-direction: row; width: 100%; }
+    .bubble { flex: 1; max-width: none; }
   }
   /* Phones: the switch, then the team as one row of faces popping in. */
   @media (max-width: 620px) {
     #team { padding-top: 72px; }
-    .tstage { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 0; }
+    .tstage { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; gap: 0; }
     .center { width: 100%; margin-bottom: 28px; align-items: flex-start; text-align: left; }
     .mate, .mate.left { width: auto; max-width: none; gap: 0; }
     .mate + .mate { margin-left: -10px; }
