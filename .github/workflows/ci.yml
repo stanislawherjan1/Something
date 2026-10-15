@@ -45,6 +45,41 @@ jobs:
       - run: npm test
       # Recurrence engine shared by reminder-mcp and the reminder monitor; no deps.
       - run: node ../apps/reminder-mcp/recur.test.mjs
+      # Guard tests: memory read isolation and reminder settling. Both import
+      # only node builtins and lib files, so they need no install of their own.
+      - run: node ../scripts/test-memory-read.mjs
+      - run: node ../scripts/test-reminder-settle.mjs
+
+  syntax:
+    # Parse-only checks over everything the Docker build or a deploy runs but
+    # no test imports: a typo in an MCP entry point, a route module, a shell
+    # script or a setuid wrapper otherwise shows up on the server, minutes into
+    # a build or at the first request. Each check costs seconds and needs no
+    # install.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: node --check on MCP entry points and workspace-api routes
+        run: |
+          for f in ide-template/apps/*/index.js ide-template/workspace-api/routes/*.js; do
+            node --check "$f" || { echo "::error file=$f::does not parse"; exit 1; }
+          done
+      - name: bash -n on deploy, bot, installer and helper scripts
+        run: |
+          for f in ide-template/*.sh ide-template/bot/*.sh install.sh update.sh bin/*.sh scripts/*.sh; do
+            bash -n "$f" || { echo "::error file=$f::does not parse"; exit 1; }
+          done
+      # The wrappers include "env-guard.h" from their own directory and Linux
+      # headers (sys/prctl.h), which the ubuntu runner has; -fsyntax-only
+      # parses and type-checks without producing a binary.
+      - name: gcc -fsyntax-only on the setuid wrappers
+        run: |
+          for f in ide-template/setuid-wrappers/*.c; do
+            gcc -fsyntax-only -Wall -I ide-template/setuid-wrappers "$f" || { echo "::error file=$f::does not compile"; exit 1; }
+          done
 
   frontend:
     runs-on: ubuntu-latest

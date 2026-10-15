@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, Hexagon } from 'lucide-react';
+import { FileText, Hexagon, LockKeyhole } from 'lucide-react';
 import {
   useCreateBlockNote,
   FormattingToolbarController,
@@ -83,6 +83,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
   // Flash + "Updated" badge when the file changes externally (bot edit).
   // Cleared after 2.4 s so the user has time to register the change.
   const [externalUpdate, setExternalUpdate] = useState(false);
+  const [locked, setLocked] = useState(null);
   const dirtyRef    = useRef(false);
   const savingRef   = useRef(false);
   const remoteMtime = useRef(0);
@@ -124,6 +125,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
           return;
         }
 
+        setLocked(data.locked || null);
         const incoming = data.content || '';
         const changed = incoming !== lastSavedMd.current;
         const wasInitialized = hasInitializedRef.current;
@@ -173,6 +175,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
   useEffect(() => {
     if (status.kind !== 'ok') return;
     const off = editor.onChange(async () => {
+      if (locked) return;                               // read-only: nothing to save
       const body = await editor.blocksToMarkdownLossy(editor.document);
       const md = frontmatterRef.current + body;        // re-attach frontmatter verbatim
       if (md === lastSavedMd.current) return;          // no-op edit
@@ -182,7 +185,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
     });
     return off;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status.kind, editor]);
+  }, [status.kind, editor, locked]);
 
   async function save(md) {
     if (savingRef.current) {
@@ -217,6 +220,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
   const meta =
     status.kind === 'error'   ? <span className="text-destructive">Error: {status.error}</span> :
     status.kind === 'loading' ? 'Loading…' :
+    locked                    ? <span className="inline-flex items-center gap-1.5 text-muted-foreground/75"><LockKeyhole className="size-3.5" strokeWidth={1.75} />Locked by {locked.byName}</span> :
     externalUpdate            ? <UpdatedBadge /> :
     dirtyRef.current          ? 'Saving…' :
     savedAt                   ? 'Saved' : null;
@@ -242,6 +246,7 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
           <div className="mx-auto w-full max-w-3xl @5xl/editor:max-w-4xl @7xl/editor:max-w-5xl px-0 sm:px-2 pb-12 pt-5">
             <BlockNoteView
               editor={editor}
+              editable={!locked}
               theme={blockNoteTheme}
               data-theming-css-variables-demo
               data-color-scheme={resolvedTheme}

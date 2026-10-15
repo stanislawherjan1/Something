@@ -34,6 +34,7 @@ import * as facts from './memory-facts.js';
 import * as router from './memory-router.js';
 import { knownNames, knownKinds } from './memory-views.js';
 import * as catalog from './integrations/catalog.js';
+import * as store from './integrations/store.js';
 import { isUsable } from './integrations/store.js';
 import { atomicWrite } from './atomic-write.js';
 import { list as rosterList, primaryAdminSlug, getTeamMode, effectiveTimezone, getUser } from './team.js';
@@ -76,13 +77,30 @@ function patchPerson(slug, id, patch) {
 /** Catalog entries that can feed memory (connected or not). */
 export function feeders() { return catalog.listAll().filter(e => e?.memory?.kind); }
 
-/** One person's connected feeders with their switch and last run. */
+/**
+ * One person's feeders with their switch and last run: their own connections
+ * (`granola@ann`) and the workspace connections they themselves made — a
+ * notetaker reads one account, and what it brings in is that account's
+ * owner's memory, never a teammate's. `key` is the connection the import
+ * reads; `id` the catalog entry the state is kept under.
+ */
 export function listFor(slug) {
   const st = readState().people?.[slug] || {};
-  return feeders().filter(e => isUsable(e.id)).map(e => {
-    const s = st[e.id] || {};
+  // Both of a kind: a person's own account of a service and the workspace's
+  // (when they connected it) are two sources, each read with its own token.
+  const keysFor = (id) => {
+    const out = [];
+    const mine = store.personalKey(id, slug);
+    if (isUsable(mine)) out.push(mine);
+    // A workspace connection from before owners existed is the primary admin's.
+    if (isUsable(id) && (store.ownership(id)?.owner || primaryAdminSlug()) === slug) out.push(id);
+    return out;
+  };
+  return feeders().flatMap(e => keysFor(e.id).map(key => ({ e, key }))).map(({ e, key }) => {
+    // The state is kept by the connection; a state from before, by the entry, still counts.
+    const s = st[key] || st[e.id] || {};
     return {
-      id: e.id, label: e.label, logo: e.logo || null, kind: e.memory.kind, what: e.memory.what || '',
+      id: e.id, key, mine: store.isPersonalKey(key), label: e.label, logo: e.logo || null, kind: e.memory.kind, what: e.memory.what || '',
       on: typeof s.on === 'boolean' ? s.on : e.memory.default === true,
       how: FEEDERS[e.id] ? 'code' : 'turn',
       lastRun: s.lastRun || null, lastItems: s.lastItems ?? null, lastFacts: s.lastFacts ?? null, lastError: s.lastError || null, cursor: s.cursor || null,
@@ -90,15 +108,17 @@ export function listFor(slug) {
   });
 }
 
-/** The feeders in the catalog the workspace has not connected — what could feed memory. */
-export function available() {
-  return feeders().filter(e => !isUsable(e.id)).map(e => ({ id: e.id, label: e.label, logo: e.logo || null, kind: e.memory.kind, what: e.memory.what || '' }));
+/** The feeders in the catalog this person has no connection of — what could feed their memory. */
+export function available(slug = null) {
+  const have = new Set(slug ? listFor(slug).map(s => s.id) : feeders().filter(e => isUsable(e.id)).map(e => e.id));
+  return feeders().filter(e => !have.has(e.id)).map(e => ({ id: e.id, label: e.label, logo: e.logo || null, kind: e.memory.kind, what: e.memory.what || '', personal: !!e.personal }));
 }
 
-export function setOn(slug, id, on) {
-  const e = catalog.get(id);
-  if (!e?.memory?.kind) throw new Error(`${id} cannot feed memory`);
-  return patchPerson(slug, id, { on: !!on, ...(on ? { since: new Date().toISOString() } : {}) });
+/** Switch a source on or off, by its connection key (`granola`, `granola@ann`). */
+export function setOn(slug, key, on) {
+  const e = catalog.get(key);
+  if (!e?.memory?.kind) throw new Error(`${key} cannot feed memory`);
+  return patchPerson(slug, key, { on: !!on, ...(on ? { since: new Date().toISOString() } : {}) });
 }
 
 // ─── one item → records → facts ──────────────────────────────────────────────
@@ -130,10 +150,12 @@ export function alreadyImported(scope, integration, item) {
  * facts against what memory holds. Never shared, never a group. Returns what
  * happened, as memory_note does.
  */
-export async function importItem({ actor, name = 'The person', integration, item, title = '', at = null, participants = [], participantsLine = null, url = null, summary = '', transcript = '' }) {
+export async function importItem({ actor, name = 'The person', integration, connection = null, item, title = '', at = null, participants = [], participantsLine = null, url = null, summary = '', transcript = '', note = false }) {
   const entry = catalog.get(String(integration || ''));
   if (!entry?.memory?.kind) return { ok: false, error: `${integration || '(none)'} is not a memory source` };
-  if (!isUsable(entry.id)) return { ok: false, error: `${entry.label} is not connected` };
+  // The source must be this person's: their own connection, or the
+  // workspace's they themselves connected — never a teammate's account.
+  if (!listFor(actor).some(x => x.id === entry.id)) return { ok: false, error: `${entry.label} is not connected for ${name}` };
   const src = listFor(actor).find(s => s.id === entry.id);
   if (!src?.on) return { ok: false, error: `${entry.label} is switched off as a memory source for this person` };
   const key = String(item || '').trim().slice(0, 200);
@@ -145,11 +167,14 @@ export async function importItem({ actor, name = 'The person', integration, item
   const people = (Array.isArray(participants) ? participants : []).map(p => String(p).trim()).filter(Boolean).slice(0, 30);
   // The service that recorded the meeting is the record's SOURCE (tags.import),
   // never a party: named in the text it was read as one ("Szymon of Granola").
-  const heading = `Meeting: ${String(title || '').trim().slice(0, 200) || '(untitled)'}`;
+  // A voice note (the app's "meeting" with nobody else in it) is the person's
+  // own words under their own heading: no "With:" line, and the fact below
+  // keeps the note's title.
+  const heading = `${note ? 'Voice note' : 'Meeting'}: ${String(title || '').trim().slice(0, 200) || '(untitled)'}`;
   // The With: line keeps the addresses the app knew ("Kontakt <kontakt@example.test>"): the
   // model resolves a placeholder by its address against the known names; the tag keeps names.
   const line = (Array.isArray(participantsLine) && participantsLine.length ? participantsLine : people).map(p => String(p).trim()).filter(Boolean).slice(0, 30);
-  const head = [heading, line.length ? `With: ${line.join(', ')}` : null].filter(Boolean).join('\n');
+  const head = [heading, !note && line.length ? `With: ${line.join(', ')}` : null].filter(Boolean).join('\n');
   const meta = { integration: entry.id, item: key, title: String(title || '').trim().slice(0, 200), at: ts, url: url ? String(url).slice(0, 500) : null, participants: people };
 
   // The records go in first, each marked pending until its notes pass has
@@ -196,11 +221,12 @@ export async function importItem({ actor, name = 'The person', integration, item
   // not the next UTC day; a chat-made "call at 17:00" keys with it).
   const tz = effectiveTimezone(actor) || 'UTC';
   const local = (() => { try { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ts)).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`; } catch { return ts.slice(0, 16); } })();
-  try { m = await router.meeting({ name, ts, when: local, text: whole, participants: people, known, kinds, exclude: [entry.label, entry.id] }); } catch (e) { out.errors.push(`meeting: ${e.message}`); }
+  try { m = await router.meeting({ name, ts, when: local, text: whole, participants: people, known, kinds, exclude: [entry.label, entry.id], note: !!note, noteTitle: String(title || '').trim() }); } catch (e) { out.errors.push(`meeting: ${e.message}`); }
   if (m) {
     for (const w of work) got.set(w.id, { notes: [], entities: m.entities || [] });
     const home = notesRec || parts[0];
-    got.get(home.id).notes.push({ ...m.fact, standing: notesRec ? 'found' : 'said' });
+    // A note is the person's own words — said, not found.
+    got.get(home.id).notes.push({ ...m.fact, standing: note || !notesRec ? 'said' : 'found' });
     for (const x of m.upcoming) {
       const at = parts.find(w => router.isVerbatim(x.evidence, body(w), 6) || router.isNearVerbatim(x.evidence, body(w))) || (notesRec && (router.isVerbatim(x.evidence, body(notesRec), 6) || router.isNearVerbatim(x.evidence, body(notesRec))) ? notesRec : null) || home;
       got.get(at.id).notes.push({ ...x, standing: at.kind === 'transcript' ? 'said' : 'found' });
@@ -227,17 +253,29 @@ export async function importItem({ actor, name = 'The person', integration, item
     return { tags: { ...r.tags, import: imp, ...(ents?.length ? { entities: ents } : {}) } };
   }, 'import-meta');
   if (out.records) {
-    ledger.logEvent({ op: 'import', scope, by: actor, integration: entry.id, label: entry.label, item: key, title: meta.title, records: out.records, notes: out.titles.length, updated: out.updated.length, superseded: out.superseded.length, dropped: out.dropped });
+    ledger.logEvent({ op: 'import', scope, by: actor, integration: entry.id, ...(connection ? { connection } : {}), label: entry.label, item: key, title: meta.title, records: out.records, notes: out.titles.length, updated: out.updated.length, superseded: out.superseded.length, dropped: out.dropped });
   }
   return { ok: out.records > 0, ...(out.records ? {} : { error: out.errors.join('; ') || 'nothing written' }), ...out };
 }
 
 // ─── the night turn ──────────────────────────────────────────────────────────
 
-/** Whose memory may be fed: the roster in team mode, the owner alone otherwise. */
+/**
+ * Whose memory a connected notetaker feeds: the person whose connection it
+ * is. A connection made on the integrations screen is the workspace's one —
+ * the owner's (the primary admin's) account at the provider — so its
+ * meetings and notes are theirs. Feeding every roster member from it filed
+ * the owner's meetings into each teammate's private memory, in that
+ * teammate's name. Per-person connections (a teammate's own notetaker) are
+ * a separate piece of work; until then the owner is the only reader.
+ */
 export function people() {
-  const all = getTeamMode() ? rosterList().map(u => u.slug) : [primaryAdminSlug()];
-  return all.filter(s => s && s !== 'default');
+  // Everyone with a source of their own; a solo workspace is its one person.
+  let slugs = [];
+  try { slugs = rosterList().map(m => m.slug).filter(Boolean); } catch { /* no roster */ }
+  const owner = primaryAdminSlug();
+  if (!slugs.length && owner && owner !== 'default') slugs = [owner];
+  return slugs.filter(s => s !== 'default' && listFor(s).length);
 }
 
 /** The task for one person's night turn: which services, since when. */
@@ -249,11 +287,12 @@ export function windowFor(s, now = Date.now()) {
 
 /** The task for the turn that reads the sources workspace-api has no feeder for: notes only, verbatim. */
 export function taskFor(slug, { now = Date.now(), only = null, also = [] } = {}) {
-  const sources = listFor(slug).filter(s => s.on && (s.how === 'turn' || also.includes(s.id)) && (!only || s.id === only));
+  const sources = listFor(slug).filter(s => s.on && (s.how === 'turn' || also.includes(s.key) || also.includes(s.id)) && (!only || s.id === only || s.key === only));
   if (!sources.length) return null;
   const lines = sources.map(s => {
     const e = catalog.get(s.id);
-    return { id: s.id, label: s.label, server: e?.mcp?.name || s.id, kind: s.kind, since: windowFor(s, now).since };
+    const server = (e?.mcp?.name || s.id) + (s.mine ? '-mine' : '');
+    return { id: s.id, key: s.key, label: s.label, server, kind: s.kind, since: windowFor(s, now).since };
   });
   const message = [
     'Memory import — a system task; nobody reads this reply.',
@@ -280,14 +319,14 @@ export async function importFromService(slug, source, { now = Date.now(), log = 
   const w = windowFor(source, now);
   const out = { items: 0, skipped: 0, failed: 0, error: null };
   try {
-    await withRemote(source.id, async (client) => {
+    await withRemote(source.key || source.id, async (client) => {
       const list = await feeder.list(client, w);
       log(`${source.id}: ${list.length} item(s) since ${w.since.slice(0, 16)}`);
       for (const it of list) {
         if (alreadyImported(scope, source.id, it.id)) { out.skipped++; continue; }
         try {
           const full = await feeder.get(client, it.id);
-          const r = await importItem({ actor: slug, name, integration: source.id, item: it.id, title: full.title || it.title, at: full.at || it.at, participants: full.participants?.length ? full.participants : it.participants, participantsLine: full.participantsLine?.length ? full.participantsLine : it.participantsLine, url: full.url || it.url, summary: full.summary, transcript: full.transcript });
+          const r = await importItem({ actor: slug, name, integration: source.id, connection: source.key, item: it.id, title: full.title || it.title, at: full.at || it.at, participants: full.participants?.length ? full.participants : it.participants, participantsLine: full.participantsLine?.length ? full.participantsLine : it.participantsLine, url: full.url || it.url, summary: full.summary, transcript: full.transcript, note: !!(full.note ?? it.note) });
           if (r.ok && !r.already) { out.items++; log(`${source.id}: ${it.id} → ${r.records} record(s), ${r.titles.length} fact(s)${r.errors?.length ? `; ${r.errors.length} part(s) left pending: ${[...new Set(r.errors)].join('; ').slice(0, 200)}` : ''}`); }
           else if (r.already) out.skipped++;
           else { out.failed++; log(`${source.id}: ${it.id} refused: ${r.error}`); }
@@ -307,7 +346,7 @@ const running = new Set();
  */
 export async function runFor(slug, { now = Date.now(), only = null, runTurn = null, log = (m) => process.stdout.write(`[memory-v4/imports] ${slug}: ${m}\n`) } = {}) {
   if (running.has(slug)) return { skipped: 'running' };
-  const sources = listFor(slug).filter(s => s.on && (!only || s.id === only));
+  const sources = listFor(slug).filter(s => s.on && (!only || s.id === only || s.key === only));
   if (!sources.length) return { skipped: 'no sources on' };
   running.add(slug);
   const startedAt = new Date().toISOString();   // the wall clock: the events are stamped by it, whatever `now` says
@@ -320,7 +359,7 @@ export async function runFor(slug, { now = Date.now(), only = null, runTurn = nu
     const fallback = [];
     for (const s of sources.filter(x => x.how === 'code')) {
       const r = await importFromService(slug, s, { now, log });
-      if (r.error) { fallback.push(s.id); errors[s.id] = r.error; log(`${s.id}: read by code failed (${r.error}); its notes are read through the assistant tonight`); }
+      if (r.error) { fallback.push(s.key); errors[s.key] = r.error; log(`${s.key}: read by code failed (${r.error}); its notes are read through the assistant tonight`); }
     }
     // The rest through one turn, notes only.
     const task = taskFor(slug, { now, only, also: fallback });
@@ -328,24 +367,24 @@ export async function runFor(slug, { now = Date.now(), only = null, runTurn = nu
       const turn = runTurn || (async (o) => (await import('./claude.js')).runHeadlessTurn({ ...o, label: 'imports' }));
       try {
         await turn({ message: task.message, actor: slug, actorName: u?.displayName || slug, servers: task.servers });
-        for (const s of task.sources) delete errors[s.id];   // read after all, through the turn
-      } catch (e) { for (const s of task.sources) errors[s.id] = errors[s.id] ? `${errors[s.id]}; ${e.message}` : e.message; }
+        for (const s of task.sources) delete errors[s.key];   // read after all, through the turn
+      } catch (e) { for (const s of task.sources) errors[s.key] = errors[s.key] ? `${errors[s.key]}; ${e.message}` : e.message; }
     }
     const events = ledger.readEvents({ since: startedAt }).filter(e => e.op === 'import' && e.by === slug);
     const out = { at: new Date().toISOString(), items: 0, facts: 0, error: Object.keys(errors).length ? Object.entries(errors).map(([k, v]) => `${k}: ${v}`).join('; ') : null };
     for (const s of sources) {
-      const mine = events.filter(e => e.integration === s.id);
+      const mine = events.filter(e => e.integration === s.id && (!e.connection || e.connection === s.key));
       const newest = mine.map(e => ledger.read({ scopes: [`user:${slug}`], includeHidden: true }).find(r => r.conv === `import:${s.id}:${e.item}`)?.ts).filter(Boolean).sort().pop();
-      const prev = readState().people?.[slug]?.[s.id] || {};
-      patchPerson(slug, s.id, {
-        lastRun: out.at, lastItems: mine.length, lastFacts: mine.reduce((a, e) => a + (e.notes || 0), 0), lastError: errors[s.id] || null,
+      const prev = readState().people?.[slug]?.[s.key] || readState().people?.[slug]?.[s.id] || {};
+      patchPerson(slug, s.key, {
+        lastRun: out.at, lastItems: mine.length, lastFacts: mine.reduce((a, e) => a + (e.notes || 0), 0), lastError: errors[s.key] || null,
         cursor: newest && (!prev.cursor || newest > prev.cursor) ? newest : prev.cursor || null,
       });
       out.items += mine.length;
       out.facts += mine.reduce((a, e) => a + (e.notes || 0), 0);
     }
     const st = readState();
-    st.runs = [...(st.runs || []), { slug, ...out, sources: sources.map(s => s.id) }].slice(-60);
+    st.runs = [...(st.runs || []), { slug, ...out, sources: sources.map(s => s.key) }].slice(-60);
     if (!only) { st.days = st.days || {}; st.days[slug] = localClock(now, effectiveTimezone(slug)).day; }
     writeState(st);
     return out;

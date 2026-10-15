@@ -108,7 +108,10 @@ Ground every reminder in one of: a routine, a tracked thread, a status, or a liv
   org uses one). You need the concrete event / due TIMES to place reminders around them.
 - **What's live / changed / open** already came from Step 0 (`memory_now` + the live
   sources: the email, the org's integrations, the open threads). Don't re-derive them from
-  scratch, and never act on a memory item a live source shows is already done.
+  scratch, and never act on a memory item a live source shows is already done. A
+  memory excerpt's `↳ task "…"` line IS the board's live state: a fact whose task
+  reads done is closed business, never a nudge; one whose task is in progress with a
+  due day is planned from that day, not from the fact's wording.
 - **Already-set reminders — REPLACE your own, plan around the rest:** `list_reminders` —
   everything ALREADY set. Split it in two and treat each half differently:
   - **Yours** (`origin: "planner"`) — your entire previous plan. **Cancel ALL of it now, up

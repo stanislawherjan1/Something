@@ -5,7 +5,6 @@
 import Base from '../layouts/Base.astro';
 import Hero from '../components/Hero.astro';
 import Routines from '../components/Routines.astro';
-import Team from '../components/Team.astro';
 import '../styles/mocks.css';
 import ChromeMock from '../components/mocks/ChromeMock.astro';
 
@@ -20,8 +19,18 @@ const memories: [string, string, string, string, number, number][] = [
 const CHAT = '<svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
 const GROUP = '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
 
+// Team: collaborative mode on in the middle, the team around it — each person
+// with what they're doing through it now, their own tools and their own routine.
+// [photo, name, x, y, now, tools, routine]
+const crew: [string, string, number, number, string, string[], string][] = [
+  ['p1', 'Mara', -390, -150, 'Handed the invoice to Jonas', ['email', 'notion'], 'Newsletter · Fri'],
+  ['p2', 'Leo', 390, -150, 'Told the team: launch on Thursday', ['granola', 'gcalendar'], 'Day plan · 8:00'],
+  ['p3', 'Ivy', -390, 150, 'Drafting the launch posts', ['meta', 'gdrive'], 'Post ideas · daily'],
+  ['p4', 'Jonas', 390, 150, 'Chasing the supplier for Mara', ['stripe', 'shopify'], 'Invoices · Mon'],
+];
+
 // Integrations: every mark we ship, as tiles.
-const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4','linear','github','airtable','miro','monday','todoist','calendly','calcom','paypal','mailchimp','cloudflare','atlassian','sentry','netlify','neon','supabase','webflow','canva','zapier','amplitude','wix','firecrawl','gdrive','gsheets','gdocs','gcalendar','email','trello','substack','x','openai','gemini','grok','clickup','deepl','tally','telegram'];
+const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4','linear','github','airtable','miro','monday','todoist','calendly','calcom','paypal','mailchimp','cloudflare','atlassian','sentry','netlify','neon','supabase','webflow','zapier','amplitude','wix','firecrawl','gdrive','gsheets','gdocs','gslides','gcalendar','gtasks','email','trello','x','openai','gemini','grok','clickup','deepl','tally','telegram'];
 ---
 <Base title="README art · Something">
   <div class="deck">
@@ -31,7 +40,27 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
     <div class="slide s-hero"><Hero /></div>
 
     <span class="label">assets/readme/team.png</span>
-    <div class="slide s-team"><Team /></div>
+    <div class="slide">
+      <div class="crew">
+        <svg class="mind-links" viewBox="0 0 1120 500" aria-hidden="true">
+          {crew.map(([, , x, y]) => <line x1="560" y1="250" x2={560 + x} y2={250 + y} />)}
+        </svg>
+        <div class="crew-switch">
+          <span class="csw"><span></span></span>
+          <span>Collaborative mode</span>
+        </div>
+        {crew.map(([n, name, x, y, now, tools, routine]) => (
+          <div class="mate-node" style={`left:${560 + x}px; top:${250 + y}px`}>
+            <img class="mn-face" src={`/people/${n}.jpg`} alt="" />
+            <div class="mn-body">
+              <b>{name}</b>
+              <span class="mn-now"><i></i>{now}</span>
+              <span class="mn-line">{tools.map((t) => <img src={`/integrations/${t}.svg`} alt="" />)}{routine}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
 
     <span class="label">assets/readme/editor.png</span>
     <div class="slide s-mock">
@@ -137,12 +166,6 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
   .s-memory :global(.mem) { display: flex; justify-content: center; }
   .s-memory :global(.mv) { max-width: 600px; }
   .s-memory :global(.mv-row) { opacity: 1 !important; transform: none !important; }
-  .s-team :global(.team-title), .s-team :global(.center .lead) { display: none; }
-  .s-team :global(.toggle) { margin-top: 0; }
-  .s-team :global(.tstage) { height: 560px; }
-  .s-team :global(.sw) { background: var(--foreground) !important; }
-  .s-team :global(.sw span) { left: 32px !important; }
-  .s-team :global(.face), .s-team :global(.bubble) { opacity: 1 !important; transform: none !important; }
   .s-mock { display: flex; justify-content: center; }
 
   /* Editor: the markdown editor alone. */
@@ -173,6 +196,22 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
   .pill { display: inline-flex; align-items: center; padding: 3px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 500; line-height: 1; color: color-mix(in oklab, var(--muted-foreground) 80%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 12%, transparent); }
   .pill.violet { background: rgb(139 92 246 / .07); color: #6d28d9; box-shadow: inset 0 0 0 1px rgb(139 92 246 / .25); }
   .pill.emerald { background: rgb(16 185 129 / .07); color: #047857; box-shadow: inset 0 0 0 1px rgb(16 185 129 / .25); }
+
+
+  /* Team: collaborative mode on in the middle, the team around it. */
+  .crew { position: relative; width: 1120px; height: 500px; margin: 0 auto; }
+  .crew-switch { position: absolute; left: 560px; top: 250px; translate: -50% -50%; display: flex; align-items: center; gap: 14px; padding: 14px 22px 14px 16px; border-radius: 999px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 18px 44px -22px rgba(0,0,0,.22); font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); white-space: nowrap; }
+  .csw { position: relative; display: inline-block; width: 64px; height: 36px; border-radius: 99px; background: var(--foreground); }
+  .csw span { position: absolute; top: 4px; left: 32px; width: 28px; height: 28px; border-radius: 99px; background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .mate-node { position: absolute; translate: -50% -50%; width: 330px; display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border-radius: 10px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 14px 32px -22px rgba(0,0,0,.26); }
+  .mn-face { flex: none; width: 40px; height: 40px; border-radius: 99px; object-fit: cover; filter: grayscale(1) contrast(1.05); }
+  .mn-body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .mn-body b { font-size: 12.5px; font-weight: 600; line-height: 16px; color: var(--muted-foreground); }
+  .mn-now { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 19px; color: var(--fg-90); }
+  .mn-now i { flex: none; margin-top: 6.5px; width: 6px; height: 6px; border-radius: 99px; background: var(--ok); box-shadow: 0 0 0 3px rgb(16 185 129 / .15); }
+  .mn-line { display: flex; align-items: center; gap: 5px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--hair); font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
+  .mn-line img { display: block; width: 12px; height: 12px; object-fit: contain; }
+  .mn-line img:last-of-type { margin-right: 4px; }
 
   /* Integrations: a field of tiles, fading out at the edges (there are more). */
   .logo-field {

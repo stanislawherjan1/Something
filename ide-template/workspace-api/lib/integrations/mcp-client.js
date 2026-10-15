@@ -41,9 +41,12 @@ export async function withRemote(id, fn) {
   const cat = catalog.get(id);
   if (!cat?.mcp || cat.mcp.type !== 'http' || !cat.mcp.url) throw new Error(`${id} has no remote MCP server`);
   const token = await getFreshToken(id);
-  const transport = new StreamableHTTPClientTransport(new URL(cat.mcp.url), {
+  const url = new URL(cat.mcp.url);
+  // A server on this host (a stand-in in a test) is reached directly; everything else through the egress proxy.
+  const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname);
+  const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
-    ...(proxyFetch ? { fetch: proxyFetch } : {}),
+    ...(proxyFetch && !loopback ? { fetch: proxyFetch } : {}),
   });
   const client = new Client({ name: 'workspace-api', version: '1.0.0' });
   await client.connect(transport);

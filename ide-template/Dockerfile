@@ -1,9 +1,24 @@
+# syntax=docker/dockerfile:1
+# === STAGE: setuid wrappers (compiled here; the compiler stays out of the image) ===
+# Six ~80-line C programs that drop privileges before exec'ing Node (source +
+# rationale in setuid-wrappers/). Same Debian release as the base image so the
+# binaries link against the same libc.
+FROM debian:trixie-slim AS wrappers
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
+COPY setuid-wrappers /src
+RUN mkdir -p /out && for w in wsapi-runner mcp-runner bot-runner monitor-runner turn-runner priv-tree; do \
+      gcc -O2 -Wall -Wextra -o "/out/$w" "/src/$w.c"; done
+
 # Pin the base image — `:latest` would re-roll on every rebuild and silently
 # pull in upstream regressions. Bump deliberately on a schedule. For full
 # reproducibility, also add the @sha256:<digest> after testing one rebuild
 # (we don't pin the digest here so this template isn't blocked on a manual
 # `docker pull` step, but it's a real follow-up).
 FROM codercom/code-server:4.118.0
+# Layer order is the build cache: what rarely changes (packages, browser, CLI,
+# extensions) comes first, the apps and scripts that change every release last,
+# so a routine deploy rebuilds only the tail. Ownership is set in the layer that
+# creates the files — a later chown copies every file into a new layer.
 
 USER root
 
@@ -67,7 +82,44 @@ RUN groupadd -g 1100 workspace && \
     usermod -a -G botshare wsapi && \
     usermod -a -G botshare bot && \
     chown bot:botshare /home/bot && \
-    chmod 0771 /home/bot
+    chmod 0771 /home/bot && \
+    # The turn users: a web, group or headless Claude turn runs as one of
+    # them, started by workspace-api through turn-runner (which names the
+    # slot). Each is in `workspace` for the project files and in nothing
+    # else: not botshare (its MCP config is written per turn, see
+    # lib/claude.js), not wsapi-broker (no broker socket).
+    #   turn (1005)            a solo workspace: one person, one turn user
+    #   turn-group (1130)      a Telegram group's turn — no private tree at all
+    #   turn-01…24 (1101–1124) one per person on the roster, each with a
+    #                          private group priv-01…24 (1201–1224) that owns
+    #                          their private trees (users/<slug>, memory/users/
+    #                          <slug>, .team/users/<slug>: turn-NN:priv-NN 2770).
+    #                          wsapi is in every priv-* group — the engine must
+    #                          read and write them; bot and coder join the
+    #                          primary admin's at boot (priv-tree grant).
+    # Homes live under /home/turns (a volume); the entrypoint lays them out.
+    useradd  -u 1005 -g 1005 -d /home/turns/solo -M -s /usr/sbin/nologin --no-user-group turn 2>/dev/null || \
+        useradd -u 1005 -d /home/turns/solo -M -s /usr/sbin/nologin turn && \
+    usermod -a -G workspace turn && \
+    groupadd -g 1130 turn-group && \
+    useradd  -u 1130 -g 1130 -d /home/turns/group -M -s /usr/sbin/nologin turn-group && \
+    usermod -a -G workspace turn-group && \
+    # (RUN is /bin/sh: no bash arithmetic — the slot number is padded by printf.)
+    for i in $(seq 1 24); do \
+        n=$(printf '%02d' "$i") && \
+        groupadd -g $((1200 + i)) priv-$n && \
+        useradd -u $((1100 + i)) -g priv-$n -d /home/turns/$n -M -s /usr/sbin/nologin turn-$n && \
+        usermod -a -G workspace turn-$n && \
+        usermod -a -G priv-$n wsapi || exit 1; \
+    done && \
+    # The run directories a turn's MCP config is written into: one per slot,
+    # root:<slot's group> 2730 — workspace-api (in the group) writes, the
+    # slot's user (the group too) reads what it is given, nobody else sees in.
+    mkdir -p /run/turns && chmod 0711 /run/turns && \
+    mkdir -p /run/turns/solo /run/turns/group && \
+    chown root:turn /run/turns/solo && chmod 2730 /run/turns/solo && usermod -a -G turn wsapi && \
+    chown root:turn-group /run/turns/group && chmod 2730 /run/turns/group && usermod -a -G turn-group wsapi && \
+    for i in $(seq 1 24); do n=$(printf '%02d' "$i") && mkdir -p /run/turns/$n && chown root:priv-$n /run/turns/$n && chmod 2730 /run/turns/$n || exit 1; done
 
 # === LAYER 1: System packages (Node.js 22, rclone, tmux, socat) ===
 # build-essential added so the setuid wrappers compile in LAYER 1b.
@@ -85,7 +137,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     xclip \
     tmux \
     tzdata-legacy \
-    build-essential \
     python3 \
     python3-pip \
     python3-venv \
@@ -107,11 +158,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     jq && \
     rm -rf /var/lib/apt/lists/*
 
-# === LAYER 1b: Compile + install setuid wrappers =============================
-# Two tiny ~80-line C programs that drop privileges before exec'ing Node.
-# Source + rationale lives in setuid-wrappers/. Compiled in-image so we
-# don't have to ship binaries from the operator's laptop.
-#
+# === LAYER 1b: setuid wrappers (from the build stage) ========================
 # Mode 4755 = setuid bit + rwxr-xr-x. owner=root means coder/PM2 invoking
 # /usr/local/bin/wsapi-runner ends up as uid 1001 (wsapi). Same for
 # mcp-runner → uid 1002 (mcp). After the exec the setuid bit doesn't
@@ -121,17 +168,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # they're terminal nodes (no further setuid exec downstream). wsapi-runner
 # + bot-runner do NOT call it: they spawn claude which spawns mcp-runner,
 # and PR_SET_NO_NEW_PRIVS would inherit and kill mcp-runner's setuid bit.
-# The 2026-06-04 canary incident traced 11/16 web-side MCPs silently
-# failing back to a stale `prctl(PR_SET_NO_NEW_PRIVS)` call in wsapi-runner;
-# removing it matched the same trade-off bot-runner.c documents.
-COPY setuid-wrappers /tmp/setuid-wrappers
-RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/wsapi-runner.c   && \
-    gcc -O2 -Wall -Wextra -o /usr/local/bin/mcp-runner     /tmp/setuid-wrappers/mcp-runner.c     && \
-    gcc -O2 -Wall -Wextra -o /usr/local/bin/bot-runner     /tmp/setuid-wrappers/bot-runner.c     && \
-    gcc -O2 -Wall -Wextra -o /usr/local/bin/monitor-runner /tmp/setuid-wrappers/monitor-runner.c && \
-    chown root:root /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/local/bin/bot-runner /usr/local/bin/monitor-runner && \
+COPY --from=wrappers /out/ /usr/local/bin/
+RUN chown root:root /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/local/bin/bot-runner /usr/local/bin/monitor-runner && \
     chmod 4755     /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/local/bin/bot-runner /usr/local/bin/monitor-runner && \
-    rm -rf /tmp/setuid-wrappers
+    # turn-runner and priv-tree: executable by workspace-api's group only (they check the caller too).
+    chown root:wsapi /usr/local/bin/turn-runner /usr/local/bin/priv-tree && \
+    chmod 4750       /usr/local/bin/turn-runner /usr/local/bin/priv-tree
 
 # === LAYER 2: Claude Code CLI + pm2 ===
 # claude-code ≥2.1.86 ships a stub `bin/claude.exe` + `install.cjs`
@@ -156,9 +198,10 @@ RUN gcc -O2 -Wall -Wextra -o /usr/local/bin/wsapi-runner   /tmp/setuid-wrappers/
 # (settings.json "model") until the durable fix lands. Durable fix =
 # plugin-side: register the channel before poller takeover; then the
 # newest CLIs (agent teams, workflows, Opus 4.8) are safe again.
-RUN npm install -g @anthropic-ai/claude-code@2.1.150 && \
+RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code@2.1.150 && \
     mkdir -p /home/coder/.npm-global && \
-    npm install -g pm2@7.0.4 --prefix /home/coder/.npm-global --ignore-scripts
+    npm install -g pm2@7.0.4 --prefix /home/coder/.npm-global --ignore-scripts && \
+    chown -R coder:coder /home/coder/.npm-global
 
 # === LAYER 2b: Bun runtime (for Telegram plugin) ===
 # Was: `curl -fsSL https://bun.sh/install | bash`. The bun.sh script
@@ -171,8 +214,93 @@ RUN npm install -g @anthropic-ai/claude-code@2.1.150 && \
 # CDN. Multi-stage copy from oven/bun's official image sidesteps the
 # entire HTTPS dance and is repeatable on every host we deploy to.
 # Same binary, same version pin (bumping = bump the FROM tag).
-COPY --from=oven/bun:1.3 /usr/local/bin/bun /home/coder/.bun/bin/bun
-RUN chmod 0755 /home/coder/.bun/bin/bun && chown -R coder:coder /home/coder/.bun
+COPY --from=oven/bun:1.3 --chown=coder:coder --chmod=0755 /usr/local/bin/bun /home/coder/.bun/bin/bun
+ENV PATH="/home/coder/.bun/bin:/home/coder/.npm-global/bin:${PATH}"
+
+# npm's download cache lives in a BuildKit cache mount on every npm step
+# (`--mount=type=cache,target=/root/.npm`): shared between steps and builds,
+# never baked into a layer — before, each of ~30 installs left its tarballs
+# under /root/.npm in the image.
+
+# === LAYER 2c: MCP servers — pre-installed so there's no cold npx download at runtime ===
+
+RUN --mount=type=cache,target=/root/.npm npm install -g \
+    @modelcontextprotocol/server-memory@1.0.0 \
+    --prefix /home/coder/.npm-global && \
+    chown -R coder:coder /home/coder/.npm-global
+
+# Pinned: an unpinned third-party pip package is code we haven't read changing
+# under us between builds (CLAUDE.md "pin what you pull in").
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
+    google-analytics-mcp==2.11.5
+
+# PDF toolchain for pdf-mcp: python-markdown → weasyprint. The one supported
+# way to make PDFs (apps/pdf-mcp). System libs (pango/harfbuzz/ffi) + fonts +
+# poppler-utils are installed in LAYER 1a above. NO latin-1 mangling, no
+# hand-rolled PDF bytes — weasyprint is a real CSS/paged-media engine.
+RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
+    weasyprint \
+    markdown
+
+# === LAYER 2e: Playwright MCP + Chromium browser ===
+# Pre-installed so there's no download at runtime — the egress-proxy
+# does NOT allow cdn.playwright.dev (and never will: arbitrary browser
+# downloads at runtime are a prompt-injection escape hatch).
+#
+# Browser install path is FIXED via PLAYWRIGHT_BROWSERS_PATH so every
+# uid in the container (coder 1000, wsapi 1001, mcp 1002, bot 1003)
+# resolves to the same binary regardless of which $HOME they inherit.
+# Without this, install lands in /root/.cache/ms-playwright (the user
+# active in this Dockerfile layer is root for the `apt install` step),
+# bot at uid 1003 with HOME=/home/bot can't read it, and playwright-mcp
+# silently tries to download via `npx` — which hits the 403 egress wall
+# and bubbles up as "browser not available" in chat.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+# Stable alias for the chromium version the codebase hardcodes. `playwright
+# install` pulls whatever version it currently pins (e.g. chromium-1228), so the
+# literal /opt/playwright-browsers/chromium-1223/... paths in docs-comments and
+# entrypoint.sh go stale and spawn() ENOENTs after a rebuild. If the pinned dir
+# is absent, symlink chromium-1223 → the version that actually landed so every
+# hardcoded path keeps resolving across playwright bumps.
+# Pinned (CLAUDE.md: pin what you pull in). Full Chromium only (--no-shell):
+# both the MCP and the Docs login launch the full browser by its path, so the
+# headless shell was 270 MB nothing ran.
+RUN --mount=type=cache,target=/root/.npm npm install -g @playwright/mcp@0.0.83 playwright@1.64.0 --prefix /home/coder/.npm-global && \
+    chown -R coder:coder /home/coder/.npm-global && \
+    mkdir -p /opt/playwright-browsers && \
+    /home/coder/.npm-global/bin/playwright install --with-deps --no-shell chromium && \
+    chmod -R a+rX /opt/playwright-browsers && \
+    { [ -e /opt/playwright-browsers/chromium-1223/chrome-linux64/chrome ] || \
+      { t="$(ls -d /opt/playwright-browsers/chromium-[0-9]*/ 2>/dev/null | sort -V | tail -1 | sed 's#/$##')"; [ -z "$t" ] || ln -sfn "$t" /opt/playwright-browsers/chromium-1223 ; } ; }
+
+# === LAYER 3: VS Code Extensions ===
+# Installed straight into the coder user's extensions dir — the one code-server
+# reads — and owned by coder in the same layer. (They used to be installed under
+# /root, copied to coder's dir, copied again to /opt/ide for a boot-time
+# re-copy: three copies of a 350 MB extension in the image.)
+ENV CODER_EXT_DIR=/home/coder/.local/share/code-server/extensions
+RUN mkdir -p "$CODER_EXT_DIR" && \
+    { code-server --extensions-dir "$CODER_EXT_DIR" --install-extension Anthropic.claude-code@2.1.85 \
+      || (wget -q "https://open-vsx.org/api/Anthropic/claude-code/2.1.85/file/Anthropic.claude-code.vsix" \
+          -O /tmp/claude-code.vsix && \
+          code-server --extensions-dir "$CODER_EXT_DIR" --install-extension /tmp/claude-code.vsix && \
+          rm -f /tmp/claude-code.vsix); } && \
+    chown -R coder:coder /home/coder/.local
+RUN { code-server --extensions-dir "$CODER_EXT_DIR" --install-extension cweijan.vscode-office@4.2.1 \
+      || echo "WARNING: vscode-office extension not found on marketplace"; } && \
+    code-server --extensions-dir "$CODER_EXT_DIR" --uninstall-extension GitHub.copilot 2>/dev/null || true; \
+    code-server --extensions-dir "$CODER_EXT_DIR" --uninstall-extension GitHub.copilot-chat 2>/dev/null || true; \
+    chown -R coder:coder /home/coder/.local
+
+# === LAYER 5: Branding extension (build TypeScript) ===
+COPY extensions/branding /tmp/branding
+RUN --mount=type=cache,target=/root/.npm cd /tmp/branding && \
+    npm install && \
+    npm run build && \
+    mkdir -p /home/coder/.local/share/code-server/extensions && \
+    cp -r /tmp/branding /home/coder/.local/share/code-server/extensions/ide.branding && \
+    chown -R coder:coder /home/coder/.local/share/code-server/extensions/ide.branding && \
+    rm -rf /tmp/branding
 
 # === LAYER 2b.5: Pre-install Telegram plugin offline ============================
 # COPY the plugin marketplace + telegram source from the build
@@ -206,26 +334,6 @@ RUN cd /opt/ide/plugins-src/external_plugins/telegram && \
     /home/coder/.bun/bin/bun install --frozen-lockfile && \
     chown -R coder:coder /opt/ide/plugins-src
 
-# === LAYER 2c: MCP servers — pre-installed so there's no cold npx download at runtime ===
-ENV PATH="/home/coder/.bun/bin:/home/coder/.npm-global/bin:${PATH}"
-
-RUN npm install -g \
-    @modelcontextprotocol/server-memory \
-    --prefix /home/coder/.npm-global
-
-# Pinned: an unpinned third-party pip package is code we haven't read changing
-# under us between builds (CLAUDE.md "pin what you pull in").
-RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
-    google-analytics-mcp==2.11.5
-
-# PDF toolchain for pdf-mcp: python-markdown → weasyprint. The one supported
-# way to make PDFs (apps/pdf-mcp). System libs (pango/harfbuzz/ffi) + fonts +
-# poppler-utils are installed in LAYER 1a above. NO latin-1 mangling, no
-# hand-rolled PDF bytes — weasyprint is a real CSS/paged-media engine.
-RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
-    weasyprint \
-    markdown
-
 # === LAYER 2d: Custom MCP servers (shopify, meta, google-ads, seedream) ===
 # Shared helpers used by every MCP — google-oauth.js (token refresh) +
 # broker-client.js (credential fetch over UDS + global HTTPS_PROXY
@@ -245,37 +353,47 @@ RUN pip install --no-cache-dir --break-system-packages --ignore-installed \
 # "✗ Failed to connect" and the bot reports the tool as unavailable.
 # Caught on a first-broker-deploy 2026-05-13.
 COPY apps/_shared /opt/ide/apps/_shared
-RUN cd /opt/ide/apps/_shared && npm install --omit=dev
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/_shared && npm install --omit=dev
 
+# TODO: these MCP installs resolve versions at build time (`npm install`), so
+# two builds of the same commit can differ. Once every app has a
+# package-lock.json (deploy.sh ships one wherever it exists; email-mcp,
+# grok-mcp and miniapp-mcp have theirs), switch them to `npm ci --omit=dev`
+# like workspace-api and the embedder below.
 COPY apps/shopify-mcp /opt/ide/apps/shopify-mcp
-RUN cd /opt/ide/apps/shopify-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/shopify-mcp && npm install --production
 
 COPY apps/meta-mcp /opt/ide/apps/meta-mcp
-RUN cd /opt/ide/apps/meta-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/meta-mcp && npm install --production
 
 COPY apps/google-ads-mcp /opt/ide/apps/google-ads-mcp
-RUN cd /opt/ide/apps/google-ads-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/google-ads-mcp && npm install --production
 
 COPY apps/seedream-mcp /opt/ide/apps/seedream-mcp
-RUN cd /opt/ide/apps/seedream-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/seedream-mcp && npm install --production
 
 COPY apps/nano-banana-mcp /opt/ide/apps/nano-banana-mcp
-RUN cd /opt/ide/apps/nano-banana-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/nano-banana-mcp && npm install --production
 
 COPY apps/reminder-mcp /opt/ide/apps/reminder-mcp
-RUN cd /opt/ide/apps/reminder-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/reminder-mcp && npm install --production
 
 # pdf-mcp: markdown → PDF via python-markdown + weasyprint (installed above).
 # Always on, no credentials. The ONE supported way to make PDFs.
 COPY apps/pdf-mcp /opt/ide/apps/pdf-mcp
-RUN cd /opt/ide/apps/pdf-mcp && npm install --production
+# Playwright launcher (no deps): starts @playwright/mcp as the mcp user via mcp-runner.
+COPY apps/playwright-mcp /opt/ide/apps/playwright-mcp
+# Bridge to a provider's hosted MCP server (Granola, Fathom, …): a fresh token per call.
+COPY apps/remote-mcp /opt/ide/apps/remote-mcp
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/remote-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/pdf-mcp && npm install --production
 
 # miniapp-mcp: save_as_tab — AI-built mini apps as workspace sidebar tabs.
 COPY apps/miniapp-mcp /opt/ide/apps/miniapp-mcp
-RUN cd /opt/ide/apps/miniapp-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/miniapp-mcp && npm install --production
 
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
-RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/workspace-api-mcp && npm install --production
 
 # Memory v4 embedder: a worker workspace-api forks (lib/embedder-client.js),
 # with the model deploy.sh fetched into models/ (pinned revision + sha256).
@@ -283,7 +401,7 @@ RUN cd /opt/ide/apps/workspace-api-mcp && npm install --production
 # Only this platform's runtime binaries are kept (the package ships all of
 # them, ~480 MB); onnxruntime-web is the browser runtime, unused under Node.
 COPY apps/embedder /opt/ide/apps/embedder
-RUN cd /opt/ide/apps/embedder && ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev --no-audit --no-fund && \
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/embedder && ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev --no-audit --no-fund && \
     ARCH="$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" && \
     rm -rf node_modules/onnxruntime-web node_modules/onnxruntime-node/bin/napi-v*/darwin node_modules/onnxruntime-node/bin/napi-v*/win32 && \
     find node_modules/onnxruntime-node/bin -mindepth 3 -maxdepth 3 -type d ! -name "$ARCH" -exec rm -rf {} + && \
@@ -291,10 +409,10 @@ RUN cd /opt/ide/apps/embedder && ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev
 COPY models /opt/ide/models
 
 COPY apps/web-channel-mcp /opt/ide/apps/web-channel-mcp
-RUN cd /opt/ide/apps/web-channel-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/web-channel-mcp && npm install --production
 
 COPY apps/email-mcp /opt/ide/apps/email-mcp
-RUN cd /opt/ide/apps/email-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/email-mcp && npm install --production
 
 # github-mcp: thin node wrapper + official Go binary from github/github-mcp-server.
 # Wrapper handles broker creds + conditional --read-only / --toolsets flags;
@@ -316,92 +434,54 @@ RUN set -eux; \
     rm /tmp/github-mcp.tar.gz
 
 COPY apps/grok-mcp /opt/ide/apps/grok-mcp
-RUN cd /opt/ide/apps/grok-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/grok-mcp && npm install --production
 
 COPY apps/openai-mcp /opt/ide/apps/openai-mcp
-RUN cd /opt/ide/apps/openai-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/openai-mcp && npm install --production
 
 # Docs Comments (Playwright range-anchored Google Docs comments) — first-class
 # integration shipped to every client. Pulls playwright-core (reuses the system
 # chromium installed by the playwright-mcp layer; no bundled browsers).
 COPY apps/docs-comments-mcp /opt/ide/apps/docs-comments-mcp
-RUN cd /opt/ide/apps/docs-comments-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/docs-comments-mcp && npm install --production
 
 COPY apps/gemini-chat-mcp /opt/ide/apps/gemini-chat-mcp
-RUN cd /opt/ide/apps/gemini-chat-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gemini-chat-mcp && npm install --production
 
 COPY apps/signwell-mcp /opt/ide/apps/signwell-mcp
-RUN cd /opt/ide/apps/signwell-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/signwell-mcp && npm install --production
 
 COPY apps/trello-mcp /opt/ide/apps/trello-mcp
-RUN cd /opt/ide/apps/trello-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/trello-mcp && npm install --production
 
 COPY apps/gdocs-mcp /opt/ide/apps/gdocs-mcp
-RUN cd /opt/ide/apps/gdocs-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdocs-mcp && npm install --production
 
 COPY apps/gsheets-mcp /opt/ide/apps/gsheets-mcp
-RUN cd /opt/ide/apps/gsheets-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gsheets-mcp && npm install --production
 
 COPY apps/gcalendar-mcp /opt/ide/apps/gcalendar-mcp
-RUN cd /opt/ide/apps/gcalendar-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gcalendar-mcp && npm install --production
 
 COPY apps/gdrive-mcp /opt/ide/apps/gdrive-mcp
-RUN cd /opt/ide/apps/gdrive-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdrive-mcp && npm install --production
 
 COPY apps/gslides-mcp /opt/ide/apps/gslides-mcp
-RUN cd /opt/ide/apps/gslides-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gslides-mcp && npm install --production
 
 COPY apps/gtasks-mcp /opt/ide/apps/gtasks-mcp
-RUN cd /opt/ide/apps/gtasks-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gtasks-mcp && npm install --production
 
 COPY apps/x-mcp /opt/ide/apps/x-mcp
-RUN cd /opt/ide/apps/x-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/x-mcp && npm install --production
 
 # === LAYER 2f: workspace-api (web chat backend) ===
 # Express server that wraps `claude -p` with SSE streaming for the React workspace.
 # Started by PM2 alongside the bot. Listens on 127.0.0.1:3001 inside the container.
+# `npm ci` from the lockfile (deploy.sh ships it): the image gets exactly the
+# versions CI tested, not whatever `npm install` resolves on build day.
 COPY workspace-api /opt/ide/workspace-api
-RUN cd /opt/ide/workspace-api && npm install --production
-
-# === LAYER 2e: Playwright MCP + Chromium browser ===
-# Pre-installed so there's no download at runtime — the egress-proxy
-# does NOT allow cdn.playwright.dev (and never will: arbitrary browser
-# downloads at runtime are a prompt-injection escape hatch).
-#
-# Browser install path is FIXED via PLAYWRIGHT_BROWSERS_PATH so every
-# uid in the container (coder 1000, wsapi 1001, mcp 1002, bot 1003)
-# resolves to the same binary regardless of which $HOME they inherit.
-# Without this, install lands in /root/.cache/ms-playwright (the user
-# active in this Dockerfile layer is root for the `apt install` step),
-# bot at uid 1003 with HOME=/home/bot can't read it, and playwright-mcp
-# silently tries to download via `npx` — which hits the 403 egress wall
-# and bubbles up as "browser not available" in chat.
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
-# Stable alias for the chromium version the codebase hardcodes. `playwright
-# install` pulls whatever version it currently pins (e.g. chromium-1228), so the
-# literal /opt/playwright-browsers/chromium-1223/... paths in docs-comments and
-# entrypoint.sh go stale and spawn() ENOENTs after a rebuild. If the pinned dir
-# is absent, symlink chromium-1223 → the version that actually landed so every
-# hardcoded path keeps resolving across playwright bumps.
-RUN npm install -g @playwright/mcp playwright --prefix /home/coder/.npm-global && \
-    mkdir -p /opt/playwright-browsers && \
-    /home/coder/.npm-global/bin/playwright install --with-deps chromium && \
-    chmod -R a+rX /opt/playwright-browsers && \
-    { [ -e /opt/playwright-browsers/chromium-1223/chrome-linux64/chrome ] || \
-      { t="$(ls -d /opt/playwright-browsers/chromium-[0-9]*/ 2>/dev/null | sort -V | tail -1 | sed 's#/$##')"; [ -z "$t" ] || ln -sfn "$t" /opt/playwright-browsers/chromium-1223 ; } ; }
-
-# === LAYER 3: VS Code Extensions ===
-RUN code-server --install-extension Anthropic.claude-code@2.1.85 \
-    || (wget -q "https://open-vsx.org/api/Anthropic/claude-code/2.1.85/file/Anthropic.claude-code.vsix" \
-    -O /tmp/claude-code.vsix && \
-    code-server --install-extension /tmp/claude-code.vsix && \
-    rm -f /tmp/claude-code.vsix)
-RUN code-server --install-extension cweijan.vscode-office \
-    || echo "WARNING: vscode-office extension not found on marketplace"
-
-# === Uninstall GitHub Copilot extensions (we use Claude Code only) ===
-RUN code-server --uninstall-extension GitHub.copilot 2>/dev/null || true
-RUN code-server --uninstall-extension GitHub.copilot-chat 2>/dev/null || true
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/workspace-api && npm ci --omit=dev --no-audit --no-fund
 
 # === LAYER 4: VS Code settings + global Claude rules (staged for entrypoint copy) ===
 RUN mkdir -p /opt/ide
@@ -426,20 +506,6 @@ RUN chmod +x /opt/ide/hooks/*.sh /opt/ide/hooks/*.py 2>/dev/null || true
 # Helper scripts — frontmatter stamping (Bundle 6), etc.
 COPY scripts /opt/ide/scripts
 RUN chmod +x /opt/ide/scripts/*.sh 2>/dev/null || true
-
-# === LAYER 5: Branding extension (build TypeScript) ===
-COPY extensions/branding /tmp/branding
-RUN cd /tmp/branding && \
-    npm install && \
-    npm run build && \
-    mkdir -p /home/coder/.local/share/code-server/extensions && \
-    cp -r /tmp/branding /home/coder/.local/share/code-server/extensions/ide.branding && \
-    rm -rf /tmp/branding
-
-# === LAYER 6: Merge root-installed extensions + coder extensions, then stage ===
-RUN cp -r /root/.local/share/code-server/extensions/* \
-    /home/coder/.local/share/code-server/extensions/ 2>/dev/null || true && \
-    cp -r /home/coder/.local/share/code-server/extensions /opt/ide/extensions
 
 # === LAYER 7: Custom CSS + JS injection (overrides + mobile view switcher) ===
 COPY overrides.css /opt/ide/overrides.css
@@ -480,7 +546,8 @@ RUN mkdir -p /home/coder/project \
     echo 'export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$PATH"' >> /home/coder/.bashrc && \
     echo 'export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$PATH"' >> /home/coder/.zshrc 2>/dev/null || true && \
     echo 'export PATH="$HOME/.bun/bin:$HOME/.npm-global/bin:$PATH"' >> /home/coder/.profile && \
-    chown -R coder:coder /home/coder
+    chown coder:coder /home/coder/project /home/coder/.config /home/coder/.config/rclone /home/coder/.claude /home/coder/.claude/channels /home/coder/.claude/channels/telegram /home/coder/.${BOT_NAME} /home/coder/.npm /home/coder/.bashrc /home/coder/.profile && \
+    { [ ! -e /home/coder/.zshrc ] || chown coder:coder /home/coder/.zshrc; }
 
 # USER coder (Disabled to allow entrypoint.sh to fix volume permissions as root on startup)
 USER root
@@ -488,8 +555,12 @@ USER root
 EXPOSE 8080
 EXPOSE 9090
 
-# Health check: verifies code-server (main UI) is alive
+# Health check: code-server (main UI) AND workspace-api (:3001, the backend
+# every web screen and the bot's web channel depend on) must both answer.
+# code-server alone used to be enough, so a container whose wsapi never
+# bound :3001 reported healthy.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD curl -sf http://localhost:8080/ > /dev/null 2>&1 || exit 1
+    CMD curl -sf http://localhost:8080/ > /dev/null 2>&1 && \
+        curl -sf http://127.0.0.1:3001/api/health > /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -40,6 +40,7 @@ reaches the repo.
 | `ide-template/entrypoint.sh`, `Dockerfile`, `docker-compose.yml`, `deploy.sh` | Container boot, image, stack, deploy |
 | `ide-template/setuid-wrappers/` | C runners that drop each process to its own uid |
 | `install.sh`, `bin/`, `scripts/` | Installer, server preflight/ensure, hardening, dev scripts, `check-docs-impact.sh` |
+| `scripts/e2e/` | End-to-end suites against a live test deployment (`docs/TESTING.md`) |
 | `chrome-extension/` | The side-panel browser extension (no build step; `scripts/build-extension-zip.sh` packages it into the frontend's `public/downloads/`) |
 | `clients/` | Per-client config — **local only**, never committed except `example-client/` |
 | `docs/` | Product + operator documentation (map below) |
@@ -61,6 +62,7 @@ reaches the repo.
 | The browser extension, its sign-in or `pageContext` | `docs/BROWSER_EXTENSION.md` |
 | workspace-api endpoints or module layout | `ide-template/workspace-api/README.md` |
 | User-visible features | `README.md` |
+| Test suites, how to run them | `docs/TESTING.md` |
 
 ## Docs before main (required)
 
@@ -123,6 +125,10 @@ Skills and `global-claude.md` are English only, with no trigger phrases in any l
   yet; don't add new ones.
 - Prefer tests of **behaviour** over tests that grep the source — source-grep tests
   break on harmless refactors and miss real regressions.
+- **End-to-end suites** (`scripts/e2e/`, see `docs/TESTING.md`) run against a live
+  test deployment: `run.sh smoke` after a deploy, the suites a change touches before a
+  merge. Most hold real conversations and spend the admin's Claude plan — one at a
+  time. A new feature with a security or privacy edge gets a scenario there.
 
 ## Hard rules
 

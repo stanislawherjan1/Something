@@ -17,7 +17,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, appendF
 import { join } from 'node:path';
 import { PROJECT_DIR } from '../config.js';
 import { encryptValue, decryptValue, summariseRecord } from './crypto.js';
-import { requiredFields, allFields, get as getCatalog } from './catalog.js';
+import { requiredFields, allFields, get as getCatalog, baseId, slugOf } from './catalog.js';
 import { processStorageStateField } from './storage-state.js';
 
 // Phase-2 broker isolation: the encrypted store moved out of PROJECT_DIR
@@ -89,6 +89,193 @@ function appendAudit(action, id, fieldNames, extra) {
   }
 }
 
+/*
+ * Owner and reach. Every connection has an owner (the slug of the person who
+ * connected it) and a reach: `workspace` — an admin connected it for
+ * everyone, keyed by the integration id (`granola`); `personal` — a person
+ * connected their own account, keyed `<id>@<slug>` (`granola@ann`), loaded
+ * in that person's turns only. Same file, same encryption, same broker; the
+ * key is what tells them apart. A connection from before this had no owner:
+ * it is the workspace's, owned by the primary admin (ensureOwners, at boot).
+ */
+export const REACHES = ['workspace', 'personal'];
+/*
+ * Access. A workspace connection is `read` (the team reads through it, its
+ * write tools are refused in every turn by the scope-guard hook) or `write`
+ * (the default, and what a connection from before had). A person's own
+ * connection is always `write` — their account, their call.
+ */
+export const ACCESSES = ['read', 'write'];
+export function accessOf(key) {
+  const e = readAll()[key];
+  if (!e) return null;
+  if (isPersonalKey(key)) return 'write';
+  return ACCESSES.includes(e.access) ? e.access : 'write';
+}
+/**
+ * A workspace connection becomes a person's own (when collaboration is
+ * switched on, the owner keeps what was theirs): decrypted and written again
+ * under `id@slug` — the encryption is bound to the key — then the workspace's
+ * is removed. Refuses when the person already has their own of it.
+ */
+export function makePersonal(id, slug) {
+  if (isPersonalKey(id)) throw new Error('already a personal connection');
+  const state = readAll();
+  if (!state[id]) throw new Error(`${id} is not active`);
+  const key = personalKey(id, slug);
+  if (state[key]) throw new Error('they already have their own');
+  const plain = decryptFor(id);
+  activate(key, Array.isArray(plain) ? { items: plain.map(fields => ({ fields })) } : { fields: plain }, { owner: slug, reach: 'personal' });
+  remove(id);
+  appendAudit('make-personal', key, [], { from: id });
+  return key;
+}
+
+export function setAccess(key, access) {
+  if (!ACCESSES.includes(access)) throw new Error('access must be read or write');
+  if (isPersonalKey(key)) throw new Error('your own connection is always read and write');
+  const state = readAll();
+  if (!state[key]) throw new Error(`${key} is not active`);
+  state[key].access = access;
+  writeAll(state);
+  appendAudit('access', key, [], { access });
+  return access;
+}
+/** Server name → 'read' for every read-only workspace connection; what the hook enforces. */
+export function readOnlyServers(serverNamesOf) {
+  const out = {};
+  for (const [key, e] of Object.entries(readAll())) {
+    if (isPersonalKey(key) || e?.access !== 'read') continue;
+    for (const name of serverNamesOf(key)) out[name] = 'read';
+  }
+  return out;
+}
+export const personalKey = (id, slug) => `${baseId(id)}@${slug}`;
+export const isPersonalKey = (key) => slugOf(key) !== null;
+
+/** Workspace connections: the keys with no slug. */
+export function workspaceIds() { return Object.keys(readAll()).filter(k => !isPersonalKey(k)); }
+/** One person's own connections, as keys (`granola@ann`). */
+export function personalIds(slug) { return slug ? Object.keys(readAll()).filter(k => slugOf(k) === slug) : []; }
+/** The people who connected their own account of this integration. */
+export function peopleWith(id) {
+  const base = baseId(id);
+  return Object.keys(readAll()).map(k => (baseId(k) === base ? slugOf(k) : null)).filter(Boolean);
+}
+/** Owner and reach of a key, or null when it is not connected. */
+export function ownership(key) {
+  const e = readAll()[key];
+  if (!e) return null;
+  return { owner: e.owner || null, reach: isPersonalKey(key) ? 'personal' : 'workspace' };
+}
+/** Connections from before owners existed become the workspace's, owned by `ownerSlug`. Returns how many. */
+export function ensureOwners(ownerSlug) {
+  const state = readAll();
+  let n = 0;
+  for (const [key, e] of Object.entries(state)) {
+    if (!e || typeof e !== 'object') continue;
+    if (!e.reach) { e.reach = isPersonalKey(key) ? 'personal' : 'workspace'; n++; }
+    if (!e.owner && ownerSlug && !isPersonalKey(key)) { e.owner = ownerSlug; n++; }
+    if (!e.owner && isPersonalKey(key)) { e.owner = slugOf(key); n++; }
+  }
+  if (n) writeAll(state);
+  return n;
+}
+/** A person left: their own connections go with them. Returns the keys removed. */
+export function removePersonalAll(slug) {
+  const state = readAll();
+  const gone = Object.keys(state).filter(k => slugOf(k) === slug);
+  for (const k of gone) { appendAudit('remove', k, Object.keys(state[k].fields || {}), { reason: 'person removed' }); delete state[k]; }
+  if (gone.length) writeAll(state);
+  return gone;
+}
+
+/* ─── What a connection holds, for its page ──────────────────────────────── */
+
+/** One stored field for the screen: a non-secret value in clear, a secret as `{ length, last4 }`, never both. */
+function fieldView(def, record) {
+  if (!record) return { name: def.name, set: false };
+  const secret = def.type === 'secret' || def.type === 'json' || def.type === 'remote-mcp-oauth' || /storage-state|browser-login|password|token|secret|key/i.test(`${def.type} ${def.name}`);
+  // A short secret's last characters would be most of it: shown as length alone.
+  const short = (sum) => (sum && sum.length <= 8 ? { ...sum, last4: '' } : sum);
+  if (secret) return { name: def.name, set: true, summary: short(summariseRecord(record)) };
+  try { return { name: def.name, set: true, value: decryptValue(record) }; }
+  catch { return { name: def.name, set: true, summary: short(summariseRecord(record)) }; }
+}
+
+/**
+ * A connection as its page shows it: every catalog field with whether it is
+ * set (a secret only as length and last characters), the items of a multi
+ * connection (each its fields the same way), owner, reach, when. Null when
+ * not connected. Plaintext secrets never leave the store this way.
+ */
+export function detail(key) {
+  const state = readAll();
+  const entry = state[key];
+  if (!entry) return null;
+  const cat = getCatalog(key);
+  const defs = cat?.fields || [];
+  const out = { key, id: baseId(key), owner: entry.owner || null, reach: isPersonalKey(key) ? 'personal' : 'workspace', access: accessOf(key), activatedAt: entry.activatedAt || null };
+  if (cat?.multi) {
+    out.items = (entry.items || []).map((it, i) => ({ index: i, fields: defs.map(d => fieldView(d, it.fields?.[d.name])) }));
+  } else {
+    out.fields = defs.map(d => fieldView(d, entry.fields?.[d.name]));
+  }
+  return out;
+}
+
+/** Add one account to a multi connection (email: a mailbox). Returns the new item's index. */
+export function addItem(key, fields) {
+  const cat = getCatalog(key);
+  if (!cat?.multi) throw new Error(`${cat?.label || key} holds one set of settings, not a list`);
+  const state = readAll();
+  const entry = state[key];
+  if (!entry) throw new Error(`${key} is not active`);
+  const items = entry.items || [];
+  items.push({ fields: buildEncryptedItem(key, fields || {}) });
+  entry.items = items;
+  state[key] = entry;
+  writeAll(state);
+  appendAudit('add-item', key, [], { items: items.length });
+  return items.length - 1;
+}
+
+/** Change one account's fields in place (only the fields given; a secret left blank is kept). */
+export function updateItem(key, index, fields) {
+  const cat = getCatalog(key);
+  if (!cat?.multi) throw new Error(`${cat?.label || key} holds one set of settings, not a list`);
+  const state = readAll();
+  const entry = state[key];
+  const item = entry?.items?.[index];
+  if (!item) throw new Error('no such item');
+  const allowed = new Set(allFields(key));
+  const updates = {};
+  for (const [name, value] of Object.entries(fields || {})) {
+    if (!allowed.has(name) || typeof value !== 'string' || value.trim() === '') continue;
+    updates[name] = encryptValue(value.trim());
+  }
+  if (!Object.keys(updates).length) throw new Error('nothing to change');
+  item.fields = { ...(item.fields || {}), ...updates };
+  writeAll(state);
+  appendAudit('update-item', key, Object.keys(updates), { index });
+  return Object.keys(updates);
+}
+
+/** Remove one account from a multi connection; the last one removes the connection itself. */
+export function removeItem(key, index) {
+  const cat = getCatalog(key);
+  if (!cat?.multi) throw new Error(`${cat?.label || key} holds one set of settings, not a list`);
+  const state = readAll();
+  const entry = state[key];
+  if (!entry?.items?.[index]) throw new Error('no such item');
+  entry.items.splice(index, 1);
+  const last = entry.items.length === 0;
+  if (last) delete state[key]; else state[key] = entry;
+  writeAll(state);
+  appendAudit(last ? 'remove' : 'remove-item', key, [], { index });
+  return { removedConnection: last, items: entry.items.length };
+}
+
 /** Return whether an integration has stored credentials (= active). */
 export function isActive(id) {
   const state = readAll();
@@ -130,6 +317,9 @@ export function listStatus() {
         activatedAt: entry.activatedAt || null,
         itemCount:   items.length,
         summary:     null,
+        owner:       entry.owner || null,
+        reach:       isPersonalKey(id) ? 'personal' : 'workspace',
+        access:      isPersonalKey(id) ? 'write' : (ACCESSES.includes(entry.access) ? entry.access : 'write'),
       };
       continue;
     }
@@ -140,6 +330,9 @@ export function listStatus() {
       active:      true,
       activatedAt: entry.activatedAt || null,
       summary:     primary ? summariseRecord(primary) : null,
+      owner:       entry.owner || null,
+      reach:       isPersonalKey(id) ? 'personal' : 'workspace',
+      access:      isPersonalKey(id) ? 'write' : (ACCESSES.includes(entry.access) ? entry.access : 'write'),
     };
   }
   return out;
@@ -207,9 +400,14 @@ function buildEncryptedItem(id, plainFields) {
   return encrypted;
 }
 
-export function activate(id, body) {
+export function activate(id, body, { owner = null, reach = null, access = null } = {}) {
   const cat = getCatalog(id);
   if (!cat || cat.comingSoon) throw new Error(`unknown integration: ${id}`);
+  const who = owner || slugOf(id) || null;
+  const how = reach || (isPersonalKey(id) ? 'personal' : 'workspace');
+  const level = how === 'personal' ? 'write' : (ACCESSES.includes(access) ? access : 'write');
+  if (how === 'personal' && !isPersonalKey(id)) throw new Error('a personal connection is keyed by its owner');
+  if (how === 'personal' && !cat.personal) throw new Error(`${cat.label} can only be connected for the workspace`);
 
   const state = readAll();
 
@@ -225,9 +423,12 @@ export function activate(id, body) {
     state[id] = {
       activatedAt: new Date().toISOString(),
       items:       encryptedItems,
+      owner:       who,
+      reach:       how,
+      access:      level,
     };
     writeAll(state);
-    appendAudit('activate', id, [], { items: encryptedItems.length });
+    appendAudit('activate', id, [], { items: encryptedItems.length, owner: who, reach: how, access: level });
     return;
   }
 
@@ -237,9 +438,12 @@ export function activate(id, body) {
   state[id] = {
     activatedAt: new Date().toISOString(),
     fields:      encrypted,
+    owner:       who,
+    reach:       how,
+    access:      level,
   };
   writeAll(state);
-  appendAudit('activate', id, Object.keys(encrypted));
+  appendAudit('activate', id, Object.keys(encrypted), { owner: who, reach: how, access: level });
 }
 
 /**

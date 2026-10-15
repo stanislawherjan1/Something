@@ -51,6 +51,7 @@ import { tmpdir } from 'node:os';
 import { join, basename, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createGoogleApiClient } from '../_shared/google-oauth.js';
+import { projectFile } from '../_shared/local-file.js';
 import { loadCredentials } from '../_shared/broker-client.js';
 
 // Phase-2 broker — fetch credentials over UDS at startup if launched via
@@ -555,12 +556,7 @@ async function handleExportDocRevision({ file_id, revision_id, mime_type }) {
 
 async function handleUploadFile({ local_path, name, parent_id, mime_type }) {
   requireWrite();
-  let st;
-  try { st = statSync(local_path); }
-  catch (err) { throw new Error(`Cannot read ${local_path}: ${err.message}`); }
-  if (!st.isFile()) throw new Error(`${local_path} is not a regular file.`);
-
-  const fileBytes = readFileSync(local_path);
+  const fileBytes = readFileSync(projectFile(local_path));
   const finalName = name || basename(local_path);
   const finalMime = mime_type || inferMime(finalName);
 

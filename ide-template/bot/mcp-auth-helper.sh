@@ -23,7 +23,8 @@ set -euo pipefail
 ID="${1:?usage: mcp-auth-helper.sh <integration-id>}"
 WSAPI_PORT="${WSAPI_PORT:-3001}"
 
-BODY=$(curl -sf -m 20 "http://127.0.0.1:${WSAPI_PORT}/api/internal/mcp-token/${ID}")
+# The helper runs inside a turn; the turn's token is what entitles it to a token.
+BODY=$(curl -sf -m 20 -H "X-IDE-Turn: ${IDE_TURN_ID:-}" "http://127.0.0.1:${WSAPI_PORT}/api/internal/mcp-token/${ID}")
 
 # Belt-and-braces: only forward something that looks like a JSON object —
 # never let an HTML error page reach Claude Code's header parser.

@@ -7,6 +7,8 @@ import { useAuth } from '@/context/AuthContext';
 import EditorHeader from '../EditorHeader.jsx';
 import { useApi, invalidate } from '@/lib/useApi';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { Logo, Pick, OrgMark } from './IntegrationsDashboard.jsx';
+import { useBranding } from '../identity';
 
 /**
  * TeamDashboard — file-based whitelist management.
@@ -42,6 +44,7 @@ export default function TeamDashboard({ sidebarOpen }) {
   const teamMode          = data?.teamMode ?? false;
   const personalFileCount = data?.personalFileCount ?? 0;
   const [confirmingOff, setConfirmingOff] = useState(false);
+  const [askConnections, setAskConnections] = useState(null);
 
   const setMode = useCallback(async (enabled, mergePersonal = false) => {
     setSwitching(true); setModeError(null);
@@ -56,6 +59,14 @@ export default function TeamDashboard({ sidebarOpen }) {
       invalidate('/api/me');   // sidebar split + role badge react live
       invalidate('/api/files/tree');   // merged files show up in the workspace tree
       reload();
+      // Switched on: the connections the owner had alone — which does the team use?
+      if (enabled) {
+        try {
+          const l = await fetch('/api/integrations', { credentials: 'include' }).then(x => x.json());
+          const conns = (l.integrations || []).filter(i => i.active);
+          if (conns.length) setAskConnections(conns);
+        } catch { /* the Integrations screen shows them anyway */ }
+      }
     } catch (err) {
       setModeError(err.message);
     } finally {
@@ -65,10 +76,14 @@ export default function TeamDashboard({ sidebarOpen }) {
 
   // Turning OFF with personal files present needs a decision (move vs hide);
   // every other transition is immediate.
+  // Solo is one person: with anyone else on the team, turning off waits until they are removed.
+  const others = entries.filter(e => (e.email || '').toLowerCase() !== myEmail);
+  const [blockedOff, setBlockedOff] = useState(false);
   const handleToggle = useCallback((next) => {
-    if (!next && personalFileCount > 0) setConfirmingOff(true);
+    if (!next && others.length) setBlockedOff(true);
+    else if (!next && personalFileCount > 0) setConfirmingOff(true);
     else setMode(next);
-  }, [personalFileCount, setMode]);
+  }, [others.length, personalFileCount, setMode]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -165,6 +180,13 @@ export default function TeamDashboard({ sidebarOpen }) {
           onSuccess={() => { setRemoving(null); reload(); }}
         />
       )}
+      {askConnections && (
+        <WhoUsesModal connections={askConnections} onDone={() => { setAskConnections(null); invalidate('/api/integrations'); }} />
+      )}
+      {blockedOff && (
+        <OthersFirstModal others={others} onClose={() => setBlockedOff(false)}
+          onRemove={(e) => { setBlockedOff(false); setRemoving(e); }} />
+      )}
       {confirmingOff && (
         <DisablePersonalModal
           count={personalFileCount}
@@ -237,6 +259,10 @@ function PersonLine({ entry, isMe, isLastAdmin, canManage, onEdit, onRemove }) {
       <div className={cell}><RoleBadge role={role} /></div>
       <div className={cell}><ChannelIcons entry={entry} /></div>
       <div className={cn(cell, 'pr-0')} />
+      {/* The list is one six-column grid, so every row fills all six cells:
+          without the actions cell a member's view shifted each next person
+          into the gap left on the row above. */}
+      {!canManage && <div className={cn(cell, 'pr-0')} />}
       {canManage && (
         <div className={cn(cell, 'justify-end gap-1.5 pr-1')}>
           <button type="button" onClick={onEdit} title="Edit" aria-label={`Edit ${name}`}
@@ -290,6 +316,91 @@ function Switch({ on, busy, onClick }) {
 // Turning off collaboration while you have personal files: decide whether to
 // move them into the shared workspace or keep them tucked away. Only ever
 // touches YOUR OWN files — teammates' personal files are never moved.
+/** Collaboration switched on: per connection, the whole team or just the owner. */
+function WhoUsesModal({ connections, onDone }) {
+  const branding = useBranding();
+  const { user } = useAuth();
+  const [choice, setChoice] = useState(() => Object.fromEntries(connections.map(c => [c.id, 'team'])));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      const ids = connections.filter(c => choice[c.id] === 'personal').map(c => c.id);
+      if (ids.length) {
+        // One request for the whole answer: one restart, one rate-limit hit.
+        const r = await fetch('/api/integrations/make-personal', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || d.failed?.length) {
+          const label = (id) => connections.find(c => c.id === id)?.label || id;
+          throw new Error((d.failed || []).map(f => `${label(f.id)}: ${f.error}`).join(' · ') || d.error || `HTTP ${r.status}`);
+        }
+      }
+      onDone();
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+  const team = { value: 'team', label: 'The whole team', icon: <OrgMark orgIcon={branding.iconUrl || branding.logoUrl} className="size-4" /> };
+  const mine = { value: 'personal', label: 'Just me', icon: <Avatar name={user?.displayName || user?.email} email={user?.email} avatarUrl={user?.avatarUrl} className="!size-4 text-[8px]" /> };
+  return (
+    <ModalShell onClose={busy ? () => {} : onDone} ariaLabel="Who uses your connections">
+      <div className="w-full max-w-xl overflow-hidden modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-border/40 px-5 py-3.5">
+          <h2 className="text-[14px] font-semibold text-foreground/90">Who uses your connections?</h2>
+        </div>
+        <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-5 py-4">
+          {connections.map((c) => (
+            <div key={c.id} className="flex items-center gap-3">
+              <Logo src={c.logo} alt={c.label} fill={!!c.logoFill} size="size-9" imgSize="size-5" />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/90">{c.label}</span>
+              <div className="flex w-56 shrink-0">
+                <Pick id={`who-${c.id}`} value={choice[c.id]} disabled={busy} onChange={(v) => setChoice(o => ({ ...o, [c.id]: v }))}
+                  options={c.personal ? [team, mine] : [team]} />
+              </div>
+            </div>
+          ))}
+          {error && <div className="rounded-[6px] border border-destructive/25 bg-destructive/[0.05] px-3 py-2 text-[12px] text-destructive">{error}</div>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button type="button" onClick={save} disabled={busy} className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3.5 py-1.5 text-[13px] font-medium text-background hover:opacity-95 disabled:opacity-50">
+            {busy && <Loader2 className="size-3.5 animate-spin" />}Done
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** Turning collaboration off with others on the team: who has to be removed first. */
+function OthersFirstModal({ others, onClose, onRemove }) {
+  return (
+    <ModalShell onClose={onClose} ariaLabel="Turn off collaboration">
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+          <h2 className="text-[14px] font-semibold text-foreground/90">Remove the others first</h2>
+          <button type="button" onClick={onClose} className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+            <X className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-3 px-5 py-4 text-[13px] text-foreground/85">
+          <p>Without collaboration the workspace is yours alone. {others.length === 1 ? 'This person is' : 'These people are'} still on the team:</p>
+          <ul className="flex flex-col divide-y divide-border/40 rounded-[6px] border border-border/50">
+            {others.map((e) => (
+              <li key={e.email} className="flex items-center gap-3 px-3 py-2">
+                <Avatar name={e.displayName || e.email} email={e.email} avatarUrl={e.avatarUrl} className="!size-7 text-[11px]" />
+                <span className="min-w-0 flex-1 truncate">{e.displayName || e.email}</span>
+                <button type="button" onClick={() => onRemove(e)} className="rounded-[6px] px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-muted/40 hover:text-foreground/85">Remove</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90">Close</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
 function DisablePersonalModal({ count, busy, onCancel, onMerge, onHide }) {
   const noun = count === 1 ? 'file' : 'files';
   return (
@@ -429,7 +540,7 @@ function ChannelIcons({ entry }) {
   );
 }
 
-function Avatar({ email, name, avatarUrl, className }) {
+export function Avatar({ email, name, avatarUrl, className }) {
   const initial = (name || email || '?').trim().charAt(0).toUpperCase();
   const [broken, setBroken] = useState(false);
   if (!avatarUrl || broken) return <PersonInitial initial={initial} className={cn('size-14 text-[22px]', className)} />;

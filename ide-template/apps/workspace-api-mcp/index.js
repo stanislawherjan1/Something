@@ -58,6 +58,7 @@ function v4MemoryWrite(tool) {
       'Facts and events need no call: every finished conversation is filed by the system, and "remember this" is memory_note. Use THIS tool only for:\n' +
       '- a correction to the person\'s USER_PROFILE or USER_PREFERENCES card (op "supersede" when the fact CHANGED, "retire" when it was never true, "remember" for a new standing line)\n' +
       '- a hard rule for everyone (card "RULES"), a tool gotcha ("AGENT_TOOLS"), your voice ("AGENT_IDENTITY")\n' +
+      '- what the company does, for whom, how it works (card "MISSION", shown as "About the company")\n' +
       '- a standing duty ("every Friday…", "keep an eye on…"): card "RESPONSIBILITIES", then run the morning-planner in the same turn\n' +
       'Do NOT announce the write; memory upkeep is background work, never a message. The tool refuses, with a reason, when a credential is detected or a correction matches several claims — read the reason and act on it.',
     inputSchema: {
@@ -672,7 +673,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Say what actually happened — the bot reported "saved as a topic" when
         // all it had was "Saved".
         if (r.ok && r.already) r.text = `Already in memory${r.repeats?.length ? ` ("${r.repeats.join('", "')}")` : ''} — nothing new saved.`;
-        else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}.`;
+        else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}${r.shared ? `; ${r.shared > 1 ? `${r.shared} facts` : 'the fact'} reached the team's shared memory by the person's sharing mode` : ''}${r.asked ? `; ${r.asked > 1 ? `${r.asked} facts wait` : 'one fact waits'} for the person's OK on the Memory screen's Sharing tab` : ''}.`;
       } else if (name === 'memory_import') {
         r = await v4Call('POST', 'import', {
           integration: String(args?.integration || ''), item: String(args?.item || ''), title: String(args?.title || ''), at: args?.at ? String(args.at) : null,

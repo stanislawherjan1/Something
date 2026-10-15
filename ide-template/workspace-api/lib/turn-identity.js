@@ -13,12 +13,14 @@
  *   - the Telegram brain (bot.sh, its own uid) reads a token entrypoint wrote at
  *     boot into a file only the bot user can read; workspace-api keeps only its
  *     SHA-256 (BOT_TURN_ID_HASH_FILE), so nothing workspace-api's own turns can
- *     read reveals it. That token carries the operator's identity, which bot.sh
- *     also sends as X-IDE-Actor.
+ *     read reveals it. That token IS the operator's identity — the primary
+ *     admin, resolved here from the roster; an X-IDE-Actor header beside it is
+ *     not consulted.
  * No valid token → no identity (resolve returns null).
  */
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { primaryAdminSlug } from './team.js';
 
 const turns = new Map();   // token → { actor, group, groupId }
 
@@ -31,6 +33,12 @@ export function issueTurnToken({ actor = null, group = false, groupId = null } =
     groupId: group && /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null,
   });
   return token;
+}
+
+/** The memory excerpts (record ids) a turn was handed, so what the turn makes can be tied to them. */
+export function setTurnRecall(token, ids) {
+  const t = turns.get(String(token || ''));
+  if (t) t.recall = Array.isArray(ids) ? ids.map(String).slice(0, 40) : [];
 }
 
 export function revokeTurnToken(token) {
@@ -50,11 +58,11 @@ function botTokenHash() {
 }
 
 /**
- * The identity behind a turn token, or null. `claimedActor` is what the caller
- * says in X-IDE-Actor — used only for the bot's token, which proves "this is
- * the operator's brain" but is not minted per turn.
+ * The identity behind a turn token, or null. The second argument (what the
+ * caller says in X-IDE-Actor) is kept for the callers' sake and not used: a
+ * per-turn token knows its actor, and the bot's token is the operator's.
  */
-export function resolveTurnToken(token, claimedActor = '') {
+export function resolveTurnToken(token, _claimedActor = '') {
   const t = typeof token === 'string' ? token.trim() : '';
   if (!t) return null;
   const turn = turns.get(t);
@@ -63,11 +71,21 @@ export function resolveTurnToken(token, claimedActor = '') {
   if (expected) {
     const got = createHash('sha256').update(t).digest();
     if (got.length === expected.length && timingSafeEqual(got, expected)) {
-      const actor = /^[a-z0-9-]+$/.test(String(claimedActor || '')) ? String(claimedActor) : null;
-      return { actor, group: false, groupId: null, source: 'bot' };
+      return { actor: primaryAdminSlug() || null, group: false, groupId: null, source: 'bot' };
     }
   }
   return null;
+}
+
+// workspace-api sometimes calls its own /internal routes over loopback (the
+// Telegram relay-back in telegram-sync.js). Those calls carry this per-process
+// value in X-IDE-Internal; nothing outside this process knows it, so a route
+// can tell its own caller from a turn's shell on the same loopback.
+export const INTERNAL_TOKEN = randomBytes(24).toString('base64url');
+export function isInternalCall(value) {
+  const v = typeof value === 'string' ? value : '';
+  if (v.length !== INTERNAL_TOKEN.length) return false;
+  return timingSafeEqual(Buffer.from(v), Buffer.from(INTERNAL_TOKEN));
 }
 
 // For tests.

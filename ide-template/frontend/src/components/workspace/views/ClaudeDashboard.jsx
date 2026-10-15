@@ -374,20 +374,21 @@ function ModalShell({ children, onClose, ariaLabel }) {
   );
 }
 
-/* ─── API wrapper — mocks success when backend unreachable (Vite dev) ─── */
+/* ─── API wrapper — in a dev build, mocks success when the backend is absent ─── */
 
 async function apiWrite(url, opts = {}) {
   try {
     const r = await fetch(url, opts);
     if (r.ok) return { ok: true };
-    // 404 = route not registered (running Vite dev without workspace-api).
-    // Pretend it worked so the local UI flow stays usable.
-    if (r.status === 404) return { ok: true, mock: true };
+    // Vite dev without workspace-api: the route is not there (404). Pretend
+    // it worked so the local UI flow stays usable — in a dev build only; a
+    // deployed workspace must say when a save did not happen.
+    if (r.status === 404 && import.meta.env.DEV) return { ok: true, mock: true };
     const data = await r.json().catch(() => ({}));
     return { ok: false, error: data.error || `HTTP ${r.status}` };
   } catch {
-    // Network failure (workspace-api not running) — treat as mock.
-    return { ok: true, mock: true };
+    if (import.meta.env.DEV) return { ok: true, mock: true };
+    return { ok: false, error: 'Could not reach the workspace. Nothing was saved.' };
   }
 }
 

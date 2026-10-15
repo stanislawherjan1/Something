@@ -46,6 +46,7 @@ fi
 
 RESPONSE=$(curl -sS -m 5 -X POST "$WSAPI_URL" \
     -H 'Content-Type: application/json' \
+    -H "X-IDE-Turn: ${IDE_TURN_ID:-}" \
     -d "$PAYLOAD" 2>&1)
 EXIT_CODE=$?
 

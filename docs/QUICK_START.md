@@ -278,7 +278,7 @@ That's it. Your assistant is live.
 | Google: **`redirect_uri_mismatch`** at login | The callback URL isn't registered on your OAuth client | In Google Console → **Credentials** → your OAuth client → **Authorized redirect URIs**, add exactly `https://<your-domain>/auth/callback` (no trailing slash) and save. See [Google OAuth setup](#google-oauth). |
 | Signed in, but **the bot doesn't reply on Telegram** | No Telegram token set | Open **Integrations → Telegram** in the workspace and paste a bot token from [@BotFather](https://t.me/BotFather). |
 | Deploy **times out or fails partway** | Transient network/build hiccup, or DNS/Docker wasn't ready | Just run it again — the deploy is idempotent: `./clients/<your-domain>/deploy.sh`. Confirm Docker is installed (`ssh root@<IP> 'docker --version'`) and DNS resolves first. |
-| Deploy fails: **`no space left on device`** | Server disk filled with old build cache | `ssh root@<IP> "df -h"` to check, then `ssh root@<IP> "docker builder prune -af"` to free space — or pick a larger Hetzner plan. |
+| Deploy fails: **`no space left on device`** | Server disk filled with old build cache or an image nothing runs | `ssh root@<IP> "df -h"` to check, then `ssh root@<IP> "docker builder prune -af; docker image prune -f"` to free space and run the deploy again (a routine deploy reuses the build cache; `./deploy.sh --fresh` rebuilds everything and needs about four times the image's size free) — or pick a larger Hetzner plan. |
 
 Still stuck? See the full operations reference in [DEPLOY.md](DEPLOY.md) and the
 end-to-end manual walkthrough in [NEW_CLIENT.md](NEW_CLIENT.md).

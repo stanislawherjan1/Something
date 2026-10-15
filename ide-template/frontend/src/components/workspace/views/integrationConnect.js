@@ -22,9 +22,9 @@ export const isOpenServer = (integration) =>
  * the fallback for when it can't reach the opener. Shared by Integrations and
  * the Routines Marketplace's Connect.
  */
-export function openOAuthPopup(integration, onClosed) {
+export function openOAuthPopup(integration, onClosed, { reach = 'workspace', access = 'write' } = {}) {
   const popup = window.open(
-    `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start`,
+    `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start${reach === 'personal' ? '?reach=personal' : `?access=${access}`}`,
     `oauth-${integration.id}`,
     'popup,width=560,height=720',
   );

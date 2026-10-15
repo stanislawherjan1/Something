@@ -42,6 +42,9 @@ export function parseMeetings(text) {
       participants: people ? parseParticipants(people[1]) : [],
       participantsLine: people ? parseParticipantsWithAddresses(people[1]) : [],
       summary: summary ? unescape(summary[1]).trim() : '',
+      // A voice note recorded on the phone comes back as a "meeting" whose only
+      // participant is the person who recorded it.
+      note: !people || parseParticipants(people[1]).length <= 1,
     });
   }
   return out.filter(x => x.id);

@@ -16,12 +16,13 @@
  * tight enough that a stolen session can't quietly invite a thousand emails.
  */
 
+import { soloSharedToOwner } from '../lib/memory-solo.js';
 import { Router } from 'express';
 import express from 'express';
 import * as team from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.js';
-import { restoreDefaultMemory } from '../lib/memory-loader.js';
+import { restoreDefaultMemory, migrateDefaultMemory } from '../lib/memory-loader.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
 import { listUnregistered } from '../lib/integrations/group-watcher.js';
@@ -103,21 +104,45 @@ export default function teamRouter() {
   // that unlocks inviting teammates and the Workspace/Personal split. When
   // disabling, `mergePersonal: true` moves the CALLER's own personal files up
   // into the shared workspace (collision-renamed) — never anyone else's.
-  router.put('/team/mode', requireAdmin, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
+  router.put('/team/mode', requireAdmin, rateLimit, express.json({ limit: '1kb' }), async (req, res) => {
     const enabled = req.body?.enabled;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ error: 'enabled must be a boolean.' });
+    }
+    // Solo is one person: with anyone else on the roster, team mode stays on
+    // until they are removed (removal archives their private trees and their
+    // own connections). The answer names them so the screen can say who.
+    if (!enabled) {
+      const me = String(req.actor || '').toLowerCase();
+      const others = team.list().filter(m => String(m.email || '').toLowerCase() !== me);
+      if (others.length) return res.status(409).json({ error: 'Remove everyone else from the team first.', others: others.map(m => ({ email: m.email, name: m.displayName || m.email, role: m.role })) });
     }
     let merged = null;
     if (!enabled && req.body?.mergePersonal === true) {
       const slug = team.slugFor(req.actor);
       if (slug) merged = mergePersonalToWorkspace(slug);
     }
+    const wasTeam = team.getTeamMode();
     const teamMode = team.setTeamMode(enabled, req.actor);
-    // Solo mode reads the one person's cards flat: bring the admin's back
-    // (enabling adopts them under users/<admin> at the next boot).
+    // Switched on: what solo kept in shared memory is the owner's, not the new team's.
+    let movedToOwner = null;
+    if (teamMode && !wasTeam) {
+      try { movedToOwner = await soloSharedToOwner(team.primaryAdminSlug()); }
+      catch (err) { process.stderr.write(`[team] solo memory to the owner: ${err.message}\n`); }
+    }
+    // Solo reads the one person's cards flat, team mode from users/<admin>:
+    // move them with the switch. Waiting for the next boot left the owner's
+    // profile looking empty until then (seen on the canary).
+    if (teamMode && !wasTeam) {
+      try { migrateDefaultMemory(team.primaryAdminSlug()); }
+      catch (err) { process.stderr.write(`[team] solo cards to the owner: ${err.message}\n`); }
+    }
     if (!teamMode) restoreDefaultMemory(team.primaryAdminSlug());
-    res.json({ ok: true, teamMode, merged });
+    // Everyone's private trees are theirs again at once — a merge recreates
+    // the caller's users/<slug> as workspace-api's, readable by every turn,
+    // and only a boot re-assigned it before (seen on the canary).
+    try { team.reconcileSlots(); } catch (err) { process.stderr.write(`[team] reconcile after the switch: ${err.message}\n`); }
+    res.json({ ok: true, teamMode, merged, ...(movedToOwner ? { movedToOwner } : {}) });
   });
 
   // The workspace's default time zone (people without their own use it).

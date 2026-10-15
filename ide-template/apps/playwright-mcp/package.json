@@ -1,0 +1,7 @@
+{
+  "name": "playwright-mcp-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Starts @playwright/mcp as the mcp user through mcp-runner; no dependencies of its own."
+}

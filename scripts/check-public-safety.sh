@@ -13,15 +13,31 @@
 # (one term per line, # comments) for names that are not directory names —
 # a client's bot name, a person, a product.
 #
-# Checks, over BASE..HEAD: added lines in the diff, commit messages, and the
-# branch name given as $3.
+# Checks, over BASE..HEAD and commit by commit: the lines each commit adds,
+# each commit's message, and the branch name given as $3. Per commit, not the
+# net diff of the range: a term added in one commit and removed in a later
+# one is still in the history that gets pushed.
 #
-# Usage: scripts/check-public-safety.sh [BASE] [HEAD] [BRANCH]
-# Exit:  0 = clean, 1 = findings, 2 = usage / git error
+# An empty term list is an error when run from a checkout that has clients/
+# (the list is derived from it, so empty means it was not found), unless
+# --allow-empty-terms is given; CI has no client list and runs only the
+# English-only rule.
+#
+# Usage: scripts/check-public-safety.sh [--allow-empty-terms] [BASE] [HEAD] [BRANCH]
+# Exit:  0 = clean, 1 = findings, 2 = usage / git error / no term list
 
-BASE="${1:-origin/main}"
-HEAD="${2:-HEAD}"
-BRANCH="${3:-}"
+ALLOW_EMPTY_TERMS=0
+POS=()
+for arg in "$@"; do
+    case "$arg" in
+        --allow-empty-terms) ALLOW_EMPTY_TERMS=1 ;;
+        -*) echo "check-public-safety: unknown option $arg" >&2; exit 2 ;;
+        *) POS+=("$arg") ;;
+    esac
+done
+BASE="${POS[0]:-origin/main}"
+HEAD="${POS[1]:-HEAD}"
+BRANCH="${POS[2]:-}"
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "check-public-safety: not a git repo" >&2; exit 2; }
 cd "$ROOT" || exit 2
 
@@ -51,12 +67,24 @@ if [ -f "$MAIN_ROOT/.public-denylist" ]; then
     done < "$MAIN_ROOT/.public-denylist"
 fi
 
+if [ ${#TERMS[@]} -eq 0 ] && [ -d "$MAIN_ROOT/clients" ] && [ "$ALLOW_EMPTY_TERMS" != 1 ]; then
+    cat >&2 <<EOF
+check-public-safety: no client terms found (clients/ holds only example-client
+and there is no .public-denylist), so the client-name rule cannot run. Add the
+names to $MAIN_ROOT/.public-denylist, or pass --allow-empty-terms to run the
+English-only rule alone.
+EOF
+    exit 2
+fi
+
 FOUND=0
 report() { FOUND=1; printf '%s\n' "$1" >&2; }
 
-# Added lines, with their file, excluding i18n tables (allowed other languages).
-ADDED=$(git diff --unified=0 "$BASE...$HEAD" \
-    | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+[^+]/{ if (f !~ /(^|\/)(i18n|locales?)\//) print f ": " substr($0,2) }')
+# Lines added by each commit, prefixed with the commit and the file, excluding
+# i18n tables (allowed other languages). `=== <hash>` separates the commits:
+# no line of a diff starts with '='.
+ADDED=$(git log -p --unified=0 --no-color --format='=== %h' "$BASE..$HEAD" \
+    | awk '/^=== /{c=substr($0,5); next} /^\+\+\+ b\//{f=substr($0,7); next} /^\+[^+]/{ if (f !~ /(^|\/)(i18n|locales?)\//) print c " " f ": " substr($0,2) }')
 MSGS=$(git log --format='%h %B' "$BASE..$HEAD")
 
 # ── Rule 2: client names ────────────────────────────────────────────────────

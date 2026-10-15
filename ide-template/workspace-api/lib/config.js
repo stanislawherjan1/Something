@@ -48,6 +48,10 @@ export const HARD_HIDDEN = new Set([
   '.allowed-emails.audit.log',
   // Team config (solo vs collaborative). Managed via /api/team.
   '.team-config.json',
+  // A departed member's archived trees (root 0700) and the slots held for
+  // them until that archive goes through. Managed by lib/team.js.
+  '.archived-members',
+  '.held-slots.json',
   // Branding metadata + uploaded avatar. Managed via /api/branding.
   '.branding.json',
   '.branding',

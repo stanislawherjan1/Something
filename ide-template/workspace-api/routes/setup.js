@@ -78,6 +78,11 @@ function requireSetupOrAdmin(req, res, next) {
     //      called below with that email so audit logs name the right person.
     //   2. The 'wizard' sentinel previously masked who actually clicked.
     if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+    // Once an admin exists, finishing the wizard (the token, the branding)
+    // is theirs; a member signed in meanwhile can look, not change.
+    if (team.list().some(e => e.role === 'admin') && !team.isAdmin(req.actor)) {
+      return res.status(403).json({ error: 'Only admins can change setup.' });
+    }
     return next();
   }
   // Post-onboarding: admin-only re-entry.

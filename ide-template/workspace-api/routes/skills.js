@@ -32,6 +32,8 @@ import { Router } from 'express';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from '../lib/config.js';
+import { actorScope } from '../lib/file-scope.js';
+import { getTeamMode } from '../lib/team.js';
 
 const HOME = process.env.HOME || '/home/coder';
 
@@ -165,12 +167,14 @@ function listSkillsFromDir(dir, origin) {
 // Defensive: skill name + reference filename must be simple slugs — no
 // slashes, no `..`, no leading dot — so a join can't escape the skill dir.
 const SKILL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+/** A person's own skills, in their private tree; loaded by their turns only. */
+const personalSkillsDir = (slug) => join(PROJECT_DIR, 'users', slug, '.skills');
 const REF_NAME_RE   = /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.md$/i;
 
 export default function skillsRouter() {
   const router = Router();
 
-  router.get('/skills', (_req, res) => {
+  router.get('/skills', (req, res) => {
     const project = listSkillsFromDir(PROJECT_SKILLS_DIR, 'project');
     // Legacy: post-Bundle-6 the global dir is wiped by entrypoint, but if a
     // pre-Bundle-6 client lands here mid-transition the old skills are still
@@ -179,13 +183,20 @@ export default function skillsRouter() {
     const global = listSkillsFromDir(GLOBAL_SKILLS_DIR, 'global');
 
     // Project name collision wins (same precedence claude uses).
+    // The team's skills are an admin's to change (anyone's in solo); a
+    // person's own skills (users/<slug>/.skills) are listed to them alone.
+    const who = actorScope(req);
+    const team = getTeamMode();
+    const canTeam = !team || who.isAdmin;
+    const own = team && who.slug ? listSkillsFromDir(personalSkillsDir(who.slug), 'personal').map(s => ({ ...s, source: 'personal', editable: true, scope: 'personal' })) : [];
     const projectNames = new Set(project.map(s => s.name));
     const merged = [
-      ...project,
-      ...global.filter(s => !projectNames.has(s.name)),
+      ...project.map(s => ({ ...s, scope: 'team', editable: s.editable && canTeam })),
+      ...global.filter(s => !projectNames.has(s.name)).map(s => ({ ...s, scope: 'team' })),
+      ...own,
     ].sort((a, b) => a.name.localeCompare(b.name));
 
-    res.json({ skills: merged });
+    res.json({ skills: merged, teamMode: team, canEditTeam: canTeam });
   });
 
   // GET /api/skills/tags — unique tag list across PROJECT skills only.
@@ -215,14 +226,16 @@ export default function skillsRouter() {
   // and the reference path so the join can't escape the skill folder.
   router.get('/skills/raw', (req, res) => {
     const name   = typeof req.query.name === 'string' ? req.query.name : '';
-    const origin = req.query.origin === 'global' ? 'global' : 'project';
+    const origin = req.query.origin === 'global' ? 'global' : req.query.origin === 'personal' ? 'personal' : 'project';
+    const who = actorScope(req);
+    if (origin === 'personal' && !who.slug) return res.status(404).json({ error: 'not found' });
     const refPath = typeof req.query.path === 'string' ? req.query.path : '';
 
     if (!SKILL_NAME_RE.test(name)) {
       return res.status(400).json({ error: 'invalid skill name' });
     }
 
-    const baseDir = origin === 'global' ? GLOBAL_SKILLS_DIR : PROJECT_SKILLS_DIR;
+    const baseDir = origin === 'global' ? GLOBAL_SKILLS_DIR : origin === 'personal' ? personalSkillsDir(who.slug) : PROJECT_SKILLS_DIR;
     const skillDir = join(baseDir, name);
 
     let targetPath;

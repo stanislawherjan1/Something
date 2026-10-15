@@ -195,8 +195,10 @@ function makeProvider(id, redirectUrl, flow) {
  * `baseUrl` is this deployment's public origin (https://<client-domain>),
  * derived by the route from FRONTEND_DOMAIN or the forwarded Host header.
  */
-export async function startAuth(id, baseUrl) {
+export async function startAuth(id, baseUrl, { owner = null, reach = 'workspace', access = 'write' } = {}) {
   const cat = catFor(id);
+  if (reach === 'personal' && !owner) throw new Error('a personal connection needs its owner');
+  if (reach === 'personal' && !cat.personal) throw new Error(`${cat.label} can only be connected for the workspace`);
   sweepPending();
 
   const redirectUrl = `${baseUrl.replace(/\/$/, '')}/api/integrations/oauth/callback`;
@@ -210,12 +212,20 @@ export async function startAuth(id, baseUrl) {
 
   pending.set(flow.state, {
     id,
+    owner, reach, access,
     serverUrl:  cat.mcp.url,
     redirectUrl,
     verifier:   flow.verifier,
     createdAt:  Date.now(),
   });
   return flow.authorizeUrl;
+}
+
+/** Whose flow a pending `state` is — so the callback can check it against the session. */
+export function pendingFlow(state) {
+  sweepPending();
+  const f = pending.get(state);
+  return f ? { id: f.id, owner: f.owner || null, reach: f.reach || 'workspace' } : null;
 }
 
 /**
@@ -238,9 +248,10 @@ export async function handleCallback(state, code) {
   }
 
   const fields = { OAUTH_TOKENS: JSON.stringify(flow.tokens) };
-  if (store.isActive(flow0.id)) store.updateInternal(flow0.id, fields);
-  else store.activate(flow0.id, { fields });
-  return flow0.id;
+  const key = flow0.reach === 'personal' ? store.personalKey(flow0.id, flow0.owner) : flow0.id;
+  if (store.isActive(key)) store.updateInternal(key, fields);
+  else store.activate(key, { fields }, { owner: flow0.owner, reach: flow0.reach || 'workspace', access: flow0.access || 'write' });
+  return key;
 }
 
 /**
@@ -273,7 +284,8 @@ export async function getFreshToken(id) {
     try {
       const cat = catFor(id);
       const { asUrl, metadata } = await authServerFor(cat.mcp.url);
-      const clientInformation = readClients()[id];
+      // The DCR client is the integration's, shared by every connection of it.
+      const clientInformation = readClients()[catalog.baseId(id)];
       if (!clientInformation) {
         throw Object.assign(new Error(`${id} has no registered OAuth client`), { code: 'reauth_required' });
       }

@@ -135,9 +135,11 @@ if existed:
     try:
         live = json.load(open(LIVE))
         if not isinstance(live, list):
-            sys.exit(0)             # unexpected shape — don't clobber
-    except Exception:
-        sys.exit(0)                 # corrupt/locked — leave it for the owner tools
+            raise ValueError("not a JSON list")   # unexpected shape — don't clobber
+    except Exception as err:                       # noqa: BLE001 — corrupt/locked: leave it for the owner tools
+        print(f"[reconcile-reminders] {LIVE} could not be read ({err}); leaving it alone — "
+              "no reminder fires until it is repaired", file=sys.stderr)
+        sys.exit(0)
 
 by_id = {r.get("id"): r for r in live if isinstance(r, dict)}
 now = datetime.datetime.now(datetime.timezone.utc)

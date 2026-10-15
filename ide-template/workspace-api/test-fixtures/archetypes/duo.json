@@ -1,0 +1,59 @@
+{
+ "teamMode": true,
+ "people": [
+  {
+   "email": "stan@example.test",
+   "role": "admin",
+   "slug": "stan",
+   "displayName": "Stan",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 1
+  },
+  {
+   "email": "ann@example.test",
+   "role": "member",
+   "slug": "ann",
+   "displayName": "Ann",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 2,
+   "sharing": "auto"
+  }
+ ],
+ "connections": [
+  {
+   "id": "trello",
+   "owner": "stan",
+   "reach": "workspace",
+   "access": "read",
+   "fields": {
+    "TRELLO_API_KEY": "k",
+    "TRELLO_TOKEN": "t"
+   }
+  },
+  {
+   "id": "granola",
+   "owner": "ann",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"g-ann\"}"
+   }
+  },
+  {
+   "id": "github",
+   "owner": "ann",
+   "reach": "personal",
+   "fields": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "github_pat_ann",
+    "GITHUB_TOOLSETS": "repos,issues,pull_requests",
+    "GITHUB_ALLOW_WRITE": "no"
+   }
+  }
+ ],
+ "groups": [],
+ "notetakers": {
+  "ann": [
+   "granola"
+  ]
+ },
+ "_about": "A workspace archetype of the test programme (plan 8.1): roster, connections, groups. Synthetic people and companies."
+}

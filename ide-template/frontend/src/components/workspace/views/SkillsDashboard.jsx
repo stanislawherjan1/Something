@@ -1,13 +1,19 @@
 import { Children, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Wrench, Hexagon, X, Loader2, AlertTriangle, ArrowRight, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
+import { Wrench, Hexagon, Circle, Package, X, Loader2, AlertTriangle, ArrowRight, Plus, Trash2, Lock, FileText, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MarkdownView, stripFrontmatter } from '@/lib/markdown';
 import EditorHeader from '../EditorHeader.jsx';
 import { useBranding } from '../identity';
 import { useApi, invalidate } from '@/lib/useApi';
 import { SkeletonCardGrid } from '@/components/ui/Skeleton';
+import useMe from '../useMe.js';
+import { Tabs, Pick, OrgMark, logoUrl as resolveLogo } from './IntegrationsDashboard.jsx';
+import { Avatar } from './TeamDashboard.jsx';
+
+/** Where a skill lives: the team's under .claude/skills, a person's own in their private tree. */
+const skillBase = (skill, slug) => (skill?.scope === 'personal' || skill?.origin === 'personal') && slug ? `users/${slug}/.skills` : '.claude/skills';
 
 /**
  * Skills dashboard — visual parity with IntegrationsDashboard.
@@ -33,6 +39,10 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
     const map = {};
     for (const i of integrationsData?.integrations || []) {
       if (i.id && i.logo) map[i.id] = i.logo;
+      // A skill's `requires:` may name the server instead (email, analytics).
+      if (i.mcp?.name && i.logo && !map[i.mcp.name]) map[i.mcp.name] = i.logo;
+      if (i.id && i.label) map[`label:${i.id}`] = i.label;
+      if (i.mcp?.name && i.label && !map[`label:${i.mcp.name}`]) map[`label:${i.mcp.name}`] = i.label;
     }
     return map;
   }, [integrationsData]);
@@ -45,6 +55,7 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
     const set = new Set();
     for (const i of integrationsData?.integrations || []) {
       if (i.id) set.add(i.id);
+      if (i.mcp?.name) set.add(i.mcp.name);
     }
     return set;
   }, [integrationsData]);
@@ -59,21 +70,6 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
   const [creating, setCreating]   = useState(false);
   const [deleting, setDeleting]   = useState(null);
 
-  // Tag filter — chip bar above the grid filters "Your skills" only.
-  // System / integration skills don't carry tags (backend strips them) so
-  // applying the filter to those sections would always wipe them out,
-  // which isn't useful — the user wants to narrow their own set, not lose
-  // visibility of the shipped tools. Multi-select OR semantics: a skill
-  // matches if any of its tags are in the active set. Empty set = no filter.
-  const [activeTags, setActiveTags] = useState(() => new Set());
-  const toggleTag = useCallback((tag) => {
-    setActiveTags(prev => {
-      const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag); else next.add(tag);
-      return next;
-    });
-  }, []);
-  const clearTags = useCallback(() => setActiveTags(new Set()), []);
 
   // Sync URL → local editing state. When ?edit=<name> changes, look up
   // the matching skill in `skills` and open the editor on it.
@@ -116,10 +112,27 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
   }, [reloadApi]);
 
   const isInitialLoad = loading && !data;
+  const { me } = useMe();
+  const team = data?.teamMode === true;
+  const canEditTeam = data?.canEditTeam !== false;
+  const [tab, setTab] = useState(() => (searchParams.get('tab') === 'mine' ? 'mine' : 'team'));
+  const teamSkills = useMemo(() => skills.filter(s => s.scope !== 'personal'), [skills]);
+  const ownSkills = useMemo(() => skills.filter(s => s.scope === 'personal'), [skills]);
+  // A new skill: the team's in solo; in a team a member's is their own, an admin chooses.
+  const [createFor, setCreateFor] = useState('team');
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Wrench} title="Skills" sidebarOpen={sidebarOpen} />
+      {/* In a team: the team's skills and your own, as two tabs. */}
+      {data && team && (
+        <div className="shrink-0 px-6 pb-3 pt-1">
+          <Tabs value={tab} onChange={setTab} items={[
+            { id: 'team', count: teamSkills.length, label: 'Team' },
+            { id: 'mine', count: ownSkills.length, label: 'Yours' },
+          ]} />
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <div className="flex flex-col gap-5 px-6 pb-12 pt-2">
@@ -133,14 +146,14 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
 
           {data && (
             <SkillsGrid
-              skills={skills}
+              skills={!team ? skills : tab === 'mine' ? ownSkills : teamSkills}
+              team={team}
+              canAdd={!team || tab === 'mine' || canEditTeam}
+              ownLabel={team ? null : 'Your skills'}
               requiresLogoMap={requiresLogoMap}
               knownIntegrationIds={knownIntegrationIds}
-              activeTags={activeTags}
-              onToggleTag={toggleTag}
-              onClearTags={clearTags}
               onEdit={openEditor}
-              onAdd={() => setCreating(true)}
+              onAdd={() => { setCreateFor(team && tab === 'mine' ? 'personal' : team && !me?.isAdmin ? 'personal' : 'team'); setCreating(true); }}
               onDelete={(s) => setDeleting(s)}
             />
           )}
@@ -166,9 +179,13 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
       {creating && (
         <CreateSkillModal
           existingNames={skills.map(s => s.name)}
+          initialFor={createFor}
+          canChoose={team && !!me?.isAdmin}
+          personSlug={me?.slug}
           onClose={() => setCreating(false)}
-          onCreated={(name) => {
+          onCreated={(name, whose) => {
             setCreating(false);
+            if (team) setTab(whose === 'personal' ? 'mine' : 'team');
             reload();
             // Open the editor on the freshly-created skill via URL so the
             // deep link works the same as clicking a tile.
@@ -182,7 +199,7 @@ export default function SkillsDashboard({ fileEventNonce, sidebarOpen }) {
 
 // ─── Grid + sections ──────────────────────────────────────────────────────
 
-function SkillsGrid({ skills, requiresLogoMap, knownIntegrationIds, activeTags, onToggleTag, onClearTags, onEdit, onAdd, onDelete }) {
+function SkillsGrid({ skills, team = false, canAdd = true, ownLabel = 'Your skills', requiresLogoMap, knownIntegrationIds, onEdit, onAdd, onDelete }) {
   // Three buckets:
   //   1. user — handcrafted project skills with no `requires:` link to a
   //      known integration
@@ -196,153 +213,61 @@ function SkillsGrid({ skills, requiresLogoMap, knownIntegrationIds, activeTags, 
   // Legacy origin === 'global' fallback retained for first-cycle transition
   // (pre-Bundle 6 system skills surfaced from $HOME/.claude/skills/ until
   // the next entrypoint wipes that dir).
-  const isProject     = s => s.source === 'project' || (!s.source && s.origin === 'project' && s.editable !== false);
   const isIntegration = s => (s.source && s.source.startsWith('integration:'))
                           || (!s.source && s.origin === 'project' && s.requires && knownIntegrationIds?.has(s.requires));
   const isSystem      = s => s.source === 'system' || s.origin === 'global';
 
-  const userSkills        = skills.filter(isProject);
-  const integrationSkills = skills.filter(isIntegration);
-  const globalSkills      = skills.filter(isSystem);
+  // One grid, ordered: handcrafted first, then a service's, then the system's.
+  // What kind a skill is shows as the pill on its tile (System / Integration).
+  const withKind = skills;
+  const rank = (s) => isSystem(s) ? 2 : isIntegration(s) ? 1 : 0;
+  const ordered = useMemo(() => [...withKind].sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name)), [withKind]);
 
-  // Build the tag chip bar's data straight from currently-loaded skills
-  // (saves a second `/api/skills/tags` round-trip and stays in sync with
-  // whatever the SkillsGrid is rendering — fresher after a save/delete
-  // than a separately-fetched list). Project skills only; system /
-  // integration skills don't surface tags.
-  const tagCounts = useMemo(() => {
-    const m = new Map();
-    for (const s of userSkills) {
-      for (const t of (s.tags || [])) m.set(t, (m.get(t) || 0) + 1);
-    }
-    return Array.from(m.entries())
-      .map(([tag, count]) => ({ tag, count }))
-      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
-  }, [userSkills]);
 
-  // Filter only applies to "Your skills" — integration + global sections
-  // stay visible regardless. Empty activeTags set = no filter.
-  const filteredUserSkills = useMemo(() => {
-    if (!activeTags || activeTags.size === 0) return userSkills;
-    return userSkills.filter(s => (s.tags || []).some(t => activeTags.has(t)));
-  }, [userSkills, activeTags]);
+  const shown = ordered;
+
+  const { botDisplayName } = useBranding();
+  // Nothing here yet: the same empty screen as Routines — a title, one line, the way to add one.
+  if (!ordered.length) return (
+    <div className="flex min-h-[calc(100dvh-14rem)] items-center justify-center px-6 py-16">
+      <div className="flex max-w-[320px] flex-col items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground/50">
+          <Wrench className="size-6" strokeWidth={1.75} />
+        </div>
+        <h2 className="text-[14px] font-semibold tracking-tight text-foreground/85">{team ? 'No skills of your own yet' : 'No skills yet'}</h2>
+        <p className="text-[13px] leading-relaxed text-muted-foreground/75">
+          Tell {botDisplayName} in the chat how you want something done, and it becomes a skill — or write one yourself.
+        </p>
+        {canAdd && (
+          <button type="button" onClick={onAdd}
+            className="mt-1 inline-flex items-center gap-1 rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12.5px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]">
+            <Plus className="size-3.5" strokeWidth={2} /> Add your own
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-12">
       <Section
-        label="Your skills"
-        count={filteredUserSkills.length}
-        hint={activeTags?.size > 0 ? `filtered by ${activeTags.size} tag${activeTags.size === 1 ? '' : 's'}` : null}
-        empty={activeTags?.size > 0
-          ? 'No skills match the active tag filter.'
-          : 'No project skills yet. Add one or rely on the integration / global skills below.'}
-        belowHeader={tagCounts.length > 0 && (
-          <TagFilterBar
-            tagCounts={tagCounts}
-            activeTags={activeTags}
-            onToggleTag={onToggleTag}
-            onClearTags={onClearTags}
-          />
-        )}
+        label={ownLabel}
+        count={shown.length}
+        empty="No skills yet."
       >
-        {filteredUserSkills.map(s => (
+        {shown.map(s => (
           <SkillTile
-            key={`p-${s.name}`}
+            key={`${s.scope || s.origin}-${s.name}`}
             skill={s}
             logoUrl={s.requires ? requiresLogoMap?.[s.requires] : null}
-            activeTags={activeTags}
-            onToggleTag={onToggleTag}
+            serviceLabel={s.requires ? requiresLogoMap?.[`label:${s.requires}`] : null}
+            team={team}
             onEdit={() => onEdit(s)}
             onDelete={() => onDelete(s)}
           />
         ))}
-        {/* AddSkillTile only when no filter is active — adding while filtered
-            would land a new skill outside the visible set and the tile would
-            disappear, which is confusing. */}
-        {(!activeTags || activeTags.size === 0) && <AddSkillTile onClick={onAdd} />}
+        {canAdd && <AddSkillTile onClick={onAdd} />}
       </Section>
-
-      {integrationSkills.length > 0 && (
-        <Section
-          label="Integration skills"
-          count={integrationSkills.length}
-        >
-          {integrationSkills.map(s => (
-            <SkillTile
-              key={`i-${s.name}`}
-              skill={s}
-              logoUrl={s.requires ? requiresLogoMap?.[s.requires] : null}
-              onEdit={() => onEdit(s)}
-              onDelete={() => onDelete(s)}
-            />
-          ))}
-        </Section>
-      )}
-
-      {globalSkills.length > 0 && (
-        <Section
-          label="System skills"
-          count={globalSkills.length}
-        >
-          {globalSkills.map(s => (
-            <SkillTile
-              key={`g-${s.name}`}
-              skill={s}
-              logoUrl={s.requires ? requiresLogoMap?.[s.requires] : null}
-              onEdit={() => onEdit(s)}
-            />
-          ))}
-        </Section>
-      )}
-    </div>
-  );
-}
-
-// ─── Tag filter chip bar ───────────────────────────────────────────────────
-
-// Renders a row of `#tag (count)` chips above the skill grid. Click to
-// toggle a tag into the active set; the SkillsGrid re-renders with only
-// matching "Your skills". Active chips invert colour for affordance. A
-// trailing "Clear" chip appears once any tag is active.
-//
-// We never render a "(All)" pseudo-chip — empty active set IS "all", and
-// adding a chip for it doubles cognitive load (chips for "all" + per tag
-// + "clear" is three ways to express the same intent).
-function TagFilterBar({ tagCounts, activeTags, onToggleTag, onClearTags }) {
-  const hasActive = activeTags && activeTags.size > 0;
-  return (
-    <div className="flex flex-wrap items-center gap-2 px-0.5 py-2.5">
-      {tagCounts.map(({ tag, count }) => {
-        const on = activeTags?.has(tag);
-        return (
-          <button
-            key={tag}
-            type="button"
-            onClick={() => onToggleTag(tag)}
-            className={cn(
-              'inline-flex items-center gap-1 rounded-[6px] border px-2.5 py-1 text-[11.5px] font-medium leading-none transition-colors',
-              on
-                ? 'border-foreground/45 bg-muted/70 text-foreground hover:bg-muted/85'
-                : 'border-border/55 bg-card text-foreground/80 hover:border-foreground/30 hover:bg-muted/40',
-            )}
-            aria-pressed={on}
-          >
-            <span className="leading-none">#{tag}</span>
-            <span className={cn('leading-none text-[10.5px]', on ? 'text-muted-foreground/85' : 'text-muted-foreground/65')}>
-              {count}
-            </span>
-          </button>
-        );
-      })}
-      {hasActive && (
-        <button
-          type="button"
-          onClick={onClearTags}
-          className="ml-0.5 inline-flex items-center gap-1 rounded-[6px] px-2.5 py-1 text-[11.5px] font-medium leading-none text-muted-foreground/85 transition-colors hover:bg-muted/40 hover:text-foreground/95"
-        >
-          <X className="size-3" strokeWidth={2.25} /> Clear
-        </button>
-      )}
     </div>
   );
 }
@@ -353,15 +278,18 @@ function Section({ label, count, hint, empty, belowHeader, children }) {
   const tileCount = Array.isArray(children) ? children.flat().length : 1;
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex items-baseline gap-2 px-0.5">
-        <span className="text-[10.5px] font-semibold uppercase leading-none tracking-wider text-muted-foreground/65">
-          {label}
-        </span>
-        <span className="text-[11px] leading-none text-muted-foreground/50">
-          {count}{count === 1 ? '' : ''}
-        </span>
-        {hint && <span className="ml-1 text-[11px] leading-none text-muted-foreground/65">· {hint}</span>}
-      </div>
+      {/* No title when the tab above already says what this is. */}
+      {label && (
+        <div className="flex items-baseline gap-2 px-0.5">
+          <span className="text-[10.5px] font-semibold uppercase leading-none tracking-wider text-muted-foreground/65">
+            {label}
+          </span>
+          <span className="text-[11px] leading-none text-muted-foreground/50">
+            {count}{count === 1 ? '' : ''}
+          </span>
+          {hint && <span className="ml-1 text-[11px] leading-none text-muted-foreground/65">· {hint}</span>}
+        </div>
+      )}
       {/* Optional slot between header + tiles. Used by "Your skills" to hang
           the tag filter bar directly under its label, since the filter only
           affects this one section — visual grouping > top-of-grid placement. */}
@@ -376,6 +304,7 @@ function Section({ label, count, hint, empty, belowHeader, children }) {
             child ? (
               <motion.div
                 key={child.key ?? undefined}
+                className="h-full"
                 layout
                 transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               >
@@ -413,7 +342,8 @@ function IntegrationBadge({ src }) {
   );
 }
 
-function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }) {
+function SkillTile({ skill, logoUrl, serviceLabel = null, team = false, activeTags, onToggleTag, onEdit, onDelete }) {
+  const own = skill.scope === 'personal';
   const { name, description, origin, source, editable, tags = [], references = [] } = skill;
   // Read-only = backend says `editable: false` (system / integration skills)
   // OR the legacy origin=global signal (pre-Bundle-6 clients before the
@@ -424,7 +354,6 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
   // surfaced before the entrypoint re-stamps frontmatter with `source:`.
   let badgeLabel = null;
   if (source === 'system') badgeLabel = 'System';
-  else if (source && source.startsWith('integration:')) badgeLabel = 'Integration';
   else if (origin === 'global') badgeLabel = 'Global';
   const refsCount = references.length;
   // Tags only render when the skill has any AND we have a toggle handler
@@ -440,7 +369,7 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
   const overflowTags = showTags ? Math.max(0, tags.length - visibleTags.length) : 0;
 
   return (
-    <div className="group relative flex flex-col rounded-[6px] border border-border/60 bg-card transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
+    <div className="group relative flex h-full flex-col rounded-[6px] border border-border/60 bg-card transition-all duration-150 hover:border-foreground/15 hover:shadow-[0_2px_6px_rgba(0,0,0,0.035)]">
       {/* Hover-revealed trash — hidden when read-only (system / integration).
           Absolute positioning so it doesn't shift layout when it appears.
           Positioned at the top-right corner — overlaps the right end of the
@@ -460,12 +389,22 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
 
       <div className="flex flex-1 flex-col px-4 pt-4">
         <div className="flex items-center gap-2">
+          <span className="group/kind relative inline-flex shrink-0">
           <div className={cn(
             'flex size-5 shrink-0 items-center justify-center rounded bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
             isReadOnly && 'opacity-70',
           )}>
-            <Hexagon className="size-2.5 text-muted-foreground/70" strokeWidth={1.75} />
+            {/* What kind of skill, by its icon: the service's logo, the product's package, or one's own. */}
+            {logoUrl
+              ? <img src={resolveLogo(logoUrl)} alt="" className="size-3.5 object-contain" />
+              : badgeLabel
+                ? <Package className="size-3 text-muted-foreground/70" strokeWidth={1.75} aria-label="System skill" />
+                : own
+                  ? <Circle className="size-2.5 text-muted-foreground/70" strokeWidth={1.75} />
+                  : <Hexagon className="size-2.5 text-muted-foreground/70" strokeWidth={1.75} />}
           </div>
+            <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-30 mt-1.5 hidden w-max max-w-[260px] rounded bg-popover px-3 py-2 text-[12px] font-normal leading-snug text-popover-foreground/90 shadow-md ring-1 ring-foreground/10 group-hover/kind:block">{logoUrl ? `Integration skill${serviceLabel ? `: ${serviceLabel}` : ''}` : badgeLabel ? 'System skill' : own ? 'Your skill' : team ? 'Team skill' : 'Skill'}</span>
+          </span>
           {/* Name + integration badge sit together on the left so the
               hover trash (top-right corner) can't occlude the logo. The
               wrapper claims flex-1 so the source pill (when present) is
@@ -474,21 +413,21 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
             <span className="min-w-0 truncate text-[14.5px] font-semibold text-foreground/90">
               {name}
             </span>
-            {logoUrl && <IntegrationBadge src={logoUrl} />}
           </div>
-          {badgeLabel && (
+          {refsCount > 0 && (
             <span
-              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted/55 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground/75"
-              title={isReadOnly ? 'Managed by template, read-only' : ''}
+              className={cn('inline-flex shrink-0 items-center gap-1 rounded-[6px] bg-muted/45 px-1.5 py-0.5 text-[10.5px] font-medium leading-none text-muted-foreground/80', !isReadOnly && onDelete && 'transition-opacity group-hover:opacity-0')}
+              title={`${refsCount} reference file${refsCount === 1 ? '' : 's'}`}
             >
-              {badgeLabel}
+              <FileText className="size-3" strokeWidth={2} />
+              {refsCount}
             </span>
           )}
         </div>
-        <div className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">
+        <div className="mt-2 line-clamp-2 min-h-[3.25em] text-[12.5px] leading-relaxed text-muted-foreground/80">
           {description || <span className="italic text-muted-foreground/55">No description in SKILL.md</span>}
         </div>
-        {(showTags || refsCount > 0) && (
+        {showTags && (
           <div className="mt-auto flex flex-wrap items-center gap-1 pt-3">
             {visibleTags.map(t => (
               <button
@@ -508,15 +447,6 @@ function SkillTile({ skill, logoUrl, activeTags, onToggleTag, onEdit, onDelete }
             ))}
             {overflowTags > 0 && (
               <span className="text-[10.5px] leading-none text-muted-foreground/60">+{overflowTags}</span>
-            )}
-            {refsCount > 0 && (
-              <span
-                className="ml-auto inline-flex items-center gap-1 rounded-[6px] bg-muted/45 px-1.5 py-0.5 text-[10.5px] font-medium leading-none text-muted-foreground/80"
-                title={`${refsCount} reference file${refsCount === 1 ? '' : 's'} in references/`}
-              >
-                <FileText className="size-3" strokeWidth={2} />
-                {refsCount}
-              </span>
             )}
           </div>
         )}
@@ -566,18 +496,16 @@ const RESERVED  = new Set(['', '.', '..']);
 // surface in the dashboard immediately. Tags are only emitted when the
 // user actually entered any — keeps an empty `tags: []` line out of the
 // frontmatter for the common case.
-const SKILL_TEMPLATE = (name, description, tags) => {
-  const tagsLine = tags && tags.length > 0
-    ? `tags: [${tags.join(', ')}]\n`
-    : '';
-  return `---\nname: ${name}\ndescription: ${description || `Use this when …`}\n${tagsLine}---\n\n# ${name}\n\nDescribe how the assistant should approach this task.\n`;
+const SKILL_TEMPLATE = (name, description) => {
+  return `---\nname: ${name}\ndescription: ${description || `Use this when …`}\n---\n\n# ${name}\n\nDescribe how the assistant should approach this task.\n`;
 };
 
-function CreateSkillModal({ existingNames, onClose, onCreated }) {
+function CreateSkillModal({ existingNames, initialFor = 'team', canChoose = false, personSlug = null, onClose, onCreated }) {
+  const [whose, setWhose] = useState(initialFor);
+  const { me } = useMe();
+  const branding = useBranding();
   const [name, setName]               = useState('');
   const [description, setDescription] = useState('');
-  const [tags, setTags]               = useState([]);
-  const [tagDraft, setTagDraft]       = useState('');
   const [busy, setBusy]               = useState(false);
   const [error, setError]             = useState(null);
 
@@ -590,28 +518,6 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
     : null;
   const canCreate = slug && slugValid && !slugTaken && !busy;
 
-  // Tag input commits a chip on Enter, comma, or blur. Invalid slugs (caps,
-  // spaces) are silently lowercased + dash-replaced; truly empty stays out.
-  // Caps at 8 chips so a fat-fingered "marketing, marketing, marketing…"
-  // doesn't blow up the frontmatter.
-  const commitTag = (raw) => {
-    const cleaned = (raw || '').trim().toLowerCase().replace(/\s+/g, '-');
-    if (!cleaned || !TAG_RE.test(cleaned)) return;
-    if (tags.includes(cleaned)) return;
-    if (tags.length >= 8) return;
-    setTags([...tags, cleaned]);
-  };
-  const onTagKey = (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      commitTag(tagDraft);
-      setTagDraft('');
-    } else if (e.key === 'Backspace' && !tagDraft && tags.length > 0) {
-      // Quick removal: empty draft + backspace pops the last chip
-      setTags(tags.slice(0, -1));
-    }
-  };
-  const removeTag = (t) => setTags(tags.filter(x => x !== t));
 
   // Esc closes; lock body scroll while modal is open.
   useEffect(() => {
@@ -628,21 +534,18 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
     setBusy(true); setError(null);
     // Pick up a half-typed tag the user didn't press Enter on — feels
     // friendlier than silently dropping it.
-    const finalTags = tagDraft.trim()
-      ? Array.from(new Set([...tags, tagDraft.trim().toLowerCase().replace(/\s+/g, '-')])).filter(t => TAG_RE.test(t))
-      : tags;
     try {
-      const path = `.claude/skills/${slug}/SKILL.md`;
+      const path = `${skillBase({ scope: whose }, personSlug)}/${slug}/SKILL.md`;
       const resp = await fetch('/api/files/create', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ path, content: SKILL_TEMPLATE(slug, description.trim(), finalTags) }),
+        body:    JSON.stringify({ path, content: SKILL_TEMPLATE(slug, description.trim()) }),
       });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${resp.status}`);
       }
-      onCreated(slug);
+      onCreated(slug, whose);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -714,45 +617,17 @@ function CreateSkillModal({ existingNames, onClose, onCreated }) {
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="new-skill-tags" className="text-[12.5px] font-medium text-foreground/85">
-              Tags (optional)
-            </label>
-            {/* Chip input — typed text commits on Enter or comma; existing
-                chips are removable; Backspace on empty draft pops the last
-                chip. Whole field wrapped in a button-styled box so chips and
-                text feel like one control. */}
-            <div className="flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-background px-2.5 py-1.5 transition-colors focus-within:border-foreground/60 focus-within:ring-2 focus-within:ring-foreground/10">
-              {tags.map(t => (
-                <span key={t} className="inline-flex items-center gap-1 rounded-full bg-muted/55 px-2 py-0.5 text-[11.5px] font-medium text-foreground/85">
-                  #{t}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(t)}
-                    disabled={busy}
-                    aria-label={`Remove tag ${t}`}
-                    className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground/95 disabled:opacity-50"
-                  >
-                    <X className="size-2.5" strokeWidth={2.5} />
-                  </button>
-                </span>
-              ))}
-              <input
-                id="new-skill-tags"
-                autoComplete="off"
-                value={tagDraft}
-                onChange={(e) => setTagDraft(e.target.value)}
-                onKeyDown={onTagKey}
-                onBlur={() => { if (tagDraft) { commitTag(tagDraft); setTagDraft(''); } }}
-                placeholder={tags.length === 0 ? 'e.g. marketing, comms (Enter or , to add)' : ''}
-                disabled={busy || tags.length >= 8}
-                className="min-w-[120px] flex-1 bg-transparent px-1 py-0.5 text-[13px] text-foreground outline-none disabled:opacity-60"
-              />
+          {canChoose && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[12.5px] font-medium text-foreground/85">For whom</span>
+              <div className="flex">
+                <Pick id="skill-for" value={whose} onChange={setWhose} disabled={busy} options={[
+                  { value: 'team', label: 'The whole team', icon: <OrgMark orgIcon={branding.iconUrl || branding.logoUrl} className="size-4" /> },
+                  { value: 'personal', label: 'Just me', icon: <Avatar name={me?.displayName || me?.email} email={me?.email} avatarUrl={me?.avatarUrl} className="!size-4 text-[8px]" /> },
+                ]} />
+              </div>
             </div>
-            <div className="text-[11.5px] text-muted-foreground/70">
-              Up to 8 tags. Used by the filter bar to group your skills. Optional: leave empty if you don't want to categorize this one.
-            </div>
-          </div>
+          )}
 
           {error && (
             <div className="flex items-start gap-2 rounded border border-destructive/25 bg-destructive/[0.04] px-3 py-2 text-[12.5px] text-destructive">
@@ -812,7 +687,8 @@ function SkillEditModal({ skill, onClose, onSaved }) {
   const readPath = `/api/skills/raw?name=${encodeURIComponent(name)}&origin=${origin}`;
   // Writes still go through /api/files/write — Save canonicalises to lower-
   // case "SKILL.md" so newly-saved skills don't perpetuate the casing quirk.
-  const writePath = `.claude/skills/${name}/SKILL.md`;
+  const { me: viewer } = useMe();
+  const writePath = `${skillBase(skill, viewer?.slug)}/${name}/SKILL.md`;
 
   useEffect(() => {
     let cancelled = false;
@@ -1050,6 +926,7 @@ function SkillEditModal({ skill, onClose, onSaved }) {
 // audit log, and skill-acl gate all see the change exactly like a SKILL.md
 // save would. Read-only when the parent skill is (system / integration).
 function ReferenceCard({ skillName, origin, refName, readOnly }) {
+  const { me: viewer } = useMe();
   const [open, setOpen] = useState(false);
   const [content, setContent] = useState('');
   const [original, setOriginal] = useState('');
@@ -1059,7 +936,7 @@ function ReferenceCard({ skillName, origin, refName, readOnly }) {
   const dirty = !readOnly && status === 'ok' && content !== original;
 
   const readPath = `/api/skills/raw?name=${encodeURIComponent(skillName)}&origin=${origin}&path=${encodeURIComponent(`references/${refName}`)}`;
-  const writePath = `.claude/skills/${skillName}/references/${refName}`;
+  const writePath = `${skillBase({ origin }, viewer?.slug)}/${skillName}/references/${refName}`;
 
   const expand = useCallback(() => {
     if (open) { setOpen(false); return; }
@@ -1187,6 +1064,7 @@ function ReferenceCard({ skillName, origin, refName, readOnly }) {
 
 function DeleteSkillModal({ skill, onClose, onDeleted }) {
   const { name } = skill;
+  const { me: viewer } = useMe();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -1201,7 +1079,7 @@ function DeleteSkillModal({ skill, onClose, onDeleted }) {
   const remove = async () => {
     setBusy(true); setError(null);
     try {
-      const dir = `.claude/skills/${name}`;
+      const dir = `${skillBase(skill, viewer?.slug)}/${name}`;
       const resp = await fetch(`/api/files/delete?path=${encodeURIComponent(dir)}`, { method: 'DELETE' });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));

@@ -79,10 +79,13 @@ fi
 # The HTTP status is checked too, not just curl's transport result: `curl -s`
 # without --fail exits 0 on 401 (bad token) or 400 (bad chat id), so transport
 # success was being read as delivery.
-HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-    "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-    -d chat_id="$CHAT_ID" \
-    -d text="$FULL_MESSAGE" \
+# The URL (with the token) reaches curl as a config on stdin, not argv, so it
+# is not in the process list; the fields are URL-encoded so a message with
+# `&` or `=` in it stays one field.
+HTTP_CODE=$(printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$BOT_TOKEN" | \
+    curl -s -o /dev/null -w '%{http_code}' -K - -X POST \
+    --data-urlencode chat_id="$CHAT_ID" \
+    --data-urlencode text="$FULL_MESSAGE" \
     -d disable_notification=false 2>/dev/null)
 CURL_RC=$?
 

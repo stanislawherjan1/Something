@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, createContext, useContext } from 'react';
-import { KanbanSquare, CircleUserRound, Calendar, CheckCircle2, Columns3, List as ListIcon } from 'lucide-react';
+import { KanbanSquare, CircleUserRound, Calendar, CheckCircle2, Columns3, List as ListIcon, Brain } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import PersonInitial from '../PersonInitial.jsx';
@@ -10,7 +11,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 const VIEW_MODE_KEY = 'tasks-view-mode';
 
 // Board columns, in display order. `key` matches a task's `status`.
-const TASK_COLUMNS = [
+export const TASK_COLUMNS = [
   { key: 'backlog',     name: 'Backlog' },
   { key: 'in_progress', name: 'In Progress' },
   { key: 'done',        name: 'Done' },
@@ -36,7 +37,7 @@ const TASK_COLUMNS = [
  * Iteration 3: read-only render. Drag-drop + write-back to file lands later.
  */
 // slug → { name, avatar } for resolving a task's Owner to a teammate's profile.
-const PeopleContext = createContext({});
+export const PeopleContext = createContext({});
 
 export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
   const { data, loading, error, reload } = useApi('/api/tasks');
@@ -257,7 +258,7 @@ function ListRow({ card, done, onPatch }) {
   );
 }
 
-function PriorityChip({ value }) {
+export function PriorityChip({ value }) {
   const key = value.trim().toLowerCase();
   if (key !== 'high' && key !== 'low') return null;   // medium is the default — no tag
   return (
@@ -393,6 +394,7 @@ function Column({ column, onDropTask }) {
 
 function Card({ card, done }) {
   const [dragging, setDragging] = useState(false);
+  const navigate = useNavigate();
   return (
     <div
       draggable
@@ -418,7 +420,7 @@ function Card({ card, done }) {
         </p>
       )}
 
-      {(card.owner || card.priority || card.deadline) && (
+      {(card.owner || card.priority || card.deadline || card.fact) && (
         <div className="mt-3 flex items-center gap-2.5 text-[11.5px] text-muted-foreground/75">
           <Assignee owner={card.owner} />
           {card.deadline && (
@@ -428,6 +430,19 @@ function Card({ card, done }) {
             </span>
           )}
           {card.priority && <PriorityChip value={card.priority} />}
+          {/* The memory fact this task came from: one icon, the fact's title on hover; it opens in Memory. */}
+          {card.fact?.title && (
+            <button type="button" title={card.fact.title} aria-label={`From memory: ${card.fact.title}`} onClick={(e) => { e.stopPropagation(); navigate(`/memory?tab=facts&q=${encodeURIComponent(card.fact.title)}`); }}
+              className="ml-auto inline-flex items-center text-muted-foreground/60 transition-colors hover:text-foreground/85">
+              <Brain className="size-[13px]" strokeWidth={1.75} />
+            </button>
+          )}
+          {/* From someone's private memory: that there is a source, nothing of what it says. */}
+          {card.fact?.private && (
+            <span title="From someone's private memory" className="ml-auto inline-flex items-center text-muted-foreground/40">
+              <Brain className="size-[13px]" strokeWidth={1.75} />
+            </span>
+          )}
         </div>
       )}
 
@@ -439,7 +454,7 @@ function Card({ card, done }) {
 // Task assignee. An Owner value matching a roster slug renders as that
 // teammate's avatar + name; otherwise it's shown as plain text (solo workspace
 // or a free-text owner). Renders nothing when there's no owner.
-function Assignee({ owner }) {
+export function Assignee({ owner }) {
   const people = useContext(PeopleContext);
   if (!owner || !people) return null;   // solo workspace: no owner shown
   const person = people[owner.trim().toLowerCase()];
@@ -473,7 +488,7 @@ function TaskAvatar({ name, avatar, className }) {
 
 // A deadline as "10 Jul" (and the year only when it is not this one); anything
 // that is not an ISO date is shown as written.
-function shortDeadline(value) {
+export function shortDeadline(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
   if (!m) return value;
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

@@ -2,6 +2,42 @@
 # --- ROOT WRAPPER: Fix volume permissions and drop privileges ---
 if [ "$(id -u)" = "0" ]; then
     echo "[entrypoint] Starting as root to fix volume permissions..."
+    # Everything below changes ownership or mode of, or writes to, fixed
+    # paths inside directories that a non-root user owns and that persist
+    # across restarts (/home/bot, /home/coder, /var/wsapi-store). chown, chmod
+    # and `>` act on a symlink's target, so each of these paths must be the
+    # real file or directory and never a link. Nothing else runs yet at this
+    # point, so a link removed here cannot come back before the fix-ups below.
+    # Parents are listed before their children.
+    for p in \
+            /home/bot/.claude \
+            "/home/bot/.${BOT_NAME:-bot}" \
+            /home/bot/.npm-global \
+            /home/bot/.cache \
+            /home/bot/.claude.json \
+            /home/bot/.migrated \
+            /home/bot/.claude/plugins \
+            /home/bot/.claude/.credentials.json \
+            "/home/bot/.${BOT_NAME:-bot}/integrations.env" \
+            "/home/bot/.${BOT_NAME:-bot}/turn-id" \
+            /home/coder/.pm2 \
+            /home/coder/.claude-bot \
+            /home/coder/.bot \
+            /home/coder/.claude.json \
+            /home/coder/.claude.json.persistent \
+            /home/coder/.claude/.claude.json.persistent \
+            "/home/coder/.${BOT_NAME:-bot}/integrations.env" \
+            /var/wsapi-store/run \
+            /var/wsapi-store/files \
+            /var/wsapi-store/docs-comments-profile \
+            /var/wsapi-store/bot-turn-id.sha256 \
+            /var/wsapi-store/session-secret \
+            /home/turns /home/turns/solo /home/turns/group; do
+        if [ -L "$p" ]; then
+            echo "[entrypoint] WARNING: $p is a symlink where a real file or directory belongs — removed."
+            rm -f "$p"
+        fi
+    done
     # Fix ownership of potential volume mount points. Docker bind mounts +
     # named volumes default to root-owned at first creation, so PM2 (running
     # as `coder`) can't write log files there. Without this, workspace-api
@@ -258,16 +294,12 @@ try:
 except Exception:
     d = {}
 d.setdefault('mcpServers', {})
+# Through mcp-runner: the browser runs as the mcp user, the one user the
+# open egress listener (:3130) accepts (see the iptables owner rule below).
+# The flags live in apps/playwright-mcp/index.js.
 d['mcpServers']['playwright'] = {
-    'command': '/home/coder/.npm-global/bin/playwright-mcp',
-    'args': [
-        '--headless',
-        '--browser', 'chrome',
-        '--no-sandbox',
-        '--user-data-dir', '/tmp/playwright-mcp-data',
-        '--proxy-server', 'http://egress-proxy:3130',
-        '--executable-path', '/opt/playwright-browsers/chromium-1223/chrome-linux64/chrome',
-    ],
+    'command': '/usr/local/bin/mcp-runner',
+    'args': ['playwright'],
 }
 # Web Channel MCP — always-on reply tool that pushes into the
 # workspace UI's notification stream. Force-written here for the
@@ -708,11 +740,107 @@ REDSOCKS_EOF
             fi
 
             echo "[entrypoint] Transparent egress active: external TCP → redsocks:12345 → egress-proxy:3129"
+
+            # The OPEN listener on the egress proxy (:3130, any public host) is
+            # for the browser — the Playwright MCP, which runs as the mcp
+            # user — and for workspace-api's OAuth exchanges. No other user in
+            # this container may reach it: a shell in a turn or in the bot
+            # keeps to the allow-listed path like everything else.
+            if ! iptables -C OUTPUT -p tcp -d 172.30.0.10 --dport 3130 -m owner ! --uid-owner 1002 -m owner ! --uid-owner 1001 -j REJECT 2>/dev/null; then
+                iptables -I OUTPUT 1 -p tcp -d 172.30.0.10 --dport 3130 -m owner ! --uid-owner 1002 -m owner ! --uid-owner 1001 -j REJECT \
+                    && echo "[entrypoint] Open egress (:3130) limited to the mcp and workspace-api users." \
+                    || echo "[entrypoint] WARN: could not limit the open egress listener by user."
+            fi
+            # The docs-comments browser's debugging port (CDP, 127.0.0.1:9333)
+            # carries the operator's Google session. It is for the
+            # docs-comments MCP (the mcp user), workspace-api's readiness probe
+            # and the keep-alive under PM2 (coder); a shell in a turn or in the
+            # bot does not reach it.
+            if ! iptables -C OUTPUT -o lo -p tcp --dport 9333 -m owner ! --uid-owner 1002 -m owner ! --uid-owner 1001 -m owner ! --uid-owner 1000 -j REJECT 2>/dev/null; then
+                iptables -I OUTPUT 1 -o lo -p tcp --dport 9333 -m owner ! --uid-owner 1002 -m owner ! --uid-owner 1001 -m owner ! --uid-owner 1000 -j REJECT \
+                    && echo "[entrypoint] The browser's debugging port (:9333) limited to the mcp, workspace-api and coder users." \
+                    || echo "[entrypoint] WARN: could not limit the browser's debugging port by user."
+            fi
         else
             echo "[entrypoint] WARN: redsocks failed to start; skipping iptables rules. Libraries must honour HTTPS_PROXY manually."
         fi
     else
         echo "[entrypoint] WARN: iptables not available (no NET_ADMIN cap?); transparent egress disabled. Libraries must honour HTTPS_PROXY manually."
+    fi
+
+    # ─── The turn users: where a web, group or headless turn runs ───────────
+    # One home per slot under /home/turns (a volume): solo, group and 01…24,
+    # each 0700 and its user's own. The settings file carries the hooks (the
+    # scope guard among them) and is taken from the template on every boot,
+    # like the bot's; the CLI's own config file gets the onboarding flag so a
+    # -p turn never waits on a first-run prompt. Sessions live in each home's
+    # .claude/projects — a person's turn cannot read another's transcript.
+    # (Before the pool every turn shared /home/coder/.claude/projects through
+    # a link; those conversations are not resumed, chat starts them afresh.)
+    if id turn >/dev/null 2>&1; then
+        mkdir -p /home/turns && chmod 0711 /home/turns
+        for slot in solo group $(seq -w 1 24); do
+            case "$slot" in solo) owner=turn ;; group) owner=turn-group ;; *) owner=turn-$slot ;; esac
+            id "$owner" >/dev/null 2>&1 || continue
+            h=/home/turns/$slot
+            # The slot's user owns its home and could plant links in it; root
+            # writes below must never follow one (a .claude.json pointing at a
+            # setuid runner, a .claude pointing at /etc). No turn runs yet.
+            for p in "$h/.claude.json" "$h/.claude/settings.json" "$h/.claude/projects" "$h/.claude"; do
+                [ -L "$p" ] && rm -f "$p"
+            done
+            mkdir -p "$h/.claude/projects"
+            cp /opt/ide/bootstrap/claude-settings.json "$h/.claude/settings.json"
+            [ -f "$h/.claude.json" ] || echo '{"hasCompletedOnboarding":true}' > "$h/.claude.json"
+            chown -R "$owner:$owner" "$h" 2>/dev/null || chown -R "$owner" "$h"
+            chmod 0700 "$h" "$h/.claude"
+            chmod 0600 "$h/.claude/settings.json" "$h/.claude.json"
+        done
+        # The run directories for per-turn MCP configs (made in the image; a
+        # tmpfs /run on some hosts loses them) — see the Dockerfile.
+        mkdir -p /run/turns && chmod 0711 /run/turns
+        for slot in solo group $(seq -w 1 24); do
+            case "$slot" in solo) grp=turn ;; group) grp=turn-group ;; *) grp=priv-$slot ;; esac
+            getent group "$grp" >/dev/null 2>&1 || continue
+            mkdir -p "/run/turns/$slot" && chown "root:$grp" "/run/turns/$slot" && chmod 2730 "/run/turns/$slot"
+        done
+        # The parents of the private trees exist before anyone is assigned a
+        # slot (priv-tree makes the person's directory, never the parent).
+        # The project tree is the workspace group's to write, so any member could
+        # leave a link where one of these parents should be: root never follows
+        # one (a link at users -> /etc would hand /etc to the group on the next boot).
+        for d in users memory/users .team/users; do
+            q=/home/coder/project
+            for part in $(echo "$d" | tr '/' ' '); do
+                q="$q/$part"
+                if [ -L "$q" ]; then echo "[entrypoint] WARNING: $q was a link — removed"; rm -f "$q"; fi
+            done
+            mkdir -p "/home/coder/project/$d"
+            chgrp -h workspace "/home/coder/project/$d" 2>/dev/null || true
+            [ -L "/home/coder/project/$d" ] || chmod 2775 "/home/coder/project/$d" 2>/dev/null || true
+        done
+        # Every person on the roster gets their slot and their trees become
+        # theirs (idempotent; a restored volume or a hand-copied tree ends up
+        # right); the primary admin's slot opens to the brain and the editor.
+        if [ -f /home/coder/project/.allowed-emails.json ]; then
+            node /opt/ide/workspace-api/bin/turn-slots.mjs reconcile 2>&1 | sed 's/^/[entrypoint] /' || \
+                echo "[entrypoint] WARN: turn slots not reconciled — a turn may run without its person's uid until the next boot"
+        fi
+    fi
+
+    # The session-signing secret is workspace-api's (uid 1001) and auth-service's
+    # (its own container). Everything started below — code-server, PM2, the bot
+    # and its turns — runs as other users and has no use for it, so it goes
+    # into a file only uid 1001 can read and leaves the environment before
+    # the switch to coder. workspace-api reads the file when the variable is
+    # not set (lib/auth.js).
+    if [ -n "${SESSION_SECRET:-}" ]; then
+        umask_prev=$(umask); umask 077
+        printf '%s' "$SESSION_SECRET" > /var/wsapi-store/session-secret
+        umask "$umask_prev"
+        chown 1001:1001 /var/wsapi-store/session-secret 2>/dev/null || true
+        chmod 0400      /var/wsapi-store/session-secret 2>/dev/null || true
+        unset SESSION_SECRET umask_prev
     fi
 
     # Re-execute this script as the 'coder' user with the correct HOME directory
@@ -778,15 +906,20 @@ fi
 # The allowlist reflects exactly the cards the loader expects.
 MEMORY_DIR="$PROJECT_DIR/memory"
 MEMORY_TEMPLATES_DIR="/opt/ide/bootstrap/memory-cards-templates"
-CARDS=(RULES RESPONSIBILITIES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
+CARDS=(RULES MISSION RESPONSIBILITIES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
 # In TEAM mode the per-user cards live under memory/users/<slug>/ and the flat
 # copies must not exist: the snapshot writer deletes memory/RECENT_WEB.md on
 # every refresh while this seed step recreated it on every boot, so the two
 # fought over the file for ever. Seeding them is only correct in solo mode.
 # Keep in sync with the `tier: 'user'` cards in workspace-api/lib/memory-registry.js.
 if [ -f "$PROJECT_DIR/.team-config.json" ] && grep -q '"teamMode"[[:space:]]*:[[:space:]]*true' "$PROJECT_DIR/.team-config.json" 2>/dev/null; then
-    CARDS=(RULES AGENT_IDENTITY AGENT_TOOLS)
+    CARDS=(RULES MISSION AGENT_IDENTITY AGENT_TOOLS)
     echo "[entrypoint] Team mode: seeding shared cards only (per-user cards live under memory/users/)."
+elif [ -f "$MEMORY_DIR/_engine/.v4-migrated" ]; then
+    # Moved to memory v4: only the cards a turn still reads. Duties are
+    # routines, the RECENT tails are rendered on demand, and relationships /
+    # reflections were never loaded — seeding them made empty files reappear.
+    CARDS=(RULES MISSION AGENT_IDENTITY AGENT_TOOLS USER_PROFILE USER_PREFERENCES)
 fi
 if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     mkdir -p "$MEMORY_DIR"
@@ -806,15 +939,20 @@ if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
         echo "[entrypoint] Memory cards already present — skipping seed."
     fi
 
-    # Karpathy LLM-wiki layer on top of the 7 cards. INDEX.md + topics/
-    # folder convention. Both are pure additions; existing card content
-    # is untouched. See docs/MEMORY_REWORK.md.
-    if [ -f "$MEMORY_TEMPLATES_DIR/INDEX.md" ] && [ ! -f "$MEMORY_DIR/INDEX.md" ]; then
+    # The wiki layer of the older memory (INDEX.md, topics/, patterns/). A
+    # workspace that has moved to memory v4 carries the stamp below, and
+    # migration 0007 removed these on purpose — seeding them again on the next
+    # boot would bring back trees the bot no longer reads. Seeded only before
+    # the move.
+    if [ -f "$MEMORY_DIR/_engine/.v4-migrated" ]; then
+        echo "[entrypoint] Memory v4 in place — the wiki layer is not seeded."
+    fi
+    if [ ! -f "$MEMORY_DIR/_engine/.v4-migrated" ] && [ -f "$MEMORY_TEMPLATES_DIR/INDEX.md" ] && [ ! -f "$MEMORY_DIR/INDEX.md" ]; then
         cp "$MEMORY_TEMPLATES_DIR/INDEX.md" "$MEMORY_DIR/INDEX.md"
         chmod 644 "$MEMORY_DIR/INDEX.md"
         echo "[entrypoint] Memory INDEX.md seeded (wiki entry point)."
     fi
-    if [ -d "$MEMORY_TEMPLATES_DIR/topics" ] && [ ! -d "$MEMORY_DIR/topics" ]; then
+    if [ ! -f "$MEMORY_DIR/_engine/.v4-migrated" ] && [ -d "$MEMORY_TEMPLATES_DIR/topics" ] && [ ! -d "$MEMORY_DIR/topics" ]; then
         mkdir -p "$MEMORY_DIR/topics"
         if [ -f "$MEMORY_TEMPLATES_DIR/topics/ABOUT.md" ]; then
             cp "$MEMORY_TEMPLATES_DIR/topics/ABOUT.md" "$MEMORY_DIR/topics/ABOUT.md"
@@ -826,7 +964,7 @@ if [ -d "$MEMORY_TEMPLATES_DIR" ]; then
     # only holds "the agent got X wrong; here's the rule that prevents
     # repeating it" cards. Empty dir + ABOUT.md is enough;
     # populated over time as anti-patterns surface.
-    if [ -d "$MEMORY_TEMPLATES_DIR/patterns" ] && [ ! -d "$MEMORY_DIR/patterns" ]; then
+    if [ ! -f "$MEMORY_DIR/_engine/.v4-migrated" ] && [ -d "$MEMORY_TEMPLATES_DIR/patterns" ] && [ ! -d "$MEMORY_DIR/patterns" ]; then
         mkdir -p "$MEMORY_DIR/patterns"
         if [ -f "$MEMORY_TEMPLATES_DIR/patterns/ABOUT.md" ]; then
             cp "$MEMORY_TEMPLATES_DIR/patterns/ABOUT.md" "$MEMORY_DIR/patterns/ABOUT.md"
@@ -1043,18 +1181,12 @@ fi
     SKILL_COUNT=$(grep -c '^- ' "$INDEX_FILE" 2>/dev/null || echo 0)
     echo "[entrypoint] Skills INDEX autogenerated: $INDEX_FILE ($SKILL_COUNT skills)"
 
-    # Symlink INDEX.md so `cat ~/.claude/skills/INDEX.md` works for both
-    # the bot (HOME=/home/bot) and the coder/web side (HOME=/home/coder).
-    # global-claude.md's "Before claiming absence" rule tells the model to
-    # check `~/.claude/skills/INDEX.md` — without these symlinks, the model
-    # hit "No such file or directory" and concluded skills were missing.
-    # The actual INDEX is at $INDEX_FILE (~/project/.claude/skills/INDEX.md);
-    # the symlinks just bridge the legacy path the rule still references.
-    mkdir -p /home/coder/.claude/skills 2>/dev/null
-    ln -sfn "$INDEX_FILE" /home/coder/.claude/skills/INDEX.md
-    chown -h coder:workspace /home/coder/.claude/skills/INDEX.md 2>/dev/null || true
-    # bot.sh's tar | tar overlay (later in lifecycle) carries the symlink
-    # to /home/bot/.claude/skills/INDEX.md without further work.
+    # ~/.claude/skills is a person's own skills now (a link into their private
+    # tree, made by priv-tree / turn-slots); the index of the team's skills is
+    # read where it is, in the project. The editor's home no longer carries an
+    # index link — bot.sh copies that home into the brain's, and the copied
+    # folder would stand where the brain's own-skills link belongs.
+    rm -rf /home/coder/.claude/skills 2>/dev/null || true
 }
 
 # --- Deploy ~/.claude/settings.json (autoMemoryEnabled: false + hooks) ---
@@ -1152,12 +1284,9 @@ chmod g+rw      /home/coder/.claude.json 2>/dev/null || true
     chmod g+rw      /home/coder/.claude/.claude.json.persistent 2>/dev/null || true
 }
 
-# --- Force all staged extensions into volume (always overwrite from image) ---
-if [ -d /opt/ide/extensions ]; then
-    mkdir -p /home/coder/.local/share/code-server/extensions
-    cp -r /opt/ide/extensions/* /home/coder/.local/share/code-server/extensions/
-    echo "[entrypoint] Extensions forced from image."
-fi
+# The VS Code extensions live in the image, in the coder user's own extensions
+# dir (not a volume): nothing to copy at boot. (An older image staged a copy
+# under /opt/ide/extensions and re-copied it here on every start.)
 
 # --- rclone Google Drive sync (legacy path) ---
 # New deploys default to server-only file storage backed by Hetzner snapshots
@@ -1471,29 +1600,11 @@ managed = {}
 # the playwright mcpServers entry into /home/bot/.claude.json". Keep both
 # in sync: --user-data-dir + --proxy-server are required, and the python
 # heredoc here cannot write to /home/bot because it runs as coder.
+# Through mcp-runner, as the mcp user — the one user the open egress listener
+# (:3130) accepts. The flags live in apps/playwright-mcp/index.js.
 managed['playwright'] = {
-    'command': f'{npm_bin}/playwright-mcp',
-    'args': [
-        '--headless',
-        # @playwright/mcp's --browser only accepts: chrome, firefox, webkit,
-        # msedge (verified via --help). Passing "chromium" is interpreted as
-        # an unrecognised channel and triggers the install-browser flow
-        # against "chrome-for-testing" — which our egress blocks. Use
-        # "chrome" and pin the binary with --executable-path to the
-        # Dockerfile-installed Chrome for Testing (it's the same artifact
-        # playwright would have downloaded as "chromium-1223" anyway).
-        '--browser', 'chrome',
-        # --no-sandbox: Chromium's zygote sandbox uses unprivileged user
-        # namespaces, which our container doesn't enable. Without this
-        # flag the browser FATALs with "No usable sandbox!" before any
-        # page can load. We're already inside a Docker container with
-        # uid 1003 + no-new-privs in the bot-runner — the browser sandbox
-        # would be defence-in-depth, not a primary boundary.
-        '--no-sandbox',
-        '--user-data-dir', '/tmp/playwright-mcp-data',
-        '--proxy-server', 'http://egress-proxy:3130',
-        '--executable-path', '/opt/playwright-browsers/chromium-1223/chrome-linux64/chrome',
-    ],
+    'command': '/usr/local/bin/mcp-runner',
+    'args': ['playwright'],
 }
 
 # Google Analytics 4 — only if credentials are provided.
@@ -1601,18 +1712,6 @@ managed['reminders'] = {
     }
 }
 
-# Tasks MCP — the structured task board stored in ~/project/.tasks.json. Always
-# on: no credentials required. The board replaced Tasks.md; the bot manages it
-# through this MCP (list/add/update/move) — never by editing a Markdown file.
-managed['tasks'] = {
-    'command': 'node',
-    'args': ['/opt/ide/apps/tasks-mcp/index.js'],
-    'env': {
-        'TASKS_FILE': '/home/coder/project/.tasks.json',
-        'WORKSPACE_API_PORT': os.environ.get('WORKSPACE_API_PORT', '3001'),
-    }
-}
-
 # PDF MCP — markdown → clean typeset PDF via python-markdown + weasyprint.
 # The ONE supported way to make a PDF (render_pdf) plus preview_pdf to
 # rasterise a page so the bot can SEE the result before sending. Always on:
@@ -1711,8 +1810,11 @@ PYEOF
 # next browser launch fails with "browser is already in use" — even though
 # no Chrome process is alive. Clearing them at startup is safe because we
 # know nothing else owns these dirs yet.
+# The bot's old home (now the .${BOT_NAME} volume) once downloaded its own
+# Chromium there, 800 MB nothing has used since the browsers moved to
+# PLAYWRIGHT_BROWSERS_PATH in the image. Gone for good on the first boot after this.
+rm -rf "/home/coder/.${BOT_NAME:-bot}/.cache/ms-playwright" 2>/dev/null || true
 find /home/coder/.cache/ms-playwright \
-     /home/coder/.bot/.cache/ms-playwright \
      /home/coder/project/.playwright-mcp \
      -maxdepth 4 -type l \( -name 'SingletonLock' -o -name 'SingletonCookie' -o -name 'SingletonSocket' \) \
      -delete 2>/dev/null || true
@@ -1868,26 +1970,27 @@ start_bot_stack() {
     # First-run bootstrap: scaffold default folder structure + system reminders
     # + Tasks/Pending templates on a fresh project. Idempotent (gated by
     # ~/project/.bootstrapped) and skipped when ~/project/.claude/CLAUDE.md exists.
+    # This function runs after the re-exec as coder, so the script is called
+    # directly: `su`/`runuser` need root (or a password) and were failing here
+    # without a trace, so no fresh workspace was ever scaffolded.
     if [ -x /opt/ide/bootstrap/bootstrap-project.sh ]; then
-        BOT_NAME="$BOT_NAME" PROJECT_DIR="$PROJECT_DIR" BOOTSTRAP_SRC=/opt/ide/bootstrap \
-            su coder -c '/opt/ide/bootstrap/bootstrap-project.sh' \
-            2>&1 | sed 's/^/[bootstrap] /' || \
+        if BOT_NAME="$BOT_NAME" PROJECT_DIR="$PROJECT_DIR" BOOTSTRAP_SRC=/opt/ide/bootstrap \
+            /opt/ide/bootstrap/bootstrap-project.sh 2>&1 | sed 's/^/[bootstrap] /'; [ "${PIPESTATUS[0]}" -ne 0 ]; then
             echo "[entrypoint] WARNING: bootstrap-project.sh exited non-zero — workspace may be missing baseline rituals"
+        fi
     fi
 
     # One-time migration of an existing Markdown Tasks.md into the structured
     # board (.tasks.json). Idempotent + self-guarded (no-op once migrated or if
     # there's no Tasks.md), so it's safe to run on every boot for old clients.
-    # Runs as coder (a workspace-group member); then we match .tasks.json to the
-    # .reminders.json ownership model (group `workspace`, group-writable) so both
-    # wsapi (the board API) and the tasks MCP can rewrite it on mutation.
-    # NOTE: use `runuser`, not `su coder -c` — in this non-interactive entrypoint
-    # context `su` hits PAM and fails with "Authentication failure" (the same
-    # reason the bootstrap-project su line above is effectively a no-op). runuser
-    # drops privileges as root without PAM auth.
+    # Runs as coder (this function already does); then we match .tasks.json to
+    # the .reminders.json ownership model (group `workspace`, group-writable) so
+    # wsapi (the board API) can rewrite it on mutation.
     if [ -f /opt/ide/bootstrap/migrate-tasks.mjs ]; then
-        runuser -u coder -- env PROJECT_DIR="$PROJECT_DIR" node /opt/ide/bootstrap/migrate-tasks.mjs \
-            2>&1 | sed 's/^/[migrate-tasks] /' || true
+        if PROJECT_DIR="$PROJECT_DIR" node /opt/ide/bootstrap/migrate-tasks.mjs \
+            2>&1 | sed 's/^/[migrate-tasks] /'; [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "[entrypoint] WARNING: migrate-tasks.mjs exited non-zero — an old Tasks.md may not have been moved onto the board"
+        fi
         if [ -f "$PROJECT_DIR/.tasks.json" ]; then
             chgrp workspace "$PROJECT_DIR/.tasks.json" 2>/dev/null || true
             chmod 664 "$PROJECT_DIR/.tasks.json" 2>/dev/null || true

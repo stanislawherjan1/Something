@@ -19,6 +19,8 @@
  * A page turn (the browser panel) gets no block: it reads an untrusted page and
  * must not also be handed the person's memory to leak.
  */
+import { attachTasks, factsByRecord } from './memory-task-links.js';
+import { attachFiles } from './memory-file-links.js';
 import * as ledger from './memory-ledger.js';
 import { search } from './memory-search.js';
 import { topics, nameKey, expandQuery } from './memory-views.js';
@@ -50,7 +52,11 @@ const whereOf = (r) => (r.scope === 'shared' ? 'team' : r.scope.startsWith('grou
 // The id lets the model act on an excerpt ("forget that") through memory_forget.
 export function excerpt(r, text = r.text) {
   const t = text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS)} […]` : text;
-  return `[${r.ts.slice(0, 10)} · ${r.source} · ${whereOf(r)} · id ${r.id}]\n${defang(t)}`;
+  // The tasks this excerpt's facts carry, with their state from the board —
+  // the board, not the excerpt, says whether something got done.
+  const tasks = Array.isArray(r.tasks) && r.tasks.length ? `\n↳ ${r.tasks.map(defang).join('; ')}` : '';
+  const files = Array.isArray(r.files) && r.files.length ? `\n↳ files from this conversation: ${r.files.map(defang).join('; ')}` : '';
+  return `[${r.ts.slice(0, 10)} · ${r.source} · ${whereOf(r)} · id ${r.id}]\n${defang(t)}${tasks}${files}`;
 }
 
 /** Tool output (memory_search / memory_timeline): the same fenced excerpts. */
@@ -111,6 +117,7 @@ export async function buildRecallBlock({ actor = null, groupId = null, memberGro
   out.ids = res.hits.map(h => h.id);
   out.total = res.total;
   if (mode === 'shadow') return out;
+  try { const idx = factsByRecord(scopes); attachTasks(res.hits, scopes, idx); attachFiles(res.hits, scopes, idx); } catch (e) { process.stderr.write(`[memory-v4] recall links: ${e.message}\n`); }
   out.block = renderBlock(res);
   for (const id of out.ids) shown.add(id);
   return out;

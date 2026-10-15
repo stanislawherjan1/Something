@@ -32,10 +32,19 @@ This skill works in two modes — pick which one fits the request:
 
 ### 1. Pick the destination
 
-- **Project skill** (yours, survives container rebuilds, edit freely): `~/project/.claude/skills/<name>/`
+Whose skill it is decides where it goes:
+
+- **A skill for the whole team** — every conversation of everyone loads it: `~/project/.claude/skills/<name>/`
+- **A skill for one person** — only their own conversations load it, never a group's: `~/project/users/<their slug>/.skills/<name>/` (their slug is `$IDE_ACTOR_SLUG`)
 - **System skill** (template default — RARE; only when this skill ships to every deployed bot): `/opt/ide/skills/default/<name>/` in the ide-template repo
 
-Default to project skill unless the user explicitly asked for a system skill or you're working in the ide-template repo itself.
+Which to pick:
+
+- **Solo workspace** (no team): the team's location, nothing to ask.
+- **A member asks**: always their own. The team's skills are an admin's to change; a write there is refused.
+- **An admin asks**: ask once, in a plain sentence, whether it is for the whole team or just for them — unless they already said ("for everyone", "just for me"). Then write it there.
+- **In a group conversation**: no new skills; say it is done in a direct conversation.
+- A skill about an integration follows the connection: the team's connection → the team's skills; someone's own connection → their own skills, naming their own server's tools (`mcp__<server>-mine__…`).
 
 ### 2. Folder + file naming
 
@@ -119,7 +128,7 @@ Description is good but body is ambiguous. Replace `"validate properly"` with `"
 
 ## After creating
 
-No registration step needed — skills are auto-discovered at session start by walking `.claude/skills/` in the project tree. On the **web**, every chat turn picks a new SKILL.md up — just send the next message. The **Telegram** brain is one long-running session, so it may not see the skill until it is restarted (`/restart`). (A restart is also needed if you changed MCPs, `settings.json`, or `global-claude.md`.)
+No registration step needed — skills are auto-discovered at session start: the team's from `.claude/skills/` in the project tree, a person's own from their home's `~/.claude/skills`, which points at their `.skills`. On the **web**, every chat turn picks a new SKILL.md up — just send the next message. The **Telegram** brain is one long-running session, so it may not see the skill until it is restarted (`/restart`). (A restart is also needed if you changed MCPs, `settings.json`, or `global-claude.md`.)
 
 Tell the user:
 - The skill name

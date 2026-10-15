@@ -1,0 +1,18 @@
+{
+  "_about": "What the stand-in notetaker answers, per bearer token: a workspace connection's meetings and a member's own. Synthetic people and companies. daysAgo places a meeting relative to now.",
+  "tokens": {
+    "ws-token": [
+      { "id": "m-ws-1", "title": "Board sync", "daysAgo": 1, "participants": ["Alex", "Marta Zielak"],
+        "summary": "- Decided: the Quarry launch moves to 3 October.\n- Vellmark starts the warehouse pilot on 4 November.",
+        "transcript": "Alex: The Quarry launch moves to October third.\nMarta: And Vellmark starts the pilot on the fourth of November.\nAlex: Decided." },
+      { "id": "m-ws-2", "title": "Supplier call", "daysAgo": 2, "participants": ["Alex", "Pakto sales"],
+        "summary": "- Pakto quotes boxes 15% cheaper from January.",
+        "transcript": "Alex: What is the new price?\nPakto: Fifteen percent under the current one, from January." }
+    ],
+    "ann-token": [
+      { "id": "m-ann-1", "title": "Ann 1:1 with Bob", "daysAgo": 1, "participants": ["Ann", "Bob"],
+        "summary": "- Bob takes the Orbis dashboard; Ann reviews on Friday.",
+        "transcript": "Ann: Can you take the Orbis dashboard?\nBob: Yes, review on Friday.\nAnn: Decided." }
+    ]
+  }
+}

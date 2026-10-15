@@ -33,6 +33,17 @@ the metrics and integrations") is a bad note: whose metrics, for what, decided
 where, by when? Look it up (`memory_search`, `memory_timeline`) and write it
 whole, or ask.
 
+A to-do is not a note. Something the person or you are going to do belongs on
+the task board (the `task-management` skill), which also knows when it is done;
+a note of it would outlive the task and have you asking about finished work.
+Note what stands behind it — the decision, the request, the date — not the
+to-do.
+
+A file you wrote in this conversation (a note, a draft, a report) is not a
+note either: the nightly filing ties the files a conversation produced to the
+fact behind them, and memory then points at the file. Note the decision or the
+request; never paste the file's content into memory.
+
 ## A meeting is one note
 
 Pasted meeting notes, a call summary, "here's what we agreed": that is **one

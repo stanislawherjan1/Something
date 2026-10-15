@@ -1,0 +1,70 @@
+{
+ "teamMode": true,
+ "people": [
+  {
+   "email": "ola@example.test",
+   "role": "admin",
+   "slug": "ola",
+   "displayName": "Ola",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 1
+  },
+  {
+   "email": "tom@example.test",
+   "role": "member",
+   "slug": "tom",
+   "displayName": "Tom",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 2,
+   "sharing": "auto"
+  },
+  {
+   "email": "zoe@example.test",
+   "role": "member",
+   "slug": "zoe",
+   "displayName": "Zoe",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 3
+  }
+ ],
+ "connections": [
+  {
+   "id": "granola",
+   "owner": "ola",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"g-ola\"}"
+   }
+  },
+  {
+   "id": "otter",
+   "owner": "tom",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"o-tom\"}"
+   }
+  },
+  {
+   "id": "github",
+   "owner": "zoe",
+   "reach": "personal",
+   "fields": {
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "github_pat_zoe",
+    "GITHUB_TOOLSETS": "repos,issues,pull_requests",
+    "GITHUB_ALLOW_WRITE": "no"
+   }
+  }
+ ],
+ "groups": [
+  "-100777000222"
+ ],
+ "notetakers": {
+  "ola": [
+   "granola"
+  ],
+  "tom": [
+   "otter"
+  ]
+ },
+ "_about": "A workspace archetype of the test programme (plan 8.1): roster, connections, groups. Synthetic people and companies."
+}

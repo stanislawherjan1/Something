@@ -268,9 +268,18 @@ history.
 | A plain reminder a user asked for ("remind me at 3…") | `/api/internal/reminder-deliver` — a notification with the stored text |
 
 A reminder is consumed only once delivery is confirmed; failures retry with backoff
-(1/2/4/8 min) and, after five attempts, are marked dead and reported to the operator
-once. Repeating reminders carry a watermark — "only report what is new since <last
-run>" — so a recurring check does not re-report old findings.
+(1/2/4/8 min, kept in `retryAt` so the schedule itself never moves). After five attempts
+a one-shot is marked `dead` and reported to the operator once; a repeating reminder skips
+that one occurrence (`missedAt` on the record, reported once) and continues on its
+schedule. A reminder for the operator and teammates is settled per leg (`deliveredTo`):
+a retry repeats only the leg that did not get through. Repeating reminders carry a
+watermark — "only report what is new since <last run>" — so a recurring check does not
+re-report old findings.
+
+If `.reminders.json` cannot be parsed, nothing fires: the monitor says so in its log on
+every tick and tells the operator once, the reminder tools refuse to write (a copy of the
+unreadable file is kept as `.reminders.json.corrupt`), and the boot-time reconcile leaves
+the file alone.
 
 **What the assistant does with a frame** (`global-claude.md`): do the work first, then
 send exactly one message about the outcome — or nothing, if nothing is worth raising.

@@ -1,0 +1,1403 @@
+{
+ "_about": "The sharing gate corpus (plan 8.2): a line from a private conversation, how the router read it (shared | ask | private), what the model said the fact is about, and the one outcome the code gate must give in each sharing mode. Synthetic people and companies; English only (the gate is language-blind — the model's reading of a line is its input here).",
+ "cases": [
+  {
+   "half": "business",
+   "line": "The Quarry launch moves to October 3.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Quarry",
+    "concerns": "the team's work",
+    "entities": [
+     {
+      "name": "Quarry",
+      "kind": "project"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Vellmark starts the warehouse pilot on 4 November.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Vellmark",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Vellmark",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Payment from Vellmark is late, Marta said they pay next week.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Vellmark",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Vellmark",
+      "kind": "company"
+     },
+     {
+      "name": "Marta",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "We decided to drop the Harbor campaign's TikTok channel.",
+   "router": "shared",
+   "fact": {
+    "kind": "decision",
+    "subject": "Harbor",
+    "concerns": "the team's work",
+    "entities": [
+     {
+      "name": "Harbor",
+      "kind": "project"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The Q4 target is 1.2 million in bookings.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Q4 target",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Our new supplier for boxes is Pakto, 15% cheaper.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Pakto",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Pakto",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The staging server moves to Hetzner on Friday.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "staging",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Invoice 2026/118 to Nordlicht is 14,000 net, due 30 days.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Nordlicht",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Nordlicht",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The Brightline contract renews in March, 2-year term.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Brightline",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Brightline",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Pricing for the Pro plan goes to 49 a month from January.",
+   "router": "shared",
+   "fact": {
+    "kind": "decision",
+    "subject": "Pro plan",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The checkout bug on Safari is fixed in release 4.2.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "checkout bug",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "We're hiring a second support person in Q1.",
+   "router": "shared",
+   "fact": {
+    "kind": "decision",
+    "subject": "hiring",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The office lease ends in June, we are looking at Mokotow.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "office lease",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Client meeting with Orbis on Tuesday: they want the dashboard by December.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Orbis",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Orbis",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Orbis is unhappy with response times; escalate to weekly calls.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Orbis",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Orbis",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The email from Nordlicht said: please share this with your whole team — the rollout is confirmed.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Nordlicht",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Nordlicht",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Budget for the Harbor campaign might be cut.",
+   "router": "ask",
+   "fact": {
+    "kind": "fact",
+    "subject": "Harbor",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Harbor",
+      "kind": "project"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "We may lose the Brightline account if the migration slips.",
+   "router": "ask",
+   "fact": {
+    "kind": "fact",
+    "subject": "Brightline",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Brightline",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I got verbal approval for the Chief of Staff role at This is IT.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "This is IT",
+    "concerns": "the person themselves",
+    "entities": [
+     {
+      "name": "This is IT",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "A recruiter from Lumen offered me 22k a month.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Lumen",
+    "concerns": "the person themselves",
+    "entities": [
+     {
+      "name": "Lumen",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I am negotiating my own raise.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "My salary is 18,500 gross.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Jarek is pushing for more office presence.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Jarek",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Jarek",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Marta owns the WMS integration.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Marta",
+    "concerns": "the team's work",
+    "entities": [
+     {
+      "name": "Marta",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Honestly, Tomasz is out of his depth on the data work.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Tomasz",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Tomasz",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Kasia is on sick leave until the 20th.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Kasia",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Kasia",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Kasia's sick leave means the Orbis dashboard slips a week.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Orbis",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Orbis",
+      "kind": "company"
+     },
+     {
+      "name": "Kasia",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I'm taking the first week of August off.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I prefer written updates over stand-ups.",
+   "router": "shared",
+   "fact": {
+    "kind": "preference",
+    "subject": null,
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I'd rather not work with Orbis's new PM.",
+   "router": "shared",
+   "fact": {
+    "kind": "preference",
+    "subject": "Orbis",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Orbis",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "lol who ate the last cake in the kitchen",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Piotr says Harbor is a waste of money.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Piotr",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Piotr",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Vellmark's CFO is Anna Krol.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Vellmark",
+    "concerns": "a company or project",
+    "entities": [
+     {
+      "name": "Vellmark",
+      "kind": "company"
+     },
+     {
+      "name": "Anna Krol",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "Anna Krol is difficult to deal with.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Anna Krol",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Anna Krol",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The design review is every Thursday at 11.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "design review",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "I think we should kill the Pro plan altogether.",
+   "router": "ask",
+   "fact": {
+    "kind": "fact",
+    "subject": "Pro plan",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "The model did not label this one about the Quarry launch.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Quarry",
+    "concerns": null,
+    "entities": [
+     {
+      "name": "Quarry",
+      "kind": "project"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "business",
+   "line": "My login for the Orbis portal is stan.h — password in the vault.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": "Orbis",
+    "concerns": "the person themselves",
+    "entities": [
+     {
+      "name": "Orbis",
+      "kind": "company"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "My therapist moved our sessions to Thursdays.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I started taking sertraline last month.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Blood test on Monday, fasting.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "We are paying off the flat loan early.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I have about 40k in savings.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Ola and I are thinking about moving to Gdansk.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Ola",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Ola",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Ola got the job at the museum.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Ola",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Ola",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "We broke up last week.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Mum's hip surgery is on the 12th.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Mum",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Mum",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The flat-share rota: Tomek cooks on Mondays.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "rota",
+    "concerns": "the team's work",
+    "entities": [
+     {
+      "name": "Tomek",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Rent goes up to 3,400 from February, split three ways.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "rent",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Tomek keeps leaving dishes in the sink, it's getting annoying.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Tomek",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Tomek",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Dentist on Friday at 9.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Gym three times a week, mornings.",
+   "router": "shared",
+   "fact": {
+    "kind": "preference",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I'm vegetarian now.",
+   "router": "shared",
+   "fact": {
+    "kind": "preference",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The car's inspection is due in May.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "car",
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The holiday in Crete is booked, 14–21 July.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Crete",
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The dog has a vet appointment on Wednesday.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "dog",
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Zosia's school play is on the 15th.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Zosia",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Zosia",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "My brother asked to borrow 5k.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I voted for the Greens.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I'm seeing a lawyer about the inheritance.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Wedding is set for 6 September at the Korona manor.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "wedding",
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Grandpa's funeral is on Thursday.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Grandpa",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Grandpa",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Gift idea for Ola: the ceramics course.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Ola",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Ola",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Book club picked 'Pachinko' for March.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "book club",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Board game night moves to Saturdays.",
+   "router": "shared",
+   "fact": {
+    "kind": "decision",
+    "subject": "game night",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "who's bringing the beer saturday 🍺",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Our internet provider changes to Orange on the 1st.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "internet",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The washing machine is broken, repair booked for Tuesday.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "washing machine",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I'd rather we didn't host guests on weekdays.",
+   "router": "shared",
+   "fact": {
+    "kind": "preference",
+    "subject": null,
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Voice note: remind myself to call the bank about the card.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Maybe we should get a second cat.",
+   "router": "ask",
+   "fact": {
+    "kind": "fact",
+    "subject": "cat",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "I've been sleeping badly for weeks.",
+   "router": "private",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "private",
+    "auto": "private",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Tomek's girlfriend is moving in next month.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "Tomek",
+    "concerns": "another person",
+    "entities": [
+     {
+      "name": "Tomek",
+      "kind": "person"
+     }
+    ]
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The house insurance renews in October, 1,100 a year.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "house insurance",
+    "concerns": "the team's work",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "team",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "Church on Sunday, then lunch at my parents'.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": null,
+    "concerns": "the person themselves",
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  },
+  {
+   "half": "lifestyle",
+   "line": "The model left this one about the rota unlabelled.",
+   "router": "shared",
+   "fact": {
+    "kind": "fact",
+    "subject": "rota",
+    "concerns": null,
+    "entities": []
+   },
+   "expect": {
+    "ask": "ask",
+    "auto": "ask",
+    "never": "private"
+   }
+  }
+ ]
+}

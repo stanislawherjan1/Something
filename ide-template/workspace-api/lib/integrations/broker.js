@@ -38,8 +38,8 @@
  */
 
 import { createServer } from 'node:net';
-import { unlinkSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { unlinkSync, mkdirSync, existsSync, chmodSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 const SOCKET_PATH = process.env.BROKER_SOCKET || '/var/wsapi-store/run/broker.sock';
@@ -79,11 +79,37 @@ const JANITOR_INTERVAL_MS = 5 * 60 * 1000;
  */
 const grants = new Map();
 
+// The grants are written to the store dir as well, so a restart of
+// workspace-api alone (PM2's memory cap, a crash) does not strand the running
+// bot: the nonces in its config stay known, and an MCP it starts later still
+// gets its credentials. Readable by this uid only, like the rest of the store.
+const GRANTS_FILE = join(process.env.WSAPI_STORE_DIR || '/var/wsapi-store', 'broker-grants.json');
+function loadGrants() {
+  try {
+    const now = Date.now();
+    for (const [nonce, g] of Object.entries(JSON.parse(readFileSync(GRANTS_FILE, 'utf8')))) {
+      if (g && typeof g.integrationId === 'string' && Number(g.expiresAt) > now) grants.set(nonce, { integrationId: g.integrationId, expiresAt: Number(g.expiresAt) });
+    }
+  } catch { /* none yet, or unreadable: start empty */ }
+}
+function saveGrants() {
+  try {
+    const tmp = `${GRANTS_FILE}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify(Object.fromEntries(grants)), { mode: 0o600 });
+    renameSync(tmp, GRANTS_FILE);
+  } catch (err) {
+    process.stderr.write(`[broker] grants not saved: ${err.message}\n`);
+  }
+}
+loadGrants();
+
 setInterval(() => {
   const now = Date.now();
+  let dropped = 0;
   for (const [nonce, grant] of grants) {
-    if (grant.expiresAt < now) grants.delete(nonce);
+    if (grant.expiresAt < now) { grants.delete(nonce); dropped++; }
   }
+  if (dropped) saveGrants();
 }, JANITOR_INTERVAL_MS).unref();
 
 /**
@@ -101,7 +127,17 @@ export function issueGrant(integrationId) {
     integrationId,
     expiresAt: Date.now() + NONCE_TTL_MS,
   });
+  saveGrants();
   return nonce;
+}
+
+/** The integration a live grant was issued for, or null when the nonce is
+ * unknown or expired. Lets the config sync keep a nonce that is still good
+ * instead of minting a new one on every pass. */
+export function grantIntegration(nonce) {
+  const grant = typeof nonce === 'string' ? grants.get(nonce) : null;
+  if (!grant || grant.expiresAt < Date.now()) return null;
+  return grant.integrationId;
 }
 
 /**
@@ -203,7 +239,8 @@ async function handleRequest(req, { getCredentials, onLog }) {
   if (!integrationId || !nonce) {
     return { ok: false, error: 'missing integrationId or nonce' };
   }
-  if (!/^[a-z0-9-]{1,32}$/.test(integrationId)) {
+  // `granola` (the workspace's) or `granola@ann` (a person's own connection).
+  if (!/^[a-z0-9-]{1,32}(@[a-z0-9][a-z0-9-]{0,39})?$/.test(integrationId)) {
     return { ok: false, error: 'invalid integrationId' };
   }
   if (nonce.length > 256 || !/^[A-Za-z0-9_-]+$/.test(nonce)) {

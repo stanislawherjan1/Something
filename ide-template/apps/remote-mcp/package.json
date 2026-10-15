@@ -1,0 +1,10 @@
+{
+  "name": "remote-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local stdio bridge to a provider's hosted MCP server; fetches the person's OAuth token from workspace-api on every call.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

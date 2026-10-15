@@ -1,3 +1,11 @@
+# Every container's log is rotated: an unrotated json log grew to 312 MB on one
+# host. Applied when a container is (re)created, i.e. on the next deploy.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   # ─────────────────────────────────────────────────────────────────────────
   # Egress proxy — see scripts/egress-proxy.js for design.
@@ -9,6 +17,7 @@ services:
   # bridge level. Anything that doesn't honour HTTPS_PROXY env vars simply
   # gets ECONNREFUSED rather than silently exfiltrating.
   egress-proxy:
+    logging: *logging
     build:
       context: .
       dockerfile: Dockerfile.egress-proxy
@@ -48,6 +57,7 @@ services:
       - EGRESS_PROXY_DNS_UPSTREAM=1.1.1.1
 
   code-server:
+    logging: *logging
     build:
       context: .
       dockerfile: Dockerfile
@@ -110,6 +120,10 @@ services:
       # any other bot-owned operational state that should outlive a
       # container swap.
       - bot-home:/home/bot
+      # The turn users' homes (one per roster slot, plus solo and group):
+      # their settings (the hooks) and their sessions, which --resume needs
+      # across a redeploy.
+      - turn-homes:/home/turns
       # Legacy admin-placed configs (read-only by design — admin owns these).
       - /home/coder/.google:/home/coder/.google:ro
       - /home/coder/.email:/home/coder/.email:ro
@@ -208,6 +222,7 @@ services:
       - LEGACY_CONFIG=${LEGACY_CONFIG:-false}
 
   auth-service:
+    logging: *logging
     build:
       context: ./auth-service
       dockerfile: Dockerfile
@@ -236,6 +251,7 @@ services:
       - PROJECT_DIR=/home/coder/project
 
   frontend:
+    logging: *logging
     build:
       context: ./frontend
       dockerfile: Dockerfile.frontend
@@ -256,6 +272,7 @@ services:
     environment:
       - CODE_SERVER_PASSWORD=${CODE_SERVER_PASSWORD}
   caddy:
+    logging: *logging
     image: caddy:latest
     container_name: ${IDE_NAME:-template}-caddy
     restart: unless-stopped
@@ -279,6 +296,7 @@ volumes:
   # bot user's home — primarily /home/bot/.telegram/conversation.jsonl
   # for cross-deploy persistence of TG inbound/outbound history.
   bot-home:
+  turn-homes:
   caddy_data:
   caddy_config:
 

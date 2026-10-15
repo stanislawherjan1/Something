@@ -304,7 +304,18 @@ else
     echo "::phase login-alerts warn skipped — set TELEGRAM_BOT_TOKEN + TELEGRAM_ADMIN_CHAT_ID in .env to enable"
 fi
 
-# --- backup (check only — configuring restic needs operator secrets) ---
+# --- docker upkeep: weekly prune of build cache nobody used for ten days, and a
+# journal cap. A 38 GB host cannot afford a build cache that only grows. ---
+PRUNE_CRON="/etc/cron.d/workspace-docker-prune"
+PRUNE_LINE='17 4 * * 0 root docker builder prune -f --filter until=240h >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; journalctl --vacuum-size=200M >/dev/null 2>&1'
+if [ -f "$PRUNE_CRON" ] && grep -qF "$PRUNE_LINE" "$PRUNE_CRON"; then
+    echo "::phase docker-prune ok weekly prune scheduled"
+else
+    printf '# workspace: keep the disk clear of stale build cache (ensure-server.sh)\n%s\n' "$PRUNE_LINE" > "$PRUNE_CRON"
+    chmod 644 "$PRUNE_CRON"
+    echo "::phase docker-prune changed weekly build-cache prune + journal cap scheduled (Sunday 04:17)"
+fi
+
 RESTIC_ENV="${RESTIC_ENV_FILE:-/root/.workspace-admin/restic.env}"
 if [ -f "$RESTIC_ENV" ] && { crontab -l 2>/dev/null | grep -q restic-backup || ls /etc/cron.d/ 2>/dev/null | grep -q restic; }; then
     echo "::phase backup ok restic configured + scheduled"

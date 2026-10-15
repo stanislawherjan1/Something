@@ -29,10 +29,8 @@ export default function EditorHeader({ icon: Icon, title, subtitle, meta, sideba
       style={{
         paddingLeft: sidebarOpen ? '24px' : '64px',
         minHeight: hasSubtitle ? '60px' : undefined,
-        // Match the sidebar wrapper's width-animation curve so the title
-        // slides over with the same rhythm instead of snapping when the
-        // hamburger needs to appear / disappear.
-        transition: 'padding-left 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+        // The sidebar folds without a width animation, so the title moves
+        // with it in one step rather than sliding.
       }}
     >
       {/* +1 px: lines the title up optically with the org name in the sidebar. */}

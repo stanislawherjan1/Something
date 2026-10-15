@@ -94,6 +94,10 @@ export default function migrationsRouter() {
       try {
         await migrate.plan(id, { onProgress, shouldStop });
         const r = await migrate.apply(id, { onStep: (s) => { job.step = s; job.progress = null; }, onProgress, shouldStop });
+        // What the move enables (the clean-up of the old memory) runs now,
+        // not at the next boot: the screen should not show the leftovers.
+        try { await migrate.autoApply(); }
+        catch (err) { process.stderr.write(`[migrations] follow-ups after ${id}: ${err.message}\n`); }
         Object.assign(job, { state: 'done', step: 'done', finishedAt: new Date().toISOString(), result: r.result });
         audit('migration_done', me.email, { id, result: r.result });
       } catch (err) {

@@ -31,6 +31,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { writeFileSync, mkdirSync, readFileSync }        from 'fs';
 import { join, resolve }                                  from 'path';
 import { loadCredentials } from '../_shared/broker-client.js';
+import { projectFile } from '../_shared/local-file.js';
 
 // Phase-2 broker — fetch credentials over UDS at startup if launched via
 // mcp-runner (uid 1002). No-op + return null when run standalone for
@@ -65,7 +66,7 @@ async function toImageInput(source) {
   if (source.startsWith('https://') || source.startsWith('http://')) {
     return source;
   }
-  const buf  = readFileSync(resolve(source));
+  const buf  = readFileSync(projectFile(source));
   const ext  = source.split('.').pop()?.toLowerCase() ?? 'jpeg';
   const mime = ext === 'png'  ? 'image/png'
              : ext === 'webp' ? 'image/webp'

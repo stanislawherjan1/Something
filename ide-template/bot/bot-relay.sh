@@ -53,7 +53,7 @@ fi
 # exit codes line up with ours: 0 sent, 2 offline, 3 busy-timeout. On 3 the
 # caller keeps its durable raw-Telegram copy, so nothing is lost — we just
 # don't type over the live conversation.
-INJECT_SCRIPT="${INJECT_SCRIPT:-/opt/ide/tmux-inject.sh}"
+INJECT_SCRIPT=/opt/ide/tmux-inject.sh
 if [ -x "$INJECT_SCRIPT" ]; then
     "$INJECT_SCRIPT" "$PAYLOAD"
     exit $?

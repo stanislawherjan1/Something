@@ -25,7 +25,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PORT, PROJECT_DIR } from './lib/config.js';
 import { stop as stopWatcher } from './lib/watcher.js';
-import { cookieMiddleware, attachActor } from './lib/auth.js';
+import { cookieMiddleware, attachActor, SESSION_SECRET } from './lib/auth.js';
 import healthRouter        from './routes/health.js';
 import chatRouter          from './routes/chat.js';
 import filesRouter         from './routes/files.js';
@@ -64,7 +64,7 @@ import { writeAllowedHostsFile } from './lib/integrations/egress.js';
 import { rehydrateRuntimeFiles } from './lib/setup.js';
 import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-sync.js';
 import { startBroker } from './lib/integrations/broker.js';
-import { decryptFor } from './lib/integrations/store.js';
+import { decryptFor, ensureOwners as ensureIntegrationOwners } from './lib/integrations/store.js';
 import { get as getCatalog } from './lib/integrations/catalog.js';
 import { realignAllPlans } from './lib/planner-schedule.js';
 
@@ -234,6 +234,27 @@ try {
 } catch (err) {
   process.stderr.write(`[workspace-api] default memory migration failed: ${err.message}\n`);
 }
+// Connections from before owners existed are the workspace's, owned by the
+// primary admin (lib/integrations/store.js ensureOwners). Idempotent.
+try {
+  if (team.getTeamMode()) {
+    const n = ensureIntegrationOwners(team.primaryAdminSlug());
+    if (n) process.stdout.write(`[workspace-api] integrations: ${n} ownership field(s) filled in\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] integration owners not reconciled: ${err.message}\n`);
+}
+// One turn user per person (lib/team.js, setuid-wrappers/turn-runner.c): every
+// roster entry has its slot and owns its private trees. The entrypoint did
+// this at boot as root; here it catches a roster edited since.
+try {
+  if (team.getTeamMode()) {
+    const r = team.reconcileSlots();
+    if (r.assigned.length) process.stdout.write(`[workspace-api] turn slots assigned: ${r.assigned.map(a => `${a.email}→${a.slot}`).join(', ')}\n`);
+  }
+} catch (err) {
+  process.stderr.write(`[workspace-api] turn slots not reconciled: ${err.message}\n`);
+}
 
 // Team mode: the Telegram snapshot is the operator's private conversation. Move
 // it out of the shared memory/RECENT_TELEGRAM.md (readable by any teammate via
@@ -399,7 +420,7 @@ server.on('error', (err) => {
 // see the 'upgrade' event — it has to be wired on the raw http.Server.
 // We verify the JWT-signed session cookie inline, same secret + cookie
 // name as the HTTP-side attachActor.
-const VNC_SESSION_SECRET = process.env.SESSION_SECRET || '';
+const VNC_SESSION_SECRET = SESSION_SECRET;
 const VNC_SESSION_COOKIE = process.env.SESSION_COOKIE_NAME || 'ide_session';
 attachVncUpgradeHandler(server, (req) => {
   if (!VNC_SESSION_SECRET) return false;
@@ -408,7 +429,9 @@ attachVncUpgradeHandler(server, (req) => {
   if (!m) return false;
   try {
     const payload = jwt.verify(m[1], VNC_SESSION_SECRET);
-    return Boolean(payload?.email);
+    // The viewer is attached to the browser that holds the admin's Google
+    // session — admins only, like the HTTP side of this integration.
+    return Boolean(payload?.email) && team.isAdmin(payload.email);
   } catch {
     return false;
   }

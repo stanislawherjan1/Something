@@ -1,0 +1,118 @@
+{
+ "teamMode": true,
+ "people": [
+  {
+   "email": "stan@example.test",
+   "role": "admin",
+   "slug": "stan",
+   "displayName": "Stan",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 1
+  },
+  {
+   "email": "kat@example.test",
+   "role": "admin",
+   "slug": "kat",
+   "displayName": "Kat",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 2
+  },
+  {
+   "email": "ann@example.test",
+   "role": "member",
+   "slug": "ann",
+   "displayName": "Ann",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 3,
+   "sharing": "auto"
+  },
+  {
+   "email": "bob@example.test",
+   "role": "member",
+   "slug": "bob",
+   "displayName": "Bob",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 4,
+   "sharing": "never"
+  },
+  {
+   "email": "eve@example.test",
+   "role": "member",
+   "slug": "eve",
+   "displayName": "Eve",
+   "addedAt": "2026-09-01T00:00:00Z",
+   "slot": 5
+  }
+ ],
+ "connections": [
+  {
+   "id": "trello",
+   "owner": "stan",
+   "reach": "workspace",
+   "access": "write",
+   "fields": {
+    "TRELLO_API_KEY": "k",
+    "TRELLO_TOKEN": "t"
+   }
+  },
+  {
+   "id": "shopify",
+   "owner": "kat",
+   "reach": "workspace",
+   "access": "read",
+   "fields": {
+    "SHOPIFY_STORE_DOMAIN": "x.myshopify.com",
+    "SHOPIFY_CLIENT_ID": "a",
+    "SHOPIFY_CLIENT_SECRET": "b"
+   }
+  },
+  {
+   "id": "granola",
+   "owner": "stan",
+   "reach": "workspace",
+   "access": "read",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"g-ws\"}"
+   }
+  },
+  {
+   "id": "granola",
+   "owner": "stan",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"g-stan\"}"
+   }
+  },
+  {
+   "id": "otter",
+   "owner": "ann",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"o-ann\"}"
+   }
+  },
+  {
+   "id": "fireflies",
+   "owner": "bob",
+   "reach": "personal",
+   "fields": {
+    "OAUTH_TOKENS": "{\"access_token\": \"f-bob\"}"
+   }
+  }
+ ],
+ "groups": [
+  "-100777000111"
+ ],
+ "notetakers": {
+  "stan": [
+   "granola"
+  ],
+  "ann": [
+   "otter"
+  ],
+  "bob": [
+   "fireflies"
+  ]
+ },
+ "_about": "A workspace archetype of the test programme (plan 8.1): roster, connections, groups. Synthetic people and companies."
+}

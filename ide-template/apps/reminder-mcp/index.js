@@ -20,12 +20,25 @@ const REMINDERS_FILE =
   process.env.REMINDERS_FILE ||
   path.join(process.env.HOME || '/home/coder', 'project', '.reminders.json');
 
+// An empty list only when the file does not exist yet. Any other failure —
+// unreadable, not JSON, not a list — is thrown and the tool call fails: a
+// write through such a read would replace every reminder with the one being
+// added. The content that would not parse is kept next to the file for repair.
 async function readReminders() {
+  let data;
   try {
-    const data = await fs.readFile(REMINDERS_FILE, 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return [];
+    data = await fs.readFile(REMINDERS_FILE, 'utf8');
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw new Error(`cannot read ${REMINDERS_FILE} (${err.message})`);
+  }
+  try {
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) throw new Error('not a JSON array');
+    return parsed;
+  } catch (err) {
+    try { await fs.copyFile(REMINDERS_FILE, `${REMINDERS_FILE}.corrupt`); } catch {}
+    throw new Error(`${REMINDERS_FILE} is not a readable reminder list (${err.message}); a copy was kept at ${REMINDERS_FILE}.corrupt`);
   }
 }
 
@@ -93,6 +106,20 @@ const EVERYONE_WORDS = new Set(['everyone', 'everybody', 'all', 'team', 'all of 
 
 function actorSlug()    { const s = (process.env.IDE_ACTOR_SLUG || '').trim(); return /^[a-z0-9-]+$/.test(s) ? s : ''; }
 function actorIsAdmin() { return process.env.IDE_ACTOR_IS_ADMIN === '1'; }
+
+// Does a reminder concern this person? The same rule the Reminders screen
+// applies (workspace-api/routes/reminders.js): their own, one they are a
+// recipient of, or a team-wide one. A per-person system trigger is personal.
+// The operator's shared rituals (system, no recipients) and legacy operator
+// reminders (no recipients, no setter) are the operator's. Solo → everything.
+function concernsActor(r, me, isAdmin) {
+  if (!me) return true;
+  const rc = Array.isArray(r.recipients) ? r.recipients : null;
+  if (r.kind === 'system' && rc) return rc.includes(me) || rc.includes(EVERYONE);
+  if (r.kind === 'system' || (!rc && !r.setBy)) return isAdmin;
+  if ((r.setBy || '') === me) return true;
+  return !!rc && (rc.includes(me) || rc.includes(EVERYONE));
+}
 
 // Roster for set-time name→slug resolution + validation. The MCP is a separate
 // process with no in-process team.js, so it fetches the same loopback endpoint
@@ -359,7 +386,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   ],
 }));
 
+// A failure inside a tool (the reminders file cannot be read, say) comes back
+// as a tool error the model can relay, with nothing written.
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  try {
+    return await handleTool(request);
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Reminders are unavailable right now: ${err.message}. Nothing was changed.` }],
+      isError: true,
+    };
+  }
+});
+
+async function handleTool(request) {
   const { name, arguments: args } = request.params;
 
   // ── set_reminder ───────────────────────────────────────────────────────────
@@ -545,17 +585,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── list_reminders ─────────────────────────────────────────────────────────
   if (name === 'list_reminders') {
     const reminders = await readReminders();
-    // Team mode: a member sees only reminders they set, are a recipient of, or
-    // that target everyone; admin/operator sees all. Solo (no actor) → all.
+    // Team mode: everyone sees what concerns them — admins included, so the
+    // operator's list does not carry each teammate's personal reminders.
     const me = actorSlug();
-    const isAdmin = actorIsAdmin();
-    const visibleTo = (r) => {
-      if (!me || isAdmin) return true;
-      if ((r.setBy || '') === me) return true;
-      const rc = Array.isArray(r.recipients) ? r.recipients : null;
-      return !!rc && (rc.includes(me) || rc.includes(EVERYONE));
-    };
-    const pending = reminders.filter((r) => r.status === 'pending' && visibleTo(r));
+    const pending = reminders.filter((r) => r.status === 'pending' && concernsActor(r, me, actorIsAdmin()));
 
     if (pending.length === 0) {
       return { content: [{ type: 'text', text: 'No pending reminders.' }] };
@@ -628,10 +661,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    // Team mode: a member may cancel only what THEY set; admin/operator cancels
-    // anything. Solo (no actor) → unrestricted, as before.
+    // Team mode: a person cancels what they set; an admin also what concerns
+    // them (a reminder they cannot see is not theirs to cancel). Solo (no
+    // actor) → unrestricted, as before.
     const me = actorSlug();
-    if (me && !actorIsAdmin() && (reminders[idx].setBy || '') !== me) {
+    const mine = (reminders[idx].setBy || '') === me || (actorIsAdmin() && concernsActor(reminders[idx], me, true));
+    if (me && !mine) {
       return {
         content: [{ type: 'text', text: `That reminder isn't yours to cancel: only the person who set it (or an admin) can.` }],
         isError: true,
@@ -654,7 +689,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     content: [{ type: 'text', text: `Unknown tool: ${name}` }],
     isError: true,
   };
-});
+}
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

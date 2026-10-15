@@ -1,6 +1,7 @@
 # Secrets & credentials
 **/.env
 **/.env.local
+scripts/e2e/.env.local
 **/admin.env
 **/rclone.conf
 **/.google/

@@ -15,6 +15,7 @@ set -e
 #   ./deploy.sh frontend  — deploy frontend only
 #   ./deploy.sh auth      — deploy auth-service only
 #   ./deploy.sh code-server — deploy IDE container only
+#   ./deploy.sh rollback  — put the previous image generation back (no build)
 # ============================================================================
 
 # Keep SSH/SCP connections alive during slow transfers (prevents timeout on
@@ -95,6 +96,20 @@ fi
 IDE_NAME="${IDE_NAME:-$(basename "$REMOTE_PATH")}"
 BOT_DISPLAY="$(echo "${BOT_NAME:-bot}" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')"
 
+# `--fresh` (anywhere on the command line) rebuilds every layer (`--no-cache`):
+# for a base-package refresh or a layer you suspect is stale. The default build
+# reuses the layer cache, so a routine deploy rebuilds only what changed — the
+# apt, browser, CLI and extension layers are shared with the running image
+# instead of being stored again, which is what kept filling 38 GB hosts.
+FRESH=0
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --fresh) FRESH=1 ;;
+        *) ARGS+=("$a") ;;
+    esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}   # bash 3.2 (macOS) + set -u: an empty array must not expand
 DEPLOY_TARGET="${1:-all}"
 
 # Non-fatal problems accumulate here instead of scrolling past as one-line
@@ -111,6 +126,80 @@ echo -e "${CYAN}Remote:    $REMOTE_PATH${NC}"
 echo -e "${CYAN}Container: $IDE_NAME${NC}"
 echo -e "${CYAN}Bot:       ${BOT_NAME:-none}${NC}"
 echo ""
+
+# Health wait shared by a deploy (Step 5) and a rollback: poll the container
+# until BOTH code-server (:8080) and workspace-api (:3001) answer, up to
+# MAX_WAIT seconds. 0 = healthy, 1 = not. wsapi is started by pm2 after the
+# entrypoint's permission fix-ups, so it comes up later than code-server —
+# hence the longer window than the old code-server-only probe had.
+MAX_WAIT=120
+wait_healthy() {
+    local waited=0
+    while [ $waited -lt $MAX_WAIT ]; do
+        sleep 5
+        waited=$((waited + 5))
+        if ssh "$HETZNER_HOST" "docker exec '$IDE_NAME' sh -c 'curl -sf http://localhost:8080/ > /dev/null 2>&1 && curl -sf http://127.0.0.1:3001/api/health > /dev/null 2>&1'"; then
+            return 0
+        fi
+        echo -e "${YELLOW}  Waiting... (${waited}s / ${MAX_WAIT}s)${NC}"
+    done
+    return 1
+}
+
+# ─── Rollback: previous image generation back, no upload, no build ──────────
+# Step 3 tags every image it is about to rebuild as <image>:previous (and
+# keeps a copy of the manifest beside it), so a deploy that ships a broken
+# image can be undone in the time it takes compose to recreate the
+# containers, instead of another 15-minute build while the client sits at
+# 502. Compose recreates a container whose image changed, so re-tagging
+# previous→current and `up -d --no-build` is the whole operation.
+# The pm2 crashloop watch (Step 5b) is skipped: a rollback restores an image
+# that already passed it.
+if [ "$DEPLOY_TARGET" = "rollback" ]; then
+    echo -e "${GREEN}[1/2] Restoring the previous image generation...${NC}"
+    ssh "$HETZNER_HOST" "
+        set -e
+        cd '$REMOTE_PATH'
+        n=0
+        for img in \$(docker compose config --images); do
+            name=\"\${img%%:*}\"
+            docker image inspect \"\$name:previous\" >/dev/null 2>&1 || continue
+            docker tag \"\$name:previous\" \"\$img\"
+            echo \"  \$img <- \$name:previous\"
+            n=\$((n+1))
+        done
+        if [ \"\$n\" -eq 0 ]; then
+            echo '  no :previous image on this host — nothing to roll back to' >&2
+            exit 1
+        fi
+        [ -f .deploy-manifest.previous.json ] && mv -f .deploy-manifest.previous.json .deploy-manifest.json
+        # Same pre-step as Step 4: an old wsapi node holding :3001 would put
+        # the restored container into an EADDRINUSE crashloop.
+        docker exec '${IDE_NAME}' bash -c 'pkill -9 -f /opt/ide/workspace-api/index.js; pkill -9 -f wsapi-runner' 2>/dev/null || true
+        docker compose up -d --no-build --remove-orphans
+    " || exit 1
+    echo ""
+    echo -e "${GREEN}[2/2] Waiting for health check...${NC}"
+    if wait_healthy; then
+        echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║  Rollback complete. ${BOT_DISPLAY} is healthy on the previous image.${NC}"
+        echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+        TG_TEXT="↩️ *${BOT_DISPLAY}* | Rolled back to the previous image. All systems healthy."
+        TG_RC=0
+    else
+        echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  Rollback FAILED — health check did not pass within ${MAX_WAIT}s.${NC}"
+        echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+        echo -e "${YELLOW}  Debug: ssh $HETZNER_HOST \"docker logs $IDE_NAME --tail=30\"${NC}"
+        TG_TEXT="❌ *${BOT_DISPLAY}* | Rollback FAILED: health check did not pass. Check logs."
+        TG_RC=1
+    fi
+    if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_ADMIN_CHAT_ID" ]; then
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_ADMIN_CHAT_ID" -d text="$TG_TEXT" -d parse_mode="Markdown" > /dev/null 2>&1
+    fi
+    exit $TG_RC
+fi
 
 # ─── Step 0: Preflight + server converge ─────────────────────────────────────
 # Preflight fails fast (<10s) on anything that would otherwise kill the deploy
@@ -182,11 +271,69 @@ git -C "$THIS_DIR/.." diff --quiet HEAD 2>/dev/null || UPLOAD_DIRTY=true
 
 echo -e "${GREEN}[1/5] Uploading files...${NC}"
 
-scp Dockerfile               "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-scp Dockerfile.egress-proxy  "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-scp docker-compose.yml       "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-scp entrypoint.sh            "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-scp global-claude.md         "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+# ─── One stream instead of a hundred scp calls ──────────────────────────────
+# Everything below is QUEUED and sent as one compressed tar over one ssh
+# session at the end of this step (flush_upload). scp opened a connection per
+# call and spent a round trip per file: 668 small files over a 270 ms link took
+# 16 minutes (measured 2026-10-14); the same tree as one stream takes seconds.
+# The queue keeps the old list's meaning: `ship` = scp (a required file that is
+# missing still stops the deploy), `mirror` = the remote dir is replaced, not
+# overlaid (a file deleted here is deleted there), `wipe` = replace a remote dir
+# whose files are shipped one by one. Directories are created by the extraction.
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wsdeploy-stage.XXXXXX")"
+MIRROR_RM=()
+trap 'rm -rf "$STAGE_DIR"' EXIT
+_stage_rel() {   # "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" → apps/x-mcp
+    local r="${1#*:}"; r="${r#$REMOTE_PATH}"; r="${r#/}"; r="${r%/}"; printf '%s' "$r"
+}
+ship() {         # ship [-r] <local>... <$HETZNER_HOST:$REMOTE_PATH/dir/>
+    local recursive=0
+    [ "$1" = "-r" ] && { recursive=1; shift; }
+    local n=$(( $# - 1 )) dest rel src
+    eval "dest=\${$#}"
+    rel="$(_stage_rel "$dest")"
+    mkdir -p "$STAGE_DIR/$rel"
+    for src in "${@:1:$n}"; do
+        if [ "$recursive" = 1 ]; then
+            [ -e "$src" ] || { echo "  missing: $src" >&2; return 1; }
+            cp -R "$src" "$STAGE_DIR/$rel/" || return 1      # dir/. = contents, dir = the dir
+        else
+            [ -f "$src" ] || { echo "  missing: $src" >&2; return 1; }
+            cp "$src" "$STAGE_DIR/$rel/" || return 1
+        fi
+    done
+}
+mirror() {       # mirror <local_dir> <$REMOTE_PATH/dir>
+    local rel="${2#$REMOTE_PATH}"; rel="${rel#/}"; rel="${rel%/}"
+    [ -n "$rel" ] || { echo "  mirror: refusing the root" >&2; exit 1; }
+    MIRROR_RM+=("$rel")
+    mkdir -p "$STAGE_DIR/$rel"
+    cp -R "$1/." "$STAGE_DIR/$rel/" || exit 1
+}
+wipe() {         # wipe <dir>  (relative to REMOTE_PATH)
+    [ -n "$1" ] || exit 1
+    MIRROR_RM+=("$1")
+    mkdir -p "$STAGE_DIR/$1"
+}
+flush_upload() {
+    local rm_cmd="true" d
+    for d in ${MIRROR_RM[@]+"${MIRROR_RM[@]}"}; do rm_cmd="$rm_cmd && rm -rf '$REMOTE_PATH/$d'"; done
+    local files; files=$(find "$STAGE_DIR" -type f | wc -l | tr -d ' ')
+    echo -e "${CYAN}  Sending $files files as one stream...${NC}"
+    # No macOS resource forks or xattrs in the stream (bsdtar and GNU tar both take --no-xattrs).
+    (cd "$STAGE_DIR" && COPYFILE_DISABLE=1 tar --no-xattrs -czf - .) \
+        | ssh "$HETZNER_HOST" "set -e; mkdir -p '$REMOTE_PATH'; $rm_cmd; tar --no-same-owner --no-overwrite-dir -C '$REMOTE_PATH' -xzf -"
+    local rc=("${PIPESTATUS[@]}")
+    [ "${rc[0]}" = 0 ] && [ "${rc[1]}" = 0 ] || { echo -e "${RED}  upload failed (tar ${rc[0]}, remote ${rc[1]})${NC}" >&2; exit 1; }
+    rm -rf "$STAGE_DIR"; mkdir -p "$STAGE_DIR"; MIRROR_RM=()
+}
+
+
+ship Dockerfile               "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship Dockerfile.egress-proxy  "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship docker-compose.yml       "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship entrypoint.sh            "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship global-claude.md         "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
 
 # Egress proxy — Node HTTP CONNECT proxy in its own container.
 # See ide-template/Dockerfile.egress-proxy + ide-template/scripts/...
@@ -202,20 +349,15 @@ scp global-claude.md         "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
 #
 # Wipe-then-upload, so the remote context is a MIRROR of the source, not an
 # accumulation of every version ever deployed.
-mirror_dir() {
-    local local_dir="$1" remote_dir="$2"
-    ssh "$HETZNER_HOST" "rm -rf '$remote_dir' && mkdir -p '$remote_dir'" || exit 1
-    scp -r "$local_dir/." "$HETZNER_HOST:$remote_dir/" || exit 1
-}
 
 # Note: source lives in repo-root scripts/ alongside the host-side
 # install-egress.sh; the Dockerfile.egress-proxy copies it into the
 # image. We scp it to a path the Dockerfile build context will see
 # (REMOTE_PATH/scripts/).
-mirror_dir scripts "$REMOTE_PATH/scripts"
+mirror scripts "$REMOTE_PATH/scripts"
 # Dropped in AFTER the mirror: this one comes from the repo root, not from
 # ide-template/scripts, so mirroring would otherwise delete it.
-scp ../scripts/egress-proxy.js "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
+ship ../scripts/egress-proxy.js "$HETZNER_HOST:$REMOTE_PATH/scripts/" || exit 1
 
 # ─── Plugin marketplace pre-clone (build-time embed) ─────────────────────────
 # Dockerfile LAYER 2b.5 COPYs the telegram plugin source from
@@ -256,12 +398,9 @@ ssh "$HETZNER_HOST" "
 # Setuid wrappers (Phase-2/3 broker + uid isolation) — Dockerfile compiles
 # them in-image into /usr/local/bin/{wsapi,mcp,bot}-runner with mode 4755
 # root-owned.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/setuid-wrappers'"
-scp setuid-wrappers/wsapi-runner.c   "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
-scp setuid-wrappers/mcp-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
-scp setuid-wrappers/bot-runner.c     "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
-scp setuid-wrappers/monitor-runner.c "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
-scp setuid-wrappers/README.md        "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
+# The whole directory: a wrapper added later (priv-tree.c was) must not be
+# left behind by a list kept here.
+ship setuid-wrappers/*.c setuid-wrappers/*.h setuid-wrappers/README.md "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers/" || exit 1
 
 # Default skills (always installed) + optional skills (installed when
 # matching integration activates).
@@ -270,72 +409,70 @@ scp setuid-wrappers/README.md        "$HETZNER_HOST:$REMOTE_PATH/setuid-wrappers
 # build context. Otherwise scp -r just additively overlays — the old
 # folder lingers, Docker COPY ships both into the image, and the bot
 # sees two duplicate skills at runtime.
-mirror_dir skills/default "$REMOTE_PATH/skills/default"
+mirror skills/default "$REMOTE_PATH/skills/default"
 if [ -d skills/optional ]; then
-    mirror_dir skills/optional "$REMOTE_PATH/skills/optional"
+    mirror skills/optional "$REMOTE_PATH/skills/optional"
 else
-    ssh "$HETZNER_HOST" "rm -rf '$REMOTE_PATH/skills/optional' && mkdir -p '$REMOTE_PATH/skills/optional'" || exit 1
+    wipe skills/optional
 fi
 
 # First-run bootstrap templates (folder structure + system reminders + Tasks/Pending)
-mirror_dir bootstrap "$REMOTE_PATH/bootstrap"
+mirror bootstrap "$REMOTE_PATH/bootstrap"
 
 # CC hooks (PostToolUse / Stop / etc — wired in via ~/.claude/settings.json,
 # template at bootstrap/claude-settings.json). Sources in ide-template/hooks/.
-mirror_dir hooks "$REMOTE_PATH/hooks"
+mirror hooks "$REMOTE_PATH/hooks"
 
 # Helper scripts (Bundle 6: frontmatter stamping, etc).
 
-scp Caddyfile              "$HETZNER_HOST:$REMOTE_PATH/" 2>/dev/null || true
-scp inject.js overrides.css mobile.js "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-scp settings.json "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/extensions'"
-scp -r extensions/branding "$HETZNER_HOST:$REMOTE_PATH/extensions/" || exit 1
+ship Caddyfile              "$HETZNER_HOST:$REMOTE_PATH/" 2>/dev/null || true
+ship inject.js overrides.css mobile.js "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship settings.json "$HETZNER_HOST:$REMOTE_PATH/" || exit 1
+ship -r extensions/branding "$HETZNER_HOST:$REMOTE_PATH/extensions/" || exit 1
 
 # Bot scripts
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/bot'"
-scp bot/bot.sh                "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/bot-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/web-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/mcp-auth-helper.sh    "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/bot-relay.sh          "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/tmux-inject.sh        "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/reminder-monitor.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/recent-snapshot-monitor.sh "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/browser-watchdog.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
-scp bot/ecosystem.config.js   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/bot.sh                "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/bot-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/web-notify.sh         "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/mcp-auth-helper.sh    "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/bot-relay.sh          "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/tmux-inject.sh        "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/reminder-monitor.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/recent-snapshot-monitor.sh "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/browser-watchdog.sh   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
+ship bot/ecosystem.config.js   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 
 # MCP servers
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/shopify-mcp' '$REMOTE_PATH/apps/meta-mcp' '$REMOTE_PATH/apps/seedream-mcp' '$REMOTE_PATH/apps/google-ads-mcp' '$REMOTE_PATH/apps/reminder-mcp' '$REMOTE_PATH/apps/tasks-mcp' '$REMOTE_PATH/apps/pdf-mcp' '$REMOTE_PATH/apps/nano-banana-mcp' '$REMOTE_PATH/apps/signwell-mcp' '$REMOTE_PATH/apps/workspace-api-mcp'"
-scp apps/shopify-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
-scp apps/shopify-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
-scp apps/meta-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
-scp apps/meta-mcp/package.json      "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
-scp apps/google-ads-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/google-ads-mcp/"  || exit 1
-scp apps/google-ads-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/google-ads-mcp/" || exit 1
-scp apps/seedream-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/seedream-mcp/"     || exit 1
-scp apps/seedream-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/seedream-mcp/"     || exit 1
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/nano-banana-mcp'"
-scp apps/nano-banana-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/"  || exit 1
-scp apps/nano-banana-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/" || exit 1
-scp apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
-scp apps/reminder-mcp/recur.cjs      "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
-scp apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
-scp apps/tasks-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/tasks-mcp/"        || exit 1
-scp apps/tasks-mcp/package.json      "$HETZNER_HOST:$REMOTE_PATH/apps/tasks-mcp/"        || exit 1
+ship apps/shopify-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
+ship apps/shopify-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
+ship apps/meta-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
+ship apps/meta-mcp/package.json      "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
+ship apps/google-ads-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/google-ads-mcp/"  || exit 1
+ship apps/google-ads-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/google-ads-mcp/" || exit 1
+ship apps/seedream-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/seedream-mcp/"     || exit 1
+ship apps/seedream-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/seedream-mcp/"     || exit 1
+ship apps/nano-banana-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/"  || exit 1
+ship apps/nano-banana-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/" || exit 1
+ship apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
+ship apps/reminder-mcp/recur.cjs      "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
+ship apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 # pdf-mcp — markdown→PDF (weasyprint). index.js speaks MCP + shells to render.py;
 # house.css is the shared stylesheet. All four files are needed on the remote
 # build context for the Dockerfile's `COPY apps/pdf-mcp`.
-scp apps/pdf-mcp/index.js            "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
-scp apps/pdf-mcp/package.json        "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
-scp apps/pdf-mcp/render.py           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
-scp apps/pdf-mcp/house.css           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
-scp apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
-scp apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
+ship apps/pdf-mcp/index.js            "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
+ship apps/pdf-mcp/package.json        "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
+ship apps/pdf-mcp/render.py           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
+ship apps/pdf-mcp/house.css           "$HETZNER_HOST:$REMOTE_PATH/apps/pdf-mcp/"          || exit 1
+ship apps/playwright-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/playwright-mcp/"   || exit 1
+ship apps/playwright-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/playwright-mcp/"   || exit 1
+ship apps/remote-mcp/index.js         "$HETZNER_HOST:$REMOTE_PATH/apps/remote-mcp/"       || exit 1
+ship apps/remote-mcp/package.json     "$HETZNER_HOST:$REMOTE_PATH/apps/remote-mcp/"       || exit 1
+ship apps/workspace-api-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
+ship apps/workspace-api-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/workspace-api-mcp/" || exit 1
 # Memory v4 embedder worker (forked by workspace-api; lib/embedder-client.js).
 # Three files, never a local node_modules (the image installs from the lock).
-ssh "$HETZNER_HOST" "rm -rf '$REMOTE_PATH/apps/embedder' && mkdir -p '$REMOTE_PATH/apps/embedder'" || exit 1
-scp apps/embedder/worker.mjs apps/embedder/package.json apps/embedder/package-lock.json "$HETZNER_HOST:$REMOTE_PATH/apps/embedder/" || exit 1
+wipe apps/embedder
+ship apps/embedder/worker.mjs apps/embedder/package.json apps/embedder/package-lock.json "$HETZNER_HOST:$REMOTE_PATH/apps/embedder/" || exit 1
 
 # ─── Memory v4 embedder model (build-time embed) ─────────────────────────────
 # multilingual-e5-small, int8 ONNX, pinned by revision and checked by sha256 —
@@ -346,8 +483,7 @@ scp apps/embedder/worker.mjs apps/embedder/package.json apps/embedder/package-lo
 # measured 0.75 vs 0.80) and this says so loudly. The directory always exists
 # (models/.keep), so the Dockerfile COPY never breaks.
 EMBEDDER_MODEL_REV=761b726dd34fb83930e26aab4e9ac3899aa1fa78
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/models'" || exit 1
-scp models/.keep "$HETZNER_HOST:$REMOTE_PATH/models/" || exit 1
+ship models/.keep "$HETZNER_HOST:$REMOTE_PATH/models/" || exit 1
 if ! ssh "$HETZNER_HOST" "
     set -e
     d='$REMOTE_PATH/models/Xenova/multilingual-e5-small'
@@ -366,88 +502,77 @@ if ! ssh "$HETZNER_HOST" "
 "; then
     echo -e "${YELLOW}  ⚠ Embedder model fetch failed — memory v4 search will run on BM25 alone until the next deploy.${NC}"
 fi
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/miniapp-mcp'"
-scp apps/miniapp-mcp/index.js        "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
-scp apps/miniapp-mcp/package.json    "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/web-channel-mcp'"
-scp apps/web-channel-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
-scp apps/web-channel-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/email-mcp'"
-scp apps/email-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1
-scp apps/email-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1
+ship apps/miniapp-mcp/index.js        "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
+ship apps/miniapp-mcp/package.json    "$HETZNER_HOST:$REMOTE_PATH/apps/miniapp-mcp/"        || exit 1
+ship apps/web-channel-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
+ship apps/web-channel-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/web-channel-mcp/"   || exit 1
+ship apps/email-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1
+ship apps/email-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/email-mcp/" || exit 1
 
 # GitHub MCP — thin node wrapper around the official github/github-mcp-server
 # Go binary. The Go binary itself is downloaded inside the Docker build (curl
 # from GH releases, pinned to GITHUB_MCP_VERSION); we only ship the wrapper
 # sources here.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/github-mcp'"
-scp apps/github-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/github-mcp/" || exit 1
-scp apps/github-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/github-mcp/" || exit 1
+ship apps/github-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/github-mcp/" || exit 1
+ship apps/github-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/github-mcp/" || exit 1
 
 # Grok MCP — xAI Grok via OpenAI-compatible API. Single API key, ships
 # alongside the other MCPs. Activated per-client through the workspace
 # Integrations dashboard, not via env at deploy time.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/grok-mcp'"
-scp apps/grok-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/grok-mcp/" || exit 1
-scp apps/grok-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/grok-mcp/" || exit 1
+ship apps/grok-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/grok-mcp/" || exit 1
+ship apps/grok-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/grok-mcp/" || exit 1
 
 # OpenAI MCP — ask_gpt for second-opinion / cross-check. Activated per-client
 # through the Integrations dashboard (OPENAI_API_KEY).
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/openai-mcp'"
-scp apps/openai-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/openai-mcp/" || exit 1
-scp apps/openai-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/openai-mcp/" || exit 1
+ship apps/openai-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/openai-mcp/" || exit 1
+ship apps/openai-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/openai-mcp/" || exit 1
 
 # Docs Comments MCP (Playwright range-anchored Google Docs comments) — tracked,
 # shipped to every client like any other MCP. (Reply/resolve/delete live in
 # gdocs-mcp over the Drive API; this MCP only does the anchored add.)
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/docs-comments-mcp'"
-scp apps/docs-comments-mcp/index.js      "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
-scp apps/docs-comments-mcp/package.json  "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
-scp apps/docs-comments-mcp/keepalive.mjs "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+ship apps/docs-comments-mcp/index.js      "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+ship apps/docs-comments-mcp/package.json  "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
+ship apps/docs-comments-mcp/keepalive.mjs "$HETZNER_HOST:$REMOTE_PATH/apps/docs-comments-mcp/" || exit 1
 
 # Generic operator-only catalog-fragment mechanism. No integration uses it
 # today (docs-comments is now in the main catalog), but the hook stays for any
 # future per-operator-machine integration: present locally → ships → wsapi
 # merges at startup; absent → no-op.
 if [ -f workspace-api/integrations.catalog.local.json ]; then
-    scp workspace-api/integrations.catalog.local.json \
-        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/integrations.catalog.local.json" || exit 1
+    ship workspace-api/integrations.catalog.local.json \
+        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
     echo "  catalog.local.json staged — adds private integration card(s)"
 fi
 # Same hook for the routines marketplace (lib/routines-catalog.js merges it).
 if [ -f workspace-api/routines.catalog.local.json ]; then
-    scp workspace-api/routines.catalog.local.json \
-        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/routines.catalog.local.json" || exit 1
+    ship workspace-api/routines.catalog.local.json \
+        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
     echo "  routines.catalog.local.json staged — adds private marketplace routine(s)"
 fi
 
 # Gemini MCP (chat) — ask_gemini for second-opinion / long-context reads.
 # Separate from nano-banana (image). Shares GEMINI_API_KEY with that integration.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/gemini-chat-mcp'"
-scp apps/gemini-chat-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/gemini-chat-mcp/" || exit 1
-scp apps/gemini-chat-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/gemini-chat-mcp/" || exit 1
+ship apps/gemini-chat-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/gemini-chat-mcp/" || exit 1
+ship apps/gemini-chat-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/gemini-chat-mcp/" || exit 1
 
-scp apps/signwell-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/signwell-mcp/" || exit 1
-scp apps/signwell-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/signwell-mcp/" || exit 1
+ship apps/signwell-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/signwell-mcp/" || exit 1
+ship apps/signwell-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/signwell-mcp/" || exit 1
 
 # Trello MCP — board/card read + comment/label/move via REST API. Activated
 # per-client through the Integrations dashboard.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/trello-mcp'"
-scp apps/trello-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/trello-mcp/" || exit 1
-scp apps/trello-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/trello-mcp/" || exit 1
+ship apps/trello-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/trello-mcp/" || exit 1
+ship apps/trello-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/trello-mcp/" || exit 1
 
 # Google Docs MCP — Docs + Drive REST via OAuth refresh token. Per-user OAuth
 # credentials (client_id, secret, refresh_token) stored in the encrypted
 # integrations store.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/gdocs-mcp'"
-scp apps/gdocs-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/gdocs-mcp/" || exit 1
-scp apps/gdocs-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/gdocs-mcp/" || exit 1
+ship apps/gdocs-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/gdocs-mcp/" || exit 1
+ship apps/gdocs-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/gdocs-mcp/" || exit 1
 
 # X (Twitter) MCP — read-only X data via twitterapi.io (no X dev approval,
 # no user account exposure — just an API key from twitterapi.io).
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/x-mcp'"
-scp apps/x-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
-scp apps/x-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
+ship apps/x-mcp/index.js     "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
+ship apps/x-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
 
 # Shared helpers imported via `../_shared/<file>.js` at spawn time by every
 # brokered MCP (Google Workspace, email, etc.). Recursive scp — historically
@@ -465,15 +590,22 @@ scp apps/x-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/x-mcp/" || exit 1
 #
 # Must land before any MCP that imports from _shared so Docker's COPY for
 # those MCPs sees a complete _shared/ dir on the remote build context.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/_shared'"
-mirror_dir apps/_shared "$REMOTE_PATH/apps/_shared"
+mirror apps/_shared "$REMOTE_PATH/apps/_shared"
 
 # Google Workspace bundle — six new MCPs (gdocs already deployed above)
 # spawned from a single integration record. Reuses gdocs OAuth env vars.
 for svc in gsheets gcalendar gdrive gslides gtasks; do
-  ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/apps/${svc}-mcp'"
-  scp "apps/${svc}-mcp/index.js"     "$HETZNER_HOST:$REMOTE_PATH/apps/${svc}-mcp/" || exit 1
-  scp "apps/${svc}-mcp/package.json" "$HETZNER_HOST:$REMOTE_PATH/apps/${svc}-mcp/" || exit 1
+  ship "apps/${svc}-mcp/index.js"     "$HETZNER_HOST:$REMOTE_PATH/apps/${svc}-mcp/" || exit 1
+  ship "apps/${svc}-mcp/package.json" "$HETZNER_HOST:$REMOTE_PATH/apps/${svc}-mcp/" || exit 1
+done
+
+# Lockfiles: every app that has one next to its package.json gets it shipped,
+# so the build installs the versions that were tested rather than whatever
+# resolves on build day. Runs after every apps/ directory above exists on
+# the remote; an app without a lockfile is simply skipped.
+for lock in apps/*/package-lock.json; do
+  [ -f "$lock" ] || continue
+  ship "$lock" "$HETZNER_HOST:$REMOTE_PATH/$(dirname "$lock")/" || exit 1
 done
 
 # Integrations key — generated once per client, mode 0600 root-owned, used by
@@ -524,21 +656,21 @@ ssh "$HETZNER_HOST" "mkdir -p /home/coder/.email"
 # the web chat panel. PM2 starts it; nginx proxies /api/* → :3001.
 # Module layout: index.js + lib/{config,files,sessions,claude,watcher}.js
 # + routes/{health,chat,files}.js. Recursive scp picks up the whole tree.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/workspace-api/lib/integrations' '$REMOTE_PATH/workspace-api/routes' '$REMOTE_PATH/workspace-api/assets'"
-scp workspace-api/index.js                 "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
-scp workspace-api/package.json             "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
-scp workspace-api/integrations.catalog.json "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
-scp workspace-api/routines.catalog.json   "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+ship workspace-api/index.js                 "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+ship workspace-api/package.json             "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+ship workspace-api/package-lock.json        "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+ship workspace-api/integrations.catalog.json "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
+ship workspace-api/routines.catalog.json   "$HETZNER_HOST:$REMOTE_PATH/workspace-api/" || exit 1
 # scp -r on lib/. picks up the integrations/ subdir transitively.
-mirror_dir workspace-api/lib    "$REMOTE_PATH/workspace-api/lib"
-mirror_dir workspace-api/routes "$REMOTE_PATH/workspace-api/routes"
+mirror workspace-api/lib    "$REMOTE_PATH/workspace-api/lib"
+mirror workspace-api/routes "$REMOTE_PATH/workspace-api/routes"
 # assets/ ships WORKSPACE.md (UI reference for Claude) + avatar presets.
-mirror_dir workspace-api/assets "$REMOTE_PATH/workspace-api/assets"
+mirror workspace-api/assets "$REMOTE_PATH/workspace-api/assets"
 # Versioned data migrations (lib/migrate.js loads ../migrations) and the
 # operator's CLI (bin/migrate.mjs). Without them the image boots with no
 # migrations at all — silently: nothing applies, nothing is offered.
-mirror_dir workspace-api/migrations "$REMOTE_PATH/workspace-api/migrations"
-mirror_dir workspace-api/bin        "$REMOTE_PATH/workspace-api/bin"
+mirror workspace-api/migrations "$REMOTE_PATH/workspace-api/migrations"
+mirror workspace-api/bin        "$REMOTE_PATH/workspace-api/bin"
 
 # Upload full frontend source (needed for Docker build on remote).
 # Wipe per-client image patterns from the remote public/ first — `scp -r`
@@ -546,28 +678,31 @@ mirror_dir workspace-api/bin        "$REMOTE_PATH/workspace-api/bin"
 # whose overrides shrank (e.g. dropped a logo.png) inherits the old logo
 # from a previous deploy. Generic shared assets stay (workspace-logo.svg,
 # favicon.svg, avatars/, integrations/) — they're re-uploaded right below.
-ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/frontend/src' '$REMOTE_PATH/frontend/public'
-    rm -f '$REMOTE_PATH/frontend/public/'{bot,logo,icon,favicon}.{png,jpg,jpeg} 2>/dev/null
-    rm -f '$REMOTE_PATH/frontend/public/.DS_Store' 2>/dev/null"
-scp frontend/Dockerfile.frontend  "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp frontend/nginx.conf           "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp frontend/package.json         "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp frontend/package-lock.json    "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp frontend/index.html           "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-scp frontend/vite.config.js       "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
-mirror_dir frontend/src "$REMOTE_PATH/frontend/src"
-scp -r frontend/public/.          "$HETZNER_HOST:$REMOTE_PATH/frontend/public/" || exit 1
+ship frontend/Dockerfile.frontend  "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+ship frontend/nginx.conf           "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+ship frontend/package.json         "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+ship frontend/package-lock.json    "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+ship frontend/index.html           "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+ship frontend/vite.config.js       "$HETZNER_HOST:$REMOTE_PATH/frontend/" || exit 1
+mirror frontend/src "$REMOTE_PATH/frontend/src"
+# A mirror: old branding images and stray .DS_Store files from earlier deploys
+# used to linger here (and were baked into the frontend image).
+mirror frontend/public "$REMOTE_PATH/frontend/public"
 
 if [ "$DEPLOY_TARGET" = "all" ] || [ "$DEPLOY_TARGET" = "auth" ]; then
-    ssh "$HETZNER_HOST" "mkdir -p '$REMOTE_PATH/auth-service'"
-    scp auth-service/Dockerfile   "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
-    scp auth-service/index.js     "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
-    scp auth-service/whitelist.js "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
-    scp auth-service/package.json "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    ship auth-service/Dockerfile   "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    ship auth-service/index.js     "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    ship auth-service/whitelist.js "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    ship auth-service/package.json "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    if [ -f auth-service/package-lock.json ]; then
+        ship auth-service/package-lock.json "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    fi
 fi
 
 echo -e "${GREEN}Files uploaded${NC}"
 echo ""
+
+flush_upload
 
 # ─── Step 2: Notify Telegram ─────────────────────────────────────────────────
 echo -e "${GREEN}[2/5] Notifying Telegram...${NC}"
@@ -595,21 +730,73 @@ case "$DEPLOY_TARGET" in
     *)            BUILD_TARGETS="$DEPLOY_TARGET" ;;
 esac
 
-ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build --no-cache $BUILD_TARGETS" || exit 1
+# Keep the generation we are about to replace as <image>:previous, with the
+# manifest that describes it, so `./deploy.sh rollback` has something to put
+# back. A tag is what keeps an image out of `image prune` below — the old
+# "24h reprieve" only ever protected images younger than a day, and the
+# previous generation almost never is. One generation is kept: the tag moves
+# on the next deploy and the one before it becomes dangling again.
+ssh "$HETZNER_HOST" "
+    set -e
+    cd '$REMOTE_PATH'
+    for img in \$(docker compose config --images $BUILD_TARGETS); do
+        docker image inspect \"\$img\" >/dev/null 2>&1 || continue
+        docker tag \"\$img\" \"\${img%%:*}:previous\"
+    done
+    cp -f .deploy-manifest.json .deploy-manifest.previous.json 2>/dev/null || true
+" || echo -e "${YELLOW}  could not tag the current images as :previous — rollback will not be available for this deploy${NC}"
+# Room for the build. Measured on a 38 GB host (2026-10-14): a full rebuild
+# (--fresh) holds, at its peak, the running image, a build cache the size of
+# the image and the new image compressed AND unpacked — about four times the
+# image's compressed size; a cached build adds only the layers that changed.
+# A stale build cache or an unused image generation is the difference between
+# a build that lands and one that dies at "no space left on device" after
+# forty minutes. So: measure, free what is unused if short, and stop before
+# the build when it still would not fit.
+ssh "$HETZNER_HOST" bash -s -- "$IDE_NAME" "$FRESH" <<'REMOTE' || exit 1
+IMAGE="$1-code-server:latest"
+size=$(docker image inspect --format '{{.Size}}' "$IMAGE" 2>/dev/null || echo 3000000000)
+if [ "$2" = 1 ]; then need_kb=$(( 4 * size / 1024 + 3 * 1024 * 1024 )); else need_kb=$(( size / 1024 + 3 * 1024 * 1024 )); fi
+free_kb=$(df -k / | awk 'NR==2 {print $4}')
+if [ "$free_kb" -lt "$need_kb" ]; then
+    echo "  disk: $((free_kb / 1024 / 1024)) GB free, about $((need_kb / 1024 / 1024)) GB needed - freeing what is unused"
+    docker builder prune -af >/dev/null 2>&1 || true
+    docker image prune -f >/dev/null 2>&1 || true
+    free_kb=$(df -k / | awk 'NR==2 {print $4}')
+fi
+if [ "$free_kb" -lt "$need_kb" ]; then
+    # Still short: the previous generation goes (a 38 GB host cannot hold
+    # three generations of a large image). Rollback is then not available for
+    # this deploy, which the deploy says below.
+    echo "  disk: dropping the :previous image generation to make room (no rollback for this deploy)"
+    for img in $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep ':previous$'); do docker rmi "$img" >/dev/null 2>&1 || true; done
+    docker image prune -f >/dev/null 2>&1 || true
+    free_kb=$(df -k / | awk 'NR==2 {print $4}')
+fi
+if [ "$free_kb" -lt "$need_kb" ]; then
+    echo "  disk: still $((free_kb / 1024 / 1024)) GB free - not enough for the build. Free space on the host (docker system df; old images, journal) and run the deploy again." >&2
+    exit 1
+fi
+echo "  disk: $((free_kb / 1024 / 1024)) GB free for the build"
+REMOTE
+NO_CACHE=""; [ "$FRESH" = 1 ] && NO_CACHE="--no-cache" && echo -e "${CYAN}  --fresh: every layer is rebuilt${NC}"
+ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build $NO_CACHE $BUILD_TARGETS" || exit 1
 # Prune AFTER the build, not before: pruning first leaves this build's own
 # dangling layers on disk until the NEXT deploy — on a 38G VPS that's the
 # difference between a stable ~x% floor and creeping toward disk-full.
-# (Running containers/images in use are never pruned.)
+# (Running containers/images in use are never pruned; neither is anything
+# still carrying a tag — which is what keeps <image>:previous.)
 #
 # Images get a 24h reprieve, build cache does not. `docker system prune -f`
 # used to take the previous generation of images with it, seconds after the new
 # one was built — so when a deploy shipped a config that crash-looped the
 # frontend (2026-09-24), there was nothing to roll back TO and the only way out
-# was another full deploy while the client sat at 502. Keeping one generation
-# costs a few GB for a day; the build cache, which is what actually creeps
-# toward disk-full, is still pruned on sight.
+# was another full deploy while the client sat at 502. The build cache, which
+# is what actually creeps toward disk-full, is still pruned on sight.
 echo -e "${CYAN}  Pruning unused Docker layers to free disk space...${NC}"
-ssh "$HETZNER_HOST" "docker container prune -f; docker image prune -f --filter 'until=24h'; docker builder prune -f" || true
+# The build cache this build just used stays (it is what makes the next build
+# short and small); only cache nobody has touched for ten days goes.
+ssh "$HETZNER_HOST" "docker container prune -f; docker image prune -f --filter 'until=24h'; docker builder prune -f --filter 'until=240h'" || true
 echo -e "${GREEN}Images built${NC}"
 echo ""
 
@@ -707,20 +894,8 @@ echo ""
 # ─── Step 5: Health check ───────────────────────────────────────────────────
 echo -e "${GREEN}[5/5] Waiting for health check...${NC}"
 
-MAX_WAIT=60
-WAITED=0
 HEALTHY=false
-
-while [ $WAITED -lt $MAX_WAIT ]; do
-    sleep 5
-    WAITED=$((WAITED + 5))
-    # Verify code-server is up (port 8080)
-    if ssh "$HETZNER_HOST" "docker exec '$IDE_NAME' curl -sf http://localhost:8080/ > /dev/null 2>&1"; then
-        HEALTHY=true
-        break
-    fi
-    echo -e "${YELLOW}  Waiting... (${WAITED}s / ${MAX_WAIT}s)${NC}"
-done
+wait_healthy && HEALTHY=true
 
 echo ""
 if [ "$HEALTHY" = true ]; then
@@ -868,18 +1043,29 @@ MANIFEST
             -d parse_mode="Markdown" > /dev/null 2>&1
     fi
 else
-    echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║  Deploy complete, but health check not yet passing.       ║${NC}"
-    echo -e "${YELLOW}║  Normal if Claude needs time to start (~60s).             ║${NC}"
-    echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
+    # A container that never answered within the window is a failed deploy,
+    # not a slow one: this branch used to exit 0, so install.sh went on to
+    # print "Your workspace is ready" and update.sh moved to the next client
+    # while the stack sat at 502. No manifest is stamped (nothing was
+    # verified), and the exit code says what happened.
+    echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  Deploy FAILED — health check did not pass within ${MAX_WAIT}s.${NC}"
+    echo -e "${RED}║  The container is up but is not answering.${NC}"
+    echo -e "${RED}║  Previous image kept on the host:  ./deploy.sh rollback${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
     echo -e "${YELLOW}  Debug: ssh $HETZNER_HOST \"docker logs $IDE_NAME --tail=30\"${NC}"
+    for e in "${DEPLOY_ERRORS[@]}"; do
+        echo -e "${YELLOW}   - also: $e${NC}"
+    done
     if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_ADMIN_CHAT_ID" ]; then
         TARGET_LABEL="${DEPLOY_TARGET:-all}"
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="$TELEGRAM_ADMIN_CHAT_ID" \
-            -d text="⚠️ *${BOT_DISPLAY}* | Deploy complete (${TARGET_LABEL}), but health check not yet passing. Check logs." \
+            -d text="❌ *${BOT_DISPLAY}* | Deploy FAILED (${TARGET_LABEL}): health check did not pass. Check logs." \
             -d parse_mode="Markdown" > /dev/null 2>&1
     fi
+    echo -e "${CYAN}Logs: ssh $HETZNER_HOST \"docker logs $IDE_NAME --tail=50 -f\"${NC}"
+    exit 1
 fi
 
 echo ""

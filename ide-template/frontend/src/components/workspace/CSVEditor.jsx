@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Table2, Hexagon, Plus, Trash2, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal } from 'lucide-react';
+import { Table2, Hexagon, Plus, Trash2, LockKeyhole, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal } from 'lucide-react';
 import Papa from 'papaparse';
 import {
   useReactTable,
@@ -44,6 +44,9 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
   const [sorting, setSorting] = useState([]);
   // editingCell = { row: number | 'header', col: number } | null
   const [editingCell, setEditingCell] = useState(null);
+  // A locked file (its own lock or a folder's) opens read-only.
+  const [locked, setLocked] = useState(null);
+  const lockedRef = useRef(null);
 
   const dirtyRef    = useRef(false);
   const savingRef   = useRef(false);
@@ -73,6 +76,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
           return;
         }
 
+        setLocked(data.locked || null); lockedRef.current = data.locked || null;
         // Keep unsaved local edits on watcher refresh.
         if (!isInitialLoad.current && dirtyRef.current) {
           remoteMtime.current = data.mtime ?? 0;
@@ -136,6 +140,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
   // Serialise + schedule save. Reads from the next-state values directly so
   // we don't race the React state queue.
   const scheduleSave = useCallback((nextHeaders, nextRows) => {
+    if (lockedRef.current) return;   // read-only
     dirtyRef.current = true;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -251,7 +256,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
             value={header}
             colIdx={colIdx}
             isEditing={editingCell?.row === 'header' && editingCell?.col === colIdx}
-            onStartEdit={() => setEditingCell({ row: 'header', col: colIdx })}
+            onStartEdit={() => { if (!locked) setEditingCell({ row: 'header', col: colIdx }); }}
             onCommit={(v) => { commitHeader(colIdx, v); setEditingCell(null); }}
             onCancel={() => setEditingCell(null)}
             onDelete={() => removeColumn(colIdx)}
@@ -264,7 +269,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
             <BodyCell
               value={info.getValue()}
               isEditing={editingCell?.row === rowIdx && editingCell?.col === colIdx}
-              onStartEdit={() => setEditingCell({ row: rowIdx, col: colIdx })}
+              onStartEdit={() => { if (!locked) setEditingCell({ row: rowIdx, col: colIdx }); }}
               onCommit={(v) => { commitCell(rowIdx, colIdx, v); setEditingCell(null); }}
               onCancel={() => setEditingCell(null)}
             />
@@ -287,6 +292,7 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
   const meta =
     status.kind === 'error'   ? <span className="text-destructive">Error: {status.error}</span> :
     status.kind === 'loading' ? 'Loading…' :
+    locked                    ? <span className="inline-flex items-center gap-1.5 text-muted-foreground/75"><LockKeyhole className="size-3.5" strokeWidth={1.75} />Locked by {locked.byName}</span> :
     externalUpdate            ? <UpdatedBadge /> :
     dirtyRef.current          ? 'Saving…' :
     savedAt                   ? 'Saved' : null;
@@ -329,14 +335,14 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
                       ))}
                       {/* Add-column button */}
                       <th className="border-b border-border/60 bg-muted/10 px-1 py-1">
-                        <button
+                        {!locked && <button
                           type="button"
                           onClick={addColumn}
                           className="inline-flex size-6 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
                           title="Add column"
                         >
                           <Plus className="size-3.5" strokeWidth={2} />
-                        </button>
+                        </button>}
                       </th>
                     </tr>
                   ))}
@@ -371,14 +377,14 @@ export default function CSVEditor({ path, fileEventNonce, sidebarOpen }) {
                   {/* Add-row affordance */}
                   <tr>
                     <td colSpan={columns.length + 2} className="px-2 py-1">
-                      <button
+                      {!locked && <button
                         type="button"
                         onClick={addRow}
                         className="inline-flex items-center gap-1.5 rounded-[5px] px-2 py-1 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground/85"
                       >
                         <Plus className="size-3.5" strokeWidth={2} />
                         Add row
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 </tbody>

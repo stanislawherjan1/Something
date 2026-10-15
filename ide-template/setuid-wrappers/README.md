@@ -20,6 +20,19 @@ mode 4755 (setuid bit set). The setuid bit is what allows a coder-uid
 caller to end up at the target uid; without it the wrappers refuse to
 run rather than silently running unprivileged.
 
+- `turn-runner.c` — starts a Claude turn as the turn user for its slot:
+  `turn-runner <solo|group|01..24> <claude args…>`. The pool `turn-01…24`
+  (uids 1101–1124, private groups `priv-01…24`) is one user per person on the
+  roster, `turn-group` a Telegram group's, `turn` a solo workspace's. Only
+  root or `wsapi` may start it (mode 4750, group wsapi); the slot is validated
+  here, in code. HOME is the slot's own under `/home/turns`.
+- `priv-tree.c` — the one root helper workspace-api calls: `assign <slug>
+  <slot>` makes a person's private trees (`users/<slug>`, `memory/users/<slug>`,
+  `.team/users/<slug>`) their slot's (`turn-NN:priv-NN` 2770); `archive <slug>`
+  moves them out of the project as root 0700 before a slot is reused; `grant
+  <slot>` lets `bot` and `coder` into the primary admin's group. Validates every
+  argument, never follows a symlink, runs one fixed program (`gpasswd`).
+
 ## Hardening
 
 - `PR_SET_NO_NEW_PRIVS` set after the uid drop, so the exec'd Node can

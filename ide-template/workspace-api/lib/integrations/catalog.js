@@ -6,7 +6,7 @@
  * MCP server (or which long-running process to restart).
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -17,9 +17,13 @@ const CATALOG_PATH       = join(__dirname, '..', '..', 'integrations.catalog.jso
 // are merged on top of the main catalog at load time. Same shape: an
 // object with `integrations: [...]`. Missing file is silently skipped —
 // every other client sees only the shared catalog.
-const CATALOG_LOCAL_PATH = join(__dirname, '..', '..', 'integrations.catalog.local.json');
+const CATALOG_LOCAL_PATH = process.env.INTEGRATIONS_CATALOG_LOCAL || join(__dirname, '..', '..', 'integrations.catalog.local.json');
 
 let cached = null;
+// The local catalog is read again when its file changes (a stat per lookup;
+// an operator can add or override an entry without a restart).
+let localStamp = null;
+function stampOf(path) { try { const st = statSync(path); return `${st.mtimeMs}:${st.size}`; } catch { return null; } }
 
 function validateEntry(i) {
   if (!i.id || typeof i.id !== 'string') throw new Error('integration missing id');
@@ -35,13 +39,18 @@ function validateEntry(i) {
 }
 
 function load() {
-  if (cached) return cached;
+  const stamp = stampOf(CATALOG_LOCAL_PATH);
+  if (cached && stamp === localStamp) return cached;
+  localStamp = stamp;
   const raw = readFileSync(CATALOG_PATH, 'utf8');
   const parsed = JSON.parse(raw);
   if (!parsed || !Array.isArray(parsed.integrations)) {
     throw new Error('integrations.catalog.json: missing "integrations" array');
   }
   for (const i of parsed.integrations) validateEntry(i);
+  // A person may connect their own account of anything, unless the entry says
+  // `personal: false` (its runtime is bound to the bot's home, a browser, or the bot itself).
+  for (const i of parsed.integrations) i.personal = i.personal !== false;
 
   // Merge local (gitignored) catalog if present. Last-write-wins on id
   // collision so a local entry CAN override a shared one if a future use
@@ -52,6 +61,7 @@ function load() {
       const localParsed = JSON.parse(localRaw);
       const localEntries = Array.isArray(localParsed?.integrations) ? localParsed.integrations : [];
       for (const i of localEntries) validateEntry(i);
+      for (const i of localEntries) i.personal = i.personal !== false;
       const ids = new Set(localEntries.map(i => i.id));
       const merged = [
         ...parsed.integrations.filter(i => !ids.has(i.id)),
@@ -76,7 +86,21 @@ export function listAll() {
 }
 
 /** One entry by id, or null. */
+/** `granola@ann` → `granola`: a person's own connection is keyed by the integration id and their slug. */
+export function baseId(key) {
+  const s = String(key || '');
+  const at = s.indexOf('@');
+  return at === -1 ? s : s.slice(0, at);
+}
+/** The slug a personal key names, or null for a workspace key. */
+export function slugOf(key) {
+  const s = String(key || '');
+  const at = s.indexOf('@');
+  return at === -1 ? null : s.slice(at + 1) || null;
+}
+
 export function get(id) {
+  id = baseId(id);
   return load().integrations.find(i => i.id === id) || null;
 }
 

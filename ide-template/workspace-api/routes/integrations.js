@@ -23,9 +23,12 @@ import * as catalog from '../lib/integrations/catalog.js';
 import * as store from '../lib/integrations/store.js';
 import * as runtime from '../lib/integrations/runtime.js';
 import * as team from '../lib/team.js';
+import { requireActor } from '../lib/auth.js';
 import * as oauth from '../lib/integrations/oauth.js';
 import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
 import { isReady, readinessError } from '../lib/integrations/crypto.js';
+import { avatarUrl } from '../lib/user-avatars.js';
+import { publish as notify } from '../lib/notify.js';
 
 // Tiny in-memory rate limiter — sliding window. Keyed on the verified actor
 // email (req.actor) when present, falling back to req.ip when not. The actor
@@ -40,7 +43,7 @@ import { isReady, readinessError } from '../lib/integrations/crypto.js';
 // Not meant to survive a multi-replica deploy (we run a single workspace-api
 // per client).
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_HITS  = 5;
+const RATE_MAX_HITS  = Number(process.env.INTEGRATIONS_RATE_MAX || 5);   // per minute per actor; tests raise it
 const hits = new Map();   // key → number[] (timestamps within window)
 
 function rateKey(req) {
@@ -92,6 +95,58 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Which connection a request means: the workspace's (`granola`, admins only)
+// or the actor's own (`granola@<slug>`, for catalog entries a person may
+// connect for themselves). `?reach=personal` (or body.reach) picks the latter;
+// an admin may also name another person's with `?slug=` to remove it.
+function actorSlug(req) { try { return team.getUser(req.actor)?.slug || null; } catch { return null; } }
+function onRoster(slug) { try { return team.list().some(m => m.slug === slug); } catch { return false; } }
+function nameOf(slug) { try { return team.list().find(m => m.slug === slug)?.displayName || slug; } catch { return slug; } }
+// A person as a tile shows them: name and avatar (null → initials). The owner
+// of a workspace connection who has since left is "a former member": the
+// connection stays the workspace's, its night import pauses (nobody lists it
+// as theirs), and the screen says to reconnect.
+function personOf(slug) {
+  if (!onRoster(slug)) return { slug, name: 'a former member', avatarUrl: null, gone: true };
+  let url = null; try { url = avatarUrl(slug); } catch { /* none */ }
+  return { slug, name: nameOf(slug), avatarUrl: url };
+}
+function reachOf(req) { return (req.query?.reach || req.body?.reach) === 'personal' ? 'personal' : 'workspace'; }
+function accessOf(req) { return (req.query?.access || req.body?.access) === 'read' ? 'read' : 'write'; }
+function keyFor(req, id, res) {
+  const cat = catalog.get(id);
+  if (reachOf(req) === 'workspace') {
+    if (!team.isAdmin(req.actor)) { res.status(403).json({ error: 'Only admins can change workspace integrations.' }); return null; }
+    return { key: id, owner: actorSlug(req), reach: 'workspace', access: accessOf(req) };
+  }
+  if (!cat?.personal) { res.status(400).json({ error: `${cat?.label || id} can only be connected for the whole workspace.` }); return null; }
+  const forSlug = typeof req.query?.slug === 'string' && req.query.slug ? req.query.slug : actorSlug(req);
+  if (!forSlug) { res.status(400).json({ error: 'No person to connect this for.' }); return null; }
+  // Someone else's own connection: an admin may only remove it (People tab →
+  // Disconnect). Changing it — a host, a password, a whole account — would let
+  // an admin point a person's mail at a server of their choosing with the
+  // person's stored password, or put their own account under the person's name.
+  if (forSlug !== actorSlug(req) && !(team.isAdmin(req.actor) && req.method === 'DELETE')) { res.status(403).json({ error: 'You can only change your own connections.' }); return null; }
+  return { key: store.personalKey(id, forSlug), owner: forSlug, reach: 'personal', access: 'write' };
+}
+// After a change: files, skills, the bot's config (workspace and the
+// operator's own), the egress list; the bot restarts only when its own
+// config changed. A member's own connection changes nothing of the bot's.
+async function afterChange(key, { files = true, skill = true, forceRestart = false } = {}) {
+  const slug = catalog.slugOf(key);
+  if (slug) runtime.forgetPersonalServers(slug);
+  if (files) { try { runtime.applyFiles(key); } catch (err) { process.stderr.write(`[integrations] applyFiles ${key}: ${err.message}\n`); } }
+  if (skill) { try { runtime.installOptionalSkill(key); } catch (err) { process.stderr.write(`[integrations] installOptionalSkill ${key}: ${err.message}\n`); } }
+  let changed = false;
+  try { ({ changed } = runtime.syncMcpServers()); }
+  catch (err) { return { error: `Saved, but failed to wire up the MCP server: ${err.message}.` }; }
+  try { writeAllowedHostsFile(); }
+  catch (err) { process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`); }
+  const restarting = changed || forceRestart;
+  const restartOk = restarting ? await runtime.restartBot() : true;
+  return { restarting, restartFailed: restarting && !restartOk };
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -99,8 +154,8 @@ function escapeHtml(s) {
 // Tiny self-closing page the OAuth popup lands on. postMessage tells the
 // dashboard (window.opener, same origin) to refresh the card; the fallback
 // text covers popup-blocker → same-tab navigations.
-function oauthResultPage(ok, message, id) {
-  const payload = JSON.stringify({ type: 'integration-oauth', ok, id: id || null });
+function oauthResultPage(ok, message, id, extra = {}) {
+  const payload = JSON.stringify({ type: 'integration-oauth', ok, id: id || null, ...extra });
   return `<!doctype html><meta charset="utf-8"><title>${ok ? 'Connected' : 'Connection failed'}</title>
 <body style="font-family:system-ui;display:grid;place-items:center;height:90vh;margin:0">
 <div style="text-align:center;max-width:28rem">
@@ -118,10 +173,21 @@ export default function integrationsRouter() {
   const router = Router();
 
   // GET — anyone can read the catalog + status (no secrets returned).
-  router.get('/integrations', (_req, res) => {
+  router.get('/integrations', requireActor, (req, res) => {
     const status = isReady() ? store.listStatus() : {};
+    // The length and last characters of a key describe the key; they are for
+    // the admin who manages it, not for every member who sees the list.
+    const admin = team.isAdmin(req.actor);
+    const me = actorSlug(req);
     const items = catalog.listAll().map(entry => {
       const s = status[entry.id];
+      // The actor's own connection of it, and (for an admin) everyone's.
+      const mineKey = me ? store.personalKey(entry.id, me) : null;
+      const mine = mineKey && status[mineKey]
+        ? { active: true, activatedAt: status[mineKey].activatedAt || null, summary: status[mineKey].summary || null, itemCount: status[mineKey].itemCount ?? null }
+        : { active: false, activatedAt: null };
+      const people = isReady() ? store.peopleWith(entry.id) : [];
+      const activeFor = admin ? people.map(personOf) : undefined;
       // Non-secret values for globalForMulti fields, e.g. EMAIL_ALLOW_SEND.
       // Lets the Settings modal pre-populate with the user's current
       // choice. Empty object when nothing exposable / not active.
@@ -132,11 +198,22 @@ export default function integrationsRouter() {
         ...entry,
         active:            Boolean(s?.active),
         activatedAt:       s?.activatedAt || null,
-        // { length, last4 } when active, null otherwise. Never plaintext.
-        credentialSummary: s?.summary || null,
+        // { length, last4 } when active, for an admin; null otherwise. Never plaintext.
+        credentialSummary: admin ? (s?.summary || null) : null,
         // For multi=true integrations: how many items the user added.
         itemCount:         s?.itemCount ?? null,
         globalFieldValues,
+        // Who connected the workspace's, its reach ('workspace') and access.
+        connectedBy:       s?.active && s.owner ? personOf(s.owner) : null,
+        reach:             s?.active ? 'workspace' : null,
+        access:            s?.active ? (s.access || 'write') : null,
+        // The actor's own connection of it (catalog `personal` entries).
+        personal:          Boolean(entry.personal),
+        mine,
+        // Admins: the people who connected their own account of it.
+        ...(activeFor ? { activeFor } : {}),
+        canConnectWorkspace: admin,
+        canConnectPersonal:  Boolean(entry.personal) && Boolean(me),
         // Pausable integrations: switched off for now, key kept.
         ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
       };
@@ -178,19 +255,21 @@ export default function integrationsRouter() {
   //       page postMessages the opener and closes itself.
 
   // The popup rides the admin's session cookies, so requireAdmin holds here.
-  router.get('/integrations/:id/oauth/start', requireAdmin, readyOr503, rateLimit, async (req, res) => {
+  router.get('/integrations/:id/oauth/start', requireActor, readyOr503, rateLimit, async (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat?.mcp || cat.mcp.type !== 'http') {
       return res.status(404).json({ error: 'Not a remote-MCP integration.' });
     }
+    const target = keyFor(req, id, res);
+    if (!target) return;
     // Public origin for the redirect_uri: explicit env wins, else the
     // Caddy-forwarded host of this very request. Both resolve to the
     // client's own domain — the self-hosted constraint (no operator-side
     // redirector) is structural here.
     const host = process.env.FRONTEND_DOMAIN || req.get('x-forwarded-host') || req.get('host');
     try {
-      const authorizeUrl = await oauth.startAuth(id, `https://${host}`);
+      const authorizeUrl = await oauth.startAuth(id, `https://${host}`, { owner: target.owner, reach: target.reach, access: target.access });
       return res.redirect(authorizeUrl);
     } catch (err) {
       process.stderr.write(`[integrations] oauth start ${id}: ${err.message}\n`);
@@ -210,38 +289,38 @@ export default function integrationsRouter() {
     if (typeof code !== 'string' || typeof state !== 'string') {
       return res.status(400).send(oauthResultPage(false, 'Missing code or state parameter.'));
     }
-    let id;
+    // A person's own connection binds to their session as well as to the
+    // state: a state link that leaked cannot land one person's account under
+    // another. The workspace's needs an admin's session.
+    const flow = oauth.pendingFlow(state);
+    if (!flow) return res.status(400).send(oauthResultPage(false, 'Unknown or expired sign-in. Start again from the integrations page.'));
+    if (flow.reach === 'personal' && actorSlug(req) !== flow.owner) {
+      return res.status(403).send(oauthResultPage(false, 'This sign-in belongs to another person\'s session.'));
+    }
+    if (flow.reach !== 'personal' && !team.isAdmin(req.actor)) {
+      return res.status(403).send(oauthResultPage(false, 'Only an admin can connect this for the workspace.'));
+    }
+    let key;
     try {
-      id = await oauth.handleCallback(state, code);
+      key = await oauth.handleCallback(state, code);
     } catch (err) {
       process.stderr.write(`[integrations] oauth callback: ${err.message}\n`);
       return res.status(400).send(oauthResultPage(false, escapeHtml(err.message)));
     }
-
-    // Mirror the PUT post-activation recipe: optional skill, MCP config,
-    // egress allowlist, bot restart when the mcpServers block changed.
-    try { runtime.installOptionalSkill(id); } catch {}
-    let changed = false;
-    try { ({ changed } = runtime.syncMcpServers()); }
-    catch (err) {
-      process.stderr.write(`[integrations] oauth sync ${id}: ${err.message}\n`);
-    }
-    try { writeAllowedHostsFile(); }
-    catch (err) {
-      process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`);
-    }
-    if (changed) { try { await runtime.restartBot(); } catch {} }
-
-    return res.send(oauthResultPage(true, null, id));
+    const after = await afterChange(key, { files: false });
+    return res.send(oauthResultPage(true, null, catalog.baseId(key), { reach: flow.reach, restarting: !!after.restarting }));
   });
 
   // PUT — activate one integration. Body shape: { fields: { NAME: value, ... } }
-  router.put('/integrations/:id', requireAdmin, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+  router.put('/integrations/:id', requireActor, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
     if (cat.comingSoon) return res.status(400).json({ error: `${cat.label} is not yet configurable.` });
-    if (store.isActive(id)) {
+    const target = keyFor(req, id, res);
+    if (!target) return;
+    const key = target.key;
+    if (store.isActive(key)) {
       // Browser-login integrations (e.g. Docs Comments) are PRE-activated by
       // their own connect-start flow — it must mark the integration active so
       // the egress allowlist opens before the embedded Google login runs. The
@@ -273,7 +352,7 @@ export default function integrationsRouter() {
     }
 
     try {
-      store.activate(id, body);
+      store.activate(key, body, { owner: target.owner, reach: target.reach, access: target.access });
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
@@ -282,7 +361,7 @@ export default function integrationsRouter() {
     // activating admin's roster entry so the Telegram settings panel shows them
     // linked instead of asking for the SAME id again a minute later. Best-effort:
     // a conflict (id already linked to someone else) must not fail activation.
-    if (id === 'telegram') {
+    if (key === 'telegram') {
       const adminChatId = typeof body.fields?.TELEGRAM_ADMIN_CHAT_ID === 'string'
         ? body.fields.TELEGRAM_ADMIN_CHAT_ID.trim() : '';
       if (adminChatId) {
@@ -293,69 +372,19 @@ export default function integrationsRouter() {
       }
     }
 
-    // Some integrations need files on disk (email accounts.json, GA4 service-
-    // account JSON). Write them BEFORE syncing mcp config so the file exists
-    // when the next claude turn spawns the MCP.
-    try { runtime.applyFiles(id); }
-    catch (err) {
-      process.stderr.write(`[integrations] applyFiles ${id}: ${err.message}\n`);
-    }
-
-    // If a matching optional skill exists in /opt/ide/skills/optional/, copy
-    // it into ~/.claude/skills/ so the bot has the protocol playbook
-    // available right after activation. Idempotent + non-destructive — user
-    // edits to an existing skill survive.
-    try { runtime.installOptionalSkill(id); }
-    catch (err) {
-      process.stderr.write(`[integrations] installOptionalSkill ${id}: ${err.message}\n`);
-    }
-
-    // Hot-apply: write the MCP config so the next claude turn picks it up.
-    let changed = false;
-    try {
-      ({ changed } = runtime.syncMcpServers());
-    } catch (err) {
-      // We've already saved credentials, but couldn't update the MCP config.
-      // Surface the error so the admin can investigate; the credentials are
-      // still on disk and a manual restart will pick them up.
-      return res.status(500).json({
-        error: `Saved, but failed to wire up the MCP server: ${err.message}. Try restarting workspace-api.`,
-      });
-    }
-
-    // Refresh the egress allow-list — the host-side ipset polls
-    // allowed-hosts.txt on its own cadence (~60-300s), so this just makes
-    // the new integration's hostnames reachable on the next sync. Failure
-    // here doesn't block activation: the integration is already saved,
-    // and the host script will pick up the new file on its next read.
-    try { writeAllowedHostsFile(); }
-    catch (err) {
-      process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`);
-    }
-
-    // Restart the bot only when something the bot actually caches has
-    // changed. Two trigger conditions:
-    //   1. mcpServers diff — `changed` from syncMcpServers
-    //   2. Telegram integration touched — its credentials live in
-    //      integrations.env, which the bot reads once at startup
-    // Both result in re-running bot.sh, which re-reads the cached config.
-    // Idempotent re-saves (same fields) skip the restart and keep the
-    // active session alive.
-    const restarting = changed || cat.process === 'telegram-bot';
-    // Await so we can surface the signal result. Restart goes via file-touch
-    // (runtime.restartBot), which is sync-ish — bot watcher picks up within
-    // 2s and the PM2 cycle follows. The credentials are already saved
-    // regardless of restart outcome, so a failed signal is a UI hint, not
-    // a transaction rollback.
-    const restartOk = restarting ? await runtime.restartBot() : true;
-
-    const state = store.listStatus()[id];
+    // Files on disk (email accounts.json, GA4 service account), the optional
+    // skill, the bot's config, the egress list; a restart when the bot's own
+    // config changed. A member's own connection changes nothing of the bot's.
+    const after = await afterChange(key, { forceRestart: cat.process === 'telegram-bot' });
+    if (after.error) return res.status(500).json({ error: after.error });
+    const state = store.listStatus()[key];
     res.json({
       ok:                true,
       activatedAt:       state?.activatedAt || null,
       credentialSummary: state?.summary || null,
-      restarting,
-      restartFailed:     restarting && !restartOk,
+      reach:             target.reach,
+      restarting:        after.restarting,
+      restartFailed:     after.restartFailed,
     });
   });
 
@@ -363,105 +392,200 @@ export default function integrationsRouter() {
   // credentials. Body: { fields: {...} } for single, { globalFields: {...} }
   // for multi. Used to flip Permissions toggles (e.g. EMAIL_ALLOW_SEND)
   // without a full Remove → Activate cycle.
-  router.patch('/integrations/:id', requireAdmin, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+  // One connection, for its page: fields with whether they are set (secrets
+  // as length and last characters), items for a multi one, owner and reach.
+  router.get('/integrations/:id', requireActor, readyOr503, (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
-    if (!store.isActive(id)) return res.status(404).json({ error: `${cat.label} is not active.` });
-
-    const body = req.body;
-    if (!body || typeof body !== 'object' || (!body.fields && !body.globalFields)) {
-      return res.status(400).json({ error: 'Body must include `fields` or `globalFields`.' });
-    }
-
-    let updatedNames;
-    try { updatedNames = store.update(id, body); }
-    catch (err) { return res.status(400).json({ error: err.message }); }
-
-    // Re-materialise files in case a field that backs a writeFile changed.
-    try { runtime.applyFiles(id); }
-    catch (err) {
-      process.stderr.write(`[integrations] applyFiles ${id} (update): ${err.message}\n`);
-    }
-
-    try { runtime.syncMcpServers(); }
-    catch (err) {
-      return res.status(500).json({
-        error: `Saved, but failed to wire up the MCP server: ${err.message}.`,
-      });
-    }
-
-    // PATCH can change SHOPIFY_STORE_DOMAIN, EMAIL_HOST, etc. — refresh
-    // egress so the new hostname becomes reachable on the host script's
-    // next sync.
-    try { writeAllowedHostsFile(); }
-    catch (err) {
-      process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`);
-    }
-
-    // Always restart on PATCH. Settings tweaks rarely move the
-    // `mcpServers` JSON (env vars stay the same for email — only the
-    // accounts.json on disk changes), so the `changed` heuristic used in
-    // PUT/DELETE doesn't apply. Bots cache their writeFile outputs at
-    // process start, so a restart is the only way the new value takes
-    // effect immediately. Telegram users tolerate a ~5 s blip.
-    const restartOk = await runtime.restartBot();
-
+    const admin = team.isAdmin(req.actor);
+    const me = actorSlug(req);
+    // Members see only their own connection's fields; the workspace's is an
+    // admin's to look into (its presence is on the list).
+    const workspace = admin ? store.detail(id) : null;
+    const mine = me ? store.detail(store.personalKey(id, me)) : null;
+    const people = admin ? store.peopleWith(id).map(slug => ({ ...personOf(slug), activatedAt: store.listStatus()[store.personalKey(id, slug)]?.activatedAt || null })) : undefined;
+    res.set('Cache-Control', 'no-store');
     res.json({
-      ok: true,
-      updated: updatedNames,
-      restarting: true,
-      restartFailed: !restartOk,
+      ...cat,
+      workspaceActive: store.isActive(id),
+      connectedBy: store.ownership(id)?.owner ? personOf(store.ownership(id).owner) : null,
+      workspace: workspace ? { ...workspace, connectedBy: workspace.owner ? personOf(workspace.owner) : null } : null,
+      mine,
+      ...(people ? { activeFor: people } : {}),
+      canConnectWorkspace: admin,
+      canConnectPersonal: Boolean(cat.personal) && Boolean(me),
+      globalFieldValues: store.isActive(id) ? store.readGlobalFieldValues(id) : {},
     });
   });
 
-  // DELETE — wipe credentials and deactivate.
-  router.delete('/integrations/:id', requireAdmin, readyOr503, rateLimit, async (req, res) => {
+  // Accounts of a multi connection (a mailbox each), edited in place.
+  router.post('/integrations/:id/items', requireActor, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+    const target = keyFor(req, req.params.id, res);
+    if (!target) return;
+    try {
+      const index = store.addItem(target.key, req.body?.fields || {});
+      const after = await afterChange(target.key, { skill: false, forceRestart: target.reach === 'workspace' });
+      res.json({ ok: true, index, restarting: after.restarting, restartFailed: after.restartFailed });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+  router.patch('/integrations/:id/items/:n', requireActor, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+    const target = keyFor(req, req.params.id, res);
+    if (!target) return;
+    try {
+      const updated = store.updateItem(target.key, Number(req.params.n), req.body?.fields || {});
+      const after = await afterChange(target.key, { skill: false, forceRestart: target.reach === 'workspace' });
+      res.json({ ok: true, updated, restarting: after.restarting, restartFailed: after.restartFailed });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+  router.delete('/integrations/:id/items/:n', requireActor, readyOr503, rateLimit, async (req, res) => {
+    const target = keyFor(req, req.params.id, res);
+    if (!target) return;
+    try {
+      const r = store.removeItem(target.key, Number(req.params.n));
+      if (r.removedConnection) { try { runtime.unlinkFiles(target.key); } catch { /* best-effort */ } }
+      const after = await afterChange(target.key, { files: !r.removedConnection, skill: false, forceRestart: target.reach === 'workspace' });
+      res.json({ ok: true, ...r, restarting: after.restarting, restartFailed: after.restartFailed });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  // Does the connection work? A remote-MCP one gets a fresh token from the
+  // provider; a stored-key one is decrypted and checked for its required
+  // fields. The answer names the problem, never a secret.
+  router.post('/integrations/:id/test', requireActor, readyOr503, rateLimit, async (req, res) => {
+    const target = keyFor(req, req.params.id, res);
+    if (!target) return;
+    const cat = catalog.get(req.params.id);
+    if (!store.isActive(target.key)) return res.status(404).json({ ok: false, error: `${cat.label} is not connected.` });
+    const at = new Date().toISOString();
+    try {
+      if ((cat.fields || []).some(f => f.type === 'remote-mcp-oauth')) {
+        await oauth.getFreshToken(target.key);
+        return res.json({ ok: true, at, detail: 'Signed in; the provider accepted the token.' });
+      }
+      const plain = store.decryptFor(target.key);
+      const items = Array.isArray(plain) ? plain : [plain];
+      const required = catalog.requiredFields(req.params.id);
+      const missing = items.flatMap((it, i) => required.filter(n => !it[n]).map(n => (items.length > 1 ? `${n} (item ${i + 1})` : n)));
+      if (missing.length) return res.json({ ok: false, at, error: `Missing: ${missing.join(', ')}` });
+      return res.json({ ok: true, at, detail: items.length > 1 ? `${items.length} accounts stored and readable.` : 'Stored and readable.' });
+    } catch (err) {
+      const reauth = err.code === 'reauth_required';
+      return res.json({ ok: false, at, error: reauth ? 'The sign-in has expired — reconnect.' : String(err.message || err).replace(/[A-Za-z0-9_-]{24,}/g, '…'), reauth });
+    }
+  });
+
+  // PATCH — edit an active connection's settings in place (the workspace's for
+  // an admin, a person's own with ?reach=personal).
+  // The same for several at once — the switch-on screen sends its whole answer
+  // in one request: one rate-limit hit, one restart of the bot.
+  router.post('/integrations/make-personal', requireActor, readyOr503, rateLimit, express.json({ limit: '8kb' }), async (req, res) => {
+    if (!team.isAdmin(req.actor)) return res.status(403).json({ error: 'Only an admin can do this.' });
+    const slug = actorSlug(req);
+    if (!slug) return res.status(400).json({ error: 'No person to give them to.' });
+    const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String))].slice(0, 100) : [];
+    const moved = [], failed = [];
+    for (const id of ids) {
+      const cat = catalog.get(id);
+      if (!cat || !cat.personal) { failed.push({ id, error: cat ? `${cat.label} can only be the team's.` : 'unknown integration' }); continue; }
+      try { runtime.unlinkFiles(id); moved.push(store.makePersonal(id, slug)); }
+      catch (err) { failed.push({ id, error: err.message }); }
+    }
+    let restarting = false;
+    if (moved.length) {
+      try { runtime.applyFiles(moved[0]); } catch { /* best-effort */ }
+      for (const k of moved.slice(1)) { try { runtime.applyFiles(k); } catch { /* best-effort */ } }
+      const after = await afterChange(moved[0], { files: false, skill: false, forceRestart: true });
+      restarting = after.restarting;
+    }
+    res.status(failed.length && !moved.length ? 400 : 200).json({ ok: !failed.length, moved, failed, restarting });
+  });
+
+  // When collaboration is switched on, the owner decides per connection:
+  // the team uses it, or it stays theirs alone (re-keyed as their own).
+  router.post('/integrations/:id/make-personal', requireActor, readyOr503, rateLimit, async (req, res) => {
+    if (!team.isAdmin(req.actor)) return res.status(403).json({ error: 'Only an admin can do this.' });
     const id = req.params.id;
     const cat = catalog.get(id);
     if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
-    if (!store.isActive(id)) return res.status(404).json({ error: `${cat.label} is not active.` });
-
-    store.remove(id);
-
-    // Remote-MCP integrations: also drop the DCR client registration so a
-    // future Connect starts from a clean registration.
-    if (cat.mcp?.type === 'http') {
-      try { oauth.forgetClient(id); } catch {}
-    }
-
-    try { runtime.unlinkFiles(id); }
-    catch (err) {
-      process.stderr.write(`[integrations] unlinkFiles ${id}: ${err.message}\n`);
-    }
-
-    let changed = false;
+    if (!cat.personal) return res.status(400).json({ error: `${cat.label} can only be the team's.` });
+    const slug = actorSlug(req);
+    if (!slug) return res.status(400).json({ error: 'No person to give it to.' });
     try {
-      ({ changed } = runtime.syncMcpServers());
-    } catch (err) {
-      return res.status(500).json({
-        error: `Removed, but failed to update the MCP config: ${err.message}.`,
-      });
+      runtime.unlinkFiles(id);
+      const key = store.makePersonal(id, slug);
+      const after = await afterChange(key, { files: true, skill: false, forceRestart: true });
+      res.json({ ok: true, key, restarting: after.restarting });
+    } catch (err) { res.status(400).json({ error: err.message }); }
+  });
+
+  router.patch('/integrations/:id', requireActor, readyOr503, rateLimit, express.json({ limit: '32kb' }), async (req, res) => {
+    const id = req.params.id;
+    const cat = catalog.get(id);
+    if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
+    const target = keyFor(req, id, res);
+    if (!target) return;
+    const key = target.key;
+    if (!store.isActive(key)) return res.status(404).json({ error: `${cat.label} is not active.` });
+    const body = req.body;
+    // `{ access: 'read' | 'write' }` alone: the team's access level, no reconnect.
+    if (body && typeof body === 'object' && body.access && !body.fields && !body.globalFields) {
+      if (target.reach !== 'workspace') return res.status(400).json({ error: 'Your own connection is always read and write.' });
+      try { store.setAccess(key, body.access); } catch (err) { return res.status(400).json({ error: err.message }); }
+      runtime.writeAccessMap();
+      return res.json({ ok: true, access: body.access, restarting: false, restartFailed: false });
     }
-
-    // Tighten the egress allowlist — the integration's hostnames should
-    // no longer be reachable. Host script picks up the shrinkage on its
-    // next sync.
-    try { writeAllowedHostsFile(); }
-    catch (err) {
-      process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`);
+    if (!body || typeof body !== 'object' || (!body.fields && !body.globalFields)) {
+      return res.status(400).json({ error: 'Body must include `fields`, `globalFields` or `access`.' });
     }
-
-    // Restart only when the cached set actually shrank (or for telegram,
-    // since the bot's env file changed). Signal goes via file-touch so it
-    // works regardless of whether TG was the integration being removed.
-    const restarting = changed || cat.process === 'telegram-bot';
-    const restartOk = restarting ? await runtime.restartBot() : true;
-
+    let updatedNames;
+    try { updatedNames = store.update(key, body); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+    // A workspace change restarts the bot (its config or files changed); a
+    // person's own connection reaches their turns on the next turn.
+    const after = await afterChange(key, { skill: false, forceRestart: target.reach === 'workspace' });
+    if (after.error) return res.status(500).json({ error: after.error });
     res.json({
       ok: true,
-      restarting,
-      restartFailed: restarting && !restartOk,
+      updated: updatedNames,
+      restarting: after.restarting,
+      restartFailed: after.restartFailed,
+    });
+  });
+
+  // DELETE — wipe one connection: the workspace's (admin), or a person's own
+  // (?reach=personal; an admin may name another person's with ?slug=).
+  router.delete('/integrations/:id', requireActor, readyOr503, rateLimit, async (req, res) => {
+    const id = req.params.id;
+    const cat = catalog.get(id);
+    if (!cat) return res.status(404).json({ error: `Unknown integration "${id}".` });
+    const target = keyFor(req, id, res);
+    if (!target) return;
+    const key = target.key;
+    if (!store.isActive(key)) return res.status(404).json({ error: `${cat.label} is not active.` });
+    store.remove(key);
+    // An admin took away a person's own connection: that person hears it,
+    // with the reason when one was given.
+    if (target.reach === 'personal' && target.owner !== actorSlug(req)) {
+      const reason = typeof req.query?.reason === 'string' && req.query.reason.trim() ? ` Reason: ${req.query.reason.trim().slice(0, 200)}` : '';
+      try { notify({ kind: 'integration', recipient: target.owner, title: `${cat.label} disconnected`, body: `${nameOf(actorSlug(req))} disconnected your own ${cat.label}.${reason} You can connect it again any time.`, meta: { integration: id } }); }
+      catch (err) { process.stderr.write(`[integrations] notice not sent: ${err.message}\n`); }
+    }
+    // The DCR client is the integration's, shared by every connection of it:
+    // it goes when the last connection does.
+    if (cat.mcp?.type === 'http' && !store.isActive(id) && !store.peopleWith(id).length) {
+      try { oauth.forgetClient(id); } catch {}
+    }
+    try { runtime.unlinkFiles(key); }
+    catch (err) {
+      process.stderr.write(`[integrations] unlinkFiles ${key}: ${err.message}\n`);
+    }
+    const after = await afterChange(key, { files: false, skill: false, forceRestart: cat.process === 'telegram-bot' });
+    if (after.error) return res.status(500).json({ error: `Removed, but failed to update the MCP config: ${after.error}` });
+    res.json({
+      ok: true,
+      restarting: after.restarting,
+      restartFailed: after.restartFailed,
     });
   });
 

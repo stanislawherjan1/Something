@@ -72,6 +72,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import crypto from 'crypto';
 import { loadCredentials } from '../_shared/broker-client.js';
+import { projectFile } from '../_shared/local-file.js';
 
 // Phase-2 broker — fetch credentials over UDS at startup if launched via
 // mcp-runner (uid 1002). No-op + return null when run standalone for
@@ -1386,7 +1387,7 @@ async function handleTool(name, args) {
       const filename = imgName ?? basename(new URL(image).pathname) ?? 'image.jpg';
       params = { filename, bytes: buf.toString('base64') };
     } else {
-      const buf = readFileSync(resolve(image));
+      const buf = readFileSync(projectFile(image));
       const filename = imgName ?? basename(image);
       params = { filename, bytes: buf.toString('base64') };
     }

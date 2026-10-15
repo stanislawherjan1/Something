@@ -53,7 +53,7 @@
 #define MAX_INTEGRATION_LEN 32
 #define MAX_PATH_LEN 256
 
-extern char **environ;
+#include "env-guard.h"   /* declares environ */
 
 static int valid_integration_id(const char *s) {
     if (!s) return 0;
@@ -73,6 +73,8 @@ static int valid_integration_id(const char *s) {
 }
 
 int main(int argc, char *argv[]) {
+    /* The uid that started us — getuid() before the switch below. */
+    const uid_t caller = getuid();
     if (argc != 2) {
         fprintf(stderr, "usage: mcp-runner <integration-id>\n");
         return 2;
@@ -148,7 +150,15 @@ int main(int argc, char *argv[]) {
 
     /* Exec node with the resolved script path. argv[0] is conventional
      * "node" so existing tooling that inspects argv[0] keeps working. */
-    char *node_argv[] = { (char*)"node", script_path, NULL };
+    if (env_guard_apply(caller) != 0) {
+        fprintf(stderr, "mcp-runner: could not prepare the environment; refusing to run\n");
+        return 1;
+    }
+
+    /* IPv4 first: the egress network is IPv4-only (see the MCP entries
+     * workspace-api writes). Given here rather than through NODE_OPTIONS,
+     * which env-guard removes. */
+    char *node_argv[] = { (char*)"node", (char*)"--dns-result-order=ipv4first", script_path, NULL };
     execve(NODE_BIN, node_argv, environ);
 
     fprintf(stderr, "mcp-runner: execve %s: %s\n", NODE_BIN, strerror(errno));

@@ -217,5 +217,18 @@ MC.configureClient(async (id) => ({ async listTools() { throw new Error(`${id} d
 const down = await S.runFor('ola', { now: NOW + 2 * 86400_000, runTurn: async () => { throw new Error('model down'); }, log: () => {} });
 ok('a service and its fallback turn both failing is recorded per source, not fatal', /granola: granola down; model down/.test(down.error) && /fireflies: fireflies down; model down/.test(down.error) && S.listFor('ola').find(s => s.id === 'granola').lastError === 'granola down; model down', down);
 
+// ─── a voice note ────────────────────────────────────────────────────────────
+{
+  const note = { actor: 'ola', name: 'Ola', integration: 'granola', item: 'vn-7', title: 'Offer idea for Vellmark', at: '2026-10-06T07:30:00Z', participants: ['Ola'], note: true,
+    summary: 'Ola wants to offer Vellmark a three-month pilot at 18k PLN and call Marta Zielak on Friday.', transcript: 'Offer Vellmark a three-month pilot for 18k. Call Marta on Friday.' };
+  const r = await S.importItem(note);
+  const recs = L.read({ scopes: ['user:ola'] }).filter(x => x.conv === 'import:granola:vn-7');
+  ok('a voice note is filed under its own heading, with nobody "With:"', r.ok && recs.length >= 1 && recs.every(x => /^Voice note: Offer idea for Vellmark\n/.test(x.text) && !/With:/.test(x.text)), recs.map(x => x.text.slice(0, 60)));
+  ok('...the pass reads it as the person\'s own note', seenNotes.some(u => /^Note date:/.test(u.user) && /ONE voice note/.test(u.system)));
+  ok('...and the fact carries the note\'s title', r.titles.includes('Voice note: Offer idea for Vellmark'), r.titles);
+  seenNotes.length = 0;
+}
+
+
 console.log(`memory-sources: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

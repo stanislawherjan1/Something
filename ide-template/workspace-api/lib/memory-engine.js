@@ -313,7 +313,7 @@ function removeLines(text, targets) {
  * The card's shape is not the model's to choose, so it is not taken from the
  * argument.
  */
-const FLAT_LIST_CARDS = { RESPONSIBILITIES: 'Responsibilities' };
+const FLAT_LIST_CARDS = { RESPONSIBILITIES: 'Responsibilities', MISSION: 'About the company' };
 
 /**
  * Headings that belong to ONE card. `## Never` and `## Always` are the two

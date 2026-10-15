@@ -55,6 +55,8 @@ function pathnameToSelected(pathname) {
   if (pathname.startsWith('/folders/')) return { path: decodeURIComponent(pathname.slice('/folders/'.length)), type: 'dir' };
   // Mini apps route by id, not by type — each tab is its own view.
   if (pathname.startsWith('/apps/'))    return { path: decodeURIComponent(pathname.slice('/apps/'.length)),    type: 'miniapp' };
+  // One integration's own page.
+  if (pathname.startsWith('/integrations/')) return { path: decodeURIComponent(pathname.slice('/integrations/'.length)), type: 'integration' };
   return null;
 }
 
@@ -69,6 +71,7 @@ function selectedToPath(selected) {
   if (selected.type === 'file') return `/files/${selected.path}`;
   if (selected.type === 'dir')  return `/folders/${selected.path}`;
   if (selected.type === 'miniapp') return `/apps/${encodeURIComponent(selected.path)}`;
+  if (selected.type === 'integration') return `/integrations/${encodeURIComponent(selected.path)}`;
   const v = VIEW_ROUTES.find(r => r.selected.type === selected.type);
   if (v) return v.path;
   return '/';
@@ -437,11 +440,11 @@ export default function WorkspacePage() {
           On a phone it is hidden until opened, as before. */}
       <div
         className={cn(
-          // No overflow clipping: the content animates at the wrapper's own
-          // width, and the rail's user menu opens out to the right of it.
+          // No overflow clipping: the rail's user menu opens out to the right of
+          // it. The width is not animated: the editor would reflow on every
+          // frame of the fold, text shifting as it goes.
           'relative z-30 shrink-0',
           isMobile && !sidebarOpen && 'hidden',
-          !sidebarOverlay && 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
         )}
         style={isMobile ? undefined : { width: sidebarOverlay ? SIDEBAR_RAIL : sidebarOpen ? SIDEBAR_WIDTH : SIDEBAR_RAIL }}
       >
@@ -503,7 +506,7 @@ export default function WorkspacePage() {
                 ? chatOpen
                   ? 'fixed inset-y-0 right-0 z-50 w-[min(460px,calc(100vw-48px))] shadow-2xl'
                   : 'hidden'
-                : 'transition-[width] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                : '',
           )}
           style={!chatOverlay ? { width: chatOpen ? chatWidth : 0 } : undefined}
           aria-hidden={!chatOpen}

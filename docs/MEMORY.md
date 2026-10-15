@@ -26,7 +26,12 @@ it the way you would a colleague: just tell it.
   deadlines, things it is waiting on) and what it is keeping track of.
 - **Facts**: everything it remembers, newest first, each with the conversation
   it came from ("See source") and its own timeline of earlier versions and
-  corrections. **Hide** takes a fact off the screen and out of the bot's reach;
+  corrections. A fact that became a task on the board shows the task and its
+  state; when the task is done, the fact is closed with it. Each night, tasks
+  that have no such link yet get one careful look, so older tasks find the
+  fact they came from too; a meeting's notes or a project's overview are never
+  closed by one task. A fact also lists
+  the notes and write-ups its conversation produced, each a click away. **Hide** takes a fact off the screen and out of the bot's reach;
   it comes back from Changes for 30 days, then it is gone. **Erase** removes
   it for good at once, and the same words cannot be learned again. Erasing
   the whole conversation lives behind "See source".
@@ -37,21 +42,38 @@ it the way you would a colleague: just tell it.
   yourself, and remove a topic you don't want tracked.
 - **Preferences**: the standing rules you stated ("keep answers short",
   "never email a client without asking"). They are read on every turn.
-- **Sources**: what feeds memory besides conversations. A meeting notetaker
+  Beside "About you" sits **About the company**: what the business does, for
+  whom and how. Everyone's assistant reads it on every turn, groups included.
+  An admin keeps it on this screen, or just tells the bot.
+- **Sources**: what feeds memory besides conversations. A notetaker connected
+  on the integrations screen is the workspace owner's account, so what it
+  brings in goes to the owner's memory only — never into a teammate's. A voice note you
+  record in your notetaker (on the phone, for yourself) becomes a fact titled
+  "Voice note: …" with the note's own title, in your words. A meeting notetaker
   you have connected (Granola, Fireflies, Fathom, Otter, Read AI, Krisp) is
   read in each night: its notes and transcripts become facts of yours, each
   with the meeting behind "See source" and the service's icon after its title.
   A switch per source, here and on the integration's card; "Read now" reads
   it at once.
-- **Privacy** (team mode): what you shared with the team, and the lines the
-  bot asks you about before sharing them.
+- **Sharing** (team mode): how much of what you say privately may reach the
+  team by itself — ask you first (the default), share work facts by itself, or
+  never — then the facts waiting for your OK, the facts you shared (each one a
+  row you can take back), and the rules you set ("always share about Vellmark").
 - **Changes**: a log of what memory did (remembered, corrected, merged, hidden,
   erased, restored, topics merged or removed), with undo where there is one.
 
 **Yours and the team's.** In a team workspace memory splits like the files do:
 shared memory the team works from, and a private memory for each person. What
-you say in your own chat stays yours unless you share it; the bot asks before
-sharing a borderline business line. Privacy is enforced by where a thing is
+you say in your own chat stays yours. The work facts it produced — a launch
+date, a client's pilot, a decision — may reach the team the way you chose on
+Sharing (the people icon at the top right of Memory, beside Sources,
+Preferences & rules and Changes; a red dot means questions wait): they wait for
+your OK, cross by themselves, or never cross.
+What crosses is the fact in your name, never the conversation; a fact about
+you, about a named person, or a preference of yours always waits for your OK
+whatever you chose. Everything you shared is listed there, one fact per row,
+and "Make private" takes it back. When questions wait for you, your coworker
+says so once a day at most, in your own chat, never in a group. Privacy is enforced by where a thing is
 stored, never by role: an admin cannot read a teammate's private memory, and
 the bot never reads one person's private memory on another's behalf. A
 Telegram group has a memory of its own, readable by its members.
@@ -163,13 +185,25 @@ chat it is (a stranger's chat → nobody), a registered group → that group's
 scope. Code decides the owner, never a model. Two small-model calls then only
 *add*:
 
-- **the router** (1:1 conversations) picks lines the whole team may also read.
-  Every shared line must be word-for-word in the conversation, so an invented or
-  injected line cannot reach shared memory; a router failure shares nothing and
-  loses nothing. Borderline business lines become a question on the owner's
-  Privacy screen and are shared only if they say so. That screen lists what a
-  person shared as the facts a record holds, never the conversation itself, and
-  only while team mode is on — alone, there is nobody to share with.
+- **the router** (1:1 conversations) marks the lines that are team-relevant
+  (`shared`) or borderline (`ask`). Every marked line must be word-for-word in
+  the conversation, so an invented or injected line cannot count; a router
+  failure shares nothing and loses nothing. The router is a signal, not the
+  decision: `lib/memory-sharing.js` decides **per fact** once the notes pass
+  has filed it. A fact whose evidence sits in a `shared` line may cross; one in
+  an `ask` line always asks; the rest stay. The person's mode on the roster
+  (`sharing`: `ask` default / `auto` / `never`), a remembered answer for the
+  same fact, and their per-subject rules (events in the person's `memory/users/<slug>/asks.jsonl`, next to the questions, as is the `mentioned` event: a person's own turn gets a `SHARING_QUESTIONS` card in its prefix when questions wait, once a day at most, never a group turn — `sharingQuestionsCard` in `lib/claude.js`)
+  finish the decision; a fact the notes pass marked `concerns: the person
+  themselves | another person`, a preference, or one whose subject is a person
+  entity never crosses by itself — it asks. What crosses is the fact: a shared
+  record carrying "Title. Text" (`tags.sharedFact`, `origin: user:<slug>`,
+  speaker = the person) with the fact remembered on it, so the team's "See
+  source" opens the fact, not the conversation. The Sharing screen lists the
+  questions (with the fact and whom it concerns), what the person shared as
+  one row per fact (`POST /memory/v4/shared/:id/withdraw` hides the fact and
+  its record, `/restore` brings them back), their mode and rules — only while
+  team mode is on; alone, there is nobody to share with.
 - **the notes pass** writes a few durable notes (two, one more per six lines
   the person wrote, six at most) — each a title, a description, verbatim
   evidence and the names it is about — plus any
@@ -191,9 +225,13 @@ who-lines (views, not facts) still read the whole period.
 
 ### Fed by integrations
 
-`lib/memory-sources.js`. A meeting from a connected notetaker becomes a
-**record** the way a conversation does, in the private scope of the person it
-is read for — `source: 'integration'`, `conv: import:<id>:<item>`, `ts` the
+`lib/memory-sources.js`. A notetaker reads one account, and what it brings
+in is that account's owner's: a person's own connection (`granola@ann`) feeds
+their memory; the workspace's (`granola`) feeds the admin who connected it,
+nobody else (`listFor(slug)` lists both kinds as that person's sources, with
+the connection `key` the import reads; `people()` is everyone with a source).
+A meeting from a connected notetaker becomes a **record** the way a
+conversation does, in the private scope of the person it is read for — `source: 'integration'`, `conv: import:<id>:<item>`, `ts` the
 meeting's time, `tags.import` holding the service, the item id, title, people
 and link — and the facts store and the nightly run treat it like any other
 record. The service's notes are one record; the transcript is filed in
@@ -258,7 +296,7 @@ fields came back — names and lengths only, never what was said.
 ### Reading
 
 - **The prefix** (cached): the product rules from the v3 preamble, identity and
-  tool cards, `RULES`, `CHANNELS`, the person's `USER_PROFILE` and
+  tool cards, `RULES`, `CHANNELS`, `MISSION` (About the company), the person's `USER_PROFILE` and
   `USER_PREFERENCES`, their routines (`routines.json`), **STANDING_RULES** —
   only the rules people stated — and, last, **WHAT_IS_GOING_ON**: the Memory
   screen's Short-term memory as the bot sees it (statuses still in force, then
@@ -266,7 +304,10 @@ fields came back — names and lengths only, never what was said.
   comes after the cards that rarely change. A group turn gets the same card from
   the group's own digest and the shared statuses (never anyone's private memory):
   without it the group brain answered "is X dead?" from old shared pages while
-  the group's digest said "closed". No INDEX, no RECENT tails. The
+  the group's digest said "closed". On the Facts tab a person's digest folds
+  their own facts about a closed topic under Past & superseded — never a shared
+  fact, which reads the same to everyone (one person's closed topic once hid
+  shared facts from them alone). No INDEX, no RECENT tails. The
   CLI's own auto-memory is switched off for every turn and memory call
   (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`): a second memory next to this one
   answered "what do you remember" with months-old notes of its own.
@@ -281,7 +322,11 @@ fields came back — names and lengths only, never what was said.
   records join the block whatever the ranking said — a dozen old pages matching
   the words crowded out the one record that answered.
 - **Tools** (offered only with `read`/`on`): `memory_search`, `memory_timeline`,
-  `memory_note` (private by default, shared only when asked; takes the fact as
+  `memory_note` (private by default, shared only when asked; a note in a
+  person's own memory then goes through the same sharing gate as a filed
+  conversation — the router reads the person's words, each new fact goes to
+  the team, to a question or stays by their mode, and the answer carries
+  `shared` / `asked` counts; takes the fact as
   it now stands **and the person's own words it comes from** — a name that is
   in neither those words nor memory is refused by name, so a correction cannot
   arrive with an invented first name — the person's own name in any form and a
@@ -595,6 +640,7 @@ rather than being filed next to it.
 project/memory/
 ├── INDEX.md                  ← auto: map of this scope (cards, topics, concepts)
 ├── RULES.md                  ← hard never / always rules
+├── MISSION.md                ← About the company: what it does, for whom, how
 ├── AGENT_IDENTITY.md         ← the agent's voice, mood, defaults
 ├── AGENT_TOOLS.md            ← per-tool gotchas for active integrations
 ├── CHANNELS.md               ← auto: the Telegram groups the bot is in
@@ -630,6 +676,16 @@ Cards are seeded on first container start from
 `/opt/ide/bootstrap/memory-cards-templates/`. Existing files are never
 overwritten. `INDEX.md`, `CHANNELS.md`, `TEAM.md` and the `RECENT_*` tails are
 machine-generated — read them, never hand-edit them.
+
+**After the move to memory v4** this tree shrinks to what a turn still reads:
+`RULES`, `MISSION`, `AGENT_IDENTITY`, `AGENT_TOOLS`, `CHANNELS` and each
+person's `USER_PROFILE` / `USER_PREFERENCES`, beside the ledger and facts. The
+`RECENT_*` tails, `TEAM.md`, the `INDEX` maps, `USER_RELATIONSHIPS`,
+`USER_REFLECTIONS` and the duties card are no longer written or seeded
+(duties are `routines.json`; the recent tail is rendered on demand for the
+`recent_messages` tool), and migration 0008 archives and removes what was left,
+at boot or right after the move from the upgrade banner. A workspace still on
+the older memory keeps all of them.
 
 ---
 

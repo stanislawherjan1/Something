@@ -10,6 +10,12 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const dir = mkdtempSync(join(tmpdir(), 'turn-id-'));
+// The bot's token resolves to the operator — the primary admin on the roster.
+process.env.PROJECT_DIR = dir;
+writeFileSync(join(dir, '.allowed-emails.json'), JSON.stringify([
+  { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', addedAt: '2026-09-01T00:00:00Z' },
+  { email: 'mark@example.test', role: 'member', slug: 'mark', displayName: 'Mark', addedAt: '2026-09-01T00:00:00Z' },
+]));
 const BOT_TOKEN = 'bot-token-for-tests-0123456789';
 process.env.BOT_TURN_ID_HASH_FILE = join(dir, 'bot.sha256');
 writeFileSync(process.env.BOT_TURN_ID_HASH_FILE, createHash('sha256').update(BOT_TOKEN).digest('hex'));
@@ -27,8 +33,9 @@ revokeTurnToken(t);
 ok('a revoked token proves nothing', resolveTurnToken(t, 'anna') === null);
 ok('no token proves nothing', resolveTurnToken('', 'anna') === null && resolveTurnToken(undefined, 'anna') === null);
 ok('a made-up token proves nothing', resolveTurnToken('guess', 'anna') === null);
-ok('the bot token carries the slug the bot sends', resolveTurnToken(BOT_TOKEN, 'stan')?.actor === 'stan');
-ok('...but only a well-formed one', resolveTurnToken(BOT_TOKEN, '../x')?.actor === null);
+ok('the bot token is the operator', resolveTurnToken(BOT_TOKEN, 'stan')?.actor === 'stan', JSON.stringify(resolveTurnToken(BOT_TOKEN, 'stan')));
+ok('...whatever slug is sent beside it', resolveTurnToken(BOT_TOKEN, 'mark')?.actor === 'stan');
+ok('...and it is never a group turn', resolveTurnToken(BOT_TOKEN)?.group === false);
 ok('the solo actor is no actor', resolveTurnToken(issueTurnToken({ actor: 'default' }))?.actor === null);
 
 console.log(`turn-identity: ${pass} passed, ${fail} failed`);

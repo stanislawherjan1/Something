@@ -14,7 +14,7 @@
 
 import { spawn } from 'node:child_process';
 import { join, dirname } from 'node:path';
-import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { CLAUDE_BIN, PROJECT_DIR } from './config.js';
@@ -24,18 +24,96 @@ import { v4Mode, readableScopes } from './memory-ledger.js';
 import { rulesCard, now as liveStatuses, readDigest } from './memory-views.js';
 import { readRoutines } from './routines-store.js';
 import { routinesOwner } from './memory-v4-writes.js';
-import { syncMcpServers } from './integrations/runtime.js';
-import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone } from './team.js';
+import { syncMcpServers, personalServers } from './integrations/runtime.js';
+import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, slotOf } from './team.js';
+import * as asks from './memory-asks.js';
 import { buildRecallBlock, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
-import { issueTurnToken, revokeTurnToken } from './turn-identity.js';
+import { setTurnRecall, issueTurnToken, revokeTurnToken } from './turn-identity.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 // How much of claude's stderr to keep for diagnosing a failed turn.
 const STDERR_TAIL_MAX = 4000;
 
-const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
+const BOT_CLAUDE_CONFIG = process.env.BOT_CLAUDE_CONFIG || '/home/bot/.claude.json';
+// In the container a turn is started through turn-runner, which switches to
+// the turn user for its slot before exec'ing the CLI; without it (dev) the CLI
+// runs directly. TURN_RUNNER_BIN overrides the path (tests).
+const TURN_RUNNER_BIN = process.env.TURN_RUNNER_BIN || '/usr/local/bin/turn-runner';
+export function turnCommand(args, slot = 'solo') {
+  if (existsSync(TURN_RUNNER_BIN)) return { bin: TURN_RUNNER_BIN, args: [slot, ...args] };
+  return { bin: CLAUDE_BIN, args };
+}
+/**
+ * Which turn user a turn runs as (setuid-wrappers/turn-runner.c): a group's
+ * turn as `group` (no private tree exists for it), a person's as their roster
+ * slot (`01`…`24` — the uid that owns their private trees), a solo workspace's
+ * as `solo`. A person without a slot (the pool full, or a roster not yet
+ * reconciled) runs as `solo` with a warning: the model-facing hook still
+ * fences them, as it did before the pool.
+ */
+export function turnSlot({ actor, groupContext = false } = {}) {
+  if (groupContext) return 'group';
+  let teamMode = false;
+  try { teamMode = getTeamMode(); } catch { /* no roster */ }
+  if (!teamMode || !actor || actor === 'default') return 'solo';
+  let slot = null;
+  try { slot = slotOf(actor); } catch { /* no roster */ }
+  if (!slot) { process.stderr.write(`[claude] ${actor} has no turn slot — running as the solo turn user\n`); return 'solo'; }
+  return String(slot).padStart(2, '0');
+}
+// A turn's MCP config, written for that turn alone: into the slot's run
+// directory (/run/turns/<slot>, root:<slot's group> 2730 — workspace-api
+// writes, the slot's user reads, nobody else), so a turn never reads the
+// bot's own config file and never a sibling's. Outside the container the
+// file goes to the temp dir, owner-only.
+const TURN_RUN_DIR = process.env.TURN_RUN_DIR || '/run/turns';
+function writeTurnMcpFile(slot, servers) {
+  const dir = join(TURN_RUN_DIR, slot);
+  const file = join(existsSync(dir) ? dir : tmpdir(), `mcp-${randomUUID()}.json`);
+  writeFileSync(file, JSON.stringify({ mcpServers: servers }), { mode: 0o640 });
+  try { chmodSync(file, 0o640); } catch { /* dev */ }
+  return file;
+}
+/**
+ * The MCP servers a turn gets. The bot's config names the workspace's
+ * connections and the operator's own (`-mine`); a person's turn gets the
+ * workspace set plus their own connections (lib/integrations/runtime.js
+ * personalServers), a group's turn the workspace set alone — nobody's own
+ * account is reachable from a group, not the operator's either.
+ */
+export function turnMcpServers({ actor = null, groupContext = false } = {}) {
+  let bot = {};
+  try { bot = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers || {}; }
+  catch (err) { process.stderr.write(`[claude] no MCP config (${err.message}) — the turn runs with none\n`); }
+  const workspace = Object.fromEntries(Object.entries(bot).filter(([name]) => !name.endsWith('-mine')));
+  if (groupContext) return workspace;
+  let operator = null;
+  try { operator = primaryAdminSlug(); } catch { /* no roster */ }
+  if (!actor || actor === 'default' || actor === operator) return bot;
+  let mine = {};
+  try { mine = personalServers(actor); } catch (err) { process.stderr.write(`[claude] ${actor}'s own connections not loaded: ${err.message}\n`); }
+  return { ...workspace, ...mine };
+}
+// What a turn's environment keeps of workspace-api's. The server's own keys
+// (session signing, OAuth clients, legacy integration tokens) are not a
+// turn's business — it reaches integrations through the MCPs, which get
+// their credentials from the broker. The CLI's own credential stays, as do
+// the per-turn identity values.
+const KEEP_IN_TURN = new Set(['CLAUDE_CODE_OAUTH_TOKEN', 'IDE_TAB_TOKEN', 'IDE_TURN_ID']);
+export function turnEnv(env) {
+  const out = { ...env };
+  for (const k of Object.keys(out)) {
+    if (KEEP_IN_TURN.has(k)) continue;
+    if (/SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|_KEY$|CREDENTIAL|PRIVATE/i.test(k)) delete out[k];
+  }
+  // workspace-api's own CLI config is the bot's file (CLAUDE_CONFIG_PATH), which
+  // a turn user cannot read and must not try to: a turn's config is its slot's
+  // own (HOME), and its MCP servers come in the file written for the turn.
+  delete out.CLAUDE_CONFIG_PATH;
+  return out;
+}
 
 /**
  * Run one user turn. Returns the spawned ChildProcess so the caller can
@@ -73,6 +151,22 @@ const BOT_CLAUDE_CONFIG = '/home/bot/.claude.json';
  *        for THAT person; loading it into another teammate's prefix would leak
  *        the operator's private chats — so it is included only for the operator.
  */
+/**
+ * Questions on the person's Sharing tab, said once a day at most, in their own
+ * conversation only (a group turn never gets this card). Building the card
+ * counts as saying it: the bot is told, whatever it then does with it.
+ */
+export function sharingQuestionsCard(slug, now = Date.now()) {
+  if (!getTeamMode()) return '';
+  let pending = [];
+  try { pending = asks.listAsks(slug, { status: 'pending' }); } catch { return ''; }
+  if (!pending.length) return '';
+  const last = asks.mentionedAt(slug);
+  if (last && now - Date.parse(last) < 86400_000) return '';
+  asks.markMentioned(slug, pending.length);
+  return `${pending.length} thing${pending.length === 1 ? '' : 's'} from this person's conversations wait${pending.length === 1 ? 's' : ''} for their OK on the Memory screen's Sharing tab. Mention it once, in one short sentence, when it fits the conversation; do not list the questions and do not ask them here.`;
+}
+
 export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOperator, callerExcludeIds, memoryDir } = {}) {
   const caller = Array.isArray(callerExcludeIds) ? callerExcludeIds : [];
   // Memory v4 reading: a small prefix — the product rules, identity cards, the
@@ -92,6 +186,7 @@ export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOpera
       { id: 'ROUTINES', body: routinesCard(me) },
       { id: 'STANDING_RULES', body: rulesCard([`user:${me}`]) },
       { id: 'WHAT_IS_GOING_ON', body: goingOnCard(me) },
+      { id: 'SHARING_QUESTIONS', body: sharingQuestionsCard(me) },
     ] });
   }
   if (groupContext) {
@@ -214,6 +309,7 @@ function turnModel() {
 // overrides it.
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
+
 export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
   const args = [
     '-p',
@@ -224,18 +320,13 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     // Expand Claude's trusted scope beyond PROJECT_DIR so it can read/write
     // global skills (~/.claude/skills/) and CLAUDE.md without permission prompts.
     '--add-dir', join(dirname(PROJECT_DIR), '.claude'),
-    // mcpServers config lives in /home/bot/.claude.json (CLAUDE_CONFIG_PATH
-    // env in ecosystem.config.js points wsapi's syncMcpServers writes here).
-    // Without this flag claude -p resolves ~/.claude.json against wsapi's
-    // HOME (=/home/wsapi after the Phase-2 broker isolation gave wsapi uid
-    // 1001 + its own home — earlier comments here said /home/coder, that
-    // was pre-Phase-2). /home/wsapi/.claude.json carries no mcpServers, so
-    // without this flag the web chat would see 4 native tools (memory,
-    // playwright, reminders, workspace-api) instead of the full active set.
-    // wsapi is in the botshare group, so it can read the bot file at mode
-    // 0660 group=botshare.
-    '--mcp-config', BOT_CLAUDE_CONFIG,   // may be swapped for a per-user clone below
+    // The MCP servers come from /home/bot/.claude.json (where syncMcpServers
+    // writes them), copied into a file for this turn alone — the turn user
+    // cannot read the bot's file, and must not read a sibling's copy. The
+    // path is filled in below once the turn's slot and tool set are known.
+    '--mcp-config', '',
   ];
+  const slot = turnSlot({ actor, groupContext });
 
   // A turn whose OUTPUT the system delivers must not also hold tools that can
   // deliver. Otherwise both fire: the model sends the answer with a tool, its
@@ -262,7 +353,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // the integrations and never sees the page (lib/tab-handoff.js). The user's
   // memory cards are still in the prompt; only reaching further is gone.
   const pageTurn = !!tabToken;
-  let actMcpFile = null;
+  let mcpServers = null;   // the set this turn gets; null = everything the bot has
   // `--tools ''` was supposed to drop every built-in tool from a restricted
   // turn, and the model still ran shell commands through Monitor (an import
   // turn, 170 calls, to read a transcript it was not allowed to). So every
@@ -271,16 +362,8 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     'WebFetch', 'WebSearch', 'Skill', 'TaskStop', 'TaskOutput', 'TodoWrite', 'ToolSearch', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup',
     'EnterWorktree', 'ExitWorktree', 'EnterPlanMode', 'ExitPlanMode', 'SendMessage', 'ListAgents', 'RemoteTrigger', 'PushNotification', 'Artifact'];
   if (pageTurn) {
-    let servers = {};
-    try {
-      const entry = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers?.['workspace-api'];
-      if (entry) servers = { 'workspace-api': entry };
-    } catch (err) {
-      process.stderr.write(`[claude] page turn: no MCP config (${err.message}) — running with none\n`);
-    }
-    actMcpFile = join(tmpdir(), `page-turn-${randomUUID()}.json`);
-    writeFileSync(actMcpFile, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
-    args[args.indexOf('--mcp-config') + 1] = actMcpFile;
+    const entry = turnMcpServers({ actor, groupContext })['workspace-api'];
+    mcpServers = entry ? { 'workspace-api': entry } : {};
     args.push('--strict-mcp-config');
     args.push('--tools', '');
     blocked.push(...NO_BUILTINS,
@@ -291,23 +374,17 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // A turn that must reach only a few MCP servers (the night memory import:
   // the person's notetakers and the memory tools) gets a config of those
   // alone, strict, and no built-in tools — nothing to run, read or write with.
-  let onlyMcpFile = null;
   if (!pageTurn && Array.isArray(onlyMcp)) {
-    let servers = {};
-    try {
-      const all = JSON.parse(readFileSync(BOT_CLAUDE_CONFIG, 'utf8'))?.mcpServers || {};
-      for (const name of ['workspace-api', ...onlyMcp]) if (all[name]) servers[name] = all[name];
-    } catch (err) {
-      process.stderr.write(`[claude] restricted turn: no MCP config (${err.message}) — running with none\n`);
-    }
-    onlyMcpFile = join(tmpdir(), `only-mcp-${randomUUID()}.json`);
-    writeFileSync(onlyMcpFile, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
-    args[args.indexOf('--mcp-config') + 1] = onlyMcpFile;
+    const all = turnMcpServers({ actor, groupContext });
+    mcpServers = {};
+    for (const name of ['workspace-api', ...onlyMcp]) if (all[name]) mcpServers[name] = all[name];
     args.push('--strict-mcp-config');
     args.push('--tools', '');
     blocked.push(...NO_BUILTINS, 'mcp__workspace-api__memory_write', 'mcp__workspace-api__memory_forget', 'mcp__workspace-api__memory_note', 'mcp__workspace-api__web_send_message', 'mcp__workspace-api__add_routine', 'mcp__workspace-api__set_my_settings');
   }
   args.push('--disallowedTools', blocked.join(','));
+  const mcpFile = writeTurnMcpFile(slot, mcpServers || turnMcpServers({ actor, groupContext }));
+  args[args.indexOf('--mcp-config') + 1] = mcpFile;
   if (turnModel()) args.push('--model', turnModel());
   if (actTurn && ACT_EFFORT) args.push('--effort', ACT_EFFORT);
 
@@ -368,8 +445,8 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     args.push('--append-system-prompt',
       `[ACTOR ${who}] You are talking to ${me} — the person typing right now. "I", "me", "my", "we" from them mean ${me}.${roster} ` +
-      `WHO ${me} IS — use these, in order: (1) this [ACTOR] line, (2) the USER_PROFILE / USER_PREFERENCES / USER_RELATIONSHIPS / USER_REFLECTIONS cards already in your prefix. In team mode THOSE USER_* cards ARE ${me}'s OWN private profile (loaded from memory/users/${actor}/) — they hold ${me}'s real name, facts, and taste, so READ them and use them directly. If a USER_* card has content, NEVER say "I have no profile for you" or "I don't know your name" — the answer is right there in the card. ` +
-      `SEPARATELY — do not confuse the workspace OWNER with ${me}: the SHARED cards (AGENT_IDENTITY, AGENT_TOOLS, RULES, INDEX, topics), the project CLAUDE.md, the knowledge graph, and any auto-memory were authored for this workspace's OWNER/operator, very likely a DIFFERENT person than ${me}. When THAT shared context names a person, says "the user/you", or lists clients/projects, it's the OWNER's — NOT ${me}'s. Never call ${me} by the owner's name or attribute the owner's clients/profile to ${me}. ` +
+      `WHO ${me} IS — use these, in order: (1) this [ACTOR] line, (2) the USER_PROFILE / USER_PREFERENCES cards already in your prefix. In team mode THOSE USER_* cards ARE ${me}'s OWN private profile (loaded from memory/users/${actor}/) — they hold ${me}'s real name, facts, and taste, so READ them and use them directly. If a USER_* card has content, NEVER say "I have no profile for you" or "I don't know your name" — the answer is right there in the card. ` +
+      `SEPARATELY — do not confuse the workspace OWNER with ${me}: the SHARED cards (AGENT_IDENTITY, AGENT_TOOLS, RULES, MISSION), the project CLAUDE.md, the knowledge graph, and any auto-memory were authored for this workspace's OWNER/operator, very likely a DIFFERENT person than ${me}. When THAT shared context names a person, says "the user/you", or lists clients/projects, it's the OWNER's — NOT ${me}'s. Never call ${me} by the owner's name or attribute the owner's clients/profile to ${me}. ` +
       `${me}'s private "Your Files" = project/users/${actor}/; the SHARED workspace = the project root — everyone's common work. ` +
       `SHARED-FIRST: most questions about a teammate — "did X finish Y?", "what's the status of Z?", their progress on a shared project or task — are really about the SHARED space. Look in the shared files, Tasks, and shared memory FIRST and answer from there; if it'd help, you can even relay the question to them (see above). Do NOT deflect a work question with "that's private" — collaboration is the default. ` +
       `The one thing you genuinely can't reach is another teammate's OWN private space (project/users/<them>/, memory/users/<them>/). That only matters if the user specifically asks you to read THOSE private files — and even then, just help with the shared work unless they insist on cracking into someone's private files, in which case say each person's private space is theirs. Never invent another teammate's private content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
@@ -396,21 +473,16 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
 
   if (sessionId) args.push('--resume', sessionId);
 
-  // Refresh BROKER_NONCE for each integration MCP before spawning.
-  // Each spawn needs a fresh single-use nonce: syncMcpServers() calls
-  // issueGrant(id) per MCP and writes the result to CLAUDE_CONFIG_PATH
-  // (=/home/bot/.claude.json). Without this, every spawn after the first
-  // consumes already-used nonces from the previous spawn → broker
-  // rejects → 11 of 12 integration MCPs (everything except `docs-comments`,
-  // which doesn't use the broker) silently fail to load creds and don't
-  // register their tools. Caught 2026-06-03: web chat persistently saw
-  // only 5 MCPs (4 native + docs-comments) regardless of which integrations
-  // were activated.
+  // Make sure the broker grants in CLAUDE_CONFIG_PATH (=/home/bot/.claude.json)
+  // are ones this process holds before spawning. The grants live in this
+  // process's memory, so after a restart of workspace-api the file still
+  // names the previous process's and every brokered MCP would fail to load
+  // its credentials and register no tools (seen 2026-06-03 as "only 5 MCPs").
+  // The pass keeps a grant that is still good and rewrites the file only when
+  // something changed, so for most turns it is a read.
   //
-  // Failure here is non-fatal — claude still spawns, just without fresh
-  // nonces, so the user sees the same 5-MCPs symptom. We log + continue.
-  // Safe to call from concurrent turns: issueGrant generates independent
-  // nonces per call, broker tracks them server-side.
+  // Failure here is non-fatal — claude still spawns with whatever the file
+  // holds. We log + continue. Safe to call from concurrent turns.
   try { syncMcpServers(); }
   catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
 
@@ -446,7 +518,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
   // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
   // they take the actor and group flag from this token, never from a header.
-  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId });
+  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId });   // what this turn is handed from memory is noted on it below
   childEnv.IDE_TURN_ID = turnId;
   // A turn started from the browser extension's panel carries a one-turn token
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
@@ -456,14 +528,6 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // it cannot hand off again.
   if (pageTurn) {
     childEnv.IDE_PAGE_TURN = '1';
-    // Nothing secret in a turn that reads web pages: the server's own keys
-    // (session signing, OAuth clients, integration tokens) are dropped from its
-    // environment. Only the CLI's own credential stays — it cannot run without
-    // it, and with no built-in tools nothing in the turn can read it.
-    for (const k of Object.keys(childEnv)) {
-      if (k === 'CLAUDE_CODE_OAUTH_TOKEN' || k === 'IDE_TAB_TOKEN') continue;
-      if (/SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|_KEY$|CREDENTIAL|PRIVATE/i.test(k)) delete childEnv[k];
-    }
     // Load every tool up front. With tool search the CLI shows only tool
     // NAMES and the model must look each one up first: an Act turn then spent
     // calls finding tab_act's schema, and missed use_integrations entirely
@@ -472,9 +536,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     childEnv.ENABLE_TOOL_SEARCH = 'false';
   }
 
-  const proc = spawn(CLAUDE_BIN, args, {
+  // Every turn runs with the server's own secrets left out (turnEnv) and, in
+  // the container, as the turn user (turnCommand).
+  const cmd = turnCommand(args, slot);
+  const proc = spawn(cmd.bin, cmd.args, {
     cwd: PROJECT_DIR,
-    env: childEnv,
+    env: turnEnv(childEnv),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -497,6 +564,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
         message: recallQuery ?? message,   // the person's own words when the caller wrapped them
         history: recallHistory,
       });
+      try { setTurnRecall(turnId, recall?.ids || []); } catch { /* best effort */ }
     } catch (err) {
       process.stderr.write(`[claude/recall] ${err.message}\n`);
     }
@@ -530,7 +598,27 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // trust requests, MCP-side approvals, etc.).
   const debugStream = process.env.CLAUDE_DEBUG_STREAM === '1';
 
+  // A turn that stops producing anything for this long is ended: a hung CLI
+  // or MCP otherwise lives on with its open stream for ever. Long tool calls
+  // keep it alive by their own output (tool events are output).
+  const IDLE_MAX_MS = Number(process.env.TURN_IDLE_MAX_MS) || 30 * 60_000;
+  let idleTimer = null;
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      process.stderr.write(`[claude] ${actor || 'default'}: no output for ${Math.round(IDLE_MAX_MS / 60000)} min — ending the turn\n`);
+      try { proc.kill('SIGTERM'); } catch { /* gone */ }
+    }, IDLE_MAX_MS);
+    idleTimer.unref?.();
+  };
+  armIdle();
+  // Decoded by the stream, so a multi-byte character split across two
+  // chunks (an accented letter, an emoji on a 64 KB boundary) stays whole.
+  proc.stdout.setEncoding('utf8');
+  proc.stderr.setEncoding('utf8');
+
   proc.stdout.on('data', (chunk) => {
+    armIdle();
     buffer += chunk.toString('utf8');
     const lines = buffer.split('\n');
     buffer = lines.pop();
@@ -672,9 +760,9 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   proc.on('error', (err) => { revokeTurnToken(turnId); onError(`spawn failed: ${err.message}`); });
 
   proc.on('close', (code, signal) => {
+    clearTimeout(idleTimer);
     revokeTurnToken(turnId);
-    if (actMcpFile) { try { unlinkSync(actMcpFile); } catch { /* already gone */ } }
-    if (onlyMcpFile) { try { unlinkSync(onlyMcpFile); } catch { /* already gone */ } }
+    try { unlinkSync(mcpFile); } catch { /* already gone */ }
     if (code === 0) return onDone({ sessionId: capturedSessionId });
 
     // A spent plan is not a crash and must not read like one. The turn failed
