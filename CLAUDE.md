@@ -31,6 +31,7 @@ reaches the repo.
 | `ide-template/` | The product — everything that ships into a deployment |
 | `ide-template/workspace-api/` | Express backend: files, chat (SSE over `claude -p`), integrations store + credential broker, memory engine, group watcher. `routes/` = HTTP, `lib/` = logic |
 | `ide-template/frontend/` | React 19 + Vite workspace UI (`src/components/workspace/views/` = sidebar views) |
+| `ide-template/frontend/src/demo/` | The public demo (something.md/demo): the API answered in the browser from invented sample data, only in a `VITE_DEMO=1` build |
 | `ide-template/apps/*-mcp/` | Our MCP servers (one dir each; `_shared/` = common code) |
 | `ide-template/bot/` | Telegram brain: `bot.sh` (tmux session), `reminder-monitor.sh`, notify/relay helpers, PM2 `ecosystem.config.js` |
 | `ide-template/skills/default/` | Skills shipped to every deployment (re-copied from the image on each boot) |
@@ -183,6 +184,13 @@ Every integration gives the product a new key, new code and a new place data goe
   provider; `docs/SECURITY.md` and `docs/INTEGRATIONS.md` are updated in the same change.
 
 ## Gotchas that have bitten before
+
+- **The public demo runs the real UI.** `ide-template/frontend/src/demo/` answers
+  every `/api/*` call in the browser, so a UI change that calls a new endpoint, or
+  reads a new field, needs a route in `src/demo/server.js` and sample data in
+  `src/demo/data/` — otherwise that screen breaks on something.md/demo. Check
+  with `npm run dev:demo`. Sample data stays invented (Saltmarsh Ceramics);
+  never copy real or mock-fixture memory into it.
 
 - **Permissions:** never `chown -R coder:coder` anything under `memory/` or config —
   workspace-api runs as its own uid and must keep write access. Use `chgrp workspace`

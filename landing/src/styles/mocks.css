@@ -10,6 +10,8 @@
 .mk .sb { display: flex; flex-direction: column; min-height: 0; background: #f3f2ed; border-right: 1px solid #e8e7e2; }
 .mk .sb-head { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; }
 .mk .sb-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 4px; background: #2f5d50; color: #fff; font-weight: 700; font-size: 15px; }
+/* The workspace's logo, as the app shows it (workspace-logo.svg = the favicon). */
+.mk .sb-logo { flex: none; width: 28px; height: 28px; border-radius: 6px; outline: 1px solid rgb(40 37 32 / .1); }
 .mk .sb-name { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
 .mk .sb-line { height: 1px; background: rgb(232 231 226 / .7); }
 .mk .sb-scroll { flex: 1; min-height: 0; overflow: hidden; padding: 0 8px 12px; }
