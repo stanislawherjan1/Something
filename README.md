@@ -63,6 +63,8 @@ Your coworkers:
 
 ## Get started
 
+**Want to look around first?** Click through **[the demo](https://something.md/demo/)**: a made-up ceramics shop with a team of seven, every screen on sample data. Switch between the founder and a teammate to see what stays private. The chat is off; there's no AI behind it.
+
 **You'll need:** a Linux server (from ~€4.50/mo), a domain, a Google account, and a **paid Claude plan** (Pro or Max). Run the installer from macOS or Linux (on Windows, use WSL2).
 
 Then, from your own computer, run:

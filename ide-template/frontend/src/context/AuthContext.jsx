@@ -48,6 +48,8 @@ export function AuthProvider({ children }) {
     }, []);
 
     async function signOut() {
+        // The public demo has no account to leave.
+        if (import.meta.env.VITE_DEMO === '1') return;
         // Dev mode: AuthContext is unused (App.jsx renders WorkspacePage
         // directly in DEV), so a real DELETE goes to workspace-api which
         // has no /auth/* — the fetch fails and the workspace stays mounted.

@@ -60,6 +60,9 @@ export default defineConfig({
     },
   },
   server: {
+    // The public demo (src/demo) reads the integrations and routines catalogs
+    // from workspace-api, next door.
+    fs: { allow: [path.resolve(__dirname, '..')] },
     // Local dev without MOCK=1: workspace-api on :3001. In prod, Caddy
     // routes /api/* directly to workspace-api so this proxy is dev-only.
     // With MOCK=1, the plugin above intercepts /api/* + /auth/* with

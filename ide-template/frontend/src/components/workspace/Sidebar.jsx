@@ -13,6 +13,7 @@ import MiniAppsList from './MiniAppsList.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import useMe from './useMe.js';
+import { IS_DEMO } from '@/demo/flags.js';
 
 /**
  * Sidebar — left column.
@@ -259,13 +260,16 @@ export default function Sidebar({
           active={selected?.type === 'responsibilities'}
           onClick={() => onSelect({ path: '.claude/responsibilities', type: 'responsibilities' })}
         />
-        {/* Skills and Integrations live in AI Settings now. */}
+        {/* Skills and Integrations live in AI Settings now. The public demo
+            leaves the browser agent out: its extension needs a real workspace. */}
+        {!IS_DEMO && (
         <NavRow
           icon={AppWindow} label="Browser agent" collapsed={collapsed}
           active={selected?.type === 'browser-agent'}
           onClick={() => onSelect({ path: '.claude/browser-agent', type: 'browser-agent' })}
           badge={<span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>}
         />
+        )}
       </div>
       <div className="p-2">
         <UserMenu collapsed={collapsed} />

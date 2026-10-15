@@ -167,11 +167,11 @@ function AppContent() {
 }
 
 function App() {
-  // basename matches vite's `base: '/app/'`. The trailing slash is dropped —
-  // React Router expects no trailing slash here. All in-app links use
-  // route-relative paths (e.g. `/skills`); browser sees `/app/skills`.
+  // basename follows vite's `base` ('/app/'; '/demo/' for the public demo).
+  // The trailing slash is dropped — React Router expects none. All in-app
+  // links use route-relative paths (e.g. `/skills`); browser sees `/app/skills`.
   return (
-    <BrowserRouter basename="/app">
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <AuthProvider>
         <BrandingProvider>
           <AppContent />

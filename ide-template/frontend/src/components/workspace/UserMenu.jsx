@@ -6,6 +6,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import useMe from './useMe.js';
 import { useNavigate } from 'react-router-dom';
+import { IS_DEMO } from '@/demo/flags.js';
+import { DemoViewAsItem } from '@/demo/ui.jsx';
 
 /**
  * UserMenu — avatar + display name at the bottom of the sidebar. Click opens
@@ -98,6 +100,7 @@ export default function UserMenu({ collapsed = false }) {
             <ThemeOption icon={Monitor} label="System" value="system" current={theme} onChoose={setTheme} />
 
             <div className="menu-sep" />
+            {IS_DEMO ? <DemoViewAsItem onDone={() => setOpen(false)} /> : (
             <button
               onClick={() => {
                 signOut();
@@ -108,6 +111,7 @@ export default function UserMenu({ collapsed = false }) {
               <LogOut className="size-4 shrink-0" strokeWidth={1.75} />
               Sign out
             </button>
+            )}
           </div>
         </>
       )}

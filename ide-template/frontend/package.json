@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "MOCK=1 vite",
+    "dev:demo": "VITE_DEMO=1 vite --base=/demo/",
     "build": "vite build",
+    "build:demo": "VITE_DEMO=1 VITE_APP_TITLE='Saltmarsh Ceramics · Demo' vite build --base=/demo/ --outDir dist-demo --emptyOutDir",
     "lint": "eslint .",
     "preview": "vite preview"
   },

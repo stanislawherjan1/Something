@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && rm -rf dist/readme-art",
+    "build": "astro build && rm -rf dist/readme-art && ./scripts/build-demo.sh",
     "preview": "astro preview"
   },
   "dependencies": {
