@@ -14,8 +14,22 @@ what to do and when. A reminder is work for the coworker, not a note it
 forwards to you: when the time comes it does the job and tells you what came
 of it, or stays quiet when there is nothing worth saying.
 
+It spreads its messages through the day instead of sending several at once, and
+never in the middle of a meeting; anything tied to an exact time (a meeting,
+leaving for a train) comes right on time, and background checks (your inbox
+every few minutes) run as often as you asked, quietly unless they find something.
+
+It also learns from how its reminders land. A weather note you just read is fine
+as it is; a reminder that keeps asking you to act and gets nothing back is moved
+or reshaped, and after a week it asks you once whether to pause it. Now and then
+— at most once a week — it may suggest a routine or a connection that fits what
+you do; say no and it won't ask again.
+
 The **Routines** view shows what it has taken on. Pause or remove a routine
-there, or just tell it. Times follow your own time zone from Settings. In a
+there, or just tell it. A Marketplace routine that needs a service you have not
+connected offers **Connect** right there, for your own account; one picked
+before its service was connected waits on the Routines view and starts by itself
+once it is. Times follow your own time zone from Settings. In a
 team workspace each person has their own routines, and the coworker does them
 as that person, with their calendar and their accounts.
 
@@ -128,8 +142,13 @@ reminder for a person. **Remove** retires it.
 | Endpoint | Does |
 |---|---|
 | `GET /api/routines/catalog` | `{ groups: [{ id, label, logo, routines: [{ id, title, description, icon, tags, added }] }] }` for the viewer |
-| `POST /api/routines/catalog/:id` | Adds it to the viewer's routines; idempotent; 409 until its integration is connected |
-| `DELETE /api/routines/catalog/:id` | Retires the viewer's routine that came from it |
+| `POST /api/routines/catalog/:id` | Adds it to the viewer's routines; idempotent; 409 until its integration is connected. `?later=1` keeps it waiting instead (`routines-waiting.json`, `lib/routines-add.js`): it never runs while waiting and is added by itself once the integration connects |
+| `DELETE /api/routines/catalog/:id` | Retires the viewer's routine that came from it, or drops it from the waiting list |
+
+`GET /api/routines` carries `waiting` next to `routines`: the Routines screen
+shows each as a dashed tile, "Starts once <app> is connected", with **Connect**
+and **Remove**. It is rare now (onboarding's plan keeps Add off until the app is
+connected) and comes mostly from earlier setups.
 
 Each entry has a `summary` (the one line people read on a tile) and a
 `description` — the full instruction the bot works from: which source to read
@@ -138,8 +157,10 @@ the exact threshold for speaking up, and where the output goes. `requires` is
 any-of; `requiresAll` lists integrations that must all be connected (a
 "where is my order" routine needs the mailbox *and* Shopify). Entries for
 integrations that aren't connected are listed too, greyed, with **Connect**: it
-opens that integration's install modal right there (admins; others see that an
-admin connects it). When any of several integrations would do, Connect first lays
+opens that integration's install modal right there: an admin connects it for
+the team, a member their own account (`?reach=personal`); only a service that is
+the team's alone (the mailbox, Telegram) tells a member to ask an admin. A
+service's logo sits on white in both themes. When any of several integrations would do, Connect first lays
 them out under the routine to pick one.
 The Marketplace has one search over titles, text, tags and integration names, and
 a filter list: All / Ready to add / Added, categories, integrations.
@@ -202,8 +223,12 @@ What a run does:
    fits the work and the person's chronotype, around meetings and focus blocks, with
    slack left in the day; condition-based duties only when the condition holds; up to
    one or two soft follow-ups on threads that went quiet.
-4. **Place** — `set_reminder` for each item with `origin: "planner"`, the person as
-   `recipient`, their preferred reachable channel, and an urgency.
+4. **Place** — one `replace_plan` call with the whole plan: the person as `recipient`,
+   the channel MY_SETTINGS says reaches them ("Reaches them on"), an urgency, and
+   `timed: true` for an item whose time itself matters. It validates every item as
+   `set_reminder` does and, under one hold of the reminders lock, removes the planner's
+   previous plan for that person and writes the new one; a bad item changes nothing, so a
+   run that stops half-way leaves yesterday's plan in place.
 
 The automatic run is silent — the plan lives in the reminders. An on-demand run answers
 with one line. The planner only reads context and sets reminders; anything external
@@ -211,6 +236,21 @@ with one line. The planner only reads context and sets reminders; anything exter
 
 Each run replaces the planner's own previous reminders (`origin: "planner"`); the user's
 own reminders and system rituals are never touched.
+
+**Feedback.** Each planner reminder carries `kind_of` (`info` / `action`, the tool's `kind`)
+and `routine`. `/internal/invoke-turn` records each run's outcome (said / silent / sent
+itself) in `WSAPI_STORE_DIR/planner/outcomes.jsonl`; `lib/planner-feedback.js` reads the
+planner's fired one-shots (tombstones in `.reminders.json`), those outcomes, and whether the
+person wrote within 2 h (web chats, Telegram DMs), and `memory_now` ends with the summary per
+routine, plus routines removed and suggestions made lately (`routine: "suggest:<what>"`,
+never repeated). An `info` routine changes only on an explicit signal; an `action` one that
+rarely leads anywhere is moved, reshaped, or offered for a pause once.
+
+**Pacing.** The monitor holds a planner one-shot that reaches the person on its own (not
+`ambient`, not recurring, not `timed`) until `REMINDER_MIN_GAP_MINUTES` (default 45) after
+the last one reached them — at most one per person per pass, nothing dropped (`pacedFrom`
+keeps the planned time). The person's own reminders, recurring duties and system triggers
+keep their time.
 
 ## Time zone and language
 
@@ -245,6 +285,9 @@ history.
 | `channel` | `telegram`, `web` or `all` |
 | `recipients` | Roster slugs, or everyone (admin only) |
 | `origin` | `planner` for planner-placed items |
+| `timed` | `true` when the time itself matters; such an item is never held back for pacing |
+| `kind_of` | `info` or `action` (the tool's `kind`), for the planner's feedback |
+| `routine` | the routine a planner reminder comes from; `suggest:<what>` for a suggestion |
 | `kind` | `system` for the seeded rituals (protected from cancel) |
 
 **System rituals** (`bootstrap/reminders.json`, re-synced on every boot):
@@ -293,8 +336,6 @@ result, not the finding).
 
 Tracked for the next iteration of this system:
 
-- The planner's replace step cancels its previous reminders before placing new ones; a
-  run interrupted in between leaves the day without them.
 - Recurrence is UTC-only, so a fixed local time drifts by an hour at DST changes. The
   morning planning is pulled back to 06:00 local by an hourly pass; other rituals are not.
 - `/api/internal/invoke-turn` is team-mode only; a solo workspace with a busy session

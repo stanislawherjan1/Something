@@ -40,7 +40,7 @@ Everything you'd reach for to automate your work (markdown for context, skills f
 
 Your coworkers:
 
-- **Have a name and a personality.** Set once in the first-login wizard.
+- **Know you from the first day.** A short setup on first login: name your coworker, say what your company does and what you need help with. It looks your company up on the web and reads its site, shows what it found for you to fix, and suggests a starter plan of tools and routines. Each teammate gets their own shorter version.
 - **Live on the web, in Chrome and on Telegram.** Pick any; same memory everywhere.
 - **Remember between sessions.** Markdown notes, a knowledge graph, recent threads.
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
@@ -81,7 +81,7 @@ less install.sh    # review exactly what it does
 bash install.sh
 ```
 
-The installer is interactive: it asks for your Google sign-in app, server address, domain, and admin email, then deploys. Plan for 45-60 minutes end to end, most of it waiting on the server, DNS, and the first build.
+The installer is interactive: it asks for your Google sign-in app, server address, domain, and admin email, then deploys. Plan for 45-60 minutes end to end, most of it waiting on the server, DNS, and the first build. Then open your domain, sign in, and a short setup takes it from there.
 
 First time renting a server or pointing a domain? **[Full step-by-step guide →](docs/QUICK_START.md)**
 
@@ -186,7 +186,7 @@ Open **AI Settings → Memory**:
 
 In a [team workspace](#team) memory splits like the files do: shared memory the team works from, private memory that is only yours. Privacy is enforced on the server by where a thing is stored, never by role: an admin cannot read a teammate's private memory, and the bot won't go digging through it on someone else's behalf.
 
-A workspace that started on the older card-based memory moves over from a banner on the Memory screen, with a backup to download first. Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
+A new workspace starts on this memory directly. One that started on the older card-based memory moves over from a banner on the Memory screen, with a backup to download first. Full design + operational guide in [docs/MEMORY.md](docs/MEMORY.md).
 
 <br/>
 
@@ -206,7 +206,7 @@ A workspace that started on the older card-based memory moves over from a banner
 
 > Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
-You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write; Telegram is always the whole team's, reading and sending) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 <br/>
 

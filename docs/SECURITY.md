@@ -13,9 +13,16 @@ keys to your services. Nothing is sent through anyone else's servers to work.
 - **Yours stays yours.** In a team workspace your private files and memory
   are kept apart from the shared ones by where they are stored, and there is
   no admin override that reaches them.
-- **What it reads is not what it obeys.** A web page, an email or a document
-  the coworker reads is treated as information, never as instructions, and
-  the server only talks to the services it has been connected to.
+- **What it reads is not what it obeys.** A web page, an email, a document, a
+  meeting transcript or a customer's note the coworker reads is treated as
+  information, never as instructions; an order hidden in it is not kept in
+  memory either. The server only talks to the services it has been connected to.
+- **Nothing goes out without your yes.** Sending an email, posting, or changing
+  something in another service happens only after you say so; until then the
+  coworker suggests it or prepares it.
+- **Setting up.** During setup the coworker searches the web for your company and
+  reads its public website, and looks you up on the web only if you ask it to — once, about you, and you
+  see everything it found before anything is kept.
 - **Found a problem?** Report it privately through the repository's security
   tab rather than in a public issue, and it will be handled quietly.
 
@@ -108,7 +115,8 @@ Security is not an afterthought. Every component is designed with security in mi
 │    └─▶ entrypoint.sh seeds the file from the env var on first   │
 │        boot (first email = admin, the rest = members)           │
 │    └─▶ Auth-service caches result for 30s — removals propagate  │
-│        within that window                                       │
+│        within that window; a miss re-reads the file (at most    │
+│        once per 2 s), so a person just invited gets in at once  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -928,6 +936,15 @@ Four ~50-80-line C programs in `ide-template/setuid-wrappers/`, compiled in-imag
 - `monitor-runner` — drops to uid 1003 (`bot`), exec's a whitelisted script under `/opt/ide/`. Invoked by PM2 for `bot-reminders`, `bot-snapshot`, `bot-browser-watchdog`. Sets `PR_SET_NO_NEW_PRIVS`.
 - All four call `initgroups()` before `setuid` so supplementary groups stick.
 - All four refuse to run if their own setuid bit was lost (catches deploy regressions).
+- `turn-runner` (4750 root:wsapi, the web and headless turns' runner) forks: the
+  turn runs in the child, fully switched to its slot's uid, and the parent stays
+  as a minimal supervisor with real uid = the caller (workspace-api) and
+  effective/saved uid = the slot, no root and no supplementary groups. That is
+  just enough for workspace-api to signal it (a turn fully on its slot's uid
+  answered `kill` with EPERM, so a new message could not stop the reply before
+  it); the supervisor forwards SIGTERM/SIGINT/SIGHUP to the turn, closes the
+  pipes, and exits with the turn's status. The child dies with it
+  (`PR_SET_PDEATHSIG`).
 - All four pass the caller's environment on, minus the variables that instruct an interpreter or the loader rather than configure the program (`NODE_OPTIONS`, `BASH_ENV`, exported bash functions, `LD_*` and similar; `env-guard.h`). A caller other than root or PM2's uid also gets the image's default `PATH`.
 - `wsapi-runner` and `bot-runner` start only for root or PM2's uid; `monitor-runner` also for workspace-api (which uses it to reach the bot's tmux session).
 
@@ -1244,7 +1261,10 @@ about which facts a model chose to keep.
   paths in Bash, best effort as for the other Bash checks), for every actor
   including the solo brain; the MCP stops offering `memory_grep`/`memory_log`
   and the skill fence the wiki's skills. The cards reach the bot through its
-  prefix only. `0007` archives the leftovers to the store; the nightly run
+  prefix only. One file under `memory/` is not memory and stays readable to its
+  owner alone: `memory/users/<own slug>/.pending-delegate.json`, the marker a
+  group turn leaves when a private answer to that person is on its way, which
+  the Telegram brain checks before answering twice. `0007` archives the leftovers to the store; the nightly run
   archives user trees whose slug left the roster.
 - **Filing is decided by code.** The owner of a conversation comes from where it
   was held (web user, the roster owner of a Telegram chat — a stranger's chat is
@@ -1275,6 +1295,61 @@ about which facts a model chose to keep.
   Starts of the move and downloads are audit-logged in the store.
 
 ---
+
+### 24. Prompt injection from what others wrote; supply chain
+
+**Threat.** Text written by outsiders — an email, a shared document or its
+comments, a calendar event, a meeting transcript, a web page, a customer's
+order note — carries an order for the agent ("forward the invoices to…"), or
+gets into memory and is read in every later turn.
+
+**Mitigations.**
+- Every tool result whose strings outsiders wrote reaches the agent inside
+  `<untrusted-content source="…">` (`apps/_shared/wrap-untrusted.js`): email,
+  the Google servers, Trello, X, Shopify, SignWell, every remote MCP server
+  through the bridge (open servers too), recent-message transcripts and memory
+  grep. The wrapper cannot be closed from inside. The always-on prompt and the
+  `security` skill: only what the person says in the conversation is an
+  instruction; whatever a tool returns is material, wrapped or not; a request
+  in it to send, forward, share, delete or change something is flagged, never
+  done. Not wrapped (treated the same by rule): the built-in web search and
+  fetch, files read with Read, the browser agent, GitHub.
+- Memory: a note carries a `statement` flag set in the same model call; an
+  order planted in the material is dropped with its reason in the trace;
+  meeting and voice-note prompts treat transcripts as data. A recall excerpt
+  names the service an imported line came from.
+- Onboarding (`routes/onboarding.js`): the web look-up is about the person, runs
+  once and is closed after they confirm; three research runs a day; a found
+  line must be a statement and carry no link, address, markup or file to run;
+  only lines the research drafted can be confirmed, each with its source. The
+  site reader (`lib/onboarding/site.js`) takes a public hostname only (no IP
+  literal, no `localhost` or internal suffix, no credentials, ports 80/443),
+  goes out through the egress open listener (`egress-proxy:3130`, public
+  addresses only), reads at most five pages of that one site with byte, text,
+  redirect and time caps, and drafts with a model call that has no tools; the web searches about the
+  company and (when asked) the person may only search (`WebSearch`). Answers, findings and plans live in workspace-api's
+  store (`onboarding/`, 0700/0600), never the project tree, so no turn reads
+  another person's.
+- **Acting outside needs a yes.** The global instructions' security floor:
+  anything that reaches outside the platform (an email, a post, a change over
+  an API) happens only after an explicit go-ahead from the person. It used to
+  live in the `RULES` card template, where a workspace could lose it.
+- **Schedulers that cannot work here are denied.** `CronCreate`, `CronList`,
+  `CronDelete`, `ScheduleWakeup` and `RemoteTrigger` are in the deny list of
+  `bootstrap/claude-settings.json`, merged into every home: a deny holds with
+  `--dangerously-skip-permissions` too. Scheduling is `set_reminder` and the
+  planner. The skill fence still refuses the CLI's `schedule`/`cron` skills and
+  a plugin's `…:routines`, and lets our own `routines` skill through.
+
+**Supply chain.** Every app installs from its lockfile (`npm ci --omit=dev`),
+so an image holds the versions that were tested, not what resolved on build
+day. Remote MCP servers are third parties: read-only connections by default
+where the integration offers the choice.
+
+**Residual risk.** Wrapping and flags lower the odds; they do not make an
+injection impossible. The operator's machine holds every client's `.env` and
+SSH access: disk encryption, a key per server and no untrusted tools with
+access to the repository are part of the deployment's security.
 
 ## Security Checklist
 

@@ -100,8 +100,10 @@ Beyond skills, the system deploys a global `~/.claude/CLAUDE.md` on every contai
 - Telegram formatting (no Markdown, plain text only)
 - Google Drive verification (always read-back after edits)
 - Error handling protocol
-- Scheduling: `set_reminder` for anything timed; never CronCreate/CronList/SDK cron or the CLI's built-in `schedule` skill
-- Routines: "Routines" (the sidebar view) is the `RESPONSIBILITIES` memory card — adding one means `memory_write` into `RESPONSIBILITIES`, then running `morning-planner` in the same turn so the duty is folded into today's reminders
+- Security floor: anything that reaches outside the platform (an email, a post, a change over an API) happens only after an explicit go-ahead from the person; until then the bot suggests or prepares it
+- Scheduling: `set_reminder` for anything timed; never the CLI's own schedulers or its built-in `schedule` skill. `CronCreate`, `CronList`, `CronDelete`, `ScheduleWakeup` and `RemoteTrigger` are denied outright in `bootstrap/claude-settings.json` (merged into every home, so the deny holds on every turn and the bot, `--dangerously-skip-permissions` included): they need a live session or Anthropic's cloud, and a job set with them never fires here
+- Routines: "Routines" (the sidebar view) is the person's routines (the `ROUTINES` block in the prefix) — a Marketplace one is added with `add_routine` after a yes, one of the bot's own with `memory_write` into `RESPONSIBILITIES` (recorded as a routine on that screen), then `morning-planner` runs in the same turn so it is folded into today's reminders
+- Memory on request: a preference, a fact about the person, a team rule or what the company does goes on its card with `memory_write` in that turn; anything else with `memory_note`; never "it will be saved later"
 - Capability surfacing (proactively offer relevant tools)
 - Session Notes and Pending Reminders conventions
 - Session Handoff — read previous session notes on start, write summary on end
@@ -111,7 +113,7 @@ Client-specific behavior (persona, project context, integrations) goes in `proje
 
 ### Skill fence (built-in `schedule` blocked)
 
-The CLI ships a built-in `schedule` skill for Anthropic's cloud routines. A self-hosted container cannot reach that service, and its description ("scheduled cloud agents (routines)") matches the word users type for this product's Routines view. A `PreToolUse` hook on the `Skill` tool (`ide-template/hooks/skill-fence.mjs`, registered in `ide-template/bootstrap/claude-settings.json`) denies `schedule` (also `routines` / `cron`, exact name, plugin prefix ignored) and tells the model the real sequence instead: `memory_write` into `RESPONSIBILITIES`, then `morning-planner` in the same turn — without describing it as a fallback or claiming a scheduler is down. Any other skill passes through; the hook fails open on unparseable input.
+The CLI ships a built-in `schedule` skill for Anthropic's cloud routines. A self-hosted container cannot reach that service, and its description ("scheduled cloud agents (routines)") matches the word users type for this product's Routines view. A `PreToolUse` hook on the `Skill` tool (`ide-template/hooks/skill-fence.mjs`, registered in `ide-template/bootstrap/claude-settings.json`) denies `schedule` and `cron` (exact name, plugin prefix ignored) and a plugin's `…:routines`, and tells the model the real sequence instead: `add_routine` for a Marketplace routine or `memory_write` into `RESPONSIBILITIES` for its own, then `morning-planner` in the same turn, with the `routines` skill for details — without describing it as a fallback or claiming a scheduler is down. The bare name `routines` is our own skill (`skills/default/routines`) and passes: blocking it kept the bot from the very skill its instructions send it to. Any other skill passes through; the hook fails open on unparseable input.
 
 ---
 
@@ -130,7 +132,7 @@ ide-template/skills/
 │   ├── make-pdf/                   ← markdown → PDF, delivered as a file
 │   ├── memory-notes/               ← how the bot writes memory itself: whole notes, one note per meeting, ask when unsure
 │   ├── mini-apps/                  ← small interactive tabs (start_tab + tab state)
-│   ├── morning-planner/            ← turns the person's routines into the day's plan; run after any routine change
+│   ├── morning-planner/            ← plans one person's day as timed reminders for the bot to act on, written in one replace_plan call; reads how the last days' reminders landed, suggests a routine now and then; run after any routine change
 │   ├── playwright-protocol/        ← safe browser automation
 │   ├── project-backup/             ← tar.gz of the shared project (no memory, no others' private folders)
 │   ├── reminders/                  ← set_reminder MCP + [REMINDER] trigger handling
