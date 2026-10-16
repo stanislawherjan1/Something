@@ -84,6 +84,9 @@ lacks() { # name text needle
 ok() { # name 1|0 [detail]
   if [ "$2" = 1 ]; then PASS=$((PASS+1)); echo "  ok   $1"; else FAIL=$((FAIL+1)); echo "  FAIL $1${3:+ — $3}"; fi
 }
+skip() { # name reason — a check this deployment has nothing for (not a pass, not a failure)
+  echo "  skip $1 — $2"
+}
 finish() {
   echo
   echo "$SUITE: $PASS passed, $FAIL failed"
