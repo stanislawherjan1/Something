@@ -354,6 +354,25 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               'in conversation. Set by the morning-planner per item; omit for ' +
               'ordinary user-set reminders (defaults to "now").',
           },
+          kind: {
+            type: 'string',
+            enum: ['info', 'action'],
+            description:
+              'Planner reminders: "info" when it only tells them something (weather, the day\'s overview) — no ' +
+              'reply expected, silence is fine; "action" when something should follow (a draft to approve, a ' +
+              'reply to send, a decision). The next plans learn from how each kind landed.',
+          },
+          routine: {
+            type: 'string',
+            description: 'Planner reminders: the title of the routine this comes from, if any — so its history can be told.',
+          },
+          timed: {
+            type: 'boolean',
+            description:
+              'true when the TIME itself matters (a meeting at 13:00, a departure, a call starting): it fires ' +
+              'exactly then. A planner reminder without it may be held back to keep a gap after the last one ' +
+              'that reached the person, so the day is not three messages in a row.',
+          },
           origin: {
             type: 'string',
             enum: ['planner'],
@@ -365,6 +384,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ['due'],
+      },
+    },
+    {
+      name: 'replace_plan',
+      description:
+        "The morning-planner's write: today's whole plan for the person this run is for, in one call. " +
+        "Each item takes set_reminder's fields (title, description, due, recur or repeat, channel, recipient, urgency); " +
+        "origin is set for you. In one step it removes every pending reminder the previous plans placed for this " +
+        "person and writes these: a run that stops before calling it changes nothing, and the person keeps " +
+        "yesterday's standing duties. Reminders the person set themselves and system reminders are never touched. " +
+        "If any item is invalid (a time in the past, an unknown recipient) nothing is changed: fix that item and call again.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          reminders: {
+            type: 'array',
+            description: 'The plan: every reminder for today, plus the standing recurring duties. An empty list clears the plan.',
+            items: { type: 'object' },
+          },
+        },
+        required: ['reminders'],
       },
     },
     {
@@ -399,11 +439,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-async function handleTool(request) {
-  const { name, arguments: args } = request.params;
-
-  // ── set_reminder ───────────────────────────────────────────────────────────
-  if (name === 'set_reminder') {
+// One reminder, validated and shaped exactly as set_reminder stores it — shared
+// with replace_plan, so a plan's items pass the same checks (due time, past
+// guard, recurrence, recipients and their permissions). Returns the reminder,
+// or the tool error to send back.
+async function prepareReminder(args) {
     const dueDate = parseDue(args.due);
 
     if (isNaN(dueDate.getTime())) {
@@ -550,6 +590,9 @@ async function handleTool(request) {
       // run without ever touching a reminder the user set for themselves. Stored only
       // when set, so ordinary user reminders stay byte-identical to pre-feature.
       ...(args.origin === 'planner' ? { origin: 'planner' } : {}),
+      ...(args.timed === true ? { timed: true } : {}),
+      ...(args.kind === 'info' || args.kind === 'action' ? { kind_of: args.kind } : {}),
+      ...(typeof args.routine === 'string' && args.routine.trim() ? { routine: deDash(args.routine.trim()).slice(0, 120) } : {}),
       created: new Date().toISOString(),
       status: 'pending',
       // Team mode: who set it + who it's for. Both omitted in solo (setter='')
@@ -558,6 +601,18 @@ async function handleTool(request) {
       ...(setBy ? { setBy } : {}),
       ...(recipients ? { recipients } : {}),
     };
+
+    return { reminder, recipients, setter, recurrence };
+}
+
+async function handleTool(request) {
+  const { name, arguments: args } = request.params;
+
+  // ── set_reminder ───────────────────────────────────────────────────────────
+  if (name === 'set_reminder') {
+    const prep = await prepareReminder(args);
+    if (prep.isError) return prep;
+    const { reminder, recipients, setter, recurrence } = prep;
 
     await withRemindersLock(async () => {
       const list = await readReminders();   // fresh read inside the lock
@@ -579,6 +634,44 @@ async function handleTool(request) {
               (forLabel ? `\nFor: ${forLabel}` : '') +
               `\nNext fire: ${dueStr}\nRepeat: ${recur.humanizeRecur(recurrence)}`,
       }],
+    };
+  }
+
+  // ── replace_plan ───────────────────────────────────────────────────────────
+  // The previous plan used to be cancelled first and the new one laid after: a
+  // run that died in between left the person with no reminders for the day,
+  // standing hourly duties included, and nobody heard. Validate everything,
+  // then swap the old set for the new one inside one hold of the lock.
+  if (name === 'replace_plan') {
+    const items = Array.isArray(args?.reminders) ? args.reminders : null;
+    if (!items) return { content: [{ type: 'text', text: 'Plan NOT replaced: `reminders` (a list) is required. Nothing changed.' }], isError: true };
+    if (items.length > 40) return { content: [{ type: 'text', text: `Plan NOT replaced: ${items.length} reminders is more than a day should hold (40 at most). Nothing changed.` }], isError: true };
+    const placed = [];
+    for (const [i, item] of items.entries()) {
+      const prep = await prepareReminder({ ...(item && typeof item === 'object' ? item : {}), origin: 'planner' });
+      if (prep.isError) {
+        const label = item?.title || item?.message || `item ${i + 1}`;
+        return { content: [{ type: 'text', text: `Plan NOT replaced, nothing changed. Item ${i + 1} ("${label}"): ${prep.content?.[0]?.text || 'invalid'}` }], isError: true };
+      }
+      placed.push(prep.reminder);
+    }
+    // Whose previous plan: this run's person (team), or the one person (solo).
+    const me = actorSlug();
+    const previous = (r) => r.status === 'pending' && r.origin === 'planner' && r.kind !== 'system'
+      && (me ? Array.isArray(r.recipients) && r.recipients.length === 1 && r.recipients[0] === me
+             : !Array.isArray(r.recipients) || !r.recipients.length);
+    let removed = 0;
+    await withRemindersLock(async () => {
+      const list = await readReminders();   // fresh read inside the lock
+      const keep = list.filter((r) => !previous(r));
+      removed = list.length - keep.length;
+      await writeReminders([...keep, ...placed]);
+    });
+    const lines = placed
+      .sort((a, b) => new Date(a.due) - new Date(b.due))
+      .map((r) => `${r.id} | ${r.due.slice(0, 16).replace('T', ' ')} UTC | ${r.urgency === 'ambient' ? 'ambient' : 'now'} | ${r.title}`);
+    return {
+      content: [{ type: 'text', text: `Plan replaced: ${placed.length} placed, ${removed} from the previous plan removed.${lines.length ? `\n${lines.join('\n')}` : ''}` }],
     };
   }
 

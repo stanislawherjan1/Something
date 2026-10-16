@@ -10,6 +10,7 @@
  *      would arrive with the nginx container's IP, not loopback).
  */
 
+import { recordOutcome } from '../lib/planner-feedback.js';
 import { Router } from 'express';
 import * as runtime from '../lib/integrations/runtime.js';
 import * as oauthBroker from '../lib/integrations/oauth.js';
@@ -65,12 +66,15 @@ async function deliverRunOutcome(member, deliver, reply, sentItself) {
   const text = String(reply || '').trim();
   if (sentItself) {
     process.stderr.write(`[invoke-turn] ${member.slug}: outcome sent by the model itself\n`);
+    recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'sent-itself' });
     return;
   }
   if (!text || SILENT_RE.test(text)) {
     process.stderr.write(`[invoke-turn] ${member.slug}: nothing to report (silent)\n`);
+    recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'silent' });
     return;
   }
+  recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'said' });
   const channel = ['telegram', 'web', 'all'].includes(deliver.channel) ? deliver.channel : 'all';
   const botName = resolveBranding().botName;
   const title = String(deliver.title || botName).trim().slice(0, 120) || botName;

@@ -4,7 +4,7 @@
       "id": "morning-brief",
       "title": "Morning brief",
       "summary": "Every working morning: the day's top three and what's due, in one short message.",
-      "description": "Every working morning, before the person usually starts. Read the task board (task API: list tasks with status, owner, deadline) (In Progress, due today, overdue), today's commitments from recent_messages, and the calendar if one is connected (leave meetings out if the Calendar brief routine is on). Send one short message: the top three for today and what's due. Each run, save a snapshot of the board in your notes (one line per task: id, status, deadline, date) — tasks have no change history, so 'unchanged' means the same status across snapshots. Send nothing on a day with no due tasks, no carry-over and no meetings.",
+      "description": "Every working morning, before the person usually starts. Read the task board (task API: list tasks with status, owner, deadline) (In Progress, due today, overdue), today's commitments from recent_messages, and the calendar if one is connected (leave meetings out if the Calendar brief routine is on). Send one short message: the top three for today and what's due. Each run, save a snapshot of the board in your notes (one line per task: id, status, deadline, date) — tasks have no change history, so 'unchanged' means the same status across snapshots. When it runs and there are no due tasks, no carry-over and no meetings, send nothing.",
       "icon": "sun",
       "category": "planning",
       "tags": [

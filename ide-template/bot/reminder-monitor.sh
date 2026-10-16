@@ -345,7 +345,7 @@ NODE
 # every HTTP status.
 invoke_turn_teammates() {
     command -v curl >/dev/null 2>&1 || return 1
-    local recips="$1" wire="$2" mode="${3:-1}" channel="${4:-all}" title="${5:-}" urgency="${6:-now}" slug json msg resp status payload
+    local recips="$1" wire="$2" mode="${3:-1}" channel="${4:-all}" title="${5:-}" urgency="${6:-now}" rid="${7:-}" slug json msg resp status payload
     local failed=0
     [ "$recips" = "*everyone*" ] && return 0   # planner triggers are per-slug; never mass-execute
     # mode 2 (a duty the planner placed): wrap it in the same frame the operator's
@@ -365,9 +365,9 @@ invoke_turn_teammates() {
     for slug in "${_arr[@]}"; do
         [ -z "$slug" ] && continue
         operator_in_set "$slug" && continue    # operator ran via fire_operator
-        json=$(ACTOR="$slug" MSG="$msg" MODE="$mode" CH="$channel" TI="$title" node - << 'NODE'
+        json=$(ACTOR="$slug" MSG="$msg" MODE="$mode" CH="$channel" TI="$title" RID="$rid" node - << 'NODE'
 const body = { actor: process.env.ACTOR, message: process.env.MSG };
-body.deliver = process.env.MODE === '2' ? { channel: process.env.CH, title: process.env.TI } : undefined;
+body.deliver = process.env.MODE === '2' ? { channel: process.env.CH, title: process.env.TI, id: process.env.RID || undefined } : undefined;
 process.stdout.write(JSON.stringify(body));
 NODE
 ) || { failed=1; continue; }
@@ -547,6 +547,22 @@ const toSend = [];
 // mid-attempt — is reclaimed after this long rather than stranded for ever.
 const STUCK_MS = Number(process.env.REMINDER_STUCK_MS) || 5 * 60_000;
 
+// PACING. The day's plan used to land in bursts: everything due in the same
+// minute went out back to back, three messages and then silence. A planner
+// one-shot that reaches the person on its own (not ambient, not recurring, not
+// marked `timed` — a meeting, a departure) waits until REMINDER_MIN_GAP_MINUTES
+// after the last one reached them; at most one goes per person per pass. The
+// reminders people set themselves, recurring duties and system triggers keep their time.
+const GAP_MS = (Number(process.env.REMINDER_MIN_GAP_MINUTES) || 45) * 60_000;
+const paceKey = (r) => Array.isArray(r.recipients) ? r.recipients.join(',') : '';
+const pacedKind = (r) => r.origin === 'planner' && !r.recur && r.urgency !== 'ambient' && !r.timed && !r.exec && !r.chat;
+const lastTouch = new Map();
+for (const r of reminders) {
+    if (!pacedKind(r) || !['sent', 'firing'].includes(r.status)) continue;
+    const t = Date.parse(r.settledAt || r.lastAttemptAt || '') || 0;
+    if (t > (lastTouch.get(paceKey(r)) || 0)) lastTouch.set(paceKey(r), t);
+}
+
 reminders = reminders.map(r => {
     // 'firing' means a delivery was CLAIMED but never confirmed. Retry it once
     // it has been stuck long enough; otherwise leave it to the attempt in
@@ -562,6 +578,15 @@ reminders = reminders.map(r => {
     // retryAt; a first attempt waits for due.
     const retryAt = Date.parse(r.retryAt || '');
     if ((Number.isFinite(retryAt) ? retryAt : due) > now) return r;
+
+    if (pacedKind(r) && r.status === 'pending') {
+        const last = lastTouch.get(paceKey(r)) || 0;
+        if (now - last < GAP_MS) {
+            changed = true;
+            return { ...r, due: new Date(last + GAP_MS).toISOString(), pacedFrom: r.pacedFrom || r.due };
+        }
+        lastTouch.set(paceKey(r), now);
+    }
 
     // Compose the wire-format message. Prefer the structured title +
     // description fields when present (newer reminders), fall back to the
@@ -740,7 +765,7 @@ NODEEOF
                 # EXECUTION reminder (a planner trigger, or a duty the planner
                 # placed): run it AS each teammate recipient in their own scope,
                 # not the operator brain — and never relay its text to them.
-                invoke_turn_teammates "$recipients" "$wire" "$exec" "$channel" "$title" "$urgency"
+                invoke_turn_teammates "$recipients" "$wire" "$exec" "$channel" "$title" "$urgency" "$rid"
                 tm_rc=$?
                 log_fire "$tm_rc" "invoke-turn" "$channel" "$recipients" "$urgency" "$exec" "$title"
             else
