@@ -2,7 +2,8 @@
  * memory-llm — one structured call to a small model, for memory's background work
  * (routing, notes, reviews, the digest).
  *
- * Runs `claude -p` with no tools, no MCP servers, no settings and no session, and
+ * Runs `claude -p` with no tools (unless a caller names built-in ones), no MCP
+ * servers, no settings and no session, and
  * validates the answer against a JSON schema (`--json-schema` → `structured_output`,
  * available on the pinned CLI). The conversation text it reads is untrusted; with
  * no tools there is nothing an instruction inside it could make the call do.
@@ -27,18 +28,25 @@ let override = null;
 /** Replace the transport (tests). `fn({system, user, schema, model}) → object`, or null to restore. */
 export function configureRunner(fn) { override = fn; }
 
-function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS }) {
+// `tools`: the built-in tools the call may use — none by default. Onboarding's
+// look-up allows WebSearch alone (it runs on Anthropic's side; nothing else opens).
+function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS, tools = [] }) {
   return new Promise((resolve, reject) => {
     // No auto-memory either: with cwd in /tmp the CLI kept a MEMORY.md there and
     // fed it to every call — someone else's notes in front of the sorter.
-    const env = { ...process.env, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
+    const env = { ...process.env, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
+    // Not for a call that may search: with it set, WebSearch's request goes out
+    // with thinking disabled, the API refuses it (400) and the model reports
+    // "nothing found" — a silent empty look-up.
+    if (!tools.length) env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
     if (!env.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
       try { env.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); } catch { /* fall through */ }
     }
     let proc;
     try {
       proc = spawn(CLAUDE_BIN, [
-        '-p', '--model', model, '--tools', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+        '-p', '--model', model, '--tools', tools.join(','), ...(tools.length ? ['--allowedTools', tools.join(',')] : []),
+        '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
         '--no-session-persistence', '--setting-sources', '', '--system-prompt', system,
         '--output-format', 'json', '--json-schema', JSON.stringify(schema),
       ], { stdio: ['pipe', 'pipe', 'pipe'], env, cwd: tmpdir() });
@@ -60,11 +68,11 @@ function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS }) {
 }
 
 /** One structured call; retried once. Throws when both attempts fail. */
-export async function runStructured({ system, user, schema, model = MEMORY_MODEL, timeoutMs }) {
+export async function runStructured({ system, user, schema, model = MEMORY_MODEL, timeoutMs, tools = [] }) {
   const call = override || viaCli;
   let last;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { return await call({ system, user, schema, model, timeoutMs }); } catch (e) { last = e; }
+    try { return await call({ system, user, schema, model, timeoutMs, tools }); } catch (e) { last = e; }
   }
   throw last;
 }
