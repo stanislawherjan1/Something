@@ -14,11 +14,18 @@ Setting it up takes about an hour, most of it waiting:
    page walks you through the clicks.
 4. Run the one install command on the server and answer its questions: the
    domain, the Google app details, your email as the first admin.
-5. Open your domain, sign in with Google, and set up the Anthropic account the
-   coworker thinks with from the settings page.
+5. Open your domain and sign in with Google. A short setup follows: give the
+   coworker a name and a face, say what your company does (and its website, if
+   you like), tell it a little about you and what you want help with, and paste
+   the Claude token it thinks with.
+6. It then searches the web for your company, reads its website (and, only if
+   you ask, looks you up too) and shows what it found. Fix or remove anything that's off; only what you
+   keep is remembered. Last comes a starter plan: two or three tools to connect
+   in one click and a few routines, each with a line on why.
 
 From there everything else is done inside the workspace: connect integrations,
-link Telegram, invite teammates, add routines. Nothing here needs you to come
+link Telegram, invite teammates, add routines. Each teammate you invite gets a
+shorter version of the same setup the first time they sign in. Nothing here needs you to come
 back to the server. If a step fails, the troubleshooting section at the end
 covers what people usually hit.
 
@@ -246,9 +253,15 @@ server). When it finishes you'll see your workspace URL and the next steps.
 
 1. Open **https://workspace.yourcompany.com** and sign in with your admin
    Google account.
-2. A short **wizard** appears — set the workspace name, logo, the assistant's
-   name, and personality.
-3. **Claude token.** The wizard asks for one so the assistant can think.
+2. A short **setup** appears:
+   - **Meet your coworker:** its name and avatar.
+   - **Your company:** its name, one sentence on what it does, an optional
+     logo and an optional website.
+   - **About you:** your full name, your role, what you need help with, and an
+     optional "Look me up on the web" switch (public pages only, run once).
+     The name you give here is the name the workspace shows for you.
+   - **Connect Claude:** the token (below).
+3. **Claude token.** The setup asks for one so the assistant can think.
    Generate it on your computer (needs Node.js installed and a **paid Claude
    plan — Pro or Max**; free accounts can't generate a token):
    ```bash
@@ -256,11 +269,26 @@ server). When it finishes you'll see your workspace URL and the next steps.
    claude setup-token
    ```
    Follow the browser flow, copy the printed `sk-ant-oat01-…` value, and paste
-   it into the wizard. (Valid ~1 year, stored encrypted on your server.)
-4. **Add integrations.** Open **Integrations** in the sidebar to connect tools
+   it into the setup. (Valid ~1 year, stored encrypted on your server.)
+4. **What we found.** While a short "setting up" screen runs, the assistant
+   searches the web for your company, reads its website (the home page and a
+   few of its own pages; found by the search if you left it out) and, if you
+   switched it on, public pages about you. It lists what it found, each line
+   with its source, plus the tools it spotted on the site. Edit or remove lines,
+   then **Looks right**: the company's name, sentence and website go on the
+   company card, your name, role and what you need help with on your own card,
+   together with the lines you kept. Nothing found is remembered without this.
+5. **Your starter plan.** Two or three integrations that connect in one click
+   (where there are several of a kind, "Use another …" offers the others) and
+   a few routines, each with why. A routine that needs an app shows "connect …
+   first" until it is connected; at least one needs no app and can be added
+   straight away. **Open workspace** finishes setup; everything is saved as you
+   go, so a reload resumes where you were.
+6. **More integrations.** Open **Integrations** in the sidebar to connect tools
    — Shopify, Gmail, Google Ads, image generation, and more. Each has its own
    setup walkthrough.
-5. **Telegram (optional).** In **Integrations → Telegram**, paste a bot token
+7. **Telegram (optional).** In **Integrations → Telegram** (or the "Add …
+   on Telegram" bar at the top of the workspace), paste a bot token
    from [@BotFather](https://t.me/BotFather) to chat with your assistant there
    too — same memory, same context.
 
@@ -277,6 +305,7 @@ That's it. Your assistant is live.
 | SSH works with `ssh -i ~/.ssh/<key>` but **not** plain `ssh` | Your key has a non-default name, so `ssh` doesn't try it | The installer offers to fix this; or add to `~/.ssh/config`: `Host <IP>` / `IdentityFile ~/.ssh/<key>` / `IdentitiesOnly yes`. Then `ssh root@<IP> 'echo ok'` works without `-i`. |
 | Google: **`redirect_uri_mismatch`** at login | The callback URL isn't registered on your OAuth client | In Google Console → **Credentials** → your OAuth client → **Authorized redirect URIs**, add exactly `https://<your-domain>/auth/callback` (no trailing slash) and save. See [Google OAuth setup](#google-oauth). |
 | Signed in, but **the bot doesn't reply on Telegram** | No Telegram token set | Open **Integrations → Telegram** in the workspace and paste a bot token from [@BotFather](https://t.me/BotFather). |
+| Setup: **"That is enough tries for today"** on the setting-up screen | Reading the website and the web look-up run at most three times a day per person | Carry on without it (nothing found is needed to finish setup), or try again the next day. |
 | Deploy **times out or fails partway** | Transient network/build hiccup, or DNS/Docker wasn't ready | Just run it again — the deploy is idempotent: `./clients/<your-domain>/deploy.sh`. Confirm Docker is installed (`ssh root@<IP> 'docker --version'`) and DNS resolves first. |
 | Deploy fails: **`no space left on device`** | Server disk filled with old build cache or an image nothing runs | `ssh root@<IP> "df -h"` to check, then `ssh root@<IP> "docker builder prune -af; docker image prune -f"` to free space and run the deploy again (a routine deploy reuses the build cache; `./deploy.sh --fresh` rebuilds everything and needs about four times the image's size free) — or pick a larger Hetzner plan. |
 

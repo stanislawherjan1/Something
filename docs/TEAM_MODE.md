@@ -23,8 +23,19 @@ admin unlocks it. Whoever tries hears "Locked by <name>. Read-only until an
 admin unlocks it." A locked folder covers everything inside it. Locks live in
 the row menu of the file list, and a locked row carries a keyhole.
 
-Each person links their own Telegram, so a message from you is from you. Add
-the coworker to a team group and it listens there as the team's, remembering
+The first time someone you invited signs in, they get a short setup of their
+own: their name, their role and what they need help with (and, if they want,
+a look at public pages about them, which they check before anything is kept).
+The name they give is the name the team sees. Then comes a starter plan picked
+for their role: tools they can connect with their own account, and routines.
+They can connect their own account of most tools from the Marketplace too; only
+the team's own services, like the email inbox or Telegram, need an admin.
+Members see their own settings in AI Settings; the coworker's name, face and
+instructions are an admin's to set.
+
+Each person links their own Telegram, so a message from you is from you. Only
+an admin is asked to set the coworker up on Telegram, and it is the whole
+team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
 the group's own conversation and never anyone's private memory. Reminders and
 tasks go to the person they are for.
 
@@ -147,6 +158,23 @@ when Telegram is on. The bot changes the language or zone when that person asks
 (`set_my_settings`, never from a group), unless they locked it with the padlock.
 Their morning planning runs at 06:00 in their zone; admins set the workspace
 default zone for people without one. See [ROUTINES.md](ROUTINES.md#time-zone-and-language).
+
+**Onboarding.** A person added after the workspace got onboarding goes through
+it at first sign-in (people already on a workspace when it was updated do not):
+full name, role, what they need help with and an optional web look-up of
+themselves, what was found to confirm, then a starter plan. The company step is
+the first admin's alone, so a member's flow is shorter. The full name given
+becomes their `displayName` (team list, menu, relays), not whatever the
+sign-in provider carried. What they confirm goes to their own private
+`USER_PROFILE` through the memory engine. In a member's plan the integrations
+are ones a person may connect for themselves (their own account), and the
+team's connections are listed above them. State lives in workspace-api's
+store, never the project tree (`onboarding/people/<slug>.json`); see
+[QUICK_START.md](QUICK_START.md#6-first-login) and
+`ide-template/workspace-api/README.md`.
+
+**AI Settings** shows a member their own settings; the bot tile (name, avatar)
+and the Instructions tile are shown to admins only.
 
 `personalRoot` is `users/<slug>` in team mode (null in solo) — the root of the
 caller's private space.
@@ -371,6 +399,13 @@ Each teammate can be reached on Telegram once linked:
 - `preferredSurface` — `web` / `telegram` / `both` — the teammate's own choice of
   where they want to be reached. It drives relay + reminder delivery routing.
 
+Telegram itself is **team-wide** (`teamWide` in the catalog): an admin connects
+the bot once for everyone, with no read-only/read-and-write choice (it always
+reads and sends). The "Add <bot> on Telegram" bar at the top of the workspace
+shows for admins only and opens Telegram's connect modal in place. Every turn's
+`MY_SETTINGS` card says where the person can be reached: the web always,
+Telegram only when it is connected and they are linked.
+
 The chat id is private (redacted to non-admins/non-owners); the preferred
 surface is roster-level and visible.
 
@@ -514,6 +549,7 @@ and excluded from Drive sync.
 | `POST /internal/reminder-deliver` | Loopback — fan-out of a fired reminder to teammates. |
 | `POST /internal/group-message` | Loopback — a diverted group message into the relevance watcher. |
 | `POST /internal/group-joined` | Loopback — bot added to a group → roster-gated auto-register. |
+| `GET /api/onboarding`, `POST /api/onboarding/me`, … | Each person's own setup (§3); the company step is admin-only. |
 | `POST /internal/me/settings` | Loopback — the bot's `set_my_settings` (turn identity; refused in groups and on locked settings). |
 
 ### Related skills

@@ -236,23 +236,25 @@ What to send the end-user (template you can paste into email/Telegram):
 
 > **Your workspace is live: https://ide.clientname.com/app/**
 >
-> Sign in with the email I added you under (`<their email>`). On first login a 4-step wizard appears:
+> Sign in with the email I added you under (`<their email>`). On first login a short setup appears:
 >
-> 1. **Workspace name + logo** — what shows in the browser tab and top bar.
-> 2. **Bot name + avatar** — your AI assistant's identity (e.g. "Aria"). Avatar can be uploaded or generated.
-> 3. **Backstory + personality** — short paragraph + 4 sliders. The bot uses this to set its tone.
+> 1. **Your coworker** — its name and avatar (e.g. "Aria"). Avatar can be uploaded or picked.
+> 2. **Your company** — its name, one sentence on what it does, and optionally a logo and the website.
+> 3. **About you** — your name, your role, what you need help with, and an optional "Look me up on the web".
 > 4. **Claude OAuth token** — needed for the bot to talk to Claude. Generate one on your computer:
 >    ```
 >    npm install -g @anthropic-ai/claude-code
 >    claude setup-token
 >    ```
->    Follow the OAuth flow in the browser. Copy the printed `sk-ant-oat01-…` and paste into the wizard. Token is valid for 1 year, encrypted on the server.
+>    Follow the OAuth flow in the browser. Copy the printed `sk-ant-oat01-…` and paste it in. Token is valid for 1 year, encrypted on the server.
 >
-> After the wizard, the bot is live. Open **Integrations** in the left sidebar to activate Telegram, Shopify, Meta Ads, Google Ads, GA4, image generation, IMAP — whatever you need. Each integration has its own setup walkthrough inside.
+> It then searches the web for your company, reads its website and shows what it found: fix or remove anything that's off, and only what you keep is remembered. Last comes a starter plan of tools to connect in one click and routines to switch on.
+>
+> After the setup, the bot is live. Open **Integrations** in the left sidebar to activate Telegram, Shopify, Meta Ads, Google Ads, GA4, image generation, IMAP — whatever you need. Each integration has its own setup walkthrough inside.
 >
 > Skills (the "playbooks" the bot follows) are in the **Skills** sidebar item. Default ones are read-only; create your own per-project ones from there.
 
-If the client wants you to do the Claude token step too: run `claude setup-token` on your own laptop (one token per Claude.ai account is fine — reuse across clients) and paste it into the wizard yourself.
+If the client wants you to do the Claude token step too: run `claude setup-token` on your own laptop (one token per Claude.ai account is fine — reuse across clients) and paste it into the setup yourself (the company and "about you" steps are the client's to fill in).
 
 ---
 
@@ -263,6 +265,7 @@ If the client wants you to do the Claude token step too: run `claude setup-token
 - **Save `.env` before deploying** — the script uploads it as the first step; an unsaved file means old values reach the server.
 - **DNS must propagate before deploy** — Caddy provisions TLS by hitting the domain; if DNS isn't live, TLS provisioning fails and you get cert errors. `dig +short` first.
 - **SSH key must work before deploy** — verify `ssh root@<IP> 'echo ok'` succeeds. Otherwise the deploy fails 30 s in after the build, which wastes 5 minutes.
+- **Never wipe `caddy_data`** — it holds the HTTPS certificate. To start a deployment over (a canary's fresh onboarding), remove the other volumes by name, not with `docker compose down -v`: Let's Encrypt issues at most five certificates per domain per week. See [DEPLOY.md](DEPLOY.md#starting-a-canary-over-from-scratch).
 - **Folder name = `IDE_NAME`** — `clients/clientname-ide/` becomes the server path `/root/clientname-ide` and the Docker volume names. Renaming later requires manual cleanup on the server.
 
 ---

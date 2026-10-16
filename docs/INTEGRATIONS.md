@@ -30,6 +30,14 @@ ready-made routines built on it.
 
 You can rotate a key or disconnect a service any time from the same screen.
 
+The first setup suggests two or three services that connect in one click,
+picked for your work (and for tools your website shows you already use). A
+routine picked before its app is connected waits on the Routines screen and
+starts by itself once it is. While the coworker works, each step in the chat
+reads in plain words with the service's own logo and name ("Adding a task in
+Todoist"). What a service sends back (an email, a document, a customer's note)
+is treated as information, never as an order to follow.
+
 In a team workspace a connection has an **owner** and a **reach**. An admin
 connects a service **for the whole workspace** — the shop, the ads account,
 the shared inbox — and the coworker uses it for whoever asks. Anyone can also
@@ -38,12 +46,16 @@ calendar, or their own key to a model: then only their own conversations reach
 it, nobody else's, not even the group's. Mail is both: the team's shared inbox
 and each person's own work mailbox side by side, each read by its owner's
 conversations. Only the two services bound to the coworker itself (its
-Telegram and Docs comments) are team-only. Both can exist side by side
+Telegram and Docs comments) are team-only. Telegram is always the whole
+team's and always reads and sends, so there is nothing to choose when an admin
+connects it; the "Add … on Telegram" bar at the top of the workspace is shown
+to admins only and opens the connect window right there. Both can exist side by side
 ("Granola" and "your own Granola"), and if both are yours, both feed your memory
 each night, each read with its own sign-in. The screen has three tabs: **Team**
 (connected for everyone), **Yours** (your own accounts) and the
 **Marketplace**; a member sees a team service as available to them and
-connects their own with "Connect for me". A team
+connects their own with "Connect for me", here or straight from a Marketplace
+routine that needs it (only a team-only service sends them to an admin). A team
 connection is **read-only** or **read and write** — the admin chooses when
 connecting and can switch it on the service's page at any time: read-only
 means the coworker reads through it and never creates, sends or changes
@@ -243,7 +255,9 @@ whoever deploys the product**: no operator has to register an OAuth app anywhere
    the tile to Active without a reload.
 4. **Runtime** — `syncMcpServers` writes a `~/.claude.json` entry that starts
    the local bridge `apps/remote-mcp` through `mcp-runner` (as the mcp user),
-   with the integration id and the hosted server's URL in its env. The bridge
+   with the integration id and the hosted server's URL in its env (an `open`
+   server too, with `REMOTE_MCP_OPEN=1` and no token: a direct connection would
+   pass its results to the agent unfenced). The bridge
    asks `GET /api/internal/mcp-token/:id` (with the turn's token) for the
    current bearer **on every call** and reconnects when it changes, so a token
    that expires during a long-lived session (the Telegram brain lives for days;
@@ -316,6 +330,8 @@ Each catalog entry declares:
 | `comingSoon` | Marks the entry as visible-but-disabled in the dashboard. |
 | `unavailable` | Reason code for an entry the provider currently blocks (e.g. `"provider-restricted"`). A marker only — the dashboard does not read it yet, so the `description` must explain why activation will fail. |
 | `process` | `'telegram-bot'` for the long-running PM2 case — triggers `pm2 restart` on activate/remove. |
+| `teamWide` | The whole team's, always read and write: no access choice in the dashboard or on `PUT` (the store records `write`). Telegram. |
+| `kind` | What sort of tool it is (`notetaker`, `booking`, `tasks`, `docs`, `issues`, `payments`, `newsletter`, `site`). Onboarding's starter plan offers one of a kind, words a reason by the kind, and lists the others as "Use another …"; a routine that takes any tool of a kind reads its need as "a notetaker". |
 | `home` | Where the integration is set up when that is not the marketplace — e.g. `"browser-agent"`: the marketplace does not offer it, and lists it under Active with a link there once connected. |
 | `experimental` | Shows a neutral **Experimental** tag (quieter than Beta). |
 | `pausable` | An admin can pause it without disconnecting (`PUT /api/integrations/:id/paused {paused}`): the key stays, its tools and its `allowedHosts` go away until resumed; no bot restart. `GET /api/integrations` reports `paused`. |
@@ -493,6 +509,8 @@ The Phase-2 credential broker + Phase-3 uid split + egress sidecar pivot (2026-0
 | All outbound traffic goes through `egress-proxy:3129` (HTTP CONNECT) | `fetch()` / `undici` / `axios fetch-mode` work out-of-box (broker-client sets the global ProxyAgent). **Raw TCP libs (IMAP, SMTP, MQTT, redis, postgres) need explicit `proxy: process.env.HTTPS_PROXY` in their config** — see `apps/email-mcp/index.js` for the imapflow + nodemailer pattern. |
 | `bot-net` is IPv4-only | If your lib pre-resolves the destination hostname locally (e.g. via libc `getaddrinfo`), AAAA results dial into a void. Set `family: 4` in the lib config when possible; the `NODE_OPTIONS=--dns-result-order=ipv4first` env we set per-MCP covers Node's `dns.lookup` path. |
 | DNS rotation + DNS-snoop in egress-proxy | The proxy snoops its own DNS forwarder responses to learn IP→hostname mappings. As long as your lib resolves DNS via the container resolver (default for libc), CONNECT to the resolved IP is automatically allowed. **If your lib does DoH or queries an external resolver directly, you'll bypass our snoop** and get 403 at CONNECT — file a bug or pin the lib to system resolver. |
+| Tool results are untrusted | What a service returns carries strings outsiders wrote (doc bodies, comments, event descriptions, customer notes, tweets). Return it through `wrapResult(result, source)` from `apps/_shared/wrap-untrusted.js`, which fences it in `<untrusted-content source="…">` that cannot be closed from inside — as the Google servers, Trello, X, Shopify, SignWell, email and the remote bridge do. |
+| Installs come from the lockfile | The image runs `npm ci --omit=dev` in every app. An app without a `package-lock.json` fails the build; commit one (`npm install --package-lock-only`). |
 | `mcp.allowedHosts` is the only outbound surface | Add every hostname your MCP dials to the catalog entry's `mcp.allowedHosts[]`. Wildcards: `*.myshopify.com`. Per-tenant placeholders: `{{FIELD_NAME}}` (resolves from active store fields). If you forget, the proxy returns 403 and your MCP silently retries forever. |
 | Headless services + writable profile dirs | Libs that spawn external processes (Chromium, ImageMagick, ffmpeg) often want to create profile/cache dirs at runtime. They default to `$HOME/.cache` or some baked-in path. Always pass an explicit writable dir (`/tmp/<your-mcp>-data/`) — see Playwright's `--user-data-dir` in `entrypoint.sh`. |
 
@@ -500,7 +518,7 @@ The Phase-2 credential broker + Phase-3 uid split + egress sidecar pivot (2026-0
 
 A working MCP in the post-broker world is six steps. Follow them in order; each maps directly to one of the constraints above.
 
-1. **Skeleton**: `apps/<your-mcp>/{index.js, package.json}`. ES module (`"type": "module"`), `@modelcontextprotocol/sdk` dep, stdio transport. Mirror an existing MCP like `apps/trello-mcp/` for layout.
+1. **Skeleton**: `apps/<your-mcp>/{index.js, package.json, package-lock.json}`. ES module (`"type": "module"`), `@modelcontextprotocol/sdk` dep, stdio transport. Mirror an existing MCP like `apps/trello-mcp/` for layout.
 
 2. **Top of `index.js`** — load credentials before anything else:
 
@@ -538,7 +556,7 @@ A working MCP in the post-broker world is six steps. Follow them in order; each 
 
 5. **If you write files at runtime** — never to `$HOME`, only to `/tmp/<your-mcp>-data/` or `${PROJECT_DIR}/<your-integration>/`. Create the dir at MCP startup with `fs.mkdirSync({ recursive: true })`; don't assume it exists.
 
-6. **Deploy entry** in `ide-template/deploy.sh` — scp your `index.js` + `package.json` to the remote build context. Dockerfile LAYER 2d picks it up automatically as long as you copy with `COPY apps/your-thing-mcp /opt/ide/apps/your-thing-mcp` (already templated — bump only if you add unusual deps).
+6. **Deploy entry** in `ide-template/deploy.sh` — scp your `index.js`, `package.json` and `package-lock.json` to the remote build context (it ships a lockfile wherever one exists). Dockerfile LAYER 2d picks it up automatically as long as you copy with `COPY apps/your-thing-mcp /opt/ide/apps/your-thing-mcp` (already templated — bump only if you add unusual deps).
 
 7. **Memory** — decide, and write the decision down: does this integration hold things worth remembering about the person's life and work (a notetaker's meetings: yes; a shop's order numbers or ad metrics: no), is what it holds dated and bounded enough to read in nightly, and exactly what is read (today: a meeting's title, time, participants, notes and transcript)? If yes, declare it in the catalog entry — `"memory": { "kind": "meetings", "default": true, "what": "…" }` — and say so in [MEMORY.md](MEMORY.md#fed-by-integrations); `default: true` only for a kind where connecting it plainly means "read my meetings". If no, leave the block out: nothing is read.
 

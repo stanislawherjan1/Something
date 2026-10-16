@@ -20,6 +20,12 @@ remark under it. Say something is no longer true ("I didn't get the job") and
 the old fact is struck through, with what replaced it next to it. You correct
 it the way you would a colleague: just tell it.
 
+Ask it to remember something and it writes it down there and then. How you
+want it to work ("no emoji", "always suggest a time"), a fact about you, a team
+rule or what the company does goes straight onto its card; anything else
+becomes a note. If memory refuses something, the coworker tells you plainly
+that it is not saved, never that it is.
+
 **The Memory screen** (AI Settings → Memory):
 
 - **Short-term memory**: what is going on right now (meetings, trips,
@@ -44,7 +50,10 @@ it the way you would a colleague: just tell it.
   "never email a client without asking"). They are read on every turn.
   Beside "About you" sits **About the company**: what the business does, for
   whom and how. Everyone's assistant reads it on every turn, groups included.
-  An admin keeps it on this screen, or just tells the bot.
+  An admin keeps it on this screen, or just tells the bot, and adds or removes
+  the **team's rules** the same way. The first setup fills both cards: the
+  company's name, what it does and its website, and your name, role and what
+  you need help with, plus any lines you kept from what it found.
 - **Sources**: what feeds memory besides conversations. A notetaker connected
   on the integrations screen is the workspace owner's account, so what it
   brings in goes to the owner's memory only — never into a teammate's. A voice note you
@@ -86,7 +95,7 @@ away. It only ever reads into your own memory; nothing from a meeting reaches
 the team unless you share it.
 
 **New and older workspaces.** A new workspace starts on this memory from day
-one. A workspace set up before it keeps its old notes until an admin moves it
+one, with empty cards and no "tidy up" banner; the first setup fills them. A workspace set up before it keeps its old notes until an admin moves it
 over from the banner on the Memory screen; until then the new memory already
 collects conversations in the background, so nothing from the waiting time is
 lost. Everyone can download their own memory before the move, and for 30 days
@@ -106,7 +115,7 @@ conversation, whole**, and hands each turn the few excerpts that matter to it.
 | Value | What happens |
 |---|---|
 | `off` | v3 only. The kill switch: `off` wins over everything below. |
-| `shadow` (default) | v3 as before; v4 files conversations into the ledger in the background. Admins see the upgrade bar. A fresh workspace — nothing but untouched seed templates in `memory/` — does not wait for anyone: boot applies the move itself and it is `on` from the first day. |
+| `shadow` (default) | v3 as before; v4 files conversations into the ledger in the background. Admins see the upgrade bar. A fresh workspace does not wait for anyone: a brand-new `memory/` is stamped v4 at first boot (below), and one with nothing but untouched seed templates gets the move applied at boot; either way it is `on` from the first day. |
 | `read` | v4 prefix, recall block and tools; the v3 sweep still runs. For testing on the canary. |
 | `on` | v4 is the memory; the v3 sweep stands down. |
 
@@ -117,6 +126,16 @@ when it is *trivial* for the deployment — nothing anyone wrote would move or
 go: a seed template nobody edited is a view, not content, and goes without a
 record. The moment a card or page carries a person's words (a filled-in
 duties card included), the move waits for an admin.
+
+**Born on v4.** The entrypoint stamps a new organisation before it seeds a
+single card: when `memory/` has no `_engine/` and nothing in it but `users/`,
+it writes `memory/_engine/.v4-migrated` with `"fresh": true`. The migration
+runner then records every migration that exists as done (`recordedFresh`) and
+runs none, and workspace-api skips the v3 reflect-to-engine move; migrations
+added later run as usual. The card templates carry no example content (empty
+`- Field:` lines, no commented-out samples), so nothing passes for a fact; the
+rule that anything reaching outside the platform needs a go-ahead moved from
+the `RULES` template into the global instructions, where every workspace has it.
 
 ### The ledger — the ground truth
 
@@ -295,9 +314,15 @@ fields came back — names and lengths only, never what was said.
 
 ### Reading
 
-- **The prefix** (cached): the product rules from the v3 preamble, identity and
+- **The prefix** (cached): the product rules (opened by a v4 head of its own;
+  no v3 wording about a wiki under `memory/` is left on this path), identity and
   tool cards, `RULES`, `CHANNELS`, `MISSION` (About the company), the person's `USER_PROFILE` and
-  `USER_PREFERENCES`, their routines (`routines.json`), **STANDING_RULES** —
+  `USER_PREFERENCES`, **MY_SETTINGS** (their settings, and where they can be
+  reached: the web always, Telegram only when it is connected and they are
+  linked), **INTEGRATIONS** (what is connected: the team's accounts and their
+  own, read-only where so; built-in abilities are named as not integrations),
+  their routines (`routines.json`, the block opening with the routines,
+  counted, before the rules for running them), **STANDING_RULES** —
   only the rules people stated — and, last, **WHAT_IS_GOING_ON**: the Memory
   screen's Short-term memory as the bot sees it (statuses still in force, then
   the digest, one line per thing with its state). It changes nightly, so it
@@ -311,6 +336,20 @@ fields came back — names and lengths only, never what was said.
   CLI's own auto-memory is switched off for every turn and memory call
   (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`): a second memory next to this one
   answered "what do you remember" with months-old notes of its own.
+- **A card reaches the model as its content** (`cardForPrompt` in
+  `lib/memory-loader.js`): front matter, comments and commented-out examples,
+  a "Bootstrap" section, empty `- Field:` lines and headings left with nothing
+  under them are stripped; the card's own headings sit one level under its
+  `## ID`. In their place goes one line saying what the card is for and when to
+  write it (`cardPurpose`, from the front matter's `purpose` and
+  `write_when`), so an empty card still tells the model that a stated
+  preference belongs on `USER_PREFERENCES`.
+- **One system-prompt flag.** A turn's prefix, its actor and permissions notes
+  and any system note are joined into a single `--append-system-prompt`: the
+  CLI keeps only the last one it is given, and a second one silently dropped
+  the memory prefix in team mode (the bot knew the person's name from
+  `[ACTOR]` and nothing from their cards). The `[ACTOR]` note no longer calls
+  the shared cards the owner's: `MISSION` is the company the person works in.
 - **The recall block**: before each web/group turn, the ten excerpts most
   relevant to the message and the two turns before it (BM25 + vectors, fused by
   rank), oldest first, with a coverage line ("10 of N records") and the reader
@@ -335,7 +374,10 @@ fields came back — names and lengths only, never what was said.
   the words do not carry is left out and said so; each entry is then judged
   against what memory holds — a repeat confirms, more detail merges, a changed
   detail becomes a dated update under the fact, something no longer true marks
-  the old fact as such — and the tool answers what it did),
+  the old fact as such — and the tool answers what it did; every refusal starts
+  "Nothing was saved", and a note dictated word for word is filed whole when
+  the split rejects every piece but most of its words are in what the person
+  said),
   `memory_forget`
   (the `memory-notes` skill says how a note is written: it must stand on its
   own months later — what it is about, who, when, what was decided, where it
@@ -567,6 +609,20 @@ still loads goes through the engine as before; anything else (a page, a card v4
 no longer loads) is kept as a record and becomes a fact through the facts store
 (one per thing, like any other) — nothing recreates the old files.
 
+What goes where when someone asks the bot to keep something, in that turn
+(never "it will be saved later"): a standing preference, a fact about the
+person, a team rule or what the company does → its card with `memory_write`
+(`remember`, `supersede` when it changed); anything else → `memory_note`. A
+`Field: value` line fills the card's own empty `- Field:` line in place; once
+the field holds a value, a different one is refused with `needs_supersede`.
+In solo mode the one person's own cards stay flat (`memory/USER_PROFILE.md`),
+where the prefix and the Memory screen read them; a write naming anyone else
+stays a private write under `users/` and meets the scope check.
+
+The Memory screen writes the same cards through `POST /api/memory/v4/prefs`:
+the person's own `USER_PROFILE` and `USER_PREFERENCES`, and the team's
+`MISSION` and `RULES`, which only an admin may change in team mode.
+
 ### Moving a deployment to v4
 
 1. Update. `shadow` is the default, so nothing to set (an explicit
@@ -574,7 +630,8 @@ no longer loads) is kept as a record and becomes a fact through the facts store
    migrations apply at boot (`0003` the ledger layout, `0004` routines.json next
    to the untouched card). Let it collect conversations for a while. A
    workspace with nothing but untouched seed templates skips the rest: boot
-   moves it over by itself.
+   moves it over by itself. A brand-new one is born on v4 and has nothing to
+   move.
 2. An admin sees **"A new memory is available"**, reviews, downloads a backup if
    they like, and starts the move (`0005`). Pages and cards become dated ledger
    records in the scope they were in (in solo mode, the owner's own scope); the

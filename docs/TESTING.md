@@ -86,6 +86,13 @@ suites one at a time, when a change touches what they cover.
 | `lifestyle` | Health, money and a partner never reach the team in any sharing mode; a household chore crosses only in automatic mode | 3 | 2–4 min |
 | `group` | The Telegram group never reaches anyone's private memory, files, skills or connections; what it decides reaches only its members | ~10 | 10–30 min |
 | `tasks-memory` | A task and the memory fact behind it point at each other; the bot answers from the board; done on the board closes the fact; files written in a conversation are linked | ~12 | 10–15 min |
+| `conversation` | The company card reaches the turn; a preference asked to be kept is on the person's card when the turn ends; a new message stops the running reply cleanly (no "kill EPERM"); a reply says it is settled before its process exits | 4–5 | 3–5 min |
+| `memory-sight` | What the bot sees of memory: the person's own cards are answered from and followed, another person's are not, a note from an earlier conversation is found, a team rule an admin asks for reaches a member, routines and integrations are listed right (built-in abilities are not integrations) | ~10 | 5–8 min |
+| `planner` | The morning planner as the member on a light and a busy day: the plan it makes (printed in their local time), recurring for an hourly duty, something before a call, a spread day; planning again replaces the plan; nothing in the past, no two stand-alone messages close together unless one is timed | ~6 | 5–10 min |
+
+A check that needs a connection the deployment lacks (a notetaker, the
+running browser) prints `skip` with the reason instead of failing; a skip is
+neither a pass nor a failure.
 
 Some checks judge a model's reply (did it refuse, did it answer from the
 board). A single failure there is worth a rerun before it is called a

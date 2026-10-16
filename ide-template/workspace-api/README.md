@@ -14,7 +14,7 @@ This process also backs the **web side of the bot's cross-surface presence**: it
 
 ## Endpoints
 
-The full surface area is documented in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#backend-services) — what follows is the **chat + file group**, which is what most readers come here for. The other route groups follow the same auth model and live alongside in `routes/`: `integrations`, `skills`, `memory`, `team`, `branding`, `setup`, `notifications`, `bot`, `internal`, `docs-comments`.
+The full surface area is documented in [`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md#backend-services) — what follows is the **chat + file group**, which is what most readers come here for. The other route groups follow the same auth model and live alongside in `routes/`: `integrations`, `skills`, `memory`, `team`, `branding`, `setup`, `onboarding`, `notifications`, `bot`, `internal`, `docs-comments`.
 
 ### Chat (multi-session)
 
@@ -23,7 +23,7 @@ Web chat is **per-session**: each conversation is its own thread with its own Cl
 | Endpoint | What it does |
 |---|---|
 | `GET /api/health` | Liveness check. Returns `{ ok, project_dir, sessions }`. |
-| `POST /api/chat` | One chat turn (SSE over `multipart/form-data`). Fields: `message`, optional `sessionId` (defaults to the most-recently-touched), optional `interrupt`, optional `files[]` uploads. Streams `data:` text deltas plus named events — `session`, `tool_start`, `tool_end`, `image` — then a terminal `done` (carries `session_id` + `sessionId`) or `error`. One in-flight turn per session; `interrupt` SIGTERMs the active turn and replaces it. |
+| `POST /api/chat` | One chat turn (SSE over `multipart/form-data`). Fields: `message`, optional `sessionId` (defaults to the most-recently-touched), optional `interrupt`, optional `files[]` uploads. Streams `data:` text deltas plus named events — `session`, `tool_start`, `tool_end`, `image`, and `settled` once the reply is complete (the CLI's result arrived; the UI drops "Thinking" there, while the process may take seconds more to exit) — then a terminal `done` (carries `session_id` + `sessionId`) or `error`. One in-flight turn per session; `interrupt` SIGTERMs the active turn and replaces it. |
 | `GET /api/chat/sessions` | List the actor's chat sessions (id, title, pinned, archived, message count). |
 | `POST /api/chat/sessions` | Create a new empty session. Body `{ title? }`. |
 | `PATCH /api/chat/sessions/:id` | Rename / pin / archive. Body `{ title?, pinned?, archived? }`. |
@@ -46,6 +46,23 @@ Web chat is **per-session**: each conversation is its own thread with its own Cl
 | `POST /api/files/{create,write,mkdir,move}` | Mutations — gated by `resolveSafePath` (rejects `..`, absolute paths, hidden-set leaves). `write` accepts text only and refuses binary. `move` also backs inline rename in the file tree. |
 | `DELETE /api/files/delete?path=` | Recursive delete; `resolveSafePath` + HARD_HIDDEN guards apply. |
 | `GET /api/files/watch` | Long-lived SSE stream of FS change events from chokidar (`add`/`change`/`unlink`/`addDir`/`unlinkDir`) plus payload-free `{ type: 'state', kind }` change notices (`branding` / `team` / `integrations`), batched in 100 ms. Private-tree events reach only their owner's streams. Heartbeat `: keep-alive` every 30 s so proxies don't close idle. |
+
+### Onboarding
+
+`routes/onboarding.js`, every route `requireActor`, `Cache-Control: no-store`, keyed by the caller's slug (solo: the one person is the admin). Writes are rate-limited (30/min/person; research starts 10/min, and at most **3 runs a day** per person). State lives in the store, never the project tree: `<store>/onboarding/company.json` and `<store>/onboarding/people/<slug>.json` (0600).
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/onboarding` | Where this person is: `show` (a fresh install's admin, anyone who started and has not finished, anyone added after the workspace got onboarding — `since.json`; people already on an updated workspace are not sent through it), `admin`, `team`, `steps { company, person, done }`, the saved answers. |
+| `POST /api/onboarding/company` | Admin only, once: `{ name, sentence, site? }`. `site` must be a public website (`normalizeSite`). |
+| `POST /api/onboarding/me` | `{ fullName, role, help, lookup }`. Sets the person's `displayName` to `fullName`. Closed (409) once they confirmed. |
+| `POST /api/onboarding/research` · `GET /api/onboarding/research` | Start the research in the background: for the company step, a web search about the company (which can also find its site when none was given) and a read of its website; with `lookup`, the web look-up of the person (once per person: a later run reuses what the first found). Then the stages and, when done, the findings (facts with their sources, tools spotted on the site, favicon). |
+| `POST /api/onboarding/confirm` | `{ company: [{text, source}], person: [...] }`. Only lines whose source the research found are kept (text may be edited). Writes through the memory engine: `MISSION` "About the company" (`Name:`, `What it does:`, `Website:`, then the kept lines) and the person's own `USER_PROFILE` (`Name:` / `Roles:` under Identity, `Needs help with:` under Currently focused on, kept lines under Background). Any refusal → 500 and nothing marked confirmed. |
+| `GET /api/onboarding/plan` | The starter plan (`lib/onboarding/plan.js`): up to 3 one-click integrations (`alternatives` of the same `kind`; for a member, only ones a person may connect, plus `team` = the team's connections) and up to 3 routines with `why`, `needs`/`needsLabel`, `requires`; a routine that needs no app always leads. Each routine is marked `added` / `waiting`. Cached per person; `?fresh=1` rebuilds. |
+| `POST /api/onboarding/plan/dismiss` | `{ id }` — never offer this integration or routine again. |
+| `POST /api/onboarding/done` | Setup finished for this person. |
+
+The wizard adds a routine whose app is not connected yet with `POST /api/routines/catalog/:id?later=1`; it waits in `routines-waiting.json` and is added when the integration connects (`flushAllWaiting` after every integration change).
 
 ## Module layout
 
@@ -90,6 +107,9 @@ workspace-api/
 │   ├── memory-backup.js     # a person's own memory as a .tar.gz (before/after the move)
 │   ├── migrate.js           # versioned data migrations (plan / apply / verify / rollback, backups in the store)
 │   ├── routines-store.js    # routines.json per person + the RESPONSIBILITIES card parser
+│   ├── routines-add.js      # adding a Marketplace routine (Marketplace, bot, onboarding); `later` keeps one waiting (routines-waiting.json) until its app connects, flushWaiting/flushAllWaiting add it then
+│   ├── planner-feedback.js  # how the planner's reminders landed: recordOutcome (said / silent / sent itself, by reminder id) + plannerFeedback (per routine, last 7 days) for memory_now
+│   ├── onboarding/          # site.js (reads a public website through the egress proxy, ≤5 pages) · signatures.js (tools a site's HTML gives away, no model) · profile.js (drafts the company facts with no tools; the person look-up may only search) · plan.js (the starter plan: one-click integrations + routines, checked in code) · state.js (answers, findings, plans, research jobs and the 3-a-day limit, in the store's onboarding/)
 │   ├── notify.js            # notifications pub/sub + ring buffer (SSE fan-out)
 │   ├── attachments.js       # chat file-upload handling → .attachments/
 │   ├── branding.js          # bot name / avatar / logo metadata
@@ -106,14 +126,15 @@ workspace-api/
     ├── integrations.js      # /api/integrations — activate / configure / remove (encrypted at rest); `?reach=personal` = the caller's own connection (<id>@<slug>), loaded in their turns only; GET /:id = one connection for its page (secrets masked), /:id/items = a multi connection's accounts in place, /:id/test = does it work
     ├── skills.js            # /api/skills — list / read skill markdown
     ├── memory.js            # /api/memory — graph, grep, prefix, threads, snapshot refresh
-    ├── memory-v4.js         # /api/memory/v4/* (the Memory screen; /sources = what feeds memory, a switch per source, /sources/:id/run), /api/routines (+ POST/PATCH/DELETE your own, + /catalog: the Marketplace), /api/internal/memory/v4/* (the memory tools, incl. /import)
+    ├── memory-v4.js         # /api/memory/v4/* (the Memory screen; /sources = what feeds memory, a switch per source, /sources/:id/run; /prefs = add/remove a line on the person's USER_PROFILE / USER_PREFERENCES or, admin-only in a team, the team's MISSION / RULES), /api/routines (+ `waiting`: routines picked before their app was connected; POST/PATCH/DELETE your own, + /catalog: the Marketplace, POST /catalog/:id?later=1 keeps one waiting, DELETE /catalog/:id also drops a waiting one), /api/internal/memory/v4/* (the memory tools, incl. /import; /now ends with the planner feedback)
     ├── migrations.js        # /api/migrations/status|:id/start|:id/job (upgrade bar), /api/memory/backup
     ├── team.js              # /api/team — whitelist CRUD (admin only); PUT /api/team/default-timezone
     ├── branding.js          # /api/branding — name / avatar / logo
     ├── setup.js             # /api/setup — first-run wizard, Claude token rotation
+    ├── onboarding.js        # /api/onboarding — each person's setup: company, about them, research, confirm, starter plan (see below)
     ├── notifications.js     # GET /api/notifications/stream — SSE notification feed
     ├── bot.js               # POST /api/bot/{restart,send} — lifecycle + web→tmux relay
-    ├── internal.js          # loopback-only: sync-mcp, notify, chat-session, me/settings (the bot's set_my_settings)
+    ├── internal.js          # loopback-only: sync-mcp, notify, chat-session, me/settings (the bot's set_my_settings), invoke-turn (runs a reminder as its person; records the outcome by `deliver.id` for the planner)
     │                        #   (memory-v4.js also serves /internal/memory/v4/now — the bot's memory_now)
     ├── tab.js               # the browser panel relay: /api/tab/*, /api/internal/tab-command, /api/internal/tab-handoff
     └── docs-comments-login.js  # OAuth/VNC bridge for the Docs Comments integration
@@ -149,7 +170,7 @@ The frontend exposes the SOFT_HIDDEN tier via the **eye** toggle in the sidebar 
 
 ### `lib/claude.js` — Claude turn lifecycle
 
-`runClaudeTurn({ message, sessionId, onText, onToolStart, onToolEnd, onImage, onError, onDone })` spawns:
+`runClaudeTurn({ message, sessionId, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled })` spawns (through `turn-runner`, as the person's turn user):
 
 ```
 claude -p --dangerously-skip-permissions --output-format stream-json \
@@ -164,6 +185,9 @@ It writes the user message to stdin, parses JSON-per-line from stdout, and fires
 - `onToolStart({ id, name })` / `onToolEnd({ id, ok, error })` — drive the tool-chip UI (the old "Iter 2" TODO — now shipped).
 - `onImage({ mediaType, data })` — images a tool returns (e.g. Playwright screenshots), rendered inline in the chat. Images from the `Read` tool are skipped — the user already has that file open.
 - `onError(message)` on spawn failure or non-zero exit; `onDone({ sessionId })` on clean exit. The session id is captured from the `system/init` event.
+- `onSettled()` once, when a successful `result` event arrives: the reply is complete, though the CLI may still be shutting its MCP servers down. Anything that needs the process gone waits for `onDone`.
+
+Everything a turn appends to the system prompt (the memory prefix, the `[ACTOR]` and permissions notes, `systemNote`) is joined into **one** `--append-system-prompt`: the CLI keeps only the last one it is given. The v4 prefix also carries `MY_SETTINGS` (with where the person can be reached), `INTEGRATIONS` (the team's and their own connections) and `ROUTINES`; cards go in as their content (`cardForPrompt`) with one line on what each is for (`cardPurpose`), both in `lib/memory-loader.js`.
 
 **Usage limits.** The CLI reports a spent plan as a structured `rate_limit_event` (`status`, `resetsAt`), not as reply text. When a `rejected` event was seen during the turn, the non-zero exit's generic error is replaced by a single notice from `lib/usage-limit.js` — `Claude usage limit reached. <bot> is back at HH:MM.` — with the reset time rendered in the workspace timezone (`IDE_TIMEZONE`, default UTC). A warning status does not trigger it. The phrase "usage limit reached" is load-bearing: the group watcher matches it to announce once, and the web chat renders it as a limit (clock icon, no retry button) rather than as an error.
 
@@ -215,7 +239,7 @@ Then run the React dev server (`cd ../frontend && npm run dev`) — `vite.config
 
 ## Deploy
 
-`ide-template/deploy.sh` SCPs `index.js`, `package.json`, `lib/`, `routes/` to the server. The Dockerfile copies the whole directory and runs `npm install --production`. PM2 starts it from `bot/ecosystem.config.js` (see the `workspace-api` app block).
+`ide-template/deploy.sh` SCPs `index.js`, `package.json`, `lib/`, `routes/` to the server. The Dockerfile copies the whole directory and runs `npm ci --omit=dev` (the lockfile decides the versions). PM2 starts it from `bot/ecosystem.config.js` (see the `workspace-api` app block).
 
 **Branding pictures.** `/api/branding/avatar` and `/logo` are served with a one-year `immutable` cache when asked for by their versioned URL (`?v=<mtime>`, what `/api/branding` hands out); a new upload gets a new URL. The UI also remembers the last branding in `localStorage` so the bot's picture starts loading before `/api/branding` answers.
 
