@@ -1038,13 +1038,13 @@ const MD_COMPONENTS = {
   ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
   li: ({ children }) => <li className="leading-[1.6] [&>div]:mb-0">{children}</li>,
   pre: ({ children }) => (
-    <pre className="bg-background border border-border/30 rounded p-3 my-2 overflow-x-auto text-[12px] font-mono text-foreground whitespace-pre-wrap break-words">
+    <pre className="bg-background border border-border/30 rounded p-3 my-2 overflow-x-auto text-[12px] font-code text-foreground whitespace-pre-wrap break-words">
       {children}
     </pre>
   ),
   code: ({ inline, children }) =>
     inline ? (
-      <code className="bg-secondary/60 px-1 py-0.5 rounded text-[12px] font-mono text-foreground">{children}</code>
+      <code className="rounded border border-border px-1.5 text-[13.5px] font-medium text-foreground">{children}</code>
     ) : (
       <code className="text-foreground">{children}</code>
     ),
@@ -1066,7 +1066,7 @@ const MD_COMPONENTS = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-baseline gap-0.5 rounded bg-foreground/[0.04] px-1 py-px font-mono text-[12px] text-foreground/75 hover:bg-foreground/[0.08] hover:text-foreground transition-colors"
+      className="inline-flex items-baseline gap-0.5 rounded border border-border px-1.5 text-[13.5px] font-medium text-foreground/75 hover:border-foreground/30 hover:text-foreground transition-colors"
     >
       <span>{children}</span>
       <ArrowUpRight className="self-center size-3 shrink-0 opacity-60" strokeWidth={1.75} />
@@ -1106,7 +1106,7 @@ function FilePathInline({ path, onSelect }) {
       title={`Open ${sel.path}`}
       onClick={() => onSelect?.({ path: sel.path, type: sel.type })}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.({ path: sel.path, type: sel.type }); } }}
-      className="cursor-pointer rounded bg-secondary/60 px-1 py-0.5 font-mono text-[12px] text-foreground underline decoration-foreground/25 underline-offset-2 transition-colors hover:bg-foreground/[0.1] hover:decoration-foreground/60"
+      className="cursor-pointer rounded border border-border px-1.5 text-[13.5px] font-medium text-foreground underline decoration-foreground/25 underline-offset-2 transition-colors hover:border-foreground/30 hover:decoration-foreground/60"
     >
       {path}
     </span>
