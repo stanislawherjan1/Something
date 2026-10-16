@@ -39,9 +39,28 @@ const akarIcons = {
   },
 }
 
+// The public demo (src/demo) is built only with VITE_DEMO=1, for the landing
+// page. main.jsx loads it behind that flag, but the bundler still resolves the
+// import — and the demo reads the catalogs from ../workspace-api, which a
+// deployment's frontend image does not have, so every deploy's build failed.
+// Outside the demo build, the demo's entry is an empty module.
+const demoBuild = process.env.VITE_DEMO === '1'
+const noDemo = {
+  name: 'no-demo',
+  enforce: 'pre',
+  resolveId(source) {
+    if (!demoBuild && /(^|\/)demo\/install(\.js)?$/.test(source)) return '\0no-demo'
+    return null
+  },
+  load(id) {
+    return id === '\0no-demo' ? 'export function installDemo() {}' : null
+  },
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    noDemo,
     akarIcons,
     react(),
     tailwindcss(),
