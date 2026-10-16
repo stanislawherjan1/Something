@@ -100,13 +100,26 @@ check "bot cannot reach the open egress listener" "refused" "$(R "docker exec -u
 check "the turn user cannot either" "refused" "$(R "docker exec -u turn $C sh -c 'curl -s -m 4 -o /dev/null http://egress-proxy:3130/ 2>/dev/null; rc=\$?; [ \$rc -eq 7 ] && echo refused || echo rc=\$rc'")"
 check "the mcp user reaches it" "yes" "$(R "docker exec -u 1002 $C sh -c 'curl -s -m 4 -o /dev/null -w %{http_code} http://egress-proxy:3130/ >/dev/null 2>&1; rc=\$?; [ \$rc -ne 7 ] && echo yes || echo no'")"
 check "bot cannot reach the browser's debugging port" "refused" "$(R "docker exec -u bot $C sh -c 'curl -s -m 4 -o /dev/null http://127.0.0.1:9333/json/version 2>/dev/null; rc=\$?; [ \$rc -eq 7 ] && echo refused || echo rc=\$rc'")"
-check "the mcp user reaches the debugging port (when the browser runs)" "yes" "$(R "docker exec -u 1002 $C sh -c 'curl -s -m 4 -o /dev/null http://127.0.0.1:9333/json/version 2>/dev/null; rc=\$?; [ \$rc -ne 7 ] && echo yes || echo no'")"
+if [ "$(R "docker exec $C sh -c 'pgrep -f -- --remote-debugging-port=[9]333 >/dev/null && echo up'")" = up ]; then
+  check "the mcp user reaches the debugging port (when the browser runs)" "yes" "$(R "docker exec -u 1002 $C sh -c 'curl -s -m 4 -o /dev/null http://127.0.0.1:9333/json/version 2>/dev/null; rc=\$?; [ \$rc -ne 7 ] && echo yes || echo no'")"
+else
+  skip "the mcp user reaches the debugging port" "the browser is not running"
+fi
 check "playwright starts through mcp-runner" "yes" "$(echo "$MCP_LIST" | grep -q 'playwright: /usr/local/bin/mcp-runner playwright' && echo yes || echo no)"
 
 echo "== hosted MCP bridge (Granola / Fathom)"
-check "granola is served through the bridge" "yes" "$(echo "$MCP_LIST" | grep -qE 'granola(-mine)?: /usr/local/bin/mcp-runner remote' && echo yes || echo no)"
-check "...and connects" "yes" "$(echo "$MCP_LIST" | grep -E 'granola(-mine)?:' | grep -q 'Connected' && echo yes || echo no)"
-check "fathom is served through the bridge" "yes" "$(echo "$MCP_LIST" | grep -qE 'fathom(-mine)?: /usr/local/bin/mcp-runner remote' && echo yes || echo no)"
+HOSTED="$(curl -s -H "Cookie: $COOKIE=$ADMIN_JWT" "$BASE/api/integrations" | python3 -c "import json,sys; a=json.load(sys.stdin); print(' '.join(e['id'] for e in a.get('integrations',[]) if e['id'] in ('granola','fathom') and (e.get('active') or e.get('activeFor'))))")"
+if [[ " $HOSTED " == *" granola "* ]]; then
+  check "granola is served through the bridge" "yes" "$(echo "$MCP_LIST" | grep -qE 'granola(-mine)?: /usr/local/bin/mcp-runner remote' && echo yes || echo no)"
+  check "...and connects" "yes" "$(echo "$MCP_LIST" | grep -E 'granola(-mine)?:' | grep -q 'Connected' && echo yes || echo no)"
+else
+  skip "granola through the bridge" "Granola is not connected here"
+fi
+if [[ " $HOSTED " == *" fathom "* ]]; then
+  check "fathom is served through the bridge" "yes" "$(echo "$MCP_LIST" | grep -qE 'fathom(-mine)?: /usr/local/bin/mcp-runner remote' && echo yes || echo no)"
+else
+  skip "fathom through the bridge" "Fathom is not connected here"
+fi
 BRIDGE_TOOLS="$(R "docker exec -i -u 1002 -e REMOTE_MCP_ID=granola -e REMOTE_MCP_URL=https://mcp.granola.ai/mcp -e WORKSPACE_API_PORT=3001 $C sh -c 'IDE_TURN_ID=\$(cat /home/bot/.\${BOT_NAME:-bot}/turn-id 2>/dev/null); export IDE_TURN_ID; (printf \"%s\\n\" \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":\\\"initialize\\\",\\\"params\\\":{\\\"protocolVersion\\\":\\\"2024-11-05\\\",\\\"capabilities\\\":{},\\\"clientInfo\\\":{\\\"name\\\":\\\"t\\\",\\\"version\\\":\\\"1\\\"}}}\" \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"method\\\":\\\"notifications/initialized\\\"}\" \"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":2,\\\"method\\\":\\\"tools/list\\\",\\\"params\\\":{}}\"; sleep 12) | timeout 25 node /opt/ide/apps/remote-mcp/index.js 2>/dev/null | grep -o \"list_meetings\" | head -1'")"
 check "the bridge lists granola's tools with a fresh token (bot turn-id read as 1002 fails → skip if empty)" "list_meetings" "${BRIDGE_TOOLS:-list_meetings}"
 

@@ -79,7 +79,11 @@ check "a member connects a service with no personal flag for themselves (Shopify
 check "...and removes it" "200" "$(code "$MEMBER_JWT" DELETE "/integrations/shopify?reach=personal")"
 check "the bot's own Telegram cannot be anyone's own" "400" "$(code "$MEMBER_JWT" PUT "/integrations/telegram?reach=personal" '{"fields":{"TELEGRAM_BOT_TOKEN":"1:x","TELEGRAM_ADMIN_CHAT_ID":"1"}}')"
 SRC="$(api "$ADMIN_JWT" GET /memory/v4/sources)"
-has "a person's sources carry their connection key" "$SRC" '"key":'
+if echo "$SRC" | jsonq "1 if a.get('items') else 0" | grep -q 1; then
+  has "a person's sources carry their connection key" "$SRC" '"key":'
+else
+  skip "a person's sources carry their connection key" "no notetaker connected here"
+fi
 PRIV="$(api "$MEMBER_JWT" GET /memory/v4/privacy)"
 has "the privacy answer says whether there is a team" "$PRIV" '"teamMode":'
 has "...and when the bot was last told that questions wait" "$PRIV" '"mentionedAt":'
