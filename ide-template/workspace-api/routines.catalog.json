@@ -892,6 +892,51 @@
       ]
     },
     {
+      "id": "vercel-failed-deploys",
+      "title": "Vercel deploy failures",
+      "summary": "When a Vercel deploy fails: what broke, the failing line, and when it's fixed.",
+      "description": "Every hour in working hours (set_reminder). In Vercel, list deployments in the ERROR state since the last run (keep the last one seen in your notes). For the newest one or two, tell me which project and branch, which commit and who pushed it, and the failing line from the build log; tell me again when the next production deploy of that project is ready. When nothing failed, say nothing.",
+      "icon": "deploy",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "ops"
+      ],
+      "requires": [
+        "vercel"
+      ]
+    },
+    {
+      "id": "what-went-live",
+      "title": "What went live",
+      "summary": "Each morning: yesterday's production deploys in plain words.",
+      "description": "Each morning. In Vercel, list the production deployments that became ready in the last day, with the commit message of each, and write what went live in plain words, for people who don't read commit messages. When nothing went live, say nothing.",
+      "icon": "rocket",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "report"
+      ],
+      "requires": [
+        "vercel"
+      ]
+    },
+    {
+      "id": "domain-check",
+      "title": "Domain check",
+      "summary": "Weekly: domains that aren't verified or point the wrong way.",
+      "description": "Once a week. In Vercel, list the domains of each project; for any that is unverified or whose DNS is misconfigured, tell me which domain and the exact record to add or change. When everything is fine, say nothing.",
+      "icon": "monitor",
+      "category": "dev",
+      "tags": [
+        "dev",
+        "weekly"
+      ],
+      "requires": [
+        "vercel"
+      ]
+    },
+    {
       "id": "database-limits",
       "title": "Database limits",
       "summary": "Daily: database size and usage vs. plan limits, before a limit is hit.",

@@ -1424,6 +1424,55 @@
       "tagline": "Sites, deploys, forms"
     },
     {
+      "id": "vercel",
+      "label": "Vercel",
+      "logo": "/integrations/vercel.svg",
+      "description": "Projects, deployments, build and runtime logs and domains: see what shipped, why a build failed and whether a domain is set up right. Read only.",
+      "category": "dev",
+      "fields": [
+        {
+          "name": "VERCEL_ACCESS_TOKEN",
+          "label": "Access token",
+          "type": "secret",
+          "placeholder": "Token from your Vercel account",
+          "helper": "Gives access to everything the token's scope covers: pick one team, not \"all teams\"."
+        },
+        {
+          "name": "VERCEL_TEAM_ID",
+          "label": "Team ID (optional)",
+          "type": "text",
+          "optional": true,
+          "placeholder": "team_...",
+          "helper": "Leave empty for a personal account. For a team: Team Settings \u2192 General \u2192 Team ID."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create an access token",
+          "body": "Open [vercel.com/account/settings/tokens](https://vercel.com/account/settings/tokens) and click **Create Token**.\n\n- **Scope**: the one team the bot should see (not all teams)\n- **Expiration**: pick one you will remember to renew\n\nCopy the token: Vercel shows it only once."
+        },
+        {
+          "title": "Team ID, for a team account",
+          "body": "Open your team's **Settings** \u2192 **General** and copy the **Team ID** (starts with `team_`). On a personal account leave it empty."
+        }
+      ],
+      "mcp": {
+        "command": "node",
+        "args": [
+          "{appsDir}/vercel-mcp/index.js"
+        ],
+        "envMap": {
+          "VERCEL_ACCESS_TOKEN": "VERCEL_ACCESS_TOKEN",
+          "VERCEL_TEAM_ID": "VERCEL_TEAM_ID"
+        },
+        "name": "vercel",
+        "allowedHosts": [
+          "api.vercel.com"
+        ]
+      },
+      "tagline": "Deploys, logs, domains"
+    },
+    {
       "id": "neon",
       "label": "Neon",
       "logo": "/integrations/neon.svg",

@@ -204,7 +204,7 @@ A new workspace starts on this memory directly. One that started on the older ca
 
 **Bring your own credentials.** The rest paste a key, token, or file once — encrypted at rest:
 
-> Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
+> Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · Vercel · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
 You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write; Telegram is always the whole team's, reading and sending) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
