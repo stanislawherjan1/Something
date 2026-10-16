@@ -51,7 +51,7 @@ const ti = await import('./turn-identity.js');
     const note = String(user).match(/NOTE: ([^]*?)\n\nWORDS: [^:]+: ([^]*)$/);
     if (!note) return { notes: [], rules: [], entities: [] };
     const words = note[2].trim();
-    const entries = note[1].split(/(?<=\.)\s+/).map(t => t.trim()).filter(Boolean).map(t => ({ title: t.replace(/^Correction:\s*/i, '').split(' ').slice(0, 4).join(' '), text: t.replace(/^Correction:\s*/i, ''), kind: 'fact', evidence: t.toLowerCase().match(/\p{L}{5,}/gu)?.some(w => words.toLowerCase().includes(w)) ? words : '', names: [], concerns: /pilot|launch/i.test(t) ? 'a company or project' : 'the person themselves', subject: /pilot/i.test(t) ? 'Vellmark' : null }));
+    const entries = note[1].split(/(?<=\.)\s+/).map(t => t.trim()).filter(Boolean).map(t => ({ title: t.replace(/^Correction:\s*/i, '').split(' ').slice(0, 4).join(' '), text: t.replace(/^Correction:\s*/i, ''), kind: 'fact', evidence: /receptionist|treasurer/i.test(t) ? '' : t.toLowerCase().match(/\p{L}{5,}/gu)?.some(w => words.toLowerCase().includes(w)) ? words : '', names: [], concerns: /pilot|launch/i.test(t) ? 'a company or project' : 'the person themselves', subject: /pilot/i.test(t) ? 'Vellmark' : null }));
     return { notes: entries, rules: [], entities: [] };
   }
   return { unsupported: /Krzysztof/.test(String(user).split('WORDS:')[0]) ? ['Krzysztof'] : [] };
@@ -114,6 +114,11 @@ r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Kasia prefers
 ok('(c) a note without the person\'s words is refused', r.status === 400 && /said required/.test(r.body.error), r.body);
 r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Kasia prefers morning meetings.', said: 'I prefer morning meetings' } });
 ok('(c) a note is private by default', r.body.ok && r.body.scope === 'private' && L.read({ scopes: ['user:kasia'] }).some(x => /morning meetings/.test(x.text)));
+// The split threw out every piece of a note dictated word for word: it is filed whole.
+r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'The spare office key is with the receptionist, code K-417.', said: 'Remember this: the spare office key is with the receptionist, code K-417.' } });
+ok('(c) a note in the person\'s own words is saved even when the split rejects it all', r.body.ok && L.read({ scopes: ['user:kasia'] }).some(x => /K-417/.test(x.text)), r.body);
+r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'The new treasurer is appointed for three years.', said: 'We had a long meeting today.' } });
+ok('(c) a note not in their words is still refused, and says nothing was saved', r.status === 400 && /^Nothing was saved/.test(r.body.error || ''), r.body);
 r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'The office closes on Friday.', said: 'the office closes on friday', share: true } });
 const shared = L.read({ scopes: ['shared'] }).find(x => /office closes/.test(x.text));
 ok('(c) share: true writes to shared, with its origin', r.body.scope === 'team' && shared?.origin === 'user:kasia');

@@ -19,6 +19,9 @@ import { tmpdir } from 'node:os';
 
 const ROOT = mkdtempSync(join(tmpdir(), 'mem-engine-'));
 process.env.PROJECT_DIR = ROOT;
+// These checks are about teammates: a team workspace (solo keeps a person's own
+// cards flat — lib/solo-personal-cards.test.mjs).
+writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true }));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {

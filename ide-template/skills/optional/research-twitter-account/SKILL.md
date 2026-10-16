@@ -46,7 +46,7 @@ For each of the 10 accounts, run TWO Grok queries — **bio** and **post-style**
 
 ## Step 6 — leave a discoverable pointer
 
-Record a concept page (`memory/concepts/twitter-research-<handle>.md`) so future sessions can find the research via `memory_grep` or the INDEX map. Writing the page auto-triggers the INDEX rebuild — no separate step. Page shape → `references/output-shape.md`.
+Record one `memory_note` so a later conversation finds the research with `memory_search`: who was researched, when, the similar accounts, and the folder it is in. Shape → `references/output-shape.md`.
 
 ## Step 7 — summary to user
 

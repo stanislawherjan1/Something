@@ -54,7 +54,15 @@ ok('(a) a word that merely contains "memory" is not a path', r.status === 0, r.s
 r = hook('scope-guard.mjs', { tool_name: 'Read', tool_input: { file_path: abs('Reports/q3.md') } });
 ok('(a) the rest of the project is untouched', r.status === 0, r.stderr);
 r = hook('scope-guard.mjs', { tool_name: 'Edit', tool_input: { file_path: abs('memory/USER_PROFILE.md') } });
-ok('(a) the write fence still holds', r.status === 2 && /memory_write/.test(r.stderr));
+ok('(a) the write fence still holds, in v4\'s words', r.status === 2 && /memory_note/.test(r.stderr) && !/supersede|undo snapshot/.test(r.stderr), r.stderr);
+
+// The in-flight marker of a group's private answer is the one file the brain reads under memory/: its own only.
+{
+  const as = (slug, file_path) => spawnSync(process.execPath, [join(HOOKS, 'scope-guard.mjs')], { input: JSON.stringify({ tool_name: 'Read', tool_input: { file_path } }), env: { ...process.env, PROJECT_DIR: ROOT, IDE_ACTOR_SLUG: slug }, encoding: 'utf8' });
+  ok('(a) the person\'s own in-flight marker is readable', as('stan', abs('memory/users/stan/.pending-delegate.json')).status === 0);
+  ok('(a) ...not someone else\'s', as('stan', abs('memory/users/kasia/.pending-delegate.json')).status === 2);
+  ok('(a) ...and nothing else beside it', as('stan', abs('memory/users/stan/USER_PROFILE.md')).status === 2);
+}
 
 // ─── (b) the skill fence ─────────────────────────────────────────────────────
 r = hook('skill-fence.mjs', { tool_name: 'Skill', tool_input: { skill: 'memory-cards' } });
@@ -63,6 +71,10 @@ r = hook('skill-fence.mjs', { tool_name: 'Skill', tool_input: { skill: 'taste-re
 ok('(b) ...both of them', r.status === 2);
 r = hook('skill-fence.mjs', { tool_name: 'Skill', tool_input: { skill: 'make-pdf' } });
 ok('(b) other skills pass', r.status === 0, r.stderr);
+r = hook('skill-fence.mjs', { tool_name: 'Skill', tool_input: { skill: 'routines' } });
+ok('(b) our own routines skill is not taken for the cloud scheduler', r.status === 0, r.stderr);
+r = hook('skill-fence.mjs', { tool_name: 'Skill', tool_input: { skill: 'anthropic-skills:routines' } });
+ok('(b) ...the cloud one still is', r.status === 2 && /add_routine/.test(r.stderr), r.stderr);
 
 // ─── (c) 0007: the leftovers are archived and gone, once ─────────────────────
 for (const d of ['memory/topics', 'memory/concepts', 'memory/patterns', 'memory/users/stan/topics', 'memory/users/stan/patterns']) mkdirSync(abs(d), { recursive: true });

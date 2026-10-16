@@ -132,6 +132,13 @@ function matchesQuery(candidate, query) {
 
 // ─── Target resolution ───────────────────────────────────────────────────────
 
+// Read straight from the team's config file (lib/team.js imports memory code,
+// so importing it here would loop). No file = solo.
+function teamModeOn() {
+  try { return JSON.parse(readFileSync(join(process.env.PROJECT_DIR || PROJECT_DIR, '.team-config.json'), 'utf8'))?.teamMode === true; }
+  catch { return false; }
+}
+
 /** A line that carries a claim (a bullet, or a `Field: value` row). */
 function isClaimLine(line) {
   const t = line.trim();
@@ -149,7 +156,7 @@ function isClaimLine(line) {
  *                               nothing can ever supersede what it says).
  * Returns { abs, rel } or { error }.
  */
-export function resolveTarget({ card, page, scope, owner }) {
+export function resolveTarget({ card, page, scope, owner, actor = null }) {
   const base = memoryDir();
   const isPrivate = scope === 'private';
   if (isPrivate && !SLUG_RE.test(String(owner || ''))) {
@@ -157,7 +164,14 @@ export function resolveTarget({ card, page, scope, owner }) {
     // caller explicitly marked private.
     return { error: `private write needs a valid owner slug (got ${JSON.stringify(owner)})` };
   }
-  const root = isPrivate ? join(base, USERS_DIR, owner) : base;
+  // Solo keeps the one person's own cards flat (memory/USER_PROFILE.md), and
+  // that is where the prefix and the Memory screen read them: a private card
+  // written under users/ in solo was never seen, and a shared one was refused,
+  // so nothing could write "About you" at all. Team mode moves them under users/.
+  // Only the person's own: in solo there is one person, and a write naming
+  // someone else stays a private write under users/ (refused by the scope check).
+  const flat = isPrivate && card && cardDef(card)?.tier === 'user' && !teamModeOn() && !!actor && owner === actor;
+  const root = isPrivate && !flat ? join(base, USERS_DIR, owner) : base;
 
   let abs;
   if (card) {
@@ -478,7 +492,7 @@ export function remember({ actor, scope = 'shared', owner, card, page, section, 
   if (t.error) return { ok: false, error: t.error };
   const line = card ? asBullet(t.text) : `${asBullet(t.text)}${/\[Source:/i.test(t.text) ? '' : `  [Source: ${source || 'conversation'}, ${new Date().toISOString().slice(0, 10)}]`}`;
 
-  const target = resolveTarget({ card, page, scope, owner });
+  const target = resolveTarget({ card, page, scope, owner, actor });
   if (target.error) return { ok: false, error: target.error };
   const scopeErr = guardScope(target.rel, actor);
   if (scopeErr) return { ok: false, error: scopeErr };
@@ -494,6 +508,31 @@ export function remember({ actor, scope = 'shared', owner, card, page, section, 
     before = `---\ncard: ${card}\nowner: ${owner}\n---\n\n# ${card}\n`;
   } else {
     return { ok: false, error: `card file ${target.rel} does not exist` };
+  }
+
+  // A card's template leaves fields empty ("- Name:"): a `Field: value` line
+  // fills its own empty field in place instead of sitting under it. Once filled,
+  // the field is a claim like any other (a change of value is a supersede).
+  const field = /^-?\s*([^:\n]{1,40}):\s+\S/.exec(t.text);
+  if (card && field) {
+    const name = field[1].trim().toLowerCase();
+    const lines = before.split('\n');
+    const i = lines.findIndex((l) => { const m = /^\s*[-*+]\s+([^:\n]{1,40}):\s*$/.exec(l); return m && m[1].trim().toLowerCase() === name; });
+    // The field already holds a value: a new one is a correction, not a second line.
+    const held = lines.find((l) => { const m = /^\s*[-*+]\s+([^:\n]{1,40}):\s+\S/.exec(l); return m && m[1].trim().toLowerCase() === name; });
+    if (i === -1 && held && normalizeClaim(held) !== normalizeClaim(asBullet(t.text))) {
+      return { ok: false, needs_supersede: true, target: target.rel, existing: held.trim(), error: 'this field already has a value — call supersede with the existing line as `match`' };
+    }
+    if (i !== -1) {
+      lines[i] = lines[i].replace(/:\s*$/, ':') + ' ' + t.text.slice(t.text.indexOf(':') + 1).trim();
+      const after = lines.join('\n');
+      const event = applyEvent({
+        abs: target.abs, rel: target.rel, before, after,
+        op: 'remember', actor, scope, owner, section: '', source,
+        changes: { removed: [], added: [{ section: '', line: lines[i].trim() }] },
+      });
+      return { ok: true, target: target.rel, claim_id: claimId(lines[i]), event_id: event.id, wrote: lines[i].trim(), filled: true };
+    }
   }
 
   // Already stated, verbatim → nothing to do.

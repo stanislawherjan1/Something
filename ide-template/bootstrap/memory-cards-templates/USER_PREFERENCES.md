@@ -23,26 +23,3 @@ conflict: new preference replaces old; non-conflicting preferences accumulate
 
 ## Working style
 <!-- how the user prefers the agent to plan, ask clarifying questions, default level of caution -->
-
-<!-- examples of well-shaped preference entries — DELETE this comment block after the first real write:
-
-## Communication
-- Direct feedback, skip compliment sandwiches
-- Polish for casual conversation; English for technical terms inside Polish messages
-- Brief acknowledgements; expand only on explicit request
-- No emojis in business comms; OK in casual
-
-## Channels
-- Telegram for quick replies + reminders; web chat for deep work
-- Voice memos only for ideation, never for action items
-
-## Surfacing
-- Proactively flag: campaign anomalies, overdue items, integration errors
-- Stay silent on: minor metric fluctuations, routine successful jobs
-
-## Working style
-- Ask ONE clarifying question max, then act
-- Default to "draft for review" over "send"; confirm before any irreversible action
-- Plan in 3-step max; expand only if user pushes back
--->
-

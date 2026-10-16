@@ -317,6 +317,8 @@ export default function memoryRouter() {
   // Called by the PM2 idle monitor every 60s, and by the chat-reset
   // hook when the user clicks "Reset chat" on the web side.
   router.post('/memory/snapshot/refresh', (req, res) => {
+    // v4 has no snapshot files: the monitor's tick has nothing to refresh.
+    if (v4Mode() === 'on') return res.json({ ok: true, skipped: 'v4', results: [] });
     const requested = String(req.query.channel || 'all').toLowerCase();
     const force = req.query.force === '1' || req.query.force === 'true';
     const channels = requested === 'all'

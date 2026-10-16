@@ -809,15 +809,19 @@ REDSOCKS_EOF
         # The project tree is the workspace group's to write, so any member could
         # leave a link where one of these parents should be: root never follows
         # one (a link at users -> /etc would hand /etc to the group on the next boot).
+        # Every level, not just the last: `mkdir -p memory/users` on a fresh
+        # project made memory/ root's 0755, and the card seed (run as coder)
+        # then could not write a single card — a new install started with no
+        # memory at all.
         for d in users memory/users .team/users; do
             q=/home/coder/project
             for part in $(echo "$d" | tr '/' ' '); do
                 q="$q/$part"
                 if [ -L "$q" ]; then echo "[entrypoint] WARNING: $q was a link — removed"; rm -f "$q"; fi
+                [ -d "$q" ] || mkdir "$q"
+                chgrp -h workspace "$q" 2>/dev/null || true
+                [ -L "$q" ] || chmod 2775 "$q" 2>/dev/null || true
             done
-            mkdir -p "/home/coder/project/$d"
-            chgrp -h workspace "/home/coder/project/$d" 2>/dev/null || true
-            [ -L "/home/coder/project/$d" ] || chmod 2775 "/home/coder/project/$d" 2>/dev/null || true
         done
         # Every person on the roster gets their slot and their trees become
         # theirs (idempotent; a restored volume or a hand-copied tree ends up
@@ -906,6 +910,15 @@ fi
 # The allowlist reflects exactly the cards the loader expects.
 MEMORY_DIR="$PROJECT_DIR/memory"
 MEMORY_TEMPLATES_DIR="/opt/ide/bootstrap/memory-cards-templates"
+# A new organisation starts on memory v4: nothing written yet (no card, no
+# engine) → stamp it as moved before seeding, so it gets only the v4 cards and
+# never goes through the old layout. Group-writable: workspace-api keeps it.
+if [ ! -d "$MEMORY_DIR/_engine" ] && [ -z "$(ls -A "$MEMORY_DIR" 2>/dev/null | grep -vx users)" ]; then
+    mkdir -p "$MEMORY_DIR/_engine" && chmod 2775 "$MEMORY_DIR/_engine" 2>/dev/null || true
+    printf '{"at":"%s","fresh":true}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MEMORY_DIR/_engine/.v4-migrated" \
+        && chmod 664 "$MEMORY_DIR/_engine/.v4-migrated" \
+        && echo "[entrypoint] New organisation: memory starts on v4."
+fi
 CARDS=(RULES MISSION RESPONSIBILITIES USER_PROFILE USER_PREFERENCES AGENT_IDENTITY AGENT_TOOLS USER_RELATIONSHIPS USER_REFLECTIONS RECENT_WEB RECENT_TELEGRAM)
 # In TEAM mode the per-user cards live under memory/users/<slug>/ and the flat
 # copies must not exist: the snapshot writer deletes memory/RECENT_WEB.md on
@@ -1522,18 +1535,11 @@ cat >> /home/coder/.claude/CLAUDE.md <<'CLAUDEMD'
 
 # Workspace permissions
 
-This is a single-tenant container. Every authenticated user is the owner.
-
-You are running with `--dangerously-skip-permissions` and `defaultMode: acceptEdits`.
-You have **pre-authorised full read/write** on:
-
-- the project at `/home/coder/project/` (including `.claude/`, `.chat/`, dotfiles)
-- the user home at `/home/coder/` (including `~/.claude/skills/`, `~/.claude/CLAUDE.md`,
-  `~/.claude.json`, `~/.bot/`)
-
-Do not ask the user to "click Allow" or wait for consent. The chat UI in this
-workspace has **no permission-request renderer** — any prompt you emit goes
-nowhere and looks to the user like a silent failure. Just perform the edit.
+There are no permission prompts here: what you are allowed to change you change
+directly, and nothing waits for anyone to click "Allow" (the chat has no such
+button, so a request for consent looks to the person like a silent failure).
+What you may not touch is enforced for you — another person's private files, a
+locked file, the team's settings for a member — and a refusal says why.
 
 If a write fails with EACCES or similar, surface the actual error message —
 don't paraphrase it as "needs permission".

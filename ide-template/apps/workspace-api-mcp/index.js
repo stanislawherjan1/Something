@@ -43,6 +43,7 @@ function turnIdentityHeaders() {
 // In shadow mode on an unmoved workspace the toolbox is unchanged.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { wrapUntrusted } from '../_shared/wrap-untrusted.js';
 const MEMORY_V4_FLAG = String(process.env.MEMORY_V4 || '').toLowerCase();
 const MEMORY_V4_TOOLS = ['read', 'on'].includes(MEMORY_V4_FLAG)
   || (MEMORY_V4_FLAG !== 'off' && existsSync(join(process.env.PROJECT_DIR || '/home/coder/project', 'memory', '_engine', '.v4-migrated')));
@@ -63,7 +64,20 @@ function v4MemoryWrite(tool) {
       'Do NOT announce the write; memory upkeep is background work, never a message. The tool refuses, with a reason, when a credential is detected or a correction matches several claims — read the reason and act on it.',
     inputSchema: {
       ...tool.inputSchema,
-      properties: { ...tool.inputSchema.properties, op: { ...tool.inputSchema.properties.op, enum: ['remember', 'supersede', 'retire', 'rename_entity'] } },
+      // v4 has cards, not pages, and no write log to revert from: the v3-only
+      // parameters (page, event_id) go, and the rest speak of the cards.
+      properties: (({ page, event_id, ...rest }) => ({
+        ...rest,
+        op: {
+          type: 'string',
+          enum: ['remember', 'supersede', 'retire', 'rename_entity'],
+          description: 'remember: a new line on a card. supersede: a line that changed (needs `match` + `text`). '
+            + 'retire: a line that was never true (needs `match`). rename_entity: a name was recorded wrong (needs `from` + `to`).',
+        },
+        card: { type: 'string', enum: ['USER_PROFILE', 'USER_PREFERENCES', 'RULES', 'AGENT_TOOLS', 'AGENT_IDENTITY', 'MISSION', 'RESPONSIBILITIES'], description: 'remember: which card.' },
+        section: { type: 'string', description: 'remember: the section heading on that card, e.g. "Identity" on USER_PROFILE or "Never" on RULES.' },
+        reason: { type: 'string', description: 'retire: why, in a few words.' },
+      }))(tool.inputSchema.properties),
     },
   };
 }
@@ -416,15 +430,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'recent_messages',
       description:
-        'Live RECENT_<CHANNEL>.md content from disk + snapshot freshness. ' +
-        'Use this when the user references conversation context that may ' +
-        'be OLDER than what your cached prefix shows: the Telegram side ' +
-        'in particular has a static prefix from tmux startup, so the ' +
-        '`RECENT_TELEGRAM` block in your system prompt can be stale by ' +
-        'hours or days. This tool returns the file the snapshot-monitor ' +
-        'maintains on disk (refreshed every ~60s when channel is idle) ' +
-        'so you can see fresher transcript than your prefix has. ' +
-        '`snapshot_age_seconds` tells you how recent the file is. ' +
+        'The latest messages on one channel, fresher than anything in your prompt. ' +
+        'Use it when the person refers to something said recently that you do not see — ' +
+        'on Telegram your session can be hours old. `snapshot_age_seconds` says how recent it is. ' +
         'Channel must be "web" or "telegram".',
       inputSchema: {
         type: 'object',
@@ -432,14 +440,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           channel: {
             type: 'string',
             enum: ['web', 'telegram'],
-            description: 'Which channel\'s snapshot to fetch.',
+            description: 'Which channel\'s recent messages to fetch.',
           },
           limit: {
             type: 'integer',
             description:
               'Optional: return only the last N message sections (1–200). ' +
-              'Each section starts with "## " in the markdown. ' +
-              'Default: full file.',
+              'Default: all of them.',
             minimum: 1,
             maximum: 200,
           },
@@ -744,7 +751,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const header = `Found ${data.count} match${data.count === 1 ? '' : 'es'} for "${q}"${args.regex ? ' (regex)' : ''}:`;
       return {
-        content: [{ type: 'text', text: `${header}\n${lines.join('\n')}` }],
+        content: [{ type: 'text', text: `${header}\n${wrapUntrusted(lines.join('\n'), { source: 'memory-files' })}` }],
       };
     } catch (err) {
       return {
@@ -803,7 +810,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `RECENT_${channel.toUpperCase()}.md ` +
         `(${data.bytes} bytes, snapshot age ${ageStr}, updated ${data.snapshot_updated_at})`;
       return {
-        content: [{ type: 'text', text: `${header}\n\n${data.content}` }],
+        // What people (and a group's members) said: material, never orders.
+        content: [{ type: 'text', text: `${header}\n\n${wrapUntrusted(String(data.content || ''), { source: `recent-${channel}` })}` }],
       };
     } catch (err) {
       return {

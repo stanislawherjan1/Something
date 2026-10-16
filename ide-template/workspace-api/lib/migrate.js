@@ -259,6 +259,17 @@ export async function autoApply(opts = {}) {
   const ctx = opts.ctx || await buildContext();
   const state = readState().applied || {};
   const report = { applied: [], recorded: [], pendingContent: [], failed: [] };
+  // A new organisation is born current: memory was created on v4 (the entrypoint
+  // stamps it "fresh") and nothing has been recorded yet. Every migration that
+  // exists is history it never had — record them all as done, run none. Ones
+  // added later still run as usual.
+  if (!Object.keys(state).length && bornFresh(ctx)) {
+    for (const m of await loadMigrations(opts.dir)) {
+      record(m.id, { kind: m.kind, appliedAt: new Date().toISOString(), recordedFresh: true });
+      report.recorded.push(m.id);
+    }
+    return report;
+  }
   for (const m of await loadMigrations(opts.dir)) {
     if (state[m.id]?.appliedAt && !state[m.id].rolledBackAt) continue;
     if (state[m.id]?.rolledBackAt) continue;   // an operator rolled it back: stay out of the way
@@ -280,6 +291,11 @@ export async function autoApply(opts = {}) {
     }
   }
   return report;
+}
+
+function bornFresh(ctx) {
+  try { return JSON.parse(readFileSync(join(ctx.memoryDir, '_engine', '.v4-migrated'), 'utf8'))?.fresh === true; }
+  catch { return false; }
 }
 
 /**

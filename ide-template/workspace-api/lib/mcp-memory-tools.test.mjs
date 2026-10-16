@@ -9,7 +9,7 @@
  * Run: node lib/mcp-memory-tools.test.mjs   (wired into `npm test`)
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, copyFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, copyFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,8 +19,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // The MCP app's only dependency is the MCP SDK, which workspace-api has too:
 // run a copy of its index.js next to workspace-api's node_modules, so the test
 // needs no install of its own (the image installs the app's deps at build).
-const TMP = mkdtempSync(join(tmpdir(), 'mcp-tools-'));
+// Laid out as in the image: the app in its own folder, the shared helpers next to it.
+const ROOT_TMP = mkdtempSync(join(tmpdir(), 'mcp-tools-'));
+const TMP = join(ROOT_TMP, 'workspace-api-mcp');
+mkdirSync(TMP); mkdirSync(join(ROOT_TMP, '_shared'));
 copyFileSync(join(HERE, '..', '..', 'apps', 'workspace-api-mcp', 'index.js'), join(TMP, 'index.js'));
+copyFileSync(join(HERE, '..', '..', 'apps', '_shared', 'wrap-untrusted.js'), join(ROOT_TMP, '_shared', 'wrap-untrusted.js'));
+writeFileSync(join(ROOT_TMP, '_shared', 'package.json'), JSON.stringify({ type: 'module' }));
 writeFileSync(join(TMP, 'package.json'), JSON.stringify({ type: 'module' }));
 symlinkSync(join(HERE, '..', 'node_modules'), join(TMP, 'node_modules'));
 const MCP = join(TMP, 'index.js');
