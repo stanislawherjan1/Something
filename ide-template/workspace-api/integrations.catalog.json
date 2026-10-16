@@ -257,7 +257,7 @@
       "logo": "/integrations/telegram.svg",
       "description": "Talk to your coworker on Telegram: ask, delegate, get reminders and files, in private or in a group.",
       "category": "messaging",
-      "process": "telegram-bot",
+      "process": "telegram-bot", "teamWide": true,
       "fields": [
         {
           "name": "TELEGRAM_BOT_TOKEN",
@@ -951,6 +951,7 @@
       "logo": "/integrations/linear.svg",
       "description": "Issues, projects and cycles: create and update issues, track progress and ask what is due.",
       "category": "dev",
+      "kind": "issues",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -974,6 +975,7 @@
       "logo": "/integrations/notion.svg",
       "description": "Pages and databases: search, read, create and update them from chat.",
       "category": "tasks",
+      "kind": "docs",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -998,6 +1000,7 @@
       "logo": "/integrations/todoist.svg",
       "description": "Tasks and projects: add, complete and reschedule tasks and ask what is due.",
       "category": "tasks",
+      "kind": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1022,6 +1025,7 @@
       "logo": "/integrations/monday.svg",
       "description": "Boards, items and updates: read a board, add items and post updates from chat.",
       "category": "tasks",
+      "kind": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1069,6 +1073,7 @@
       "logo": "/integrations/paypal.svg",
       "description": "Invoices, orders and payouts: create invoices, check payments and list transactions.",
       "category": "commerce",
+      "kind": "payments",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1116,6 +1121,7 @@
       "logo": "/integrations/calcom.svg",
       "description": "Bookings, event types and availability: see what is booked and find free slots.",
       "category": "meetings",
+      "kind": "booking",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1139,6 +1145,7 @@
       "logo": "/integrations/calendly.svg",
       "description": "Scheduled events, invitees and availability: see who booked what and when.",
       "category": "meetings",
+      "kind": "booking",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1162,6 +1169,7 @@
       "logo": "/integrations/wix.svg",
       "description": "Your Wix sites, stores, orders and contacts: read and update them from chat.",
       "category": "commerce",
+      "kind": "site",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1185,6 +1193,7 @@
       "logo": "/integrations/klaviyo.png",
       "description": "Campaigns, flows, lists and metrics: see what went out and how it performed.",
       "category": "marketing",
+      "kind": "newsletter",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1208,6 +1217,7 @@
       "logo": "/integrations/mailchimp.svg",
       "description": "Audiences, campaigns and reports: see who is subscribed and how campaigns did.",
       "category": "marketing",
+      "kind": "newsletter",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1254,6 +1264,7 @@
       "logo": "/integrations/stripe.svg",
       "description": "Payments, invoices, customers and subscriptions: look things up and create invoices.",
       "category": "commerce",
+      "kind": "payments",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1277,6 +1288,7 @@
       "logo": "/integrations/atlassian.svg",
       "description": "Jira issues and Confluence pages: search, read, create and update them from chat.",
       "category": "dev",
+      "kind": "issues",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1300,6 +1312,7 @@
       "logo": "/integrations/airtable.svg",
       "description": "Bases, tables and records: search, read, add and update records from chat.",
       "category": "tasks",
+      "kind": "docs",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1369,6 +1382,7 @@
       "logo": "/integrations/webflow.svg",
       "description": "Sites, CMS items and publishing: read and update content and publish changes.",
       "category": "content",
+      "kind": "site",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1720,6 +1734,7 @@
       "logo": "/integrations/clickup.svg",
       "description": "Tasks, docs, comments and time tracking: read, create and update them from chat.",
       "category": "tasks",
+      "kind": "tasks",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1789,6 +1804,7 @@
       "logo": "/integrations/granola.svg",
       "description": "Your Granola meeting notes and transcripts: find a meeting, read what was said and decided.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1817,6 +1833,7 @@
       "logo": "/integrations/fireflies.svg",
       "description": "Your Fireflies transcripts, summaries and action items: find a meeting and what came out of it.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1845,6 +1862,7 @@
       "logo": "/integrations/fathom.svg",
       "description": "Your Fathom recordings, transcripts and summaries: find a meeting and what was said.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1873,6 +1891,7 @@
       "logo": "/integrations/otter.svg",
       "description": "Your Otter conversations, transcripts and summaries: search them and read what was said.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1901,6 +1920,7 @@
       "logo": "/integrations/readai.svg",
       "description": "Your Read AI meeting summaries, chapters, action items and transcripts, searchable from chat.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",
@@ -1929,6 +1949,7 @@
       "logo": "/integrations/krisp.svg",
       "description": "Your Krisp meeting notes, transcripts and action items: find a meeting and what was agreed.",
       "category": "meetings",
+      "kind": "notetaker",
       "fields": [
         {
           "name": "OAUTH_TOKENS",

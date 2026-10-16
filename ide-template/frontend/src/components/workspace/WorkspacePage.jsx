@@ -19,6 +19,7 @@ import useDesktopNotifications from './useDesktopNotifications.js';
 import { useMobile } from '@/lib/useMobile';
 import { WORKSPACE_FONT_STYLE } from '@/lib/workspaceFont';
 import { useApi, invalidate } from '@/lib/useApi';
+import { ActivateModal } from './views/IntegrationsDashboard.jsx';
 
 /**
  * URL ⇄ selected state mapping. Each top-level view has a stable path; files
@@ -226,13 +227,21 @@ export default function WorkspacePage() {
   const chatOverlay = useMobile(899);
   const chatWidth = sidebarOverlay ? 380 : 460;
 
-  const { data: integrationsData } = useApi('/api/integrations');
-  const isTelegramActive = !!integrationsData?.integrations?.find(i => i.id === 'telegram')?.active;
+  const { data: integrationsData, reload: reloadIntegrations } = useApi('/api/integrations');
+  const telegramEntry = integrationsData?.integrations?.find(i => i.id === 'telegram') || null;
+  const isTelegramActive = !!telegramEntry?.active;
+  // Set up opens Telegram's connect modal in place; the bar steps aside while
+  // it is open and comes back only if the modal closes without a connection.
+  const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
+  const [telegramJustConnected, setTelegramJustConnected] = useState(false);
   // Show the banner only when:
   //   - the API reply is in (so we don't flash it for users who *do* have it),
   //   - telegram isn't already active,
   //   - the user hasn't dismissed it before.
-  const showBanner = !!integrationsData && !isTelegramActive && !bannerDismissed;
+  // Only an admin can switch Telegram on, so only an admin is asked to; a
+  // member gets the link bar below once it is on.
+  const { data: meForBanner } = useApi('/api/me');
+  const showBanner = !!integrationsData && (meForBanner?.isAdmin || meForBanner?.role === 'admin') && !isTelegramActive && !bannerDismissed && !telegramSetupOpen && !telegramJustConnected;
 
   const dismissBanner = () => {
     setBannerDismissed(true);
@@ -333,7 +342,7 @@ export default function WorkspacePage() {
               <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => handleSelect({ path: '.claude/integrations', type: 'integrations' })}
+                  onClick={() => telegramEntry ? setTelegramSetupOpen(true) : handleSelect({ path: '.claude/telegram', type: 'telegram' })}
                   className="rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]"
                 >
                   Set up
@@ -351,6 +360,14 @@ export default function WorkspacePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {telegramSetupOpen && telegramEntry && (
+        <ActivateModal
+          integration={telegramEntry}
+          onClose={() => setTelegramSetupOpen(false)}
+          onSuccess={() => { setTelegramJustConnected(true); setTelegramSetupOpen(false); reloadIntegrations(); }}
+        />
+      )}
 
       {/* Per-user Telegram link bar — "connect YOUR Telegram so teammates can
           reach you there". Mirrors the promo banner's motion + layout. */}

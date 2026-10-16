@@ -273,7 +273,7 @@ function panelTurnRules(ctx) {
   if (!url && ctx.act !== true) return '';
   const lines = ['[Browser panel] The user is writing from the side-panel extension in their browser, about the tab described in their message.'];
   if (url) lines.push('This turn reads a web page, so it has only the tab tools and mcp__workspace-api__use_integrations — no files, memory search, shell or web of its own. For anything beyond the page — the user\'s integrations (a document, spreadsheet, email, calendar event, store order, board card: the item\'s id is usually in the address), the workspace\'s files and memory, the web — call use_integrations: it runs the user\'s request in a separate turn that has all of that, takes the request from their message and the item from the address, and returns what it did. You pass it nothing. Never ask the user to copy or describe an item, and never ask them to switch anything for it.');
-  if (url) lines.push('That includes the user\'s own memory: their routines (the RESPONSIBILITIES card), notes, people, past work. Those are theirs — this person may always see their own — so answer such questions through use_integrations, which reads memory as them. Never refuse them as private, and never say something is not in memory before use_integrations has searched it (the index in your prompt lists page names, not what the pages say).');
+  if (url) lines.push('That includes the user\'s own memory: their routines, notes, people, past work. Those are theirs — this person may always see their own — so answer such questions through use_integrations, which reads memory as them. Never refuse them as private, and never say something is not in memory before use_integrations has searched it (the cards in your prompt are a summary, not everything remembered).');
   // Looking is part of every panel turn that shares the page: the assistant
   // takes the screenshot or reads the page itself (the chat shows it as a tool
   // pill) instead of asking the user for one.
@@ -807,6 +807,8 @@ export default function chatRouter() {
         sendEvent('tool_end', { id, ok, error: error || null });
       },
       onImage:     ({ mediaType, data }) => sendEvent('image', { mediaType, data }),
+      // The reply is complete; the process may take a few seconds more to exit.
+      onSettled:   () => sendEvent('settled', {}),
       onError:     (msg) => {
         if (resumeId && !retriedFresh && /No conversation found/i.test(String(msg))) {
           retriedFresh = true;
