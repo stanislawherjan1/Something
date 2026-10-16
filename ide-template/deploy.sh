@@ -445,6 +445,8 @@ ship bot/ecosystem.config.js   "$HETZNER_HOST:$REMOTE_PATH/bot/" || exit 1
 # MCP servers
 ship apps/shopify-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
 ship apps/shopify-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/shopify-mcp/"     || exit 1
+ship apps/vercel-mcp/index.js        "$HETZNER_HOST:$REMOTE_PATH/apps/vercel-mcp/"      || exit 1
+ship apps/vercel-mcp/package.json    "$HETZNER_HOST:$REMOTE_PATH/apps/vercel-mcp/"      || exit 1
 ship apps/meta-mcp/index.js          "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
 ship apps/meta-mcp/package.json      "$HETZNER_HOST:$REMOTE_PATH/apps/meta-mcp/"        || exit 1
 ship apps/google-ads-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/google-ads-mcp/"  || exit 1

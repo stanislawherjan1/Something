@@ -360,6 +360,9 @@ RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/_shared && npm ci --om
 COPY apps/shopify-mcp /opt/ide/apps/shopify-mcp
 RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/shopify-mcp && npm ci --omit=dev --no-audit --no-fund
 
+COPY apps/vercel-mcp /opt/ide/apps/vercel-mcp
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/vercel-mcp && npm ci --omit=dev --no-audit --no-fund
+
 COPY apps/meta-mcp /opt/ide/apps/meta-mcp
 RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/meta-mcp && npm ci --omit=dev --no-audit --no-fund
 

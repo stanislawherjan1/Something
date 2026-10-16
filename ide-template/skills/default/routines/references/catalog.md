@@ -189,6 +189,12 @@ The summary is what to say to the person; the full instruction is what the plann
   Before standup: what moved, what's blocked and what's next, per person.
 - **Is the site up** — `site-health` · needs: Firecrawl
   A few times a day; tells you right away if the site is down or slow.
+- **Vercel deploy failures** — `vercel-failed-deploys` · needs: Vercel
+  When a Vercel deploy fails: what broke, the failing line, and when it's fixed.
+- **What went live** — `what-went-live` · needs: Vercel
+  Each morning: yesterday's production deploys in plain words.
+- **Domain check** — `domain-check` · needs: Vercel
+  Weekly: domains that aren't verified or point the wrong way.
 - **Database limits** — `database-limits` · needs: Supabase or Neon
   Daily: database size and usage vs. plan limits, before a limit is hit.
 
