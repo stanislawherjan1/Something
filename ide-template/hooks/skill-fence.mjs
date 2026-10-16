@@ -25,9 +25,10 @@ const CLOUD_SCHEDULERS = new Set(['schedule', 'routines', 'cron']);
 const DENIAL =
   'Blocked: `schedule` manages Anthropic CLOUD routines. This workspace is self-hosted and '
   + 'cannot reach that service — it is not down, it is not configured, it does not apply here. '
-  + 'Routines in THIS product are the RESPONSIBILITIES card (what the sidebar calls "Routines"), '
-  + 'and they run like this: write the duty with memory_write into RESPONSIBILITIES, then run the '
-  + '`morning-planner` skill in the SAME turn so it folds the duty into today\'s reminders. '
+  + 'Routines in THIS product are the person\'s Routines (the ROUTINES block in your prefix), '
+  + 'and they run like this: add a Marketplace one with add_routine, or record one of your own with '
+  + 'memory_write (card RESPONSIBILITIES), then run the `morning-planner` skill in the SAME turn so it '
+  + 'folds the routine into today\'s reminders; the `routines` skill has the details. '
   + 'Both steps, or the routine exists only as text and fires nothing until 06:00 tomorrow. '
   + 'This is the real mechanism, not a workaround: do not describe it to the user as a fallback, '
   + 'do not tell them a scheduler is unavailable or to retry later, and do not invent a '
@@ -48,7 +49,11 @@ const skill = typeof input.skill === 'string' ? input.skill.trim().toLowerCase()
 // A plugin-qualified name (`plugin:skill`) still ends in the skill itself.
 const bare = skill.includes(':') ? skill.slice(skill.lastIndexOf(':') + 1) : skill;
 
-if (CLOUD_SCHEDULERS.has(bare)) {
+// Our own skill is also called `routines` (skills/default/routines): only a
+// plugin's `…:routines` is the cloud one. Blocking the bare name kept the bot
+// from the very skill its instructions send it to.
+const ours = bare === 'routines' && !skill.includes(':');
+if (CLOUD_SCHEDULERS.has(bare) && !ours) {
   process.stderr.write(DENIAL);
   process.exit(2);
 }

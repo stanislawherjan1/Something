@@ -165,7 +165,20 @@ function serverEntriesFor(key, existing = {}) {
       };
       return out;
     }
-    out[nameOf(name)] = { type: transport, url, [MANAGED_MARKER]: true };
+    // An open server goes through the same bridge, so what it returns reaches
+    // the agent fenced as untrusted (a direct connection passes it through raw).
+    out[nameOf(name)] = {
+      command: MCP_RUNNER_BIN,
+      args:    ['remote'],
+      env: {
+        REMOTE_MCP_ID:        key,
+        REMOTE_MCP_URL:       url,
+        REMOTE_MCP_TRANSPORT: transport,
+        REMOTE_MCP_OPEN:      '1',
+        WORKSPACE_API_PORT:   process.env.WORKSPACE_API_PORT || '3001',
+      },
+      [MANAGED_MARKER]: true,
+    };
     return out;
   }
   const { extraEnv = {}, inheritEnv = [], services } = cat.mcp;

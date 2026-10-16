@@ -353,30 +353,27 @@ RUN cd /opt/ide/plugins-src/external_plugins/telegram && \
 # "✗ Failed to connect" and the bot reports the tool as unavailable.
 # Caught on a first-broker-deploy 2026-05-13.
 COPY apps/_shared /opt/ide/apps/_shared
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/_shared && npm install --omit=dev
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/_shared && npm ci --omit=dev --no-audit --no-fund
 
-# TODO: these MCP installs resolve versions at build time (`npm install`), so
-# two builds of the same commit can differ. Once every app has a
-# package-lock.json (deploy.sh ships one wherever it exists; email-mcp,
-# grok-mcp and miniapp-mcp have theirs), switch them to `npm ci --omit=dev`
-# like workspace-api and the embedder below.
+# Every app installs from its lockfile (`npm ci`): the image gets exactly the
+# versions that were tested, never whatever resolves on build day.
 COPY apps/shopify-mcp /opt/ide/apps/shopify-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/shopify-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/shopify-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/meta-mcp /opt/ide/apps/meta-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/meta-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/meta-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/google-ads-mcp /opt/ide/apps/google-ads-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/google-ads-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/google-ads-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/seedream-mcp /opt/ide/apps/seedream-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/seedream-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/seedream-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/nano-banana-mcp /opt/ide/apps/nano-banana-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/nano-banana-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/nano-banana-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/reminder-mcp /opt/ide/apps/reminder-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/reminder-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/reminder-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # pdf-mcp: markdown → PDF via python-markdown + weasyprint (installed above).
 # Always on, no credentials. The ONE supported way to make PDFs.
@@ -385,15 +382,15 @@ COPY apps/pdf-mcp /opt/ide/apps/pdf-mcp
 COPY apps/playwright-mcp /opt/ide/apps/playwright-mcp
 # Bridge to a provider's hosted MCP server (Granola, Fathom, …): a fresh token per call.
 COPY apps/remote-mcp /opt/ide/apps/remote-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/remote-mcp && npm install --production
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/pdf-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/remote-mcp && npm ci --omit=dev --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/pdf-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # miniapp-mcp: save_as_tab — AI-built mini apps as workspace sidebar tabs.
 COPY apps/miniapp-mcp /opt/ide/apps/miniapp-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/miniapp-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/miniapp-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/workspace-api-mcp /opt/ide/apps/workspace-api-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/workspace-api-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/workspace-api-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # Memory v4 embedder: a worker workspace-api forks (lib/embedder-client.js),
 # with the model deploy.sh fetched into models/ (pinned revision + sha256).
@@ -409,10 +406,10 @@ RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/embedder && ONNXRUNTIM
 COPY models /opt/ide/models
 
 COPY apps/web-channel-mcp /opt/ide/apps/web-channel-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/web-channel-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/web-channel-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/email-mcp /opt/ide/apps/email-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/email-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/email-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # github-mcp: thin node wrapper + official Go binary from github/github-mcp-server.
 # Wrapper handles broker creds + conditional --read-only / --toolsets flags;
@@ -434,46 +431,46 @@ RUN set -eux; \
     rm /tmp/github-mcp.tar.gz
 
 COPY apps/grok-mcp /opt/ide/apps/grok-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/grok-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/grok-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/openai-mcp /opt/ide/apps/openai-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/openai-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/openai-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # Docs Comments (Playwright range-anchored Google Docs comments) — first-class
 # integration shipped to every client. Pulls playwright-core (reuses the system
 # chromium installed by the playwright-mcp layer; no bundled browsers).
 COPY apps/docs-comments-mcp /opt/ide/apps/docs-comments-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/docs-comments-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/docs-comments-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gemini-chat-mcp /opt/ide/apps/gemini-chat-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gemini-chat-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gemini-chat-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/signwell-mcp /opt/ide/apps/signwell-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/signwell-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/signwell-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/trello-mcp /opt/ide/apps/trello-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/trello-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/trello-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gdocs-mcp /opt/ide/apps/gdocs-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdocs-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdocs-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gsheets-mcp /opt/ide/apps/gsheets-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gsheets-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gsheets-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gcalendar-mcp /opt/ide/apps/gcalendar-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gcalendar-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gcalendar-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gdrive-mcp /opt/ide/apps/gdrive-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdrive-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gdrive-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gslides-mcp /opt/ide/apps/gslides-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gslides-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gslides-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/gtasks-mcp /opt/ide/apps/gtasks-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gtasks-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/gtasks-mcp && npm ci --omit=dev --no-audit --no-fund
 
 COPY apps/x-mcp /opt/ide/apps/x-mcp
-RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/x-mcp && npm install --production
+RUN --mount=type=cache,target=/root/.npm cd /opt/ide/apps/x-mcp && npm ci --omit=dev --no-audit --no-fund
 
 # === LAYER 2f: workspace-api (web chat backend) ===
 # Express server that wraps `claude -p` with SSE streaming for the React workspace.

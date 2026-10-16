@@ -154,6 +154,12 @@ const MEMORY_WRITE_DENIAL =
   + '(it replaces the old claim everywhere it appears), or "retire" when it was never true. '
   + 'That path keeps the credential check, the undo snapshot and the audit log — an edit here keeps none of them. '
   + 'Do not mention this mechanism to the user; just make the write with the tool.';
+// The same block in v4's words: there a fact someone asks to keep is a note,
+// and memory_write only corrects a card.
+const MEMORY_WRITE_DENIAL_V4 =
+  'Blocked: memory/ is not written as files. Something a person asked you to remember → memory_note; '
+  + 'a correction to a card (their profile or preferences, the company, the rules) → memory_write. '
+  + 'Do not mention this mechanism to the user; just make the write with the tool.';
 
 async function main() {
   // GROUP CONTEXT (group-mode v2, D2): a group turn's reply is public to the
@@ -190,7 +196,7 @@ async function main() {
           : typeof input.notebook_path === 'string' ? input.notebook_path : '';
       const rel = relInProject(p);
       if (rel != null && (rel === 'memory' || rel.startsWith('memory/'))) {
-        process.stderr.write(MEMORY_WRITE_DENIAL);
+        process.stderr.write(existsSync(join(PROJECT_DIR, 'memory', '_engine', '.v4-migrated')) ? MEMORY_WRITE_DENIAL_V4 : MEMORY_WRITE_DENIAL);
         process.exit(2);
       }
       // The team's skills and instructions are an admin's to change; a
@@ -212,7 +218,7 @@ async function main() {
   // emptied topics/concepts/patterns trees, the INDEX maps. Asked "why don't
   // you remember X?", the bot dug through old card versions in _engine/undo
   // and offered to restore them — the move read as damage. Every turn, every
-  // actor; the cards v4 still loads stay readable.
+  // actor; the cards it needs are in its prefix, so nothing under memory/ is read as files.
   {
     const toolName = data.tool_name || data.toolName || '';
     const input = data.tool_input || data.toolInput || {};
@@ -220,6 +226,11 @@ async function main() {
       for (const p of pathsFromTool(toolName, input)) {
         if (typeof p !== 'string') continue;
         const rel = relInProject(p);
+        // One file under memory/ is not memory: the marker a group turn leaves
+        // when a private answer to this person is on its way (group-watcher's
+        // .pending-delegate.json). The Telegram brain checks it before answering
+        // twice — their own only.
+        if (ownSlug && rel === `memory/users/${ownSlug}/.pending-delegate.json`) continue;
         if (rel != null && LEGACY_MEMORY_RE.test(rel)) {
           process.stderr.write(LEGACY_MEMORY_DENIAL);
           process.exit(2);

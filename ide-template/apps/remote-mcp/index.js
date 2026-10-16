@@ -28,6 +28,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 
+import { wrapUntrusted } from '../_shared/wrap-untrusted.js';
 const ID        = String(process.env.REMOTE_MCP_ID || '').trim();
 const URL_      = String(process.env.REMOTE_MCP_URL || '').trim();
 const TRANSPORT = process.env.REMOTE_MCP_TRANSPORT === 'sse' ? 'sse' : 'http';
@@ -54,11 +55,15 @@ async function freshToken() {
 }
 
 let live = null;   // { client, token }
+// An open server (no sign-in) comes through here too, only so its answers reach
+// the agent fenced like every other remote server's.
+const OPEN = process.env.REMOTE_MCP_OPEN === '1';
+
 async function remote() {
-  const token = await freshToken();
+  const token = OPEN ? '' : await freshToken();
   if (live && live.token === token) return live.client;
   if (live) { try { await live.client.close(); } catch { /* gone */ } live = null; }
-  const opts = { requestInit: { headers: { Authorization: `Bearer ${token}` } } };
+  const opts = OPEN ? {} : { requestInit: { headers: { Authorization: `Bearer ${token}` } } };
   const transport = TRANSPORT === 'sse'
     ? new SSEClientTransport(new URL(URL_), opts)
     : new StreamableHTTPClientTransport(new URL(URL_), opts);
@@ -90,9 +95,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools: r.tools || [] };
 });
 
+// What a remote server returns is written by others (notes, transcripts, pages,
+// records): every text block reaches the agent fenced as untrusted.
+function fenced(result) {
+  if (!result || !Array.isArray(result.content)) return result;
+  return {
+    ...result,
+    content: result.content.map((c) => (c?.type === 'text' && typeof c.text === 'string'
+      ? { ...c, text: wrapUntrusted(c.text, { source: ID }) }
+      : c)),
+  };
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
-    return await withRemote((c) => c.callTool({ name: req.params.name, arguments: req.params.arguments || {} }));
+    return fenced(await withRemote((c) => c.callTool({ name: req.params.name, arguments: req.params.arguments || {} })));
   } catch (err) {
     return { content: [{ type: 'text', text: `${ID}: ${String(err?.message || err)}` }], isError: true };
   }

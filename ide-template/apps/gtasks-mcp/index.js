@@ -31,6 +31,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { createGoogleApiClient } from '../_shared/google-oauth.js';
 import { loadCredentials } from '../_shared/broker-client.js';
 
+import { wrapResult } from '../_shared/wrap-untrusted.js';
 // Phase-2 broker — fetch credentials over UDS at startup if launched via
 // mcp-runner (uid 1002). No-op + return null when run standalone for
 // local dev (no BROKER_SOCKET in env), so the process.env reads below
@@ -256,7 +257,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       default:
         return { content: [{ type: 'text', text: `Unknown tool: ${name}` }], isError: true };
     }
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return wrapResult(result, 'google-tasks');
   } catch (err) {
     return { content: [{ type: 'text', text: `Error: ${err.message}` }], isError: true };
   }

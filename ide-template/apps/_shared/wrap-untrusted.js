@@ -53,3 +53,14 @@ export function wrapUntrusted(text, { source, absorbedAt } = {}) {
     .replace(/<\/untrusted-content>/gi, '<\\/untrusted-content>');
   return `<untrusted-content source="${escapeAttr(src)}" absorbed_at="${escapeAttr(ts)}">\n${safe}\n</untrusted-content>`;
 }
+
+/**
+ * A tool's result as text for the agent, fenced as untrusted: the shape every
+ * MCP here returns (`{content:[{type:'text',text}]}`), with the JSON — whose
+ * strings outsiders wrote (doc bodies, comments, event descriptions, customer
+ * notes, tweets) — inside `<untrusted-content>`. One call per result.
+ */
+export function wrapResult(result, source) {
+  const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  return { content: [{ type: 'text', text: wrapUntrusted(text, { source }) }] };
+}
