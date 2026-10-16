@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, Fragment } from 'react';
 import {
+  ChevronRight,
   Loader2, ArrowRight, ArrowLeft, Check, AlertTriangle,
   Wand2, Upload, Building2,
 } from 'lucide-react';
@@ -208,23 +209,36 @@ function ErrorBanner({ error }) {
   );
 }
 
-function NavRow({ onBack, onNext, nextLabel = 'Continue', busy, canNext = true }) {
+// The bottom bar: where you are on the left, Back and Continue on the right.
+export function NavRow({ onBack, onNext, nextLabel = 'Continue', busy, canNext = true, step, total = 4 }) {
   return (
-    <div className={cn('flex items-center gap-3', onBack ? 'justify-between' : 'justify-end')}>
-      {onBack && (
-        <button type="button" onClick={onBack} disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-2 text-[12.5px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-50 transition-colors"
+    <div className="flex items-center justify-between gap-3">
+      {step ? (
+        <div className="flex items-center gap-2.5">
+          <div className="flex gap-1" aria-hidden>
+            {Array.from({ length: total }, (_, i) => i + 1).map((n) => (
+              <span key={n} className={cn('h-[3px] w-5 rounded-full', n <= step ? 'bg-foreground/75' : 'bg-foreground/[0.12]')} />
+            ))}
+          </div>
+          <span className="text-[12px] text-muted-foreground/75">Step {step} of {total}</span>
+        </div>
+      ) : <span />}
+      <div className="flex items-center gap-1.5">
+        {onBack && (
+          <button type="button" onClick={onBack} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-2 text-[12.5px] font-medium text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-50 transition-colors"
+          >
+            <ArrowLeft className="size-3.5" strokeWidth={2} /> Back
+          </button>
+        )}
+        <button type="button" onClick={onNext} disabled={busy || !canNext}
+          className="inline-flex items-center gap-2 rounded-[6px] bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-all hover:bg-foreground/90 active:scale-[0.99] disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          <ArrowLeft className="size-3.5" strokeWidth={2} /> Back
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          {nextLabel}
+          {!busy && <ArrowRight className="size-3.5" strokeWidth={2.25} />}
         </button>
-      )}
-      <button type="button" onClick={onNext} disabled={busy || !canNext}
-        className="inline-flex items-center gap-2 rounded-[6px] bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-all hover:bg-foreground/90 active:scale-[0.99] disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-        {nextLabel}
-        {!busy && <ArrowRight className="size-3.5" strokeWidth={2.25} />}
-      </button>
+      </div>
     </div>
   );
 }
@@ -233,7 +247,7 @@ function NavRow({ onBack, onNext, nextLabel = 'Continue', busy, canNext = true }
 // laid out wide: a soft halftone banner down the left (the sign-in wave;
 // rings once it's done), the step on the right. Fixed height, so the steps
 // don't jump; the side banner keeps short steps from looking empty.
-function Card({ children, banner = 'wave' }) {
+export function Card({ children, banner = 'wave' }) {
   return (
     <div className="flex h-[540px] overflow-hidden rounded-[6px] border border-border/60 bg-card">
       <TileBanner abstract={banner} seed="setup" soft className="!h-full w-[240px] shrink-0 border-r border-border/60 max-md:hidden" />
@@ -243,36 +257,27 @@ function Card({ children, banner = 'wave' }) {
 }
 
 // The step as four short bars, the title and one line of context.
-function StepHeader({ step, title, subtitle }) {
+// `tabs`, when given, sit on the header's bottom line (one line, not two).
+export function StepHeader({ step, title, subtitle, tabs }) {
   return (
-    <div className="shrink-0">
-      <div className="px-8 pb-5 pt-7">
-        {step ? (
-          <div className="flex items-center gap-2.5">
-            <div className="flex gap-1" aria-hidden>
-              {[1, 2, 3, 4].map((n) => (
-                <span key={n} className={cn('h-[3px] w-5 rounded-full', n <= step ? 'bg-foreground/75' : 'bg-foreground/[0.12]')} />
-              ))}
-            </div>
-            <span className="text-[12px] text-muted-foreground/75">Step {step} of 4</span>
-          </div>
-        ) : (
-          <div className="text-[12px] text-muted-foreground/75">All set</div>
-        )}
-        <h1 className="mt-2.5 text-[20px] font-semibold tracking-[-0.015em] text-foreground/90">{title}</h1>
+    <div className="shrink-0 border-b border-border/60">
+      <div className={cn('px-8 pt-7', tabs ? 'pb-0' : 'pb-6')}>
+        {!step && <div className="mb-2.5 text-[12px] text-muted-foreground/75">All set</div>}
+        <h1 className="text-[20px] font-semibold tracking-[-0.015em] text-foreground/90">{title}</h1>
         {subtitle && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground/80">{subtitle}</p>}
+        {tabs && <div className="mt-5">{tabs}</div>}
       </div>
     </div>
   );
 }
 
-const inputCls = cn(
+export const inputCls = cn(
   'w-full rounded-[6px] border border-border/60 bg-card px-3 py-2 text-[13.5px] text-foreground outline-none',
   'placeholder:text-muted-foreground/45 transition-colors',
   'focus:border-foreground/35',
 );
 
-const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
+export const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
 
 function WorkspaceLogoOrInitial({ src, initial, size = 'md' }) {
   const sm = size === 'sm';
@@ -297,7 +302,7 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
     <Card>
       <StepHeader step={1} title="Name your workspace"
         subtitle="Shown in the sidebar and browser tab. Change it any time from Settings." />
-      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-6">
         <div className="flex flex-col gap-6">
           <label className="flex flex-col gap-2">
             <span className={labelCls}>Workspace name</span>
@@ -342,7 +347,7 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
         </div>
       </div>
       <div className="shrink-0 border-t border-border/60 px-8 py-4">
-        <NavRow onNext={onNext} busy={busy} canNext={canNext} />
+        <NavRow onNext={onNext} busy={busy} canNext={canNext} step={1} />
       </div>
     </Card>
   );
@@ -350,14 +355,21 @@ function Step1({ title, setTitle, orgLogoPreview, onPickLogo, onNext, busy, erro
 
 // ─── Step 2: Avatar & Name ────────────────────────────────────────────────────
 
-function Step2Avatar({ botName, setBotName, avatarIdx, onPickPreset, customAvatar, onPickFile, onBack, onNext, busy, error, canNext }) {
+export function Step2Avatar({ botName, setBotName, avatarIdx, onPickPreset, customAvatar, onPickFile, onBack, onNext, busy, error, canNext,
+  step = 2, total = 4, title = 'Choose an avatar', subtitle = 'This is what your team sees in the chat header.', bare = false }) {
   const fileRef = useRef(null);
+  const Wrap = bare ? Fragment : Card;
   return (
-    <Card>
-      <StepHeader step={2} title="Choose an avatar"
-        subtitle="This is what your team sees in the chat header." />
-      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
+    <Wrap>
+      <StepHeader step={step} total={total} title={title} subtitle={subtitle} />
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-6">
         <div className="flex flex-col gap-6">
+          <label className="flex flex-col gap-2">
+            <span className={labelCls}>Name</span>
+            <input type="text" value={botName}
+              onChange={(e) => setBotName(e.target.value.replace(/[^a-zA-Z0-9 _-]/g, ''))}
+              placeholder="aria · atlas · nova" spellCheck={false} autoComplete="off" className={inputCls} />
+          </label>
           {/* Every picture at once, as in AI Settings: the presets, then your own at the end. */}
           <div className="flex flex-col gap-2.5">
             <span className={labelCls}>Picture</span>
@@ -382,22 +394,13 @@ function Step2Avatar({ botName, setBotName, avatarIdx, onPickPreset, customAvata
               {customAvatar ? customAvatar.file.name : 'Or upload your own: PNG or JPEG, up to 2 MiB.'}
             </span>
           </div>
-          <label className="flex flex-col gap-2">
-            <span className={labelCls}>Assistant name</span>
-            <input type="text" value={botName}
-              onChange={(e) => setBotName(e.target.value.replace(/[^a-zA-Z0-9 _-]/g, ''))}
-              placeholder="aria · atlas · luna" spellCheck={false} autoComplete="off" className={inputCls} />
-            <p className="text-[11.5px] text-muted-foreground/70">
-              {botName ? `Shows as "${botName}" in the chat header.` : 'Letters, digits, spaces, dashes allowed.'}
-            </p>
-          </label>
           <ErrorBanner error={error} />
         </div>
       </div>
       <div className="shrink-0 border-t border-border/60 px-8 py-4">
-        <NavRow onBack={onBack} onNext={onNext} busy={busy} canNext={canNext} />
+        <NavRow onBack={onBack} onNext={onNext} busy={busy} canNext={canNext} step={step} total={total} />
       </div>
-    </Card>
+    </Wrap>
   );
 }
 
@@ -414,7 +417,7 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
     <Card>
       <StepHeader step={3} title="Define their character"
         subtitle="Write a brief backstory and tune the personality. We'll turn this into a system prompt." />
-      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-6">
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline justify-between">
@@ -445,7 +448,7 @@ function Step3Character({ botName, backstory, setBackstory, personality, setPers
         </div>
       </div>
       <div className="shrink-0 border-t border-border/60 px-8 py-4">
-        <NavRow onBack={onBack} onNext={onNext} busy={busy} />
+        <NavRow onBack={onBack} onNext={onNext} busy={busy} step={3} />
       </div>
     </Card>
   );
@@ -468,12 +471,38 @@ function SliderRow({ axis, value, onChange }) {
 
 // ─── Step 4: Claude token ─────────────────────────────────────────────────────
 
+// How to get a Claude token: a quiet line that opens into three short steps.
+// Shared with onboarding.
+export function TokenHelp({ defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const code = 'rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground/80';
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="inline-flex items-center gap-1 text-[12px] text-muted-foreground/75 transition-colors hover:text-foreground/85">
+        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} strokeWidth={2} />
+        How do I get the token?
+      </button>
+      {open && (
+        <div className="mt-2 border-l border-border/60 pl-3.5 text-[12px] leading-relaxed text-muted-foreground/80" style={{ marginLeft: 5 }}>
+          <ol className="list-decimal space-y-1 pl-4 marker:text-muted-foreground/55">
+            <li>Run <code className={cn(code, 'select-all')}>claude setup-token</code> in a terminal.</li>
+            <li>Sign in with your Anthropic account in the browser window that opens.</li>
+            <li>Paste the token it prints (it starts with <code className={code}>sk-ant-oat01-</code>).</li>
+          </ol>
+          <p className="mt-1.5 text-muted-foreground/55">No Claude Code yet? <code className={cn(code, 'select-all whitespace-nowrap')}>npm i -g @anthropic-ai/claude-code</code></p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
   return (
     <Card>
       <StepHeader step={4} title="Connect Claude"
         subtitle="Paste the OAuth token from Claude Code. It's stored encrypted on your server and never leaves it." />
-      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-1">
+      <div className="flex-1 overflow-y-auto px-8 pb-6 pt-6">
         <div className="flex flex-col gap-5">
           <label className="flex flex-col gap-2">
             <span className={labelCls}>OAuth token</span>
@@ -483,34 +512,12 @@ function Step4Token({ token, setToken, onBack, onNext, busy, error, canNext }) {
               className={cn(inputCls, 'font-mono')} />
             <p className="text-[11.5px] text-muted-foreground/70">Stored encrypted. Never leaves your server.</p>
           </label>
-          <div className="flex flex-col gap-1.5">
-            <span className={labelCls}>How to get the token</span>
-            <ol className="flex flex-col gap-0">
-              <li className="flex items-start gap-3 py-2.5">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">1</span>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[13px] leading-relaxed text-muted-foreground">Open a terminal on your computer and run:</span>
-                  <div className="rounded-[6px] border border-border/60 bg-muted/50 px-3 py-2">
-                    <code className="font-mono text-[12.5px] tracking-tight text-foreground select-all">claude setup-token</code>
-                  </div>
-                  <span className="text-[11.5px] text-muted-foreground/60">No Claude Code yet? <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">npm i -g @anthropic-ai/claude-code</code></span>
-                </div>
-              </li>
-              <li className="flex items-start gap-3 py-2.5">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">2</span>
-                <span className="text-[13px] leading-relaxed text-muted-foreground">A browser window opens: sign in with your Anthropic account.</span>
-              </li>
-              <li className="flex items-start gap-3 py-2.5">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border text-[9px] font-semibold text-muted-foreground">3</span>
-                <span className="text-[13px] leading-relaxed text-muted-foreground">The terminal prints a token starting with <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">sk-ant-oat01-</code>, paste it above.</span>
-              </li>
-            </ol>
-          </div>
+          <TokenHelp />
           <ErrorBanner error={error} />
         </div>
       </div>
       <div className="shrink-0 border-t border-border/60 px-8 py-4">
-        <NavRow onBack={onBack} onNext={onNext} nextLabel={busy ? 'Saving…' : 'Finish setup'} busy={busy} canNext={canNext} />
+        <NavRow onBack={onBack} onNext={onNext} nextLabel={busy ? 'Saving…' : 'Finish setup'} busy={busy} canNext={canNext} step={4} />
       </div>
     </Card>
   );

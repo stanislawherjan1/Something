@@ -8,6 +8,8 @@ import MobileTabBar from './components/MobileTabBar';
 import LoginPage from './components/LoginPage';
 import AccessDenied from './components/AccessDenied';
 import SetupWizard from './components/SetupWizard';
+import OnboardingPreview from './components/onboarding/OnboardingPreview.jsx';
+import Onboarding from './components/onboarding/Onboarding.jsx';
 import WorkspacePage from './components/workspace/WorkspacePage';
 import ExtensionChat from './components/workspace/ExtensionChat';
 import { isExtensionEmbed } from './lib/extensionEmbed';
@@ -32,7 +34,14 @@ function AppContent() {
   // While `setup === undefined` we render a spinner instead of bouncing into
   // the workspace and then blinking back into the wizard a second later.
   const [setup, setSetup] = useState(undefined);
+  // Onboarding: whether this person goes through it (a fresh install's admin, or
+  // someone added after onboarding existed); null when the endpoint isn't there.
+  const [onb, setOnb] = useState(undefined);
   const refreshSetup = useCallback(async () => {
+    try {
+      const o = await fetch('/api/onboarding', { credentials: 'include' });
+      setOnb(o.ok ? await o.json() : null);
+    } catch { setOnb(null); }
     try {
       const resp = await fetch('/api/setup/status', { credentials: 'include' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -89,6 +98,11 @@ function AppContent() {
 
   if (import.meta.env.DEV) {
     const fake = new URLSearchParams(window.location.search).get('auth');
+    // ?onboarding=a|b|c → the onboarding options under review (OnboardingPreview).
+    const onboarding = new URLSearchParams(window.location.search).get('onboarding');
+    // ?onboarding=real → the real wizard against a local workspace-api (DEV_LOCAL=1).
+    if (onboarding === 'real') return <DevRealOnboarding />;
+    if (onboarding) return <OnboardingPreview option={onboarding} />;
     if (fake === 'login')   return <LoginPage />;
     if (fake === 'denied')  return <AccessDenied />;
     if (fake === 'loading') return (
@@ -139,13 +153,17 @@ function AppContent() {
   // Setup gate — show a spinner during the initial fetch, then the wizard
   // when basics are missing. Dismissing the wizard refreshes status; the
   // user lands in the workspace once `complete: true`.
-  if (setup === undefined) {
+  if (setup === undefined || onb === undefined) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-background text-muted-foreground/70">
         <Loader2 className="size-5 animate-spin" strokeWidth={1.75} />
       </div>
     );
   }
+  if (onb && (onb.show || !setup.complete)) {
+    return <Onboarding setup={setup} onb={onb} onComplete={refreshSetup} />;
+  }
+  // No onboarding endpoint (an older server): the plain setup wizard.
   if (!setup.complete) {
     return <SetupWizard status={setup} onComplete={refreshSetup} />;
   }
@@ -164,6 +182,23 @@ function AppContent() {
   }
 
   return <WorkspacePage />;
+}
+
+// Dev only: the real onboarding against a local workspace-api, without the
+// sign-in (the dev proxy forges the user).
+function DevRealOnboarding() {
+  const [state, setState] = useState(null);
+  const load = useCallback(async () => {
+    const [setup, onb] = await Promise.all([
+      fetch('/api/setup/status').then((r) => r.json()),
+      fetch('/api/onboarding').then((r) => r.json()),
+    ]);
+    setState({ setup, onb });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!state) return null;
+  if (!state.onb.show && state.setup.complete) return <div className="p-10 text-[13px]">Onboarding done — the workspace would open now.</div>;
+  return <Onboarding setup={state.setup} onb={state.onb} onComplete={load} />;
 }
 
 function App() {
