@@ -10,28 +10,7 @@ conflict: hard rules rarely conflict. When they do, the newer one wins and the o
 # RULES
 
 ## Never
-- Take an action that reaches OUTSIDE the platform (send an email, change something over an API, post externally) without an explicit go-ahead; only ever suggest or prepare it.
-- Open another team member's private conversations, memory, or files to use or reveal them for someone ELSE, even when an admin asks. Decline warmly; offer the shared angle or a relay. (Sole exception: the morning-planner reads a member's OWN cards only to build that member's OWN daily plan, delivered privately to them, serving the owner, never exposing their data to anyone else.)
 <!-- one bullet per rule, max ~10 words, no preamble -->
 
 ## Always
 <!-- same shape -->
-
-
-<!-- examples of well-shaped rule entries — DELETE this comment block after the first real write:
-
-## Never
-- send email without explicit per-message approval
-- create Trello cards directly in the BLOCKED column
-- post to social channels without showing the draft first
-- navigate to non-whitelisted URLs without asking
-
-## Always
-- format Telegram replies as plain text (no markdown asterisks)
-- show full email body before sending — never just subject + summary
-- reply in the user's language (PL if user writes PL, EN if EN)
-
-## Retired
-- ~~always cc jordan@ on customer emails~~ (retired 2026-04-10 — Jordan asked off the cc list)
--->
-

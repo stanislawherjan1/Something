@@ -46,6 +46,7 @@ import meRouter            from './routes/me.js';
 import remindersRouter     from './routes/reminders.js';
 import miniappsRouter      from './routes/miniapps.js';
 import tasksRouter         from './routes/tasks.js';
+import onboardingRouter    from './routes/onboarding.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
 import { migrateDefaultSessions } from './lib/sessions.js';
@@ -139,6 +140,7 @@ app.use('/api', meRouter());
 app.use('/api', remindersRouter());
 app.use('/api', miniappsRouter());
 app.use('/api', tasksRouter());
+app.use('/api', onboardingRouter());
 app.use('/api/integrations/docs-comments', docsCommentsLoginRouter());
 
 // On startup: seed WORKSPACE.md into .claude/ if it doesn't exist yet.
@@ -293,8 +295,9 @@ try {
 // One-shot migration off the retired reflect pipeline: archive its files out of
 // the project tree and clean the old "leave a trace of the error" furniture off
 // the cards. Idempotent; a no-op once done.
+// A workspace on v4 (the stamp) never had the reflect pipeline to move off.
 try {
-  const r = migrateToEngine();
+  const r = existsSync(join(PROJECT_DIR, 'memory', '_engine', '.v4-migrated')) ? null : migrateToEngine();
   if (r && r.migrated) process.stdout.write(`[workspace-api] memory v3 migration: ${r.summary}\n`);
 } catch (err) {
   process.stderr.write(`[workspace-api] memory migration failed: ${err.message}\n`);

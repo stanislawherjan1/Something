@@ -23,25 +23,3 @@ conflict: a new fact REPLACES the old one — supersede it, never keep both. The
 
 ## Schedule + availability
 <!-- typical working hours, timezone, days off -->
-
-<!-- examples of well-shaped filled entries — DELETE this comment block after the first real write:
-
-## Identity
-- Name: Anna Kowalska
-- Roles: founder + head of growth at Acme Sp. z o.o.
-- Based in: Warsaw, Poland (CET)
-- Languages: Polish (native), English (fluent, prefers PL for casual / EN for technical)
-
-## Background
-- Background in B2B SaaS go-to-market (5y); previously growth at Stripe-adjacent fintech
-- Bootstrapped, no external funding [Source: USER_PROFILE backfill, 2026-05-15]
-
-## Currently focused on
-- Q2 2026 launch of B2B SaaS for clinics
-- Hiring first sales hire by end of June
-
-## Schedule + availability
-- Mon-Thu 9:00-17:00 CET; Fri off
-- No meetings before 10:00; deep work block Mon/Wed/Fri morning
--->
-

@@ -23,15 +23,3 @@ Cover only tools currently active in this workspace. Dormant catalog entries
 don't get a section. The Integrations dashboard is the source of truth for
 "what's activated" — this card is for "how to actually use it well".
 -->
-
-<!-- example of a well-shaped tool entry — DELETE this comment block after the first real write:
-
-## shopify (active)
-- Auth: via Integrations dashboard — SHOPIFY_STORE_DOMAIN + SHOPIFY_ACCESS_TOKEN
-- What it's good for in this workspace: pulling orders by date / status / customer, checking inventory levels for tracked SKUs, updating product descriptions in bulk
-- Gotchas:
-  - `list_orders` returns max 250 per page; paginate with `cursor` for full history (2026-05-12)
-  - Variant updates require the parent product_id; passing only variant_id silently no-ops (2026-04-30)
-- Last verified working: 2026-05-25
--->
-

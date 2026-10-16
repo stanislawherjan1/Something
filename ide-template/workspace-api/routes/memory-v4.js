@@ -30,9 +30,8 @@ import { modeOf as sharingModeOf, concernsAPerson, decide as sharingDecide, file
 import { readRoutines, writeRoutines } from '../lib/routines-store.js';
 import { routinesOwner } from '../lib/memory-v4-writes.js';
 import * as routinesCatalog from '../lib/routines-catalog.js';
-import { isUsable as integrationUsable, personalKey } from '../lib/integrations/store.js';
-/** A service is usable for a person when the team's is connected or their own is. */
-const usableFor = (slug) => (id) => integrationUsable(id) || (!!slug && slug !== 'default' && integrationUsable(personalKey(id, slug)));
+import { addFromCatalog, flushWaiting, waitingView, dropWaiting, usableFor } from '../lib/routines-add.js';
+import { plannerFeedback } from '../lib/planner-feedback.js';
 import { remember as engineRemember, retire as engineRetire } from '../lib/memory-engine.js';
 import { resolveTurnToken } from '../lib/turn-identity.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
@@ -75,19 +74,12 @@ function whoIsAsking(req) {
  * Add a Marketplace routine to a person's list — the same for the Add button
  * and the bot's add_routine tool. Idempotent; 409 until its integration is on.
  */
-function addFromCatalog(slug, id) {
-  const entry = routinesCatalog.get(id);
-  if (!entry) return { status: 404, body: { ok: false, error: 'no such routine in the catalog' } };
-  if (routinesCatalog.unlockedBy(entry, usableFor(slug)) === null) {
-    return { status: 409, body: { ok: false, error: 'connect its integration first' } };
-  }
-  const key = routinesOwner(slug);
-  const store = readRoutines(key);
-  const have = store.routines.find(r => !r.retired && r.catalogId === entry.id);
-  if (have) return { status: 200, body: { ok: true, routine: have, added: false } };
-  store.routines.push({ title: entry.title, summary: entry.summary, description: entry.description, icon: entry.icon || null, tags: entry.tags || [], source: 'catalog', catalogId: entry.id });
-  const saved = writeRoutines(key, store);
-  return { status: 200, body: { ok: true, routine: saved.routines[saved.routines.length - 1], added: true } };
+/** Share of a note's content words (3+ letters) that appear in what the person said. */
+function wordsFrom(text, said) {
+  const words = (t) => (String(t).toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}-]{2,}/gu) || []);
+  const have = new Set(words(said));
+  const mine = words(text);
+  return mine.length ? mine.filter((w) => have.has(w)).length / mine.length : 0;
 }
 
 function nameOf(slug) {
@@ -480,19 +472,22 @@ export default function memoryV4Router() {
   }));
   router.post('/memory/v4/prefs', requireActor, withViewer((req, res, v) => {
     const { card, op, text } = req.body || {};
-    if (!['USER_PROFILE', 'USER_PREFERENCES', 'MISSION'].includes(card) || !['add', 'remove'].includes(op) || !String(text || '').trim()) {
+    // What this route may write: the person's own cards, and the team's two.
+    const ownCards = ['USER_PROFILE', 'USER_PREFERENCES'], teamCards = ['MISSION', 'RULES'];
+    if (![...ownCards, ...teamCards].includes(card) || !['add', 'remove'].includes(op) || !String(text || '').trim()) {
       return res.status(400).json({ ok: false, error: 'card, op and text required' });
     }
     const team = getTeamMode();
-    if (card === 'MISSION') {
-      if (team && !v.isAdmin) return res.status(403).json({ ok: false, error: 'admins keep the company card' });
+    // The company and the team's rules are the team's: an admin keeps them.
+    if (teamCards.includes(card)) {
+      if (team && !v.isAdmin) return res.status(403).json({ ok: false, error: card === 'RULES' ? 'admins keep the team rules' : 'admins keep the company card' });
       const out = op === 'add'
         ? engineRemember({ actor: v.slug, scope: 'shared', card, text: String(text).trim(), source: 'memory screen' })
         : engineRetire({ actor: v.slug, match: String(text).trim(), reason: 'removed on the memory screen' });
       return res.status(out.ok ? 200 : 422).json(out);
     }
     const out = op === 'add'
-      ? engineRemember({ actor: v.slug, scope: team ? 'private' : 'shared', owner: team ? v.slug : undefined, card, text: String(text).trim(), source: 'memory screen' })
+      ? engineRemember({ actor: v.slug, scope: 'private', owner: v.slug, card, text: String(text).trim(), source: 'memory screen' })
       : engineRetire({ actor: v.slug, match: String(text).trim(), reason: 'removed on the memory screen' });
     return res.status(out.ok ? 200 : 422).json(out);
   }));
@@ -735,8 +730,10 @@ export default function memoryV4Router() {
 
   // Routines: the person's routines.json (the Routines view once v4 is on).
   router.get('/routines', requireActor, withViewer((req, res, v) => {
-    const store = readRoutines(routinesOwner(v.slug));
-    return res.json({ ok: true, mode: ledger.v4Mode(), routines: store.routines, unparsed: store.unparsed });
+    const owner = routinesOwner(v.slug);
+    flushWaiting(owner);
+    const store = readRoutines(owner);
+    return res.json({ ok: true, mode: ledger.v4Mode(), routines: store.routines, unparsed: store.unparsed, waiting: waitingView(owner) });
   }));
   // ── Marketplace: ready-made routines (lib/routines-catalog.js) ──
   router.get('/routines/catalog', requireActor, withViewer((req, res, v) => {
@@ -744,14 +741,15 @@ export default function memoryV4Router() {
     return res.json({ ok: true, categories: routinesCatalog.CATEGORIES.map(([id, label]) => ({ id, label })), integrations: routinesCatalog.integrationsInCatalog(usableFor(v.slug)), groups: routinesCatalog.offer({ isUsable: usableFor(v.slug), routines: store.routines }) });
   }));
   router.post('/routines/catalog/:id', requireActor, withViewer((req, res, v) => {
-    const r = addFromCatalog(v.slug, req.params.id);
+    const r = addFromCatalog(v.slug, req.params.id, { later: req.query.later === '1' });
     return res.status(r.status).json(r.body);
   }));
   router.delete('/routines/catalog/:id', requireActor, withViewer((req, res, v) => {
     const key = routinesOwner(v.slug);
     const store = readRoutines(key);
     const hits = store.routines.filter(r => !r.retired && r.catalogId === req.params.id);
-    if (!hits.length) return res.status(404).json({ ok: false, error: 'not one of your routines' });
+    const wasWaiting = dropWaiting(key, req.params.id);
+    if (!hits.length) return wasWaiting ? res.json({ ok: true, retired: 0, waiting: true }) : res.status(404).json({ ok: false, error: 'not one of your routines' });
     for (const r of hits) r.retired = true;   // retired, not erased: history stays
     writeRoutines(key, store);
     return res.json({ ok: true, retired: hits.length });
@@ -873,7 +871,7 @@ export default function memoryV4Router() {
     if (!who) return res.status(403).json({ ok: false, error: 'no turn identity' });
     if (who.group) return res.status(403).json({ ok: false, error: 'personal — not in a group conversation' });
     const routines = routinesCard(who.actor);
-    const parts = [settingsCard(who.actor), goingOnCard(who.actor), routines && `Your routines for them:\n${routines}`].filter(Boolean);
+    const parts = [settingsCard(who.actor), goingOnCard(who.actor), routines && `Your routines for them:\n${routines}`, plannerFeedback(who.actor)].filter(Boolean);
     return res.json({ ok: true, text: parts.join('\n\n') || 'Nothing current recorded for this person.' });
   });
 
@@ -917,7 +915,7 @@ export default function memoryV4Router() {
     // plain word the check cannot tell from a name (a place, a translation)
     // is resent vouched for by name.
     const said = String(req.body?.said || '').trim().slice(0, 2000);
-    if (!said) return res.status(400).json({ ok: false, error: "said required — the person's own words this comes from, copied exactly" });
+    if (!said) return res.status(400).json({ ok: false, error: "Nothing was saved: said required — the person's own words this comes from, copied exactly" });
     const vouched = (Array.isArray(req.body?.confirmNames) ? req.body.confirmNames : []).map(v => String(v).toLowerCase());
     const knownNames = views.knownNames([who.write, 'shared']);
     const speaker = who.actor ? nameOf(who.actor) : 'The person';
@@ -938,10 +936,16 @@ export default function memoryV4Router() {
     // from the words as new, and the note was refused and written again.
     const saidLower = said.toLowerCase();
     const unknown = unsupported.filter(n => !vouched.includes(n.toLowerCase()) && !saidLower.includes(n.toLowerCase()));
-    if (unknown.length) return res.status(400).json({ ok: false, error: `not in what the person said nor in memory: ${unknown.join(', ')} — write only what they said (or ask them); if a detail is right after all, resend with it in confirmNames` });
-    const pieces = split?.notes || [];
+    if (unknown.length) return res.status(400).json({ ok: false, error: `Nothing was saved: not in what the person said nor in memory: ${unknown.join(', ')} — write only what they said (or ask them); if a detail is right after all, resend with it in confirmNames` });
+    let pieces = split?.notes || [];
     const leftOut = (split?.rejected || []).filter(x => !x.kept);
-    if (split && !pieces.length) return res.status(400).json({ ok: false, error: `nothing in the note is in the person's words${leftOut.length ? ` (${leftOut.map(x => x.why).join('; ')})` : ''} — quote the part of what they said it comes from in \`said\`; what they said earlier in the conversation is filed from the conversation itself` });
+    // The split is a model's call and once threw out every piece of a note the
+    // person had dictated word for word ("remember: the spare key is with the
+    // receptionist, code …"); the assistant retried for minutes, then said it
+    // was saved. A note whose words are plainly the person's — most of them in
+    // what they said, nothing unsupported above — is filed whole instead.
+    if (split && !pieces.length && wordsFrom(text, said) >= 0.6) pieces = [{ text, kind: 'fact', evidence: said }];
+    if (split && !pieces.length) return res.status(400).json({ ok: false, error: `Nothing was saved: nothing in the note is in the person's words${leftOut.length ? ` (${leftOut.map(x => x.why).join('; ')})` : ''} — quote the part of what they said it comes from in \`said\`; what they said earlier in the conversation is filed from the conversation itself` });
     const cands = pieces.length ? pieces : [{ text, kind: 'fact', evidence: said }];
     // Already remembered → not saved twice; a change → the old note is replaced.
     const plan = await facts.plan(scope, cands, { entities: split?.entities || [] });

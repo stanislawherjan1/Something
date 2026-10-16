@@ -25,6 +25,8 @@ import { rulesCard, now as liveStatuses, readDigest } from './memory-views.js';
 import { readRoutines } from './routines-store.js';
 import { routinesOwner } from './memory-v4-writes.js';
 import { syncMcpServers, personalServers } from './integrations/runtime.js';
+import * as integrationsStore from './integrations/store.js';
+import * as integrationsCatalog from './integrations/catalog.js';
 import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, slotOf } from './team.js';
 import * as asks from './memory-asks.js';
 import { buildRecallBlock, withRecall } from './memory-recall.js';
@@ -183,6 +185,7 @@ export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOpera
     const me = actor && actor !== 'default' ? actor : primaryAdminSlug();
     return buildCachedPrefixV4({ memoryDir, actor: me, flatPersonal: !getTeamMode(), extraCards: [
       { id: 'MY_SETTINGS', body: settingsCard(me) },
+      { id: 'INTEGRATIONS', body: integrationsCard(me) },
       { id: 'ROUTINES', body: routinesCard(me) },
       { id: 'STANDING_RULES', body: rulesCard([`user:${me}`]) },
       { id: 'WHAT_IS_GOING_ON', body: goingOnCard(me) },
@@ -213,6 +216,23 @@ function localNow(tz) {
   } catch { return ''; }
 }
 
+/**
+ * Where a reminder or a message can reach this person: the web workspace always,
+ * Telegram only when it is connected for the workspace and they are linked to it
+ * (the operator through the bot's own chat). The planner was told to use
+ * Telegram "only if they are linked" with nothing in the turn saying who is.
+ */
+function reachLine(slug, m) {
+  try {
+    const telegramOn = integrationsStore.isUsable('telegram');
+    const linked = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
+    const prefers = m?.preferredSurface === 'telegram' ? ' They prefer Telegram.' : m?.preferredSurface === 'web' ? ' They prefer the web workspace.' : '';
+    return linked
+      ? `Reaches them on: the web workspace and Telegram.${prefers}`
+      : `Reaches them on: the web workspace only${telegramOn ? ' (they have not linked Telegram)' : ''} — never set a reminder or a message for them on Telegram.`;
+  } catch { return ''; }
+}
+
 export function settingsCard(slug) {
   try {
     const m = teamList().find(x => x.slug === slug);
@@ -223,6 +243,29 @@ export function settingsCard(slug) {
       `Reply language: ${m?.preferredLanguage || 'the language of each message'}.${lock(m?.languageLocked)}`,
       `Times you say, plan or schedule are in this time zone; get the local time with \`TZ=${tz} date\`${localNow(tz)}.`,
       'When they ask you to change either, or plainly say they are now in another time zone, call set_my_settings with a short why.',
+      reachLine(slug, m),
+    ].filter(Boolean).join('\n');
+  } catch { return ''; }
+}
+
+/**
+ * What this person has connected: the team's integrations and their own, with
+ * whose account each is and what it may do. Without it the bot guessed from
+ * tool names — called the team's account "yours" and listed its own built-in
+ * abilities (PDF, the browser, mini apps) as integrations.
+ */
+export function integrationsCard(slug) {
+  try {
+    const label = (id) => integrationsCatalog.get(id)?.label || id;
+    const usable = (key) => { try { return integrationsStore.isUsable(key); } catch { return false; } };
+    const team = integrationsStore.workspaceIds().filter(usable)
+      .map((k) => `- ${label(k)} — the team's account${integrationsStore.accessOf(k) === 'read' ? ', read only' : ''}`);
+    const own = (slug && slug !== 'default' ? integrationsStore.personalIds(slug) : []).filter(usable)
+      .map((k) => `- ${label(integrationsCatalog.baseId(k))} — their own account (its tools' server name ends in \`-mine\`)`);
+    if (!team.length && !own.length) return 'Nothing is connected yet. Integrations are connected under Integrations: an admin for the team, anyone their own account.';
+    return [
+      ...team, ...own,
+      'These are the integrations. When asked what is connected, list these — your built-in abilities (files, PDFs, the browser, mini apps, reminders, memory, web search) are not integrations.',
     ].join('\n');
   } catch { return ''; }
 }
@@ -266,7 +309,7 @@ function goingOnFor({ key, scopes, whose, they }) {
  * and each run follows the routine's full instruction plus these rules.
  */
 const ROUTINE_RULES = [
-  'The list below IS the person\'s routines (their Routines page, Marketplace ones included). Reminders are not routines: a reminder is one firing the planner set, and a routine without a reminder today is still a routine. Before saying a routine does not exist or offering to add one, read this list (memory_now has the current copy).',
+  'The list below IS the person\'s routines (their Routines page, Marketplace ones included). Reminders are not routines: a reminder is one firing the planner set, and a routine without a reminder today is still a routine. Before saying a routine does not exist or offering to add one, read this list (memory_now has the current copy). Every routine is planned on its cadence: a routine\'s own "send nothing if…" is decided when it runs, never while planning — an empty-looking day still gets it, since tasks or mail may arrive by then.',
   'How to run them (every routine, every run):',
   '- Silence: message the person only if the result would change what they do; otherwise send nothing — never "nothing to report".',
   '- State: keep each routine\'s working notes (snapshots of the board, baselines, ids already reported, the person\'s one-time answers) in the workspace file `.routines/<routine title in kebab-case>.md` (team mode: under the person\'s own folder). Read it at the start of a run, update it at the end.',
@@ -283,9 +326,13 @@ export function routinesCard(slug) {
   let list = [];
   try { list = readRoutines(routinesOwner(slug)).routines.filter(r => !r.retired); } catch { return ''; }
   if (!list.length) return '';
-  return ['Your standing duties toward this person (they manage these on their Routines page).',
-    ROUTINE_RULES,
-    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}`)].join('\n');
+  // The routines first, counted, then how to run them: with a dozen rules ahead
+  // of it, a single routine at the end was missed on an empty-looking morning
+  // and the planner told the person they had none.
+  return [`Their routines (${list.length}): ${list.map(r => r.title).join('; ')}. Each is planned on its cadence — they manage these on their Routines page.`,
+    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}`),
+    '',
+    ROUTINE_RULES].join('\n');
 }
 
 // The model every web turn runs on: the one the bot is pinned to
@@ -310,7 +357,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -388,6 +435,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   if (turnModel()) args.push('--model', turnModel());
   if (actTurn && ACT_EFFORT) args.push('--effort', ACT_EFFORT);
 
+  // Everything this turn appends to the system prompt, joined into ONE flag at
+  // the end: the CLI keeps only the last --append-system-prompt it is given,
+  // so a second one silently dropped the memory prefix (seen as a bot that
+  // knew the person's name from [ACTOR] and nothing from their cards).
+  const systemParts = [];
+
   // Memory cached prefix — ≥4096 token block from project/memory/ so
   // Anthropic's prompt cache fires (otherwise nothing is cached and every
   // turn pays full input tokens). Failures here are non-fatal: we log and
@@ -402,7 +455,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
       memoryDir: join(PROJECT_DIR, 'memory'),
     });
     if (prefix && prefix.block) {
-      args.push('--append-system-prompt', prefix.block);
+      systemParts.push(prefix.block);
     }
   } catch (err) {
     process.stderr.write(`[claude/prefix] buildCachedPrefix failed: ${err.message}\n`);
@@ -419,7 +472,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     // sender's private tree as reachable, which in a group turn it is not.
     const me = actorName || 'this teammate';
     const who = actorName ? `${actorName} (slug: ${actor})` : `slug: ${actor}`;
-    args.push('--append-system-prompt',
+    systemParts.push(
       `[ACTOR ${who}] You are replying in a shared GROUP conversation; the message you are answering was written by ${me}. "I", "me", "my" in that message mean ${me}. ` +
       `This is a SHARED context: you act on the shared workspace (the project root) only. NO private space is accessible here — not other teammates' and not ${me}'s own (their profile cards are not loaded and private paths are blocked): the group context is shared, so nothing private may enter it. ` +
       `If ${me} asks for something that needs THEIR OWN private files, notes, or memory, emit the [[PRIVATE_TASK ...]] marker (per your instructions) so it runs privately and reaches them in a DM — never try to read private paths here, and never present a guess as their private data.`);
@@ -443,10 +496,11 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
         `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer.`
       : '';
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
-    args.push('--append-system-prompt',
+    systemParts.push(
       `[ACTOR ${who}] You are talking to ${me} — the person typing right now. "I", "me", "my", "we" from them mean ${me}.${roster} ` +
       `WHO ${me} IS — use these, in order: (1) this [ACTOR] line, (2) the USER_PROFILE / USER_PREFERENCES cards already in your prefix. In team mode THOSE USER_* cards ARE ${me}'s OWN private profile (loaded from memory/users/${actor}/) — they hold ${me}'s real name, facts, and taste, so READ them and use them directly. If a USER_* card has content, NEVER say "I have no profile for you" or "I don't know your name" — the answer is right there in the card. ` +
-      `SEPARATELY — do not confuse the workspace OWNER with ${me}: the SHARED cards (AGENT_IDENTITY, AGENT_TOOLS, RULES, MISSION), the project CLAUDE.md, the knowledge graph, and any auto-memory were authored for this workspace's OWNER/operator, very likely a DIFFERENT person than ${me}. When THAT shared context names a person, says "the user/you", or lists clients/projects, it's the OWNER's — NOT ${me}'s. Never call ${me} by the owner's name or attribute the owner's clients/profile to ${me}. ` +
+      `The SHARED cards (MISSION, RULES, AGENT_IDENTITY, AGENT_TOOLS) are the whole team's, ${me} included: MISSION is the company ${me} works in, so "we", "our company", "our clients" from ${me} mean it — answer from it. ` +
+      `Do not confuse the workspace OWNER with ${me} in older material, though: the project CLAUDE.md, the knowledge graph and any auto-memory may have been written by and about the owner, possibly a DIFFERENT person. When THAT material names a person or says "the user/you", it's the owner — never call ${me} by the owner's name or give ${me} the owner's personal profile. ` +
       `${me}'s private "Your Files" = project/users/${actor}/; the SHARED workspace = the project root — everyone's common work. ` +
       `SHARED-FIRST: most questions about a teammate — "did X finish Y?", "what's the status of Z?", their progress on a shared project or task — are really about the SHARED space. Look in the shared files, Tasks, and shared memory FIRST and answer from there; if it'd help, you can even relay the question to them (see above). Do NOT deflect a work question with "that's private" — collaboration is the default. ` +
       `The one thing you genuinely can't reach is another teammate's OWN private space (project/users/<them>/, memory/users/<them>/). That only matters if the user specifically asks you to read THOSE private files — and even then, just help with the shared work unless they insist on cracking into someone's private files, in which case say each person's private space is theirs. Never invent another teammate's private content, and don't report ${me}'s own activity as if it were someone else's.${adminNote}`);
@@ -458,7 +512,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const peers = Array.isArray(relayThread) ? relayThread.filter(p => p && p.slug) : [];
     if (peers.length) {
       const peerList = peers.map(p => `${p.name} (slug: ${p.slug})`).join(', ');
-      args.push('--append-system-prompt',
+      systemParts.push(
         `[RELAY THREAD] This conversation is a live relay channel between ${me} and ${peerList}. ` +
         `${me} is talking WITH them THROUGH you — you're the courier. Earlier in this thread you delivered a message from them; ${me}'s messages here are part of that exchange, NOT remarks to you. ` +
         `So when ${me} answers or reacts to what the teammate said ("yes, I do", "ok, tell them that…", a yes/no, a counter-question for them), relay it straight back to that teammate IMMEDIATELY via web_send_message (recipient = their slug), composed naturally in their language, then confirm to ${me} in one line. Do NOT ask "do you want me to pass that on?" for a clear answer — just pass it on. Keep using this same thread. ` +
@@ -469,7 +523,8 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Rules for this kind of turn (the browser panel's, from routes/chat.js) go
   // into the system prompt: in the user's message a page could pose as them,
   // and the model rightly distrusted a rule that changed mid-conversation there.
-  if (systemNote) args.push('--append-system-prompt', String(systemNote));
+  if (systemNote) systemParts.push(String(systemNote));
+  if (systemParts.length) args.push('--append-system-prompt', systemParts.join('\n\n'));
 
   if (sessionId) args.push('--resume', sessionId);
 
@@ -576,6 +631,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
+  let settled = false;
   // `resetsAt` from the first rejection of this turn, or true when the CLI
   // rejected without one. Read on close: a spent plan makes claude exit
   // non-zero, and the generic "exited with code 1 :: <stderr>" is what a
@@ -662,6 +718,16 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
             }
           }
         }
+        continue;
+      }
+
+      // The reply is complete: the CLI reports the turn's result before it
+      // shuts its MCP servers down and exits, which can take seconds. A caller
+      // that shows "still thinking" until onDone can drop it here; onDone
+      // still comes on exit, so nothing that needs the process gone moves.
+      if (evt.type === 'result' && !evt.is_error && !limitRejectedAt && !settled) {
+        settled = true;
+        try { onSettled?.(); } catch { /* the caller's own bug, not the turn's */ }
         continue;
       }
 

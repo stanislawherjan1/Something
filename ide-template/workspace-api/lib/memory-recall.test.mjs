@@ -18,12 +18,14 @@ const ROOT = mkdtempSync(join(tmpdir(), 'recall-'));
 process.env.PROJECT_DIR = ROOT;
 process.env.MEMORY_V4 = 'read';
 const STDIN_LOG = join(ROOT, 'stdin.txt');
+const ARGS_LOG = join(ROOT, 'args.json');
 const FAKE = join(ROOT, 'fake-claude.mjs');
 writeFileSync(FAKE, `#!/usr/bin/env node
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 let buf = '';
 process.stdin.on('data', (d) => { buf += d; });
 process.stdin.on('end', () => {
+  writeFileSync(${JSON.stringify(ARGS_LOG)}, JSON.stringify(process.argv.slice(2)));
   appendFileSync(${JSON.stringify(STDIN_LOG)}, buf + '\\n=====\\n');
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', session_id: 'fake', result: '' }) + '\\n');
 });
@@ -134,6 +136,29 @@ ok('(e) a group turn receives no private excerpt', /Marek/.test(got) && !/bonus 
 await turn({ actor: 'stan', message: '[wrapped] resume context… When?', recallQuery: 'When is the Pinecrest launch?', webSessionId: 'e3' });
 got = stdinOf();
 ok('(e) the search uses the person\'s own words when the message is wrapped', /October 10/.test(got) && got.trim().endsWith('[wrapped] resume context… When?'));
+
+// ─── (f) the cards and the [ACTOR] line both reach the model ─────────────────
+// The CLI keeps only the last --append-system-prompt: two of them dropped the
+// memory prefix, and the bot knew the person's name and nothing of the cards.
+const { mkdirSync } = await import('node:fs');
+mkdirSync(join(ROOT, 'memory', 'users', 'stan'), { recursive: true });
+writeFileSync(join(ROOT, 'memory', 'MISSION.md'), '# MISSION\n\n## About the company\n- Name: Fieldcraft\n- It ships 400 orders a week.\n');
+writeFileSync(join(ROOT, 'memory', 'users', 'stan', 'USER_PROFILE.md'), '# USER_PROFILE\n\n## Identity\n- Name: Stan Fielding\n');
+await turn({ actor: 'stan', actorName: 'Stan', message: 'How many orders do we ship?', webSessionId: 'f1' });
+const argv = JSON.parse(readFileSync(ARGS_LOG, 'utf8'));
+const appends = argv.map((a, i) => (a === '--append-system-prompt' ? argv[i + 1] : null)).filter((x) => x !== null);
+ok('(f) one system-prompt append per turn', appends.length === 1, { count: appends.length });
+ok('(f) it carries the company card, the person\'s card and the [ACTOR] line', /400 orders a week/.test(appends[0] || '') && /Stan Fielding/.test(appends[0] || '') && /\[ACTOR /.test(appends[0] || ''), (appends[0] || '').slice(0, 200));
+
+// ─── (g) the reply is known complete before the process exits ───────────────
+// The CLI reports the result, then shuts its MCP servers down; the chat used
+// to say "Thinking" through that gap. onSettled fires on the result.
+const order = [];
+await new Promise((resolve) => {
+  runClaudeTurn({ onText() {}, onToolStart() {}, onToolEnd() {}, onImage() {}, onError: () => resolve(), actor: 'stan', message: 'Hi', webSessionId: 'g1',
+    onSettled: () => order.push('settled'), onDone: () => { order.push('done'); resolve(); } });
+});
+ok('(g) the reply settles on the result, before the exit', order[0] === 'settled' && order.includes('done'), order);
 
 console.log(`memory-recall: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

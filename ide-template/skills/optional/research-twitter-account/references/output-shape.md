@@ -42,36 +42,12 @@ Research generated: <YYYY-MM-DD> · Source: Grok x_search
 [Anything Grok flagged that's relevant beyond the table — e.g. "this account recently went private", "two of these are alts of the same person", recurring controversies, etc.]
 ```
 
-## Memory pointer — concept page
+## Memory pointer — one note
 
-Record a durable, discoverable pointer to this research by writing a concept page at `memory/concepts/twitter-research-<handle>.md` (create it, or append a claim if it already exists). Writing the page auto-triggers the INDEX rebuild, so no separate reindex step is needed.
-
-```markdown
-# twitter-research-<handle>
-
-Research index for the X account @<handle>.
-
-## Claims
-
-- target: @<handle>
-- generated: <ISO date>
-- similar_accounts: @h1, @h2, …
-- path: Research/Twitter/<handle>/
-```
-
-## Summary message to user
+Record a durable pointer to this research with `memory_note`, in plain sentences
+(it is what `memory_search` finds later), for example:
 
 ```
-Research complete — @<handle>
-
-Saved to: Research/Twitter/<handle>/
-- target-accounts.md (10 similar accounts, ranked by interaction)
-- 10 subfolders (bio.md + post-style.md each)
-
-Top 3 by interaction:
-  1. @<h1> — <focus>
-  2. @<h2> — <focus>
-  3. @<h3> — <focus>
-
-Want me to dig deeper into any specific one, or pull recent posts from the top of the list?
+Researched the X account @<handle> on <date>: similar accounts are @h1, @h2 and @h3.
+The research is in Research/Twitter/<handle>/.
 ```

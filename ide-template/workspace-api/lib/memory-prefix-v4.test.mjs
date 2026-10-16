@@ -82,7 +82,49 @@ ok('(d) no actor in team mode is the primary admin', /Stan runs operations/.test
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: false }));
 writeFileSync(join(mem, 'USER_PROFILE.md'), '# USER_PROFILE\n\n- The solo owner runs everything.\n');
 const soloFlat = buildTurnPrefix({ actor: 'default', memoryDir: mem }).block;
+ok('(d) the v4 prompt does not describe memory as a wiki of files', !/LLM-wiki|Karpathy|frozen snapshot/.test(soloFlat), soloFlat.slice(0, 400));
 ok('(d) solo mode loads the owner\'s flat cards', /solo owner runs everything/.test(soloFlat) && /Keep answers short/.test(soloFlat), soloFlat.slice(-800));
+
+// ─── (e) a card reaches the model as its content, without v3's scaffolding ───
+const { cardForPrompt } = await import('./memory-loader.js');
+const raw = `---
+card: USER_PROFILE
+purpose: Stable facts about the user
+write_when: User shares a fact
+---
+
+# USER_PROFILE
+
+## Bootstrap (first-run only: delete this section once any card here is populated)
+The other six cards (USER_RELATIONSHIPS, USER_REFLECTIONS) are empty templates. Offer to fill them.
+
+## Identity
+- Name: Mara Lindqvist
+- Based in:
+- Languages:
+
+## Background
+<!-- biographical context -->
+
+## Tools
+<!-- example — DELETE after the first real write:
+## shopify (active)
+- Any outbound email needs approval
+-->
+- Uses Linear for issues
+`;
+const card = cardForPrompt(raw);
+ok('(e) the facts stay', /Name: Mara Lindqvist/.test(card) && /Uses Linear for issues/.test(card), card);
+ok('(e) no front matter, title, comments or commented examples', !/write_when|purpose:|# USER_PROFILE|<!--|shopify|outbound email/.test(card), card);
+ok('(e) no v3 first-run section', !/Bootstrap|USER_RELATIONSHIPS|Offer to fill/.test(card), card);
+ok('(e) no empty fields or empty headings', !/Based in:|Languages:|Background/.test(card), card);
+ok('(e) the card\'s headings sit under its name', /^### Identity$/m.test(card) && !/^## /m.test(card), card);
+ok('(e) a card of only scaffolding is empty', cardForPrompt('---\ncard: RULES\n---\n\n# RULES\n\n## Never\n<!-- one per line -->\n\n## Always\n') === '');
+
+// ─── (f) each card says what it is for — an empty one too ────────────────────
+const { cardPurpose } = await import('./memory-loader.js');
+const purpose = cardPurpose('---\ncard: USER_PREFERENCES\npurpose: Soft preferences — tone, format\nwrite_when: User expresses a preference about how the agent should work\nwrite_how: tighten\n---\n\n# USER_PREFERENCES\n');
+ok('(f) a card\'s line says what goes there and when', /Soft preferences/.test(purpose) && /Write here when: User expresses a preference/.test(purpose) && !/tighten/.test(purpose), purpose);
 
 console.log(`memory-prefix-v4: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
