@@ -1,0 +1,16 @@
+{
+  "name": "vercel-mcp",
+  "version": "1.0.0",
+  "description": "Internal Vercel REST API MCP server — read-only (projects, deployments, build and runtime logs, domains)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
