@@ -74,9 +74,20 @@ function get() {
     return envMap;
 }
 
+// A person invited a moment ago is not in a list cached up to 30 s ago: a miss
+// reads the file again before refusing. Bounded, so a stream of refused
+// sign-ins can't turn into a disk read each.
+const MISS_REREAD_MS = 2_000;
+let lastMissReread = 0;
+
 function isAllowed(email) {
     const e = String(email || '').trim().toLowerCase();
     if (!e) return false;
+    if (get().has(e)) return true;
+    const now = Date.now();
+    if (now - lastMissReread < MISS_REREAD_MS) return false;
+    lastMissReread = now;
+    cache.ts = 0;
     return get().has(e);
 }
 

@@ -279,7 +279,7 @@ ok('the delegate is told there is no send step', /THERE IS NO SEND STEP/.test(gw
 // web_send_message, which routes to the recipient's preferred surface.
 ok('the delegate turn is denied every delivery tool', /disallowedTools: DELIVERY_TOOLS/.test(delSrc));
 ok('...and the list covers web_send_message, not only Telegram',
-  /mcp__web_channel__web_send_message/.test(gwSrc));
+  /mcp__web-channel__web_send_message/.test(gwSrc));
 const claudeSrc = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
 ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', (disallowedTools|blocked)\.join/.test(claudeSrc));
 

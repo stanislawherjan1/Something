@@ -34,6 +34,7 @@
  * constant the Team screen reports when the pool is full.
  */
 
+#define _GNU_SOURCE   /* setresuid / setresgid */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
 
 #define WSAPI_UID 1001
 
@@ -96,6 +100,41 @@ static int resolve_slot(const char *arg, struct slot *out) {
     return 1;
 }
 
+static volatile pid_t child_pid = 0;
+
+static void forward(int sig) {
+    if (child_pid > 0) kill(child_pid, sig);
+}
+
+/* The parent after the fork: drop to (real: the caller, effective and saved:
+ * the slot) — enough to signal the turn, nothing more — forward stop signals,
+ * and leave with the turn's own status. */
+static int supervise(uid_t caller, const struct slot *slot) {
+    if (setgroups(0, NULL) != 0 || setresgid(slot->gid, slot->gid, slot->gid) != 0
+        || setresuid(caller, slot->uid, slot->uid) != 0) {
+        kill(child_pid, SIGKILL);
+        fprintf(stderr, "turn-runner: supervisor privilege drop failed\n");
+        return 1;
+    }
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_handler = forward;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGHUP, &sa, NULL);
+    /* The turn holds the pipes; the supervisor needs none of them. */
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    int status = 0;
+    while (waitpid(child_pid, &status, 0) < 0) {
+        if (errno != EINTR) return 1;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
     /* The uid that started us — getuid() before the switch below. */
     const uid_t caller = getuid();
@@ -134,6 +173,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* The turn runs in a child; this process stays as its supervisor. A turn
+     * fully switched to its slot's uid cannot be signalled by workspace-api
+     * (kill → EPERM), so a new message could not stop the reply before it and
+     * the chat died with "kill EPERM". The supervisor keeps the caller's real
+     * uid — so workspace-api may signal it — and passes SIGTERM/SIGINT/SIGHUP
+     * on to the turn. It holds nothing else: no root, no groups. */
+    child_pid = fork();
+    if (child_pid < 0) {
+        perror("turn-runner: fork");
+        return 1;
+    }
+    if (child_pid > 0) return supervise(caller, &slot);
+
     /* Supplementary groups before the drop: workspace (the project files) and
      * the slot's own private group — and nothing of the bot's. */
     if (initgroups(slot.user, slot.gid) != 0) {
@@ -152,6 +204,10 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "turn-runner: privilege drop failed\n");
         return 1;
     }
+    /* If the supervisor goes (killed outright), the turn goes too. Set after
+     * the uid change, which clears it. */
+    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    if (getppid() == 1) return 1;   /* the supervisor is already gone */
 
     if (setenv("HOME", slot.home, 1) != 0) {
         perror("turn-runner: setenv HOME");

@@ -26,7 +26,7 @@
 // Tools that put a message in front of a person: the hand-off's reply is
 // relayed through the panel turn, so there is exactly one delivery path.
 export const HANDOFF_DENIED_TOOLS = [
-  'mcp__web_channel__web_send_message',
+  'mcp__web-channel__web_send_message',
   'mcp__plugin_telegram_telegram__sendMessage',
   'mcp__plugin_telegram_telegram__reply',
   'mcp__workspace-api__fix_sent_message',

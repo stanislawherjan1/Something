@@ -56,7 +56,10 @@ export function excerpt(r, text = r.text) {
   // the board, not the excerpt, says whether something got done.
   const tasks = Array.isArray(r.tasks) && r.tasks.length ? `\n↳ ${r.tasks.map(defang).join('; ')}` : '';
   const files = Array.isArray(r.files) && r.files.length ? `\n↳ files from this conversation: ${r.files.map(defang).join('; ')}` : '';
-  return `[${r.ts.slice(0, 10)} · ${r.source} · ${whereOf(r)} · id ${r.id}]\n${defang(t)}${tasks}${files}`;
+  // Where it came from, as precisely as known: an import names its service
+  // ("integration: fireflies"), so text from outside reads as what it is.
+  const from = r.tags?.import?.integration ? `${r.source}: ${String(r.tags.import.integration).replace(/[^\w.-]/g, '')}` : r.source;
+  return `[${r.ts.slice(0, 10)} · ${from} · ${whereOf(r)} · id ${r.id}]\n${defang(t)}${tasks}${files}`;
 }
 
 /** Tool output (memory_search / memory_timeline): the same fenced excerpts. */

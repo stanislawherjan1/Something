@@ -1280,7 +1280,7 @@ const DELEGATE_TIMEOUT = num('GROUP_DELEGATE_TIMEOUT_MS', 300000);
 // Tools that put a message in front of a person. Denied on any turn whose text
 // the system itself delivers, so there is exactly one delivery path.
 const DELIVERY_TOOLS = [
-  'mcp__web_channel__web_send_message',
+  'mcp__web-channel__web_send_message',
   'mcp__plugin_telegram_telegram__sendMessage',
   'mcp__plugin_telegram_telegram__reply',
 ];
