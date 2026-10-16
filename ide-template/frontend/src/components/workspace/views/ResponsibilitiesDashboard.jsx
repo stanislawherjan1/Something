@@ -55,7 +55,7 @@ const ICON_MAP = {
   check: CheckCircle2, task: CheckCircle2, done: CheckCircle2,
 };
 
-function dutyIcon(name) {
+export function dutyIcon(name) {
   return (name && ICON_MAP[name]) || CheckCircle2;
 }
 
@@ -249,6 +249,41 @@ function DutyTile({ duty, onOpen, onEdit, onDelete, integrations = [] }) {
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// A Marketplace routine picked before its app was connected (setup, or a
+// teammate's plan): it doesn't run yet, and joins the routines on its own once
+// one of its apps is connected.
+function WaitingTile({ duty, labelOf, onRemoved }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const names = duty.waitsFor.map(labelOf);
+  const needs = names.length <= 2 ? names.join(' or ') : `${names[0]} or a similar app`;
+  const remove = async () => {
+    setBusy(true);
+    try { await fetch(`/api/routines/catalog/${encodeURIComponent(duty.catalogId)}`, { method: 'DELETE', credentials: 'include' }); onRemoved?.(); }
+    finally { setBusy(false); }
+  };
+  const quiet = 'inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors';
+  return (
+    <div className="relative flex min-h-[124px] overflow-hidden rounded-[6px] border border-dashed border-border/70 bg-card/60">
+      <div className="relative w-[92px] shrink-0 border-r border-border/50 opacity-60">
+        <TileBanner icon={dutyIcon(duty.icon)} seed={duty.title} soft center scale={0.62} className="!absolute inset-0 !h-full" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col px-4 pb-2.5 pt-3.5">
+        <span className="truncate text-[14px] font-semibold text-foreground/75">{duty.title}</span>
+        <div className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground/80">Starts once {needs} is connected.</div>
+        <div className="mt-auto flex items-center gap-1 pt-2.5">
+          <button type="button" onClick={() => navigate(`/integrations/${encodeURIComponent(duty.waitsFor[0])}`)}
+            className={cn(quiet, '-ml-2 mr-auto text-foreground/85 hover:bg-muted/45')}>Connect {names[0]}</button>
+          <button type="button" onClick={remove} disabled={busy} aria-label="Remove" title="Remove"
+            className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </button>
         </div>
       </div>
     </div>
@@ -568,8 +603,12 @@ function RoleView({ fileEventNonce, sidebarOpen }) {
 
   const role = useMemo(() => (v4
     ? {
-        duties: (data?.routines || []).filter((r) => !r.retired)
-          .map((r) => ({ id: r.id, catalogId: r.catalogId, title: r.title, summary: r.summary || '', description: r.description, icon: r.icon, tags: r.tags || [], retired: false })),
+        duties: [
+          ...(data?.routines || []).filter((r) => !r.retired)
+            .map((r) => ({ id: r.id, catalogId: r.catalogId, title: r.title, summary: r.summary || '', description: r.description, icon: r.icon, tags: r.tags || [], retired: false })),
+          // Picked before its app was connected: shown, and starts once it is.
+          ...(data?.waiting || []).map((w) => ({ id: null, catalogId: w.catalogId, title: w.title, summary: w.summary, icon: w.icon, tags: w.tags || [], retired: false, waitsFor: w.needs || [] })),
+        ],
         unparsed: data?.unparsed || [],
       }
     : parseRole(data?.content)), [data, v4]);
@@ -582,6 +621,10 @@ function RoleView({ fileEventNonce, sidebarOpen }) {
     const fromCatalog = {};
     for (const g of catalog.data?.groups || []) for (const r of g.routines) fromCatalog[r.id] = r.integrations || [];
     return (d) => [...new Set([...(fromCatalog[d.catalogId] || []), ...d.tags.filter((t) => byId[t])])].map((id) => byId[id]).filter(Boolean);
+  }, [catalog.data]);
+  const integrationLabel = useMemo(() => {
+    const byId = Object.fromEntries((catalog.data?.integrations || []).map((i) => [i.id, i.label]));
+    return (id) => byId[id] || id;
   }, [catalog.data]);
   const isInitialLoad = loading && !data;
   const realError = error && !error.includes('404') ? error : null;
@@ -711,7 +754,9 @@ function RoleView({ fileEventNonce, sidebarOpen }) {
             )}
             {/* Your routines as tiles, the same as the Marketplace's. */}
             <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,306px)] max-sm:grid-cols-1">
-              {visibleDuties.map((d, i) => <DutyTile key={d.id || i} duty={d} onOpen={setActiveDuty} onEdit={setEditing} onDelete={setDeleting} integrations={integrationsOf(d)} />)}
+              {visibleDuties.map((d, i) => d.waitsFor
+                ? <WaitingTile key={`w-${d.catalogId}`} duty={d} labelOf={integrationLabel} onRemoved={() => { reload(); refetch('/api/routines/catalog'); }} />
+                : <DutyTile key={d.id || i} duty={d} onOpen={setActiveDuty} onEdit={setEditing} onDelete={setDeleting} integrations={integrationsOf(d)} />)}
               {v4 && <AddRoutineTile onClick={() => setEditing({})} />}
             </div>
             {visibleDuties.length === 0 && (
@@ -774,8 +819,15 @@ function RoutinesMarketplace({ onChanged }) {
   const navigate = useNavigate();
   const { me } = useMe();
   const isAdmin = me?.role === 'admin';
-  // The full integration records — what the install modal needs.
-  const integrationsQ = useApi(isAdmin ? '/api/integrations' : null);
+  // The full integration records — what the install modal needs. A member
+  // connects their own account of what allows one (most services do); only
+  // what is the team's alone (Email, Telegram…) needs an admin.
+  const integrationsQ = useApi('/api/integrations');
+  const canConnect = (id) => {
+    const integ = (integrationsQ.data?.integrations || []).find((i) => i.id === id);
+    return !!integ && (isAdmin || !!integ.canConnectPersonal);
+  };
+  const reach = isAdmin ? 'workspace' : 'personal';
   const afterConnect = () => { integrationsQ.reload?.(); reload(); refetch('/api/integrations'); };
   // The same three ways in as on Integrations: a one-click integration goes
   // straight to the provider's sign-in popup, an open server switches on with
@@ -783,9 +835,9 @@ function RoutinesMarketplace({ onChanged }) {
   const connect = (id) => {
     const integ = (integrationsQ.data?.integrations || []).find((i) => i.id === id);
     if (!integ) { navigate('/integrations'); return; }
-    if (isRemoteMcpOauth(integ)) { openOAuthPopup(integ, afterConnect); return; }
+    if (isRemoteMcpOauth(integ)) { openOAuthPopup(integ, afterConnect, { reach }); return; }
     if (isOpenServer(integ)) {
-      fetch(`/api/integrations/${encodeURIComponent(integ.id)}`, {
+      fetch(`/api/integrations/${encodeURIComponent(integ.id)}${reach === 'personal' ? '?reach=personal' : ''}`, {
         method: 'PUT', credentials: 'include',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: {} }),
       }).then(async (r) => {
@@ -897,7 +949,7 @@ function RoutinesMarketplace({ onChanged }) {
               {shown.map((r) => (
                 <MarketRow key={r.id} entry={r} integById={integById} catLabel={catLabel[r.category]} open={open === r.id}
                   onToggle={() => setOpen(open === r.id ? null : r.id)} busy={busy === r.id}
-                  onAct={() => act(r)} onConnect={isAdmin ? connect : null} />
+                  onAct={() => act(r)} onConnect={connect} canConnect={canConnect} />
               ))}
             </ul>
           )}
@@ -927,7 +979,10 @@ function LogoRow({ integrations = [], max = LOGOS_SHOWN }) {
     <>
       {shown.map((i) => (
         <LogoTip key={i.id} label={i.connected ? i.label : `${i.label} · not connected`}>
-          <img src={logoUrl(i.logo)} alt={i.label} className={cn('size-3.5 shrink-0 object-contain', !i.connected && 'opacity-60 grayscale')} />
+          {/* On white in both themes, as on Integrations: brand marks are drawn for a white backdrop. */}
+          <span className={cn('inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] bg-white ring-1 ring-black/[0.06]', !i.connected && 'opacity-60 grayscale')}>
+            <img src={logoUrl(i.logo)} alt={i.label} className="size-3 object-contain" />
+          </span>
         </LogoTip>
       ))}
       {rest.length > 0 && (
@@ -955,11 +1010,13 @@ function LogoTip({ label, children }) {
   );
 }
 
-function MarketRow({ entry, integById, catLabel, open, onToggle, busy, onAct, onConnect }) {
+function MarketRow({ entry, integById, catLabel, open, onToggle, busy, onAct, onConnect, canConnect = () => true }) {
   const btn = 'inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-[6px] px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50';
   const works = (entry.integrations || []).map((id) => integById[id] || { id, label: id });
   // Locked: name what to connect — one integration, or "Connect" when any of several would do.
-  const missing = works.filter((i) => !i.connected);
+  const needed = works.filter((i) => !i.connected);
+  // What this person can connect themselves; the rest needs an admin.
+  const missing = needed.filter((i) => canConnect(i.id));
   const connectLabel = missing.length === 1 ? `Connect ${missing[0].label}` : 'Connect';
   // Any of several would do: Connect first lays them out to pick from.
   const [picking, setPicking] = useState(false);
@@ -978,9 +1035,9 @@ function MarketRow({ entry, integById, catLabel, open, onToggle, busy, onAct, on
             <div className="truncate text-[12.5px] text-muted-foreground/75">{entry.summary}</div>
           </div>
         </button>
-        {!entry.available && !onConnect ? (
-          <span className="shrink-0 text-[11.5px] text-muted-foreground/60" title={`Needs ${missing.map((i) => i.label).join(' or ')}`}>
-            Needs {missing.length === 1 ? missing[0].label : 'an integration'} · ask an admin
+        {!entry.available && (!onConnect || !missing.length) ? (
+          <span className="shrink-0 text-[11.5px] text-muted-foreground/60" title={`Needs ${needed.map((i) => i.label).join(' or ')}`}>
+            Needs {needed.length === 1 ? needed[0].label : 'an integration'} · ask an admin
           </span>
         ) : !entry.available ? (
           <button type="button" onClick={() => (missing.length === 1 ? onConnect(missing[0].id) : setPicking(!picking))}

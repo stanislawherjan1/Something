@@ -424,6 +424,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         else if (event === 'image')      appendImageToLastAssistant(data);
         else if (event === 'tool_start') addChip(data);
         else if (event === 'tool_end')   completeChip(data);
+        else if (event === 'settled')    markLastAssistant({ settled: true });
         else if (event === 'done')       markLastAssistant({ state: 'done' });
         else if (event === 'error')      markLastAssistant({ state: 'error', errorKind: 'stream', errorDetail: data.error });
       };
@@ -800,7 +801,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
               const toolLast = (m.tools?.length || 0) > 0
                 && toolSegments(m.text || '', m.tools).at(-1)?.type === 'tools';
               const showActivityBelow = isLastAssistant && !isEmptyStreaming
-                && m.state === 'streaming' && !toolLast;
+                && m.state === 'streaming' && !m.settled && !toolLast;
               // Retry resends the user message that preceded a failed assistant
               // turn — drops the error bubble + the original prompt, then re-sends.
               const canRetry = isLastAssistant && m.state === 'error' && !busy;

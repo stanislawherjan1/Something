@@ -29,6 +29,7 @@ import { writeAllowedHostsFile } from '../lib/integrations/egress.js';
 import { isReady, readinessError } from '../lib/integrations/crypto.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { publish as notify } from '../lib/notify.js';
+import { flushAllWaiting } from '../lib/routines-add.js';
 
 // Tiny in-memory rate limiter — sliding window. Keyed on the verified actor
 // email (req.actor) when present, falling back to req.ip when not. The actor
@@ -117,7 +118,8 @@ function keyFor(req, id, res) {
   const cat = catalog.get(id);
   if (reachOf(req) === 'workspace') {
     if (!team.isAdmin(req.actor)) { res.status(403).json({ error: 'Only admins can change workspace integrations.' }); return null; }
-    return { key: id, owner: actorSlug(req), reach: 'workspace', access: accessOf(req) };
+    // A channel (Telegram) is the whole team's and sends as well as reads: no access to choose.
+    return { key: id, owner: actorSlug(req), reach: 'workspace', access: cat?.teamWide ? 'write' : accessOf(req) };
   }
   if (!cat?.personal) { res.status(400).json({ error: `${cat?.label || id} can only be connected for the whole workspace.` }); return null; }
   const forSlug = typeof req.query?.slug === 'string' && req.query.slug ? req.query.slug : actorSlug(req);
@@ -137,6 +139,8 @@ async function afterChange(key, { files = true, skill = true, forceRestart = fal
   if (slug) runtime.forgetPersonalServers(slug);
   if (files) { try { runtime.applyFiles(key); } catch (err) { process.stderr.write(`[integrations] applyFiles ${key}: ${err.message}\n`); } }
   if (skill) { try { runtime.installOptionalSkill(key); } catch (err) { process.stderr.write(`[integrations] installOptionalSkill ${key}: ${err.message}\n`); } }
+  // Routines picked before their integration was connected start now.
+  try { flushAllWaiting(); } catch (err) { process.stderr.write(`[integrations] waiting routines: ${err.message}\n`); }
   let changed = false;
   try { ({ changed } = runtime.syncMcpServers()); }
   catch (err) { return { error: `Saved, but failed to wire up the MCP server: ${err.message}.` }; }

@@ -391,7 +391,10 @@ function SkillTile({ skill, logoUrl, serviceLabel = null, team = false, activeTa
         <div className="flex items-center gap-2">
           <span className="group/kind relative inline-flex shrink-0">
           <div className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded bg-card shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+            'flex size-5 shrink-0 items-center justify-center rounded shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]',
+            // A service's logo sits on white in both themes, as on Integrations:
+            // brand marks are drawn for a white backdrop.
+            logoUrl ? 'bg-white' : 'bg-card',
             isReadOnly && 'opacity-70',
           )}>
             {/* What kind of skill, by its icon: the service's logo, the product's package, or one's own. */}

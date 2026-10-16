@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useApi } from '@/lib/useApi';
 import {
   Check, ChevronRight,
   Bell, Image as ImageIcon, Globe, FileText, FileEdit, Search, Terminal,
   Sparkles, ListChecks, Eye, MousePointerClick, Wrench, BookOpen, Plug,
+  Brain, Send, Repeat, Settings2, MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -61,6 +63,23 @@ const TOOL_DISPLAY = {
   'mcp__workspace-api__tab_act':        { label: 'Working in the tab',  Icon: MousePointerClick },
   'mcp__workspace-api__use_integrations': { label: 'Using your integrations', Icon: Plug },
 
+  // Memory and the person's own settings — what the bot did, in plain words.
+  'mcp__workspace-api__memory_search':   { label: 'Searching my memory',       Icon: Brain },
+  'mcp__workspace-api__memory_timeline': { label: 'Thinking back',            Icon: Brain },
+  'mcp__workspace-api__memory_now':      { label: "Checking what's going on", Icon: Brain },
+  'mcp__workspace-api__memory_note':     { label: 'Making a note',             Icon: Brain },
+  'mcp__workspace-api__memory_write':    { label: 'Updating memory',         Icon: Brain },
+  'mcp__workspace-api__memory_forget':   { label: 'Forgetting',              Icon: Brain },
+  'mcp__workspace-api__memory_grep':     { label: 'Searching my memory',       Icon: Brain },
+  'mcp__workspace-api__memory_log':      { label: 'Thinking back',            Icon: Brain },
+  'mcp__workspace-api__memory_import':   { label: 'Making a note',             Icon: Brain },
+  'mcp__workspace-api__recent_messages': { label: 'Reading recent messages', Icon: MessageSquare },
+  'mcp__workspace-api__web_send_message': { label: 'Sending a message',      Icon: Send },
+  'mcp__workspace-api__fix_sent_message': { label: 'Fixing a message',       Icon: Send },
+  'mcp__workspace-api__add_routine':     { label: 'Adding a routine',        Icon: Repeat },
+  'mcp__workspace-api__set_my_settings': { label: 'Updating your settings',  Icon: Settings2 },
+  'mcp__web-channel__web_send_message':  { label: 'Sending a message',       Icon: Send },
+
   'mcp__seedream__generate':         { label: 'Creating an image',    Icon: ImageIcon },
   'mcp__nano_banana__generate':      { label: 'Creating an image',    Icon: ImageIcon },
 
@@ -71,33 +90,89 @@ const TOOL_DISPLAY = {
   Edit:      { label: 'Editing a file',     Icon: FileEdit },
   Grep:      { label: 'Searching files',    Icon: Search },
   Glob:      { label: 'Finding files',      Icon: Search },
-  Bash:      { label: 'Running a command',  Icon: Terminal },
+  Bash:      { label: 'Working on it',      Icon: Terminal },
 
   // Claude Code's own plumbing: loading a tool's definition, a skill, its to-do list.
-  ToolSearch: { label: 'Getting a tool ready', Icon: Wrench },
-  Skill:      { label: 'Using a skill',        Icon: BookOpen },
+  ToolSearch: { label: 'Picking the right tool',    Icon: Wrench },
+  Skill:      { label: 'Looking up how to do it',   Icon: BookOpen },
   TodoWrite:  { label: 'Planning the steps',   Icon: ListChecks },
 };
 
 const LOGO_BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '') + '/integrations/';
 
-// Title-case a humanised verb phrase: "list orders" → "Listing orders" is too
-// clever; keep it simple and sentence-cased — "List orders".
+// Every integration's servers, from the catalog: the name it goes by and its
+// logo. The hand-kept map above only knew a dozen; the catalog knows all, so
+// a step in DeepL shows DeepL's logo and name. Filled by useServerCatalog in
+// the components that show steps (the list is cached and shared).
+let SERVERS = {};
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+function useServerCatalog() {
+  const { data } = useApi('/api/integrations');
+  return useMemo(() => {
+    const m = {};
+    for (const e of data?.integrations || []) {
+      const logo = e.logo ? (/^https?:/.test(e.logo) ? e.logo : BASE + e.logo) : null;
+      if (e.mcp?.name) m[e.mcp.name] = { label: e.label, logo };
+      for (const svc of e.mcp?.services || []) if (svc?.name && !m[svc.name]) m[svc.name] = { label: svc.label || e.label, logo: null };
+    }
+    SERVERS = m;
+    return m;
+  }, [data]);
+}
+
+// A tool with no label of its own reads as activity, never as its id: the
+// verb its name starts with, what it acts on, and where — "add_task" on
+// Todoist → "Adding a task in Todoist", "list_orders" → "Checking orders".
+const VERBS = [
+  [/^(search|find|query|lookup)$/, 'Searching'],
+  [/^(list|check)$/, 'Checking'],
+  [/^(navigate|open|visit|click|type|scroll|browse)$/, 'Browsing'],
+  [/^(get|read|fetch|retrieve|view|show|download|export)$/, 'Reading'],
+  [/^(add|create|insert|upload|import|schedule|book)$/, 'Adding'],
+  [/^(update|edit|set|patch|modify|rename|change|reschedule)$/, 'Updating'],
+  [/^(delete|remove|archive|cancel|clear)$/, 'Removing'],
+  [/^(send|post|reply|publish|share|comment)$/, 'Sending'],
+  [/^(complete|close|finish|resolve|done)$/, 'Completing'],
+  [/^(move|assign|transfer)$/, 'Moving'],
+  [/^(generate|make|draw|render|draft|write)$/, 'Creating'],
+  [/^(run|execute|trigger|start|sync)$/, 'Running'],
+];
+// Built-in servers are not places to name; integrations are.
+const SERVER_NAMES = { 'google-workspace': 'Google', google_workspace: 'Google', 'workspace-api': null, 'web-channel': null, playwright: null, pdf: null, reminders: null, tasks: null, 'mini-apps': null, openai: 'OpenAI', x: 'X' };
+function serverName(server) {
+  if (!server) return null;
+  if (server in SERVER_NAMES) return SERVER_NAMES[server];
+  if (SERVERS[server]?.label) return SERVERS[server].label;
+  return server.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 function humanise(name) {
-  const bare = name.replace(/^mcp__\w+__/, '').replace(/_/g, ' ').trim();
-  return bare ? bare.charAt(0).toUpperCase() + bare.slice(1) : 'Working';
+  const m = /^mcp__([\w-]+?)__(.+)$/.exec(name);
+  const where = m ? serverName(m[1].replace(/-mine$/, '')) : null;
+  const server = m ? m[1].replace(/-mine$/, '') : '';
+  // The server's own name repeated in its tools ("notion-search") says nothing.
+  const words = (m ? m[2] : name).split(/[-_\s]+/).filter(Boolean).map((w) => w.toLowerCase())
+    .filter((w, i, all) => !(i === 0 && all.length > 1 && server.split(/[-_]/).includes(w)))
+    .filter((w, i, all) => !(w === 'browser' && all.length > 1))
+    .map((w) => (/^(pdf|csv|url|api|seo|crm)$/.test(w) ? w.toUpperCase() : w));
+  const at = words.findIndex((w) => VERBS.some(([re]) => re.test(w)));
+  const verb = at >= 0 ? VERBS.find(([re]) => re.test(words[at]))[1] : null;
+  let what = (verb ? words.filter((_, i) => i !== at) : words).join(' ').replace(/^web$/, 'the web');
+  if (verb && what && !what.endsWith('s') && !what.startsWith('the ')) what = `a ${what}`;
+  const phrase = verb ? (what ? `${verb} ${what}` : verb) : (where ? 'Working' : (what ? what.charAt(0).toUpperCase() + what.slice(1) : 'Working on it'));
+  return where ? `${phrase} in ${where}` : phrase;
 }
 
 // Resolve a tool name → { label, Icon, logo }. `logo` (a URL) wins over Icon.
 function displayFor(name) {
   const preset = TOOL_DISPLAY[name];
-  const mcp = /^mcp__([a-z0-9_]+)__/.exec(name);
-  const server = mcp?.[1];
-  const logoFile = server && INTEGRATION_LOGOS[server];
+  const mcp = /^mcp__([a-z0-9_-]+?)__/.exec(name);
+  const server = mcp?.[1]?.replace(/-mine$/, '');
+  const logoFile = server && (INTEGRATION_LOGOS[server] || INTEGRATION_LOGOS[server.replace(/-/g, '_')]);
+  const catalogLogo = server ? SERVERS[server]?.logo : null;
   return {
     label: preset?.label || humanise(name),
     Icon: preset?.Icon || Sparkles,
-    logo: logoFile ? LOGO_BASE + logoFile : null,
+    logo: logoFile ? LOGO_BASE + logoFile : catalogLogo,
   };
 }
 
@@ -164,6 +239,7 @@ function realFailure(tool) {
 
 // The current action, replaced in place as the next one starts.
 export function ToolLine({ tools, still = false }) {
+  useServerCatalog();
   const tool = tools[tools.length - 1];
   const { Icon, logo } = displayFor(tool.name);
   const failed = realFailure(tool);
@@ -188,6 +264,7 @@ export function ToolLine({ tools, still = false }) {
 
 // "Used N tools · k failed", collapsed; a click lists the steps.
 export function ToolSummary({ tools, animate = false }) {
+  useServerCatalog();
   const [open, setOpen] = useState(false);
   const failed = tools.filter(realFailure).length;
   return (

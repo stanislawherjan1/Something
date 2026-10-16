@@ -212,8 +212,10 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
             </>
           ) : (
             <>
-              <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />
-              <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />
+              {/* The bot's name, avatar and instructions are an admin's to set;
+                  a member could only look at them. */}
+              {isAdmin && <SettingTile tile={botTile} onOpen={() => setOpen('bot')} canEdit={isAdmin} />}
+              {isAdmin && <SettingTile tile={instructionsTile} onOpen={() => setOpen('instructions')} canEdit={isAdmin} />}
               <SettingTile
                 tile={memoryTile}
                 onOpen={() => onSelect && onSelect({ path: 'memory', type: 'memory' })}

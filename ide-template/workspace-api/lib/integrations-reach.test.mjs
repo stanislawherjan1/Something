@@ -131,6 +131,15 @@ ok('an admin can', r.status === 200 && !store.isActive('linear@ann'));
 ok('...and the person hears it, with the reason', heard.some(h => /Linear disconnected/.test(h) && /Stan disconnected your own Linear/.test(h) && /wrong account/.test(h)), heard.slice(-1));
 r = await call('ann@example.test', 'PUT', '/integrations/telegram?reach=personal', { fields: { TELEGRAM_BOT_TOKEN: 'x', TELEGRAM_ADMIN_CHAT_ID: '1' } });
 ok('a workspace-only integration refuses a personal connection', r.status === 400);
+// ─── Telegram is a channel: the whole team's, and it always sends ───────────
+{
+  const r = await call('stan@example.test', 'PUT', '/integrations/telegram?access=read', { fields: { TELEGRAM_BOT_TOKEN: '123:abc', TELEGRAM_ADMIN_CHAT_ID: '1110001' } });
+  ok('Telegram cannot be connected read-only — it reads and sends', r.status < 300 && store.accessOf('telegram') === 'write', { status: r.status, body: r.body, access: store.accessOf('telegram') });
+  const { settingsCard } = await import('./claude.js');
+  ok('MY_SETTINGS: the operator is reached on Telegram too', /Reaches them on: the web workspace and Telegram/.test(settingsCard('stan')), settingsCard('stan'));
+  ok('MY_SETTINGS: a member who has not linked Telegram, on the web only', /web workspace only \(they have not linked Telegram\)/.test(settingsCard('ann')), settingsCard('ann'));
+}
+
 // ─── one connection's page: fields in place, accounts, a test ───────────────
 r = await call('stan@example.test', 'GET', '/integrations/trello');
 ok('the page shows the workspace connection with secrets masked', r.body.workspace?.fields?.find(f => f.name === 'TRELLO_TOKEN')?.set === true && r.body.workspace.fields.find(f => f.name === 'TRELLO_TOKEN').summary?.last4 === '' && r.body.workspace.fields.find(f => f.name === 'TRELLO_TOKEN').value === undefined, r.body.workspace);
@@ -262,6 +271,16 @@ const T = await import('./team.js');
 T.remove({ email: 'bob@example.test', actor: 'stan@example.test' });
 ok('their own connections go with them', !store.isActive('granola@bob') && store.personalIds('bob').length === 0);
 ok('...the workspace\'s stay', store.isActive('trello'));
+
+// ─── what the bot is told is connected ───────────────────────────────────────
+{
+  const { integrationsCard } = await import('./claude.js');
+  const card = integrationsCard('ann');
+  ok('the card lists the team\'s accounts as the team\'s', /Trello — the team's account/.test(card), card);
+  ok('and the person\'s own as theirs', /Trello — their own account/.test(card), card);
+  ok('never another person\'s own connection', !/Granola — their own account/.test(card), card);
+  ok('built-in abilities are not integrations', /built-in abilities .* are not integrations/.test(card), card);
+}
 
 console.log(`integrations-reach: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

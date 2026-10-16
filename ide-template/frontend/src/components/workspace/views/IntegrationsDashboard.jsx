@@ -1388,8 +1388,9 @@ export function Pick({ id, value, options, onChange, disabled }) {
 
 export function ReachChoice({ integration, isAdmin, reach, access, onReach, onAccess, disabled }) {
   const { me: viewer } = useMe();
-  // Solo: one person, nothing to choose.
-  if (viewer?.teamMode === false) return null;
+  // Solo: one person, nothing to choose. A channel (Telegram) is always the
+  // whole team's, reading and sending: nothing to choose either.
+  if (viewer?.teamMode === false || integration?.teamWide) return null;
   const { iconUrl, logoUrl } = useBranding();
   const { me } = useMe();
   const canPersonal = !!integration.personal;
@@ -1441,7 +1442,7 @@ export async function startOneClick(integration, { reach, access }, onPopupClose
 
 export function ConnectChoiceModal({ integration, isAdmin, onClose, onSuccess, onPopupClosed }) {
   const [reach, setReach] = useState(isAdmin ? 'workspace' : 'personal');
-  const [access, setAccess] = useState('read');
+  const [access, setAccess] = useState(integration.teamWide ? 'write' : 'read');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const oauth = isRemoteMcpOauth(integration);
@@ -1485,7 +1486,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
   // Solo is a team of one: no Team / Yours split, no access to choose.
   const solo = me?.teamMode === false;
   const [reach, setReach] = useState(isAdmin ? 'workspace' : 'personal');
-  const [access, setAccess] = useState('read');
+  const [access, setAccess] = useState(integration.teamWide ? 'write' : 'read');
   const branding = useBranding();
   // Step interpolation context — supports {{botDisplayName}}, {{botName}},
   // {{title}}, {{botAvatarUrl}}, {{logoUrl}}, {{iconUrl}} in step.title /
