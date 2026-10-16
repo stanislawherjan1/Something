@@ -133,6 +133,29 @@ ok('a one-shot gets no watermark (it has no previous run)', !/Only report what i
 r = claimRun([hourly]);
 ok('a first run gets no watermark either (no settledAt yet)', !/Only report what is new/.test(r.wire[0][3]), r.wire[0][3]);
 
+// ── pacing: the plan does not land as a burst ─────────────────────────────────
+{
+  const past = new Date(Date.now() - 60_000).toISOString();
+  const plan = (id, extra = {}) => ({ id, kind: 'user', origin: 'planner', status: 'pending', title: id, due: past, recipients: ['ola'], ...extra });
+  let p = claimRun([
+    plan('p1'), plan('p2'), plan('p3'),
+    plan('leave', { timed: true }),
+    plan('weather', { urgency: 'ambient' }),
+    { id: 'mine', kind: 'user', status: 'pending', title: 'Call the dentist', due: past, recipients: ['ola'] },
+    plan('kai1', { recipients: ['kai'] }),
+  ]);
+  const sent = p.wire.map((w) => w[0]);
+  ok('pacing: one planner message per person per pass', sent.filter((id) => /^p\d$/.test(id)).length === 1, sent);
+  ok('pacing: a timed item, an ambient one and the person\'s own go on time', ['leave', 'weather', 'mine'].every((id) => sent.includes(id)), sent);
+  ok('pacing: another person is paced on their own', sent.includes('kai1'), sent);
+  const held = p.file.filter((x) => /^p\d$/.test(x.id) && x.status === 'pending');
+  ok('pacing: the rest wait the gap, nothing dropped', held.length === 2 && held.every((x) => Date.parse(x.due) - Date.now() > 40 * 60_000 && x.pacedFrom), held.map((x) => [x.id, x.due]));
+  // The next pass, after the gap: exactly one more goes.
+  const later = p.file.map((x) => (x.status === 'firing' ? { ...x, status: 'sent', settledAt: new Date(Date.now() - 50 * 60_000).toISOString() } : /^p\d$/.test(x.id) ? { ...x, due: past } : x));
+  p = claimRun(later);
+  ok('pacing: after the gap, the next one goes — one', p.wire.map((w) => w[0]).filter((id) => /^p\d$/.test(id)).length === 1, p.wire.map((w) => w[0]));
+}
+
 // ── the file cannot be read ───────────────────────────────────────────────────
 writeFileSync(file, '[{"id": "x", "status": "pending"');
 let res = spawnSync('node', ['-', file, '12345'], { input: claim, encoding: 'utf8' });
