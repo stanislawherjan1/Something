@@ -162,6 +162,34 @@ try { await V.updateDigest('user:stan', stan, { at: AT + 10000 }); } catch { thr
 ok('(d) a model failure keeps the old digest', threw && V.readDigest('user:stan').items[0].name === 'Harbor');
 failDigest = false;
 
+// (d) an item rests on records; when they are all hidden, the item goes —
+// the digest only adds and updates, so a deleted thing used to stay for good.
+const vRec = await put('user:stan', new Date(AT + 20000).toISOString(), 'Stan: Vellmark starts the warehouse pilot on 4 November.');
+const kRec = await put('user:stan', new Date(AT + 21000).toISOString(), 'Stan: Kestrel signed the contract.');
+llmCalls = [];
+digestAnswer = { items: [
+  { name: 'Harbor', state: 'closed', line: 'Call cancelled.', date: '2026-09-29' },
+  { name: 'Vellmark', state: 'active', line: 'Warehouse pilot starts Nov 4.', date: '2026-09-30', sources: [`#${vRec.id}`, 'zzzzzzzzzzzz'] },
+  { name: 'Kestrel', state: 'active', line: 'Contract signed.', date: '2026-09-30', sources: [kRec.id] },
+] };
+d = await V.updateDigest('user:stan', stan, { at: AT + 30000 });
+ok('(d) the model is shown each excerpt\'s id', llmCalls.some(c => c.user.includes(`#${vRec.id}`)), llmCalls.map(c => c.user.slice(0, 300)));
+const vItem = d.items.find(i => i.name === 'Vellmark');
+ok('(d) an item keeps the ids it rests on, never one it was not shown', vItem && JSON.stringify(vItem.sources) === JSON.stringify([vRec.id]), vItem);
+ok('(d) an item from before sources were kept has none, and stays', d.items.find(i => i.name === 'Harbor') && !d.items.find(i => i.name === 'Harbor').sources);
+await L.hide('user:stan', vRec.id, 'stan');
+ok('(d) its record hidden: the item is gone from what is read', !V.readDigest('user:stan', stan).items.some(i => i.name === 'Vellmark') && V.readDigest('user:stan', stan).items.some(i => i.name === 'Kestrel'));
+ok('(d) ...even before the next update (the stored file still has it)', V.readDigest('user:stan').items.some(i => i.name === 'Vellmark'));
+llmCalls = [];
+d = await V.updateDigest('user:stan', stan, { at: AT + 40000 });
+ok('(d) the next update drops it from the file, without a model call', llmCalls.length === 0 && !V.readDigest('user:stan').items.some(i => i.name === 'Vellmark') && d.items.some(i => i.name === 'Kestrel'));
+await put('user:stan', new Date(AT + 50000).toISOString(), 'Stan: Kestrel kickoff is on Monday.');
+llmCalls = [];
+digestAnswer = { items: [{ name: 'Kestrel', state: 'active', line: 'Kickoff Monday.', date: '2026-10-01' }, { name: 'Harbor', state: 'closed', line: 'Call cancelled.', date: '2026-09-29' }] };
+d = await V.updateDigest('user:stan', stan, { at: AT + 60000 });
+ok('(d) the model never sees an item that is gone', llmCalls.length === 1 && !/Vellmark/.test(llmCalls[0].user), llmCalls.map(c => c.user.slice(0, 400)));
+ok('(d) an updated item keeps the sources it had', JSON.stringify(d.items.find(i => i.name === 'Kestrel')?.sources) === JSON.stringify([kRec.id]), d.items);
+
 // ─── (f) the nightly run ─────────────────────────────────────────────────────
 const old = await put('user:kasia', '2026-08-01T10:00:00Z', 'Kasia: an old thing to forget.');
 await L.hide('user:kasia', old.id, 'kasia');

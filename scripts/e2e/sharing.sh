@@ -10,7 +10,7 @@
 source "$(dirname "$0")/lib.sh"
 need_member
 
-CLIENT="Vellmark"            # fictional; distinct per run through the date
+CLIENT="Vellmark-$TAG"       # fictional; the run tag keeps it findable for the cleanup even when the model rewords
 PROJECT="Quarry-$TAG"
 
 ADMIN_MODE0="$(api "$ADMIN_JWT" GET /memory/v4/privacy | jsonq 'a.get("mode")')"

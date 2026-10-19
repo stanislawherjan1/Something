@@ -211,7 +211,7 @@ export default function memoryV4Router() {
 
   // What is going on: right now + the digest.
   router.get('/memory/v4/overview', requireActor, withViewer((req, res, v) => res.json({
-    ok: true, mode: ledger.v4Mode(), now: views.now(v.read), digest: views.readDigest(v.own),
+    ok: true, mode: ledger.v4Mode(), now: views.now(v.read), digest: views.readDigest(v.own, v.read),
   })));
 
   // Facts: every note and review item the person can read, newest first.
@@ -226,7 +226,7 @@ export default function memoryV4Router() {
     // note whose topics are all closed folds under "Past" — except the closing
     // fact itself and anything after it. Without this, a dead project's every
     // detail from months ago reads as current.
-    const closed = new Map(views.readDigest(v.own).items.filter(i => i.state === 'closed').map(i => [views.nameKey(i.name), i.date]));
+    const closed = new Map(views.readDigest(v.own, v.read).items.filter(i => i.state === 'closed').map(i => [views.nameKey(i.name), i.date]));
     const closedSince = (r) => {
       const names = (r.tags?.entities || []).map(e => views.nameKey(typeof e === 'string' ? e : e?.name));
       if (!names.length || !names.every(k => closed.has(k))) return null;
@@ -332,7 +332,7 @@ export default function memoryV4Router() {
   // Topics, with their latest line and state from the digest.
   router.get('/memory/v4/topics', requireActor, withViewer((req, res, v) => {
     const recs = new Map(ledger.read({ scopes: v.read }).map(r => [r.id, r]));
-    const digest = views.readDigest(v.own).items;
+    const digest = views.readDigest(v.own, v.read).items;
     const profiles = views.readProfiles(v.own).topics;
     const items = views.topics(v.read, { min: views.TOPIC_MIN, hide: views.dismissedKeys(v.own) }).map(t => {
       const d = digest.find(x => views.nameKey(x.name) === t.key);
