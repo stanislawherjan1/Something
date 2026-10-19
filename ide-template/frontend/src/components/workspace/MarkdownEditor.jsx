@@ -16,6 +16,7 @@ import EditorFilePanel from './EditorFilePanel.jsx';
 import EditorSlashMenu from './EditorSlashMenu.jsx';
 import { cn } from '@/lib/utils';
 import EditorHeader from './EditorHeader.jsx';
+import ShareButton from './ShareButton.jsx';
 import { useTheme } from '@/context/ThemeContext';
 
 // BlockNote ships its own light/dark themes — they don't inherit our CSS
@@ -217,13 +218,20 @@ export default function MarkdownEditor({ path, fileEventNonce, sidebarOpen }) {
     }
   }
 
-  const meta =
+  const saveState =
     status.kind === 'error'   ? <span className="text-destructive">Error: {status.error}</span> :
     status.kind === 'loading' ? 'Loading…' :
     locked                    ? <span className="inline-flex items-center gap-1.5 text-muted-foreground/75"><LockKeyhole className="size-3.5" strokeWidth={1.75} />Locked by {locked.byName}</span> :
     externalUpdate            ? <UpdatedBadge /> :
     dirtyRef.current          ? 'Saving…' :
     savedAt                   ? 'Saved' : null;
+  // The save state, then Share: the file's link for anyone, read only.
+  const meta = (
+    <span className="inline-flex items-center gap-3">
+      {saveState}
+      {status.kind !== 'error' && status.kind !== 'loading' && <ShareButton path={path} />}
+    </span>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">

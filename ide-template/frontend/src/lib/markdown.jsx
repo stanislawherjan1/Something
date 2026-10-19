@@ -43,10 +43,10 @@ export const MARKDOWN_PROSE = [
  * Render a markdown string as formatted content (GFM: tables, strikethrough, etc.).
  * Pass already-stripped text, or wrap with stripFrontmatter() at the call site.
  */
-export function MarkdownView({ children, className = '' }) {
+export function MarkdownView({ children, className = '', components }) {
   return (
     <div className={`${MARKDOWN_PROSE} ${className}`.trim()}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children || ''}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{children || ''}</ReactMarkdown>
     </div>
   );
 }

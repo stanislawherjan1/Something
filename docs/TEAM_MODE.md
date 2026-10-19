@@ -23,6 +23,15 @@ admin unlocks it. Whoever tries hears "Locked by <name>. Read-only until an
 admin unlocks it." A locked folder covers everything inside it. Locks live in
 the row menu of the file list, and a locked row carries a keyhole.
 
+A Markdown file can be **shared by link**: press **Share** in the editor's top
+bar and the link is copied. Anyone with it reads the file as it is now, read
+only, without signing in; a teammate who can open the file here goes straight
+to it. A link works for 30 days unless you pick 7 days or no end in its menu,
+and then stops by itself; share again for a new one. **Stop sharing** ends it
+sooner, and so does moving or deleting the file. When the coworker edits a
+shared file it is told the file is public, so it keeps private details out. Your private files are yours alone to share.
+Settings lists your links, and an admin can switch sharing off for everyone.
+
 The first time someone you invited signs in, they get a short setup of their
 own: their name, their role and what they need help with (and, if they want,
 a look at public pages about them, which they check before anything is kept).
@@ -200,6 +209,25 @@ In collaborative mode the file tree splits in two:
 The `users/` tree is hidden from the normal file listing (structural) and
 revealed to admins only via the system-files toggle. Scoping is enforced
 server-side on read, write, move, and delete — the UI just mirrors it.
+
+**Sharing by link** (`lib/shares.js`, `routes/shares.js`). A Markdown file a
+person can open is shared under a random token (`/app/s/<token>`); the same
+file always gets the same link while it works. A link ends by itself after its
+span (`days`: 30 by default, 7, or 0 for no end; `PATCH /api/shares/:token`
+changes it from now); an ended link reads like a revoked one and sharing again
+makes a new token. After the assistant edits a Markdown file, the PostToolUse
+hook `hooks/shared-file-note.mjs` asks `GET /api/internal/shared?path=` (the
+turn's token; only a path that turn can open) and, when the file has a working
+link, tells the model it is public. The public read (`GET /api/public/share/:token`,
+the one `/api` path nginx serves without the sign-in check) returns the file's
+name and **current** text, never its path, and nothing when the link was ended,
+the file moved, deleted or became unshareable, or sharing is off. Never
+shareable: another person's private tree (admins included), the memory tree,
+hidden or dot folders, hard-hidden files, anything that is not `.md`. Links are
+listed and ended by their maker; an admin also sees and ends links to team
+files, never to someone's private file. `fileSharing: false` in
+`.team-config.json` (Settings → Shared links, admin) stops every link at once.
+Tokens live in the store dir, out of the file tree and the bot's reach.
 
 ---
 

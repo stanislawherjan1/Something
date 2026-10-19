@@ -38,6 +38,17 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /opt/ide/hooks/shared-file-note.mjs"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -53,5 +64,5 @@
       }
     ]
   },
-  "_hooks_comment": "Memory writes go through the memory_write tool (workspace-api owns the one write path), so there is no post-write hook: the engine logs every write and the PreToolUse guard blocks raw file edits under memory/. Memory upkeep is silent by contract — no notification on any surface. WS5 C (Bundle 8): Stop hook fires verify-denials.sh — blocks the response if the model claims absence (skill/file/tool doesn't exist) without first running a lookup tool. 2026-06-04: second Stop hook verify-telegram-reply.sh — blocks the Telegram silent-response failure mode (turn triggered from Telegram bot tmux session BUT model didn't call any mcp__plugin_telegram_telegram__* tool). All hooks are fire-and-forget-safe — never break the turn over their own bugs. 2026-09-24: PreToolUse matcher `Skill` fires skill-fence.mjs — blocks the CLI's built-in `schedule` skill (Anthropic CLOUD routines, unreachable from a self-hosted box) and points the model at this product's actual routines path: memory_write into RESPONSIBILITIES + morning-planner in the same turn. Instruction alone lost to the built-in's own description, which advertises the word \"routines\"."
+  "_hooks_comment": "Memory writes go through the memory_write tool (workspace-api owns the one write path), so there is no post-write hook: the engine logs every write and the PreToolUse guard blocks raw file edits under memory/. Memory upkeep is silent by contract — no notification on any surface. WS5 C (Bundle 8): Stop hook fires verify-denials.sh — blocks the response if the model claims absence (skill/file/tool doesn't exist) without first running a lookup tool. 2026-06-04: second Stop hook verify-telegram-reply.sh — blocks the Telegram silent-response failure mode (turn triggered from Telegram bot tmux session BUT model didn't call any mcp__plugin_telegram_telegram__* tool). 2026-10-19: PostToolUse on Edit|MultiEdit|Write fires shared-file-note.mjs — when the edited file is shared by link, the model is told it is public, so a private detail does not land in it unnoticed. All hooks are fire-and-forget-safe — never break the turn over their own bugs. 2026-09-24: PreToolUse matcher `Skill` fires skill-fence.mjs — blocks the CLI's built-in `schedule` skill (Anthropic CLOUD routines, unreachable from a self-hosted box) and points the model at this product's actual routines path: memory_write into RESPONSIBILITIES + morning-planner in the same turn. Instruction alone lost to the built-in's own description, which advertises the word \"routines\"."
 }

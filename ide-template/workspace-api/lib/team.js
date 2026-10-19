@@ -712,6 +712,20 @@ export function getDefaultTimezone() {
   return isValidTimezone(env) ? canonicalTimezone(env) : 'UTC';
 }
 
+/** Whether people may share files by link (an admin can switch it off for the workspace). On by default. */
+export function getFileSharing() {
+  return readConfig().fileSharing !== false;
+}
+export function setFileSharing(enabled, actor) {
+  const cfg = readConfig();
+  cfg.fileSharing = !!enabled;
+  cfg.updatedAt = new Date().toISOString();
+  if (actor) cfg.updatedBy = normalize(actor);
+  writeConfig(cfg);
+  appendAudit('file_sharing', actor || '', { enabled: !!enabled });
+  return !!enabled;
+}
+
 export function setDefaultTimezone(tz, actor) {
   if (!isValidTimezone(tz)) throw new Error('Unknown time zone.');
   const cfg = readConfig();

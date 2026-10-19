@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Settings, Upload, Trash2, AlertTriangle, Check, ChevronDown, Search, Lock, LockOpen } from 'lucide-react';
+import { Settings, Upload, Trash2, AlertTriangle, Check, ChevronDown, Search, Lock, LockOpen, Copy, Link2Off } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { mutate, useApi } from '@/lib/useApi';
 import EditorHeader from '../EditorHeader.jsx';
+import { shareUrl } from '@/lib/shareUrl';
+import { Toggle } from './IntegrationsDashboard.jsx';
 import PersonInitial from '../PersonInitial.jsx';
 import { SkeletonLine, SkeletonCircle } from '../SkeletonLoader.jsx';
 
@@ -66,6 +68,7 @@ export default function SettingsView({ sidebarOpen }) {
               <Group title="Assistant"><AssistantRows me={me} patch={patch} /></Group>
               {tgActive && <Group title="Telegram"><TelegramRows me={me} patch={patch} /></Group>}
               {me.role === 'admin' && <Group title="Workspace"><WorkspaceRows me={me} onError={setError} /></Group>}
+              <SharedLinks isAdmin={me.role === 'admin'} onError={setError} />
             </>
           )}
         </div>
@@ -285,6 +288,55 @@ function WorkspaceRows({ me, onError }) {
     <Row label="Default time zone" hint="For everyone who hasn't set their own.">
       <Combobox value={me.defaultTimezone || 'UTC'} options={zones} format={formatZone} onChange={save} />
     </Row>
+  );
+}
+
+// Files shared by link: the ones this person made (an admin also sees every
+// link to a team file), each to copy or stop; an admin's switch for everyone.
+function SharedLinks({ isAdmin, onError }) {
+  const q = useApi('/api/shares');
+  const [copied, setCopied] = useState(null);
+  const enabled = q.data?.enabled !== false;
+  const links = q.data?.links || [];
+  const act = async (url, init) => {
+    onError(null);
+    try {
+      const r = await fetch(url, { credentials: 'include', ...init });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok || out.ok === false) throw new Error(out.error || `Failed (${r.status})`);
+      // mutate() stores what it is given: hand it the fresh list, never nothing.
+      const fresh = await fetch('/api/shares', { credentials: 'include' }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (fresh) mutate('/api/shares', fresh);
+    } catch (err) { onError(err.message); }
+  };
+  const copy = async (token) => {
+    try { await navigator.clipboard.writeText(shareUrl(token)); setCopied(token); setTimeout(() => setCopied(null), 1400); } catch { /* clipboard refused */ }
+  };
+  if (!q.data || (!isAdmin && !links.length)) return null;
+  return (
+    <Group title="Shared links">
+      {isAdmin && (
+        <Row label="Sharing by link" hint={enabled ? 'People can share Markdown files: anyone with a link reads the file.' : 'Off: every link stops working and nothing new can be shared.'}>
+          <Toggle small on={enabled} label="Sharing by link"
+            onClick={() => act('/api/shares/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !enabled }) })} />
+        </Row>
+      )}
+      {links.map((l) => (
+        <Row key={l.token} label={l.path.split('/').pop()}
+          hint={`${l.path}${l.expired ? ' · ended, the link shows nothing' : l.exists ? '' : ' · file moved or deleted, the link shows nothing'} · shared ${String(l.createdAt).slice(0, 10)}${l.by ? ` by ${l.by}` : ''}${!l.expired ? (l.expiresAt ? ` · works until ${String(l.expiresAt).slice(0, 10)}` : ' · no end date') : ''}`}>
+          <button type="button" className={quietBtn} onClick={() => copy(l.token)}>
+            {copied === l.token ? <Check className="size-3.5" strokeWidth={2} /> : <Copy className="size-3.5" strokeWidth={1.75} />}
+            {copied === l.token ? 'Copied' : 'Copy link'}
+          </button>
+          <button type="button" className={quietBtn} onClick={() => act(`/api/shares/${l.token}`, { method: 'DELETE' })}>
+            <Link2Off className="size-3.5" strokeWidth={1.75} />Stop
+          </button>
+        </Row>
+      ))}
+      {isAdmin && !links.length && (
+        <div className="px-4 py-3.5 text-[12px] text-muted-foreground/70">No files are shared. Share one from its top bar in the editor.</div>
+      )}
+    </Group>
   );
 }
 

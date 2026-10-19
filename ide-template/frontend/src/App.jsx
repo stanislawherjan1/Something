@@ -14,6 +14,7 @@ import WorkspacePage from './components/workspace/WorkspacePage';
 import ExtensionChat from './components/workspace/ExtensionChat';
 import { isExtensionEmbed } from './lib/extensionEmbed';
 import { BrandingProvider, useBranding } from './components/workspace/identity';
+import SharedFileView from './components/SharedFileView.jsx';
 
 // Workspace is the default view. The legacy code-server iframe is still
 // reachable via ?view=legacy (linked from UserMenu → "Open legacy IDE")
@@ -201,7 +202,18 @@ function DevRealOnboarding() {
   return <Onboarding setup={state.setup} onb={state.onb} onComplete={load} />;
 }
 
+// A file shared by link: /app/s/<token>. It is for anyone with the link, so it
+// renders outside sign-in, setup and the workspace altogether.
+const sharedToken = () => {
+  if (typeof window === 'undefined') return null;
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const m = window.location.pathname.slice(base.length).match(/^\/s\/([A-Za-z0-9_-]{20,64})\/?$/);
+  return m ? m[1] : null;
+};
+
 function App() {
+  const token = sharedToken();
+  if (token) return <BrandingProvider><SharedFileView token={token} /></BrandingProvider>;
   // basename follows vite's `base` ('/app/'; '/demo/' for the public demo).
   // The trailing slash is dropped — React Router expects none. All in-app
   // links use route-relative paths (e.g. `/skills`); browser sees `/app/skills`.

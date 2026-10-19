@@ -23,6 +23,11 @@ keys to your services. Nothing is sent through anyone else's servers to work.
 - **Setting up.** During setup the coworker searches the web for your company and
   reads its public website, and looks you up on the web only if you ask it to — once, about you, and you
   see everything it found before anything is kept.
+- **Sharing a file by link.** A file you share can be read by anyone who has
+  the link, without signing in, for 30 days unless you choose otherwise, or
+  until you stop sharing it. When the coworker edits a shared file it is told
+  the file is public. Your private files
+  can be shared by you alone, and an admin can switch sharing off for everyone.
 - **Found a problem?** Report it privately through the repository's security
   tab rather than in a public issue, and it will be handled quietly.
 
@@ -1350,6 +1355,36 @@ where the integration offers the choice.
 injection impossible. The operator's machine holds every client's `.env` and
 SSH access: disk encryption, a key per server and no untrusted tools with
 access to the repository are part of the deployment's security.
+
+### 25. Files shared by link
+
+A shared Markdown file is readable without signing in: the one `/api` path nginx
+serves outside `auth_request` is `GET /api/public/share/<token>` (GET only, cookies
+and `X-IDE-User` stripped). The token is the permission: 18 random bytes, base64url,
+checked against a strict pattern before any lookup.
+- **What leaves:** the file's name and current text. Never its path (a path names
+  whose private tree it is in), never the maker. Responses carry `no-store`,
+  `noindex` and `no-referrer`; the viewer renders through react-markdown, which does
+  not render raw HTML.
+- **What can't be shared:** another person's private tree (admins included, the same
+  path rule as the file API), `memory/`, any dot or hard-hidden path, non-Markdown.
+  The rule is re-checked on every public read, so a file moved into a hidden folder
+  stops being served.
+- **Ending it:** its maker, or an admin for a team file (never for someone's private
+  file); moving or deleting the file; an admin switching sharing off, which stops
+  every link at once. Tokens are stored in the store dir (mode 600), outside the
+  project tree, so neither the bot nor the file API can read them.
+- **Old links:** a link ends by itself after 30 days unless its maker chose 7 days
+  or no end; an ended link reads like a revoked one.
+- **The assistant writing into a shared file:** a PostToolUse hook
+  (`hooks/shared-file-note.mjs`) tells the model, after it edits a Markdown file
+  with a working link, that the file is public and private details stay out. The
+  hook asks `/api/internal/shared` with the turn's token, about a path that turn
+  can open, and learns only yes or no; it never blocks the edit and is silent on
+  any failure.
+- **Abuse:** a per-address cap on the public read (60 a minute by default,
+  `SHARE_PUBLIC_PER_MIN`). Behaviour tests (incl. expiry and the hook, run as a
+  separate process): `node lib/shares.test.mjs`.
 
 ## Security Checklist
 
