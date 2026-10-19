@@ -30,6 +30,8 @@ import { injectBotFrame } from '../lib/bot-inject.js';
 import { ensureBrowserForMcp, recordSessionState } from './docs-comments-login.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
 import { resolveTurnToken, isInternalCall } from '../lib/turn-identity.js';
+import { isShared } from '../lib/shares.js';
+import { pathInScope } from '../lib/scope-rule.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -815,6 +817,17 @@ export default function internalRouter() {
       process.stderr.write(`[internal] group-say failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
     }
+  });
+
+  // Whether a file the assistant just changed is shared by link (hooks/shared-file-note.mjs):
+  // anyone with the link reads it, so a private detail written into it leaks. A turn
+  // (or the bot) asks only about a path it could open itself, and learns yes or no.
+  router.get('/internal/shared', loopbackOnly, (req, res) => {
+    const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
+    if (!turn) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    const rel = String(req.query.path || '').replace(/^\/+/, '');
+    if (!rel || !pathInScope(rel, { ownSlug: turn.group ? null : turn.actor })) return res.json({ ok: true, shared: false });
+    return res.json({ ok: true, ...isShared(rel) });
   });
 
   // Repair a message the bot itself sent — the only way it can clean up after
