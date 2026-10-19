@@ -304,7 +304,7 @@ history.
 
 | Reminder | Route |
 |---|---|
-| Targets a Telegram group (`chat`) | `/api/internal/group-say` — the group assistant composes it |
+| Targets a Telegram group (`chat`) | `/api/internal/group-say` — the group assistant composes it (a person's own "post this in the group" goes word for word through `/api/internal/group-post` instead) |
 | Solo, or for the operator | `[REMINDER …]` / `[AMBIENT …]` frame into the operator's session; if that session is busy or offline, a headless turn |
 | A teammate's planner trigger (`exec`) | `/api/internal/invoke-turn` — runs the planner as that teammate |
 | A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram per `channel`); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |

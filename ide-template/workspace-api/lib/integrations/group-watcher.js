@@ -954,6 +954,35 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
   }
 }
 
+/**
+ * Post a message a person asked for into one of their groups, word for word.
+ *
+ * sayInGroup hands its text to the group's brain, which writes the message
+ * itself: right for a reminder ("check X and say if it matters"), wrong for a
+ * draft someone read and approved ("Good to send to the group?" "yes"): what
+ * lands must be what was approved. Who may post into which group is decided by
+ * the route from the turn's own identity; this only refuses an unregistered
+ * group or observe-only mode. The text joins the group's history as the
+ * assistant's, so the group's brain knows it was said there.
+ */
+export const GROUP_POST_MAX = 4000;   // under Telegram's 4096-character message limit
+let postSender = null;
+/** Replace the Telegram send (tests). `fn(chatId, text, opts) → { ok, messageId }`, or null to restore. */
+export function configurePostSender(fn) { postSender = fn; }
+export async function postToGroup({ chatId, text }) {
+  const gid = String(chatId == null ? '' : chatId).trim();
+  if (!/^-?\d{4,20}$/.test(gid)) return { ok: false, error: 'invalid chat id' };
+  if (!getGroup(gid)) return { ok: false, error: 'not a registered group' };
+  if (OBSERVE_ONLY) return { ok: false, error: 'observe-only mode: the assistant is not posting in groups' };
+  const body = String(text == null ? '' : text).trim();
+  if (!body) return { ok: false, error: 'empty text' };
+  if (body.length > GROUP_POST_MAX) return { ok: false, error: `too long for one Telegram message (${body.length} characters, at most ${GROUP_POST_MAX}): split it` };
+  const sent = await (postSender || sendTelegramMessage)(gid, body, { logKind: 'group' });
+  if (!sent || !sent.ok) return { ok: false, error: (sent && sent.error) || 'send failed' };
+  pushHistory(gid, { role: 'assistant', message_id: sent.messageId ?? `post-${Date.now()}`, text: body });
+  return { ok: true, messageId: sent.messageId ?? null };
+}
+
 // Build the runClaudeTurn params for a group turn (exported for the guard test).
 // opts.resumed — a persistent session is live: the context window below carries
 // only the messages SINCE the last turn; everything earlier is session memory.
@@ -1281,6 +1310,7 @@ const DELEGATE_TIMEOUT = num('GROUP_DELEGATE_TIMEOUT_MS', 300000);
 // the system itself delivers, so there is exactly one delivery path.
 const DELIVERY_TOOLS = [
   'mcp__web-channel__web_send_message',
+  'mcp__web-channel__group_send_message',
   'mcp__plugin_telegram_telegram__sendMessage',
   'mcp__plugin_telegram_telegram__reply',
 ];
