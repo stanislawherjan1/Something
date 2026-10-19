@@ -513,12 +513,27 @@ function viewsDir(key) {
   if (key === 'shared') return join(memoryDir(), 'views');
   return join(ledger.scopeDir(key), '..', 'views');
 }
-export function readDigest(key) {
+function readStoredDigest(key) {
   try { return JSON.parse(readFileSync(join(viewsDir(key), 'digest.json'), 'utf8')); } catch { return { at: null, items: [] }; }
+}
+// An item knows the records it rests on (`sources`). Once every one of them is
+// hidden or erased, the item goes: the digest only adds and updates, so a thing
+// someone deleted (or a test's fixture the cleanup erased) used to stay on the
+// list for good. An item with no sources (a digest written before they were
+// kept) stays until the next update gives it some.
+function liveItems(items, scopes) {
+  if (!Array.isArray(scopes) || !items.some(i => Array.isArray(i.sources) && i.sources.length)) return items;
+  const visible = new Set(ledger.read({ scopes }).map(r => r.id));
+  return items.filter(i => !Array.isArray(i.sources) || !i.sources.length || i.sources.some(id => visible.has(id)));
+}
+/** The digest stored under `key`; with `scopes`, without the items whose every source is gone. */
+export function readDigest(key, scopes = null) {
+  const d = readStoredDigest(key);
+  return scopes ? { ...d, items: liveItems(d.items || [], scopes) } : d;
 }
 
 export const DIGEST_SYSTEM = `You keep the "what is going on" list of an AI assistant that works with a small company. You get the current list and the conversation excerpts since it was last updated.
-Return the updated list: the projects, deals, clients, people matters and plans that are active, paused or closed. For each: "name" (short), "state" (active | paused | closed), "line" (one English sentence, at most 120 characters, the latest state with explicit dates), "date" (ISO date of the latest change).
+Return the updated list: the projects, deals, clients, people matters and plans that are active, paused or closed. For each: "name" (short), "state" (active | paused | closed), "line" (one English sentence, at most 120 characters, the latest state with explicit dates), "date" (ISO date of the latest change), "sources" (the #ids of the excerpts the item rests on; leave it empty for an item the excerpts do not mention).
 - Update an item when the excerpts change it; mark it closed when it ended, was cancelled or was dropped — a one-line remark that something shut down counts.
 - Add items only for things that matter a month from now. Never: assistant/tool/integration state, one-off tasks, housekeeping.
 - Keep items the excerpts do not mention unchanged. At most 25 items; drop the oldest closed ones first.
@@ -534,6 +549,7 @@ export const DIGEST_SCHEMA = {
         properties: {
           name: { type: 'string' }, state: { type: 'string', enum: ['active', 'paused', 'closed'] },
           line: { type: 'string' }, date: { type: 'string' },
+          sources: { type: 'array', items: { type: 'string' } },
         },
         required: ['name', 'state', 'line', 'date'],
       },
@@ -550,7 +566,8 @@ export function cleanDigest(raw) {
     const line = String(it?.line || '').replace(/\s+/g, ' ').trim().slice(0, 160);
     const state = ['active', 'paused', 'closed'].includes(it?.state) ? it.state : null;
     const date = /^\d{4}-\d{2}-\d{2}/.test(String(it?.date || '')) ? String(it.date).slice(0, 10) : null;
-    if (name && line && state && date) items.push({ name, state, line, date });
+    const sources = Array.isArray(it?.sources) ? [...new Set(it.sources.map(s => String(s).replace(/^#/, '').trim()).filter(s => /^[0-9a-z]{6,40}$/i.test(s)))].slice(0, 50) : [];
+    if (name && line && state && date) items.push({ name, state, line, date, ...(sources.length ? { sources } : {}) });
     if (items.length === 25) break;
   }
   return items;
@@ -562,7 +579,14 @@ export function cleanDigest(raw) {
  * changed. Throws when the model fails twice — the old digest stays.
  */
 export async function updateDigest(key, scopes, { at = Date.now(), maxChars = 60000 } = {}) {
-  const prev = readDigest(key);
+  const stored = readStoredDigest(key);
+  // Items whose sources are all gone leave before the model sees the list, so
+  // "keep the items the excerpts don't mention" cannot carry them forward.
+  const prev = { ...stored, items: liveItems(stored.items || [], scopes) };
+  if (prev.items.length !== (stored.items || []).length) {
+    mkdirSync(viewsDir(key), { recursive: true });
+    atomicWrite(join(viewsDir(key), 'digest.json'), JSON.stringify(prev, null, 1));
+  }
   // "Since the last run" by record id, which carries the time the record was
   // appended: a record's `ts` is the conversation's date, or a card line's
   // date months back, and filtering on it skipped everything filed late (the
@@ -573,13 +597,22 @@ export async function updateDigest(key, scopes, { at = Date.now(), maxChars = 60
   const lastId = recs.reduce((m, r) => (r.id > m ? r.id : m), prev.lastId || '');
   let body = '';
   for (const r of recs.slice().reverse()) {   // newest first until the budget, then back in order
-    const piece = `[${r.ts.slice(0, 10)}] ${r.text.slice(0, 1500)}\n\n`;
+    const piece = `[${r.ts.slice(0, 10)} #${r.id}] ${r.text.slice(0, 1500)}\n\n`;
     if (body.length + piece.length > maxChars) break;
     body = piece + body;
   }
   const current = prev.items.length ? prev.items.map(i => `- ${i.name} [${i.state}, ${i.date}]: ${i.line}`).join('\n') : '(empty)';
   const raw = await runStructured({ system: DIGEST_SYSTEM, user: `Today: ${todayLong(at)}\n\nCURRENT LIST:\n${current}\n\nEXCERPTS SINCE:\n${body}`, schema: DIGEST_SCHEMA });
-  const next = { at: new Date(at).toISOString(), lastId, items: cleanDigest(raw) };
+  // An item's sources: what it rested on before (same name) plus the excerpts
+  // the model named for it now, never an id that was not in front of it.
+  const shown = new Set(recs.map(r => r.id));
+  const before = new Map(prev.items.map(i => [nameKey(i.name), i.sources || []]));
+  const items = cleanDigest(raw).map(i => {
+    const sources = [...new Set([...(before.get(nameKey(i.name)) || []), ...(i.sources || []).filter(id => shown.has(id))])].slice(-50);
+    const { sources: _s, ...rest } = i;
+    return sources.length ? { ...rest, sources } : rest;
+  });
+  const next = { at: new Date(at).toISOString(), lastId, items };
   mkdirSync(viewsDir(key), { recursive: true });
   atomicWrite(join(viewsDir(key), 'digest.json'), JSON.stringify(next, null, 1));
   return next;

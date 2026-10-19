@@ -29,7 +29,8 @@ that it is not saved, never that it is.
 **The Memory screen** (AI Settings → Memory):
 
 - **Short-term memory**: what is going on right now (meetings, trips,
-  deadlines, things it is waiting on) and what it is keeping track of.
+  deadlines, things it is waiting on) and what it is keeping track of. Delete
+  the conversations something came from and it leaves this list too.
 - **Facts**: everything it remembers, newest first, each with the conversation
   it came from ("See source") and its own timeline of earlier versions and
   corrections. A fact that became a task on the board shows the task and its
@@ -325,7 +326,10 @@ fields came back — names and lengths only, never what was said.
   counted, before the rules for running them), **STANDING_RULES** —
   only the rules people stated — and, last, **WHAT_IS_GOING_ON**: the Memory
   screen's Short-term memory as the bot sees it (statuses still in force, then
-  the digest, one line per thing with its state). It changes nightly, so it
+  the digest, one line per thing with its state; each line keeps the ids of the
+  records it rests on, and a line whose records are all hidden or erased is no
+  longer shown, nor offered to the next update, which otherwise keeps whatever
+  the new excerpts don't mention). It changes nightly, so it
   comes after the cards that rarely change. A group turn gets the same card from
   the group's own digest and the shared statuses (never anyone's private memory):
   without it the group brain answered "is X dead?" from old shared pages while

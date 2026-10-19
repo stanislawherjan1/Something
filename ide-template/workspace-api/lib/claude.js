@@ -296,7 +296,7 @@ function goingOnFor({ key, scopes, whose, they }) {
   try {
     const live = liveStatuses(scopes);
     if (live.length) lines.push('Right now:', ...live.map(s => `- ${s.text}${s.expires ? ` (until ${s.expires})` : ''}`));
-    const d = readDigest(key);
+    const d = readDigest(key, scopes);
     if (d.items?.length) lines.push(`What ${they} are keeping track of${d.at ? ` (as of ${String(d.at).slice(0, 10)})` : ''}:`, ...d.items.map(i => `- ${i.name} (${i.state || 'active'}): ${i.line}`));
   } catch { return ''; }
   if (!lines.length) return '';
