@@ -4,9 +4,12 @@
  * notification stream (the bottom-right toast / future Bot Chat thread).
  *
  * Tools:
- *   web_send_message — POST a chat-style reply to /api/internal/notify
- *                      on workspace-api. wsapi fans it out to every
- *                      browser tab via /api/notifications/stream SSE.
+ *   web_send_message   — POST a chat-style reply to /api/internal/notify
+ *                        on workspace-api. wsapi fans it out to every
+ *                        browser tab via /api/notifications/stream SSE.
+ *   group_send_message — post a message the person asked for into one of
+ *                        their Telegram groups, word for word
+ *                        (/api/internal/group-post decides who may post where).
  *
  * Why this exists: the bot's tmux Claude session has a Telegram channel
  * plugin when a TG token is wired, but TG-less clients had no surface
@@ -28,6 +31,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 const WSAPI_PORT = process.env.WORKSPACE_API_PORT || '3001';
 const NOTIFY_URL        = `http://127.0.0.1:${WSAPI_PORT}/api/internal/notify`;
 const CHAT_SESSION_URL  = `http://127.0.0.1:${WSAPI_PORT}/api/internal/chat-session`;
+const GROUP_POST_URL    = `http://127.0.0.1:${WSAPI_PORT}/api/internal/group-post`;
 
 const server = new Server(
   { name: 'web-channel-mcp', version: '1.0.0' },
@@ -88,6 +92,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "they're linked (no duplicate web toast).",
           },
         },
+      },
+    },
+    {
+      name: 'group_send_message',
+      description:
+        'Post a message into a Telegram GROUP the person is in (e.g. the team ' +
+        'group chat). Use it ONLY when the person explicitly asked for it to go ' +
+        'to the group, and once they approved the exact text: what you pass is ' +
+        'posted WORD FOR WORD, nothing is rewritten, so pass the final text, in ' +
+        'the group\'s language. A message for ONE person is web_send_message, ' +
+        'never this. `group`: the group\'s name as people call it, or its chat ' +
+        'id; omit it when they are in only one group. The person can post only ' +
+        'into groups they are a member of; if the call fails, the result says ' +
+        'why and lists the groups they can post to: tell them plainly, never ' +
+        'claim it was posted unless the result says it was.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          group: { type: 'string', description: 'The group\'s name or chat id. Optional when the person is in one group only.' },
+          text: { type: 'string', description: 'The message, exactly as it should appear in the group. Plain text.' },
+        },
+        required: ['text'],
       },
     },
   ],
@@ -196,6 +222,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }],
         isError: true,
       };
+    }
+  }
+
+  if (name === 'group_send_message') {
+    const text = typeof args?.text === 'string' ? args.text : '';
+    const group = typeof args?.group === 'string' ? args.group : '';
+    try {
+      const res = await fetch(GROUP_POST_URL, {
+        method: 'POST',
+        // The turn's token is who is posting; the route never trusts a name in the body.
+        headers: { 'Content-Type': 'application/json', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
+        body: JSON.stringify({ group, text }),
+      });
+      const out = await res.json().catch(() => ({}));
+      const list = Array.isArray(out.groups) && out.groups.length
+        ? ` Groups this person can post to: ${out.groups.map((g) => `"${g.title || g.chatId}"`).join(', ')}.`
+        : '';
+      if (res.ok && out.ok) {
+        return { content: [{ type: 'text', text: `Posted in the group "${out.group?.title || out.group?.chatId}".` }] };
+      }
+      return {
+        content: [{ type: 'text', text: `Not posted: ${out.error || `HTTP ${res.status}`}.${list}` }],
+        isError: true,
+      };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Not posted: ${err.message}` }], isError: true };
     }
   }
 

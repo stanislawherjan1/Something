@@ -17,10 +17,10 @@ import * as oauthBroker from '../lib/integrations/oauth.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
-import { routeGroupMessage, sayInGroup } from '../lib/integrations/group-watcher.js';
+import { routeGroupMessage, sayInGroup, postToGroup } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
 import { idleMs, consolidateIdle } from '../lib/memory-consolidator.js';
@@ -828,6 +828,43 @@ export default function internalRouter() {
     const rel = String(req.query.path || '').replace(/^\/+/, '');
     if (!rel || !pathInScope(rel, { ownSlug: turn.group ? null : turn.actor })) return res.json({ ok: true, shared: false });
     return res.json({ ok: true, ...isShared(rel) });
+  });
+
+  // Post into a group because a person asked to, word for word (the draft they
+  // approved, not a rewrite: postToGroup). Before teammates' Telegram DMs had
+  // turns of their own, the operator's brain answered every DM and could post
+  // anywhere through the Telegram plugin; a teammate's turn and a web turn have
+  // only the web tools, so "send it to the group" had no way out. Who is posting
+  // comes from the turn's own token, never the body, and only into a registered
+  // group that person is a member of. A group turn already speaks in its own
+  // group and may not reach another. loopback only.
+  router.post('/internal/group-post', loopbackOnly, async (req, res) => {
+    const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
+    if (!turn || turn.group || !turn.actor) {
+      return res.status(403).json({ ok: false, error: 'no person behind this turn' });
+    }
+    const mine = memberGroupsOf(turn.actor).map((id) => getGroup(id)).filter(Boolean);
+    const groups = mine.map((g) => ({ chatId: g.chatId, title: g.title || null }));
+    if (!mine.length) {
+      return res.status(403).json({ ok: false, error: 'not a member of any group the assistant is in (or Telegram is not linked for this person)', groups });
+    }
+    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const want = norm(req.body?.group);
+    let hit = want ? mine.filter((g) => g.chatId === want || norm(g.title) === want) : (mine.length === 1 ? mine : []);
+    if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
+    if (hit.length !== 1) {
+      const error = hit.length ? 'more than one group matches: say which' : want ? 'none of this person\'s groups matches' : 'say which group';
+      return res.status(422).json({ ok: false, error, groups });
+    }
+    const group = { chatId: hit[0].chatId, title: hit[0].title || null };
+    try {
+      const out = await postToGroup({ chatId: group.chatId, text: req.body?.text });
+      process.stderr.write(`[internal] group-post ${turn.actor} -> ${group.chatId}: ${out.ok ? 'sent' : out.error}\n`);
+      return res.status(out.ok ? 200 : 422).json({ ...out, group });
+    } catch (err) {
+      process.stderr.write(`[internal] group-post failed: ${err.message}\n`);
+      return res.status(500).json({ ok: false, error: err.message, group });
+    }
   });
 
   // Repair a message the bot itself sent — the only way it can clean up after

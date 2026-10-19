@@ -45,7 +45,7 @@ instructions are an admin's to set.
 Each person links their own Telegram, so a message from you is from you. Only
 an admin is asked to set the coworker up on Telegram, and it is the whole
 team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
-the group's own conversation and never anyone's private memory. Reminders and
+the group's own conversation and never anyone's private memory. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
 tasks go to the person they are for.
 
 
@@ -415,6 +415,20 @@ courier:
 The relay always composes a natural, verbatim message — never a robotic
 "X asked me to forward this" — and uses the recipient's preferred language.
 
+**Posting into a group.** A relay reaches one person; a team Telegram group is
+reached with `group_send_message` (web-channel-mcp), from a web turn, a
+teammate's Telegram DM turn or the operator's brain alike. The assistant passes
+the text the person approved and it is posted **word for word**
+(`POST /api/internal/group-post` → `postToGroup`), unlike a reminder aimed at a
+group, which the group's brain writes itself. Who is posting comes from the
+turn's token, and only into a registered group that person has been seen in
+(their linked Telegram id in the group's members); a person without a linked
+Telegram, or a group turn, cannot post. The message joins the group's history as
+the assistant's, so the group's brain knows it was said. Before teammates' DMs
+had turns of their own (shared spaces), the operator's brain answered every DM
+and could post anywhere through the Telegram plugin; this restores that for each
+person, inside their own groups only.
+
 ---
 
 ## 9. Telegram linking (per user)
@@ -577,6 +591,7 @@ and excluded from Drive sync.
 | `POST /internal/reminder-deliver` | Loopback — fan-out of a fired reminder to teammates. |
 | `POST /internal/group-message` | Loopback — a diverted group message into the relevance watcher. |
 | `POST /internal/group-joined` | Loopback — bot added to a group → roster-gated auto-register. |
+| `POST /internal/group-post` | Loopback — `group_send_message`: post the approved text, word for word, into one of the turn's person's registered groups (turn token; group turns refused). |
 | `GET /api/onboarding`, `POST /api/onboarding/me`, … | Each person's own setup (§3); the company step is admin-only. |
 | `POST /internal/me/settings` | Loopback — the bot's `set_my_settings` (turn identity; refused in groups and on locked settings). |
 

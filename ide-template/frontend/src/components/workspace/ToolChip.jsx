@@ -79,6 +79,7 @@ const TOOL_DISPLAY = {
   'mcp__workspace-api__add_routine':     { label: 'Adding a routine',        Icon: Repeat },
   'mcp__workspace-api__set_my_settings': { label: 'Updating your settings',  Icon: Settings2 },
   'mcp__web-channel__web_send_message':  { label: 'Sending a message',       Icon: Send },
+  'mcp__web-channel__group_send_message': { label: 'Posting to the group',  Icon: Send },
 
   'mcp__seedream__generate':         { label: 'Creating an image',    Icon: ImageIcon },
   'mcp__nano_banana__generate':      { label: 'Creating an image',    Icon: ImageIcon },
