@@ -175,7 +175,7 @@ export default function teamRouter() {
   });
 
   router.patch('/team/:email', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
-    const { role, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
+    const { role, telegramChatId, preferredSurface, preferredLanguage, slackUserId } = req.body || {};
     try {
       let entry = null;
       if (role !== undefined) {
@@ -187,9 +187,15 @@ export default function teamRouter() {
         // to the integration + restart (background; don't block the response).
         if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
       }
+      // A Slack account links itself by email; an admin may link one by id when
+      // the person's Slack email is not the roster one (admins only — a self-link
+      // by id would let someone claim another person's account).
+      if (slackUserId !== undefined) {
+        entry = team.setSlack(req.params.email, { userId: slackUserId }, req.actor);
+      }
       // Reflect v2: pre-consent to auto-promote this person's org DM facts to
       // shared memory (typically the operator toggles it on themselves).
-      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, preferredSurface, or preferredLanguage).' });
+      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, slackUserId, preferredSurface, or preferredLanguage).' });
       res.json({ ok: true, entry });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -243,11 +249,13 @@ export default function teamRouter() {
 
   // Approve a room (a Slack channel the bot was added to), or change one.
   router.post('/team/channels', requireAdmin, rateLimit, express.json({ limit: '2kb' }), async (req, res) => {
-    const { chatId, title, beat, requireMention, language } = req.body || {};
+    const { chatId, title, beat, requireMention, language, openAudience } = req.body || {};
     try {
       const id = String(chatId || '').trim();
       if (id.startsWith('slack-')) {
-        const group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language });
+        const group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language, openAudience });
+        // A room reopened to outsiders, or closed to them again, is rechecked at once.
+        if (openAudience != null) await slackChannels.checkAudience(id, { quiet: true });
         return res.status(201).json({ ok: true, group });
       }
       const group = team.addGroup({ chatId: id, title, beat, requireMention, language, actor: req.actor });

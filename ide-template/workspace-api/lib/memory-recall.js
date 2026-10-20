@@ -86,12 +86,12 @@ export function renderBlock({ hits, total }) {
  * shadow mode the search runs and is logged, but nothing is injected.
  * Never throws and never takes longer than the budget.
  */
-export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], pageTurn = false, sessionKey = null, message, history = [] }) {
+export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], groupOnly = false, pageTurn = false, sessionKey = null, message, history = [] }) {
   const mode = ledger.v4Mode();
   const t0 = Date.now();
   const out = { block: null, ids: [], total: 0, ms: 0, mode };
   if (mode === 'off' || pageTurn || !String(message || '').trim()) return out;
-  const scopes = ledger.readableScopes({ actor, groupId, memberGroups });
+  const scopes = ledger.readableScopes({ actor, groupId, memberGroups, groupOnly });
   const asked = [...history.slice(-2), message].map(s => String(s || '')).join('\n').slice(-2000);
   // A topic named by any of its spellings is searched by all of them.
   const extra = expandQuery(scopes, message).terms;

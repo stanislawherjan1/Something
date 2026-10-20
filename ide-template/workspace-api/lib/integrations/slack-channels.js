@@ -95,7 +95,7 @@ async function leave(channel, why) {
 }
 
 /** An admin said yes: register the channel and check who is in it. */
-export async function approveChannel(chatId, { actor = null, title = null, requireMention = null, language = null, beat = null } = {}) {
+export async function approveChannel(chatId, { actor = null, title = null, requireMention = null, language = null, beat = null, openAudience = null } = {}) {
   const channel = chatId.replace(/^slack-/, '');
   const info = await channelInfo(channel);
   if (isShared(info)) {
@@ -103,7 +103,7 @@ export async function approveChannel(chatId, { actor = null, title = null, requi
     await leave(channel, 'shared channel at approval time');
     throw new Error('That channel is shared with another organisation and cannot be approved.');
   }
-  const group = d.addGroup({ chatId, title: title ?? titleOf(info, channel), requireMention, language, beat, actor });
+  const group = d.addGroup({ chatId, title: title ?? titleOf(info, channel), requireMention, language, beat, openAudience, actor });
   dropPending(chatId);
   await checkAudience(chatId, { quiet: true });
   return d.getGroup(chatId) || group;
@@ -139,7 +139,9 @@ export async function checkAudience(chatId, { quiet = false } = {}) {
   }
   const shared = isShared(info);
   const audience = { ok: !shared && outsiders.length === 0, outsiders: outsiders.slice(0, 20), shared, members: members.length, checkedAt: new Date(d.now()).toISOString() };
-  const paused = !audience.ok;
+  // An open-audience room is never paused for outsiders (it reads only its own
+  // memory); a shared channel is paused whatever the room's setting.
+  const paused = shared || (!audience.ok && !group.openAudience);
   const wasPaused = !!group.paused;
   d.touchGroupMeta(chatId, { audience, paused, ...(info?.name ? { title: `#${info.name}` } : {}) });
   if (paused && !wasPaused && !quiet) {

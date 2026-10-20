@@ -365,7 +365,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -582,7 +582,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
   // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
   // they take the actor and group flag from this token, never from a header.
-  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId });   // what this turn is handed from memory is noted on it below
+  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId, groupOnly });   // what this turn is handed from memory is noted on it below
   childEnv.IDE_TURN_ID = turnId;
   // A turn started from the browser extension's panel carries a one-turn token
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
@@ -622,6 +622,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
       recall = await buildRecallBlock({
         actor: groupContext ? null : me,
         groupId: groupContext ? groupId : null,
+        groupOnly: !!(groupContext && groupOnly),
         memberGroups: groupContext ? [] : memberGroupsOf(me),
         pageTurn,
         sessionKey: webSessionId || sessionId || null,

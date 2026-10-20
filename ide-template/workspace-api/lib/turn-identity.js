@@ -25,13 +25,15 @@ import { normalizeGroupId } from './group-id.js';
 
 const turns = new Map();   // token → { actor, group, groupId }
 
-export function issueTurnToken({ actor = null, group = false, groupId = null } = {}) {
+export function issueTurnToken({ actor = null, group = false, groupId = null, groupOnly = false } = {}) {
   const token = randomBytes(24).toString('base64url');
   turns.set(token, {
     actor: actor && actor !== 'default' ? String(actor) : null,
     group: !!group,
     // Which group, for memory v4: a group turn reads and writes that group's scope only.
     groupId: group ? normalizeGroupId(groupId) : null,
+    // The room holds people outside the team: its own scope only, nothing shared.
+    groupOnly: !!(group && groupOnly),
   });
   return token;
 }
@@ -72,7 +74,7 @@ export function resolveTurnToken(token, _claimedActor = '') {
   if (expected) {
     const got = createHash('sha256').update(t).digest();
     if (got.length === expected.length && timingSafeEqual(got, expected)) {
-      return { actor: primaryAdminSlug() || null, group: false, groupId: null, source: 'bot' };
+      return { actor: primaryAdminSlug() || null, group: false, groupId: null, groupOnly: false, source: 'bot' };
     }
   }
   return null;

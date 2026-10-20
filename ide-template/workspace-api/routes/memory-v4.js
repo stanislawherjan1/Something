@@ -62,7 +62,7 @@ function whoIsAsking(req) {
   if (turn.group) {
     return {
       group: true, groupId: turn.groupId, actor: turn.actor,
-      read: ledger.readableScopes({ groupId: turn.groupId }),
+      read: ledger.readableScopes({ groupId: turn.groupId, groupOnly: !!turn.groupOnly }),
       write: turn.groupId ? `group:${turn.groupId}` : null,
     };
   }

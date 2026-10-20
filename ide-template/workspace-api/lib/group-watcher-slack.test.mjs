@@ -72,6 +72,18 @@ ok('the group turn runs as the roster person behind the Slack id, in group conte
 ok('the prompt speaks of a Slack channel and points at the channel\'s own transcript', /Slack CHANNEL/.test(params.message) && params.message.includes('slack-C0GENERAL-history.jsonl') && !/Telegram GROUP CHAT/.test(params.message));
 ok('the Slack adapter\'s own bots/reactions lines are in the prompt', /OTHER BOTS: none/.test(params.message) && /a common emoji/.test(params.message));
 
+// an open-audience room: the turn is group-only
+team.touchGroupMeta('slack-C0GENERAL', { openAudience: true });
+const openParams = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), [], { message_id: '10.0', from_id: 'U0ANN0001', text: 'x' });
+ok('an open-audience room runs its turn on the room\'s scope only', openParams.groupOnly === true && /OPEN AUDIENCE/.test(openParams.message));
+team.touchGroupMeta('slack-C0GENERAL', { openAudience: false });
+ok('...and a closed room does not', gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), [], { message_id: '10.0', from_id: 'U0ANN0001', text: 'x' }).groupOnly === false);
+const ledger = await import('./memory-ledger.js');
+ok('group-only reads the room and nothing shared', JSON.stringify(ledger.readableScopes({ groupId: 'slack-C0GENERAL', groupOnly: true })) === '["group:slack-C0GENERAL"]' && JSON.stringify(ledger.readableScopes({ groupId: 'slack-C0GENERAL' })) === '["shared","group:slack-C0GENERAL"]');
+const ti = await import('./turn-identity.js');
+const tok = ti.issueTurnToken({ actor: 'ann', group: true, groupId: 'slack-C0GENERAL', groupOnly: true });
+ok('the turn token carries group-only', ti.resolveTurnToken(tok).groupOnly === true && ti.resolveTurnToken(ti.issueTurnToken({ actor: 'ann', group: false, groupOnly: true })).groupOnly === false);
+
 // a direct post goes through the adapter, top-level
 gw.configurePostSender(null);
 r = await gw.postToGroup({ chatId: 'slack-C0GENERAL', text: 'Posted as asked.' });

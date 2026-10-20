@@ -53,8 +53,10 @@ export function scopeDir(scope) {
  * conversations are still theirs, so a group turn — where other people talk to
  * the bot — never reads them, and switching team mode on later exposes nothing.
  */
-export function readableScopes({ actor = null, groupId = null, memberGroups = [] }) {
-  if (groupId) return ['shared', `group:${groupId}`];
+export function readableScopes({ actor = null, groupId = null, memberGroups = [], groupOnly = false }) {
+  // A room an admin opened to people outside the team reads its own scope and
+  // nothing of the team's (the "open audience" channel).
+  if (groupId) return groupOnly ? [`group:${groupId}`] : ['shared', `group:${groupId}`];
   const out = ['shared'];
   if (actor && SLUG_RE.test(actor) && actor !== 'default' && actor !== 'team') out.push(`user:${actor}`);
   for (const g of memberGroups) if (isGroupId(g)) out.push(`group:${g}`);

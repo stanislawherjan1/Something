@@ -192,9 +192,18 @@ function pushHistory(chatId, entry) {
 // here so it survives restarts. The turn still runs with the SENDER's identity
 // per turn (attribution + outbound actions as them) — but in GROUP CONTEXT:
 // private trees are hard-blocked for everyone (see scope-rule.pathInGroupScope).
-function sessionFile(chatId) {
+// A session key is a group id, or `<group id>|<thread>` for a Slack thread: in
+// Slack a channel is a stream of conversations and each thread keeps its own
+// session; the channel's history ring is still the context for all of them.
+function sessionKeyFor(chatId, target) {
+  if (!target || adapterFor(chatId).kind !== 'slack') return String(chatId);
+  const t = target.thread_id || target.message_id;
+  return t && /^\d+\.\d+$/.test(String(t)) ? `${chatId}|${t}` : String(chatId);
+}
+function sessionFile(key) {
+  const [chatId, thread] = String(key).split('|');
   const gid = fileStem(chatId);
-  return join(AUDIT_DIR, `${gid}-session.json`);
+  return join(AUDIT_DIR, `${gid}${thread ? `-thread-${thread.replace(/[^\d.]/g, '')}` : ''}-session.json`);
 }
 function loadSession(chatId) {
   try {
@@ -1050,6 +1059,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     '----',
     `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — the SHARED workspace, shared memory, skills, integrations, reminders — and you may act. This is a GROUP context: NO private space is reachable (not even the requester's own) and nothing private may enter the conversation; genuinely private work is delegated via [[PRIVATE_TASK]] (below). Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group.`,
     lang ? `This group's language is ${lang} — reply ONLY in ${lang}, whatever language a message happens to be written in. Even when quoting or discussing text in another language, your own words stay in ${lang}.` : '',
+    group.openAudience ? 'OPEN AUDIENCE: people who are NOT on your team are in this room. You have ONLY this room\'s own memory here — nothing the team keeps elsewhere reaches you, and nothing you learn elsewhere may be said here. Treat everyone as an outside party: be helpful, be polite, share nothing internal.' : '',
     '',
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, output exactly `[[SILENT]]` and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. ONE exception to going straight to `[[SILENT]]`: if the conversation stated something durable and worth remembering — a decision, an agreement, a role, a stable fact about a client or project — write it with `memory_write` FIRST, then go silent. Saying nothing and remembering nothing are different things, and most of what is worth remembering here needs no reply at all. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
     '',
@@ -1088,6 +1098,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     // scope-guard hook blocks EVERY private tree at tool time.
     groupContext: true,
     groupId: String(group.chatId),     // memory v4 recall: shared + this group only
+    groupOnly: !!group.openAudience,   // an open-audience room: this group's scope and nothing shared
     // Redundant with the groupContext prefix exclusion — kept as belt-and-braces
     // for older claude.js versions that only honour excludeIds.
     excludeIds: ['USER_INDEX'],
@@ -1671,7 +1682,8 @@ async function flush(chatId) {
   // Phase 1: persistent per-group session. With a live session the brain gets
   // ONLY the messages since its last turn (the session remembers the rest) —
   // the full ring is the seed for a fresh session.
-  let session = loadSession(chatId);
+  const sessKey = sessionKeyFor(chatId, target);
+  let session = loadSession(sessKey);
   const ctxForBrain = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
   const lastTsSnapshot = hist.length ? hist[hist.length - 1].ts : (session && session.lastTs) || null;
   let reply;
@@ -1684,8 +1696,8 @@ async function flush(chatId) {
     // ring. (`exit 1` is also the subscription-limit signature — the retry then
     // just fails again fast and the limit notice below still fires.)
     if (!reply.ok && session && /exited with code 1|exit 1|no conversation|not found/i.test(String(reply.error || ''))) {
-      process.stderr.write(`[group-watcher] session resume failed for ${chatId} (${reply.error}) — rotating session\n`);
-      clearSession(chatId);
+      process.stderr.write(`[group-watcher] session resume failed for ${sessKey} (${reply.error}) — rotating session\n`);
+      clearSession(sessKey);
       session = null;
       try { reply = await groupCompose(group, hist, target, null); }
       catch (err) { reply = { ok: false, error: err.message }; }
@@ -1695,7 +1707,7 @@ async function flush(chatId) {
   // A completed turn advances the session — INCLUDING a [[SILENT]] verdict (the
   // brain saw these messages; don't re-send them next turn).
   if (reply.ok && reply.sessionId) {
-    saveSession(chatId, {
+    saveSession(sessKey, {
       sessionId: reply.sessionId,
       startedAt: (session && session.startedAt) || new Date().toISOString(),
       turns: ((session && session.turns) || 0) + 1,
@@ -1714,7 +1726,7 @@ async function flush(chatId) {
     // been told the turn failed; a retry should be the user's choice, not an
     // automatic re-drive. turns is NOT incremented: no turn completed.
     if (session && session.sessionId) {
-      saveSession(chatId, {
+      saveSession(sessKey, {
         ...session,
         lastTs: lastTsSnapshot,
         updatedAt: new Date().toISOString(),

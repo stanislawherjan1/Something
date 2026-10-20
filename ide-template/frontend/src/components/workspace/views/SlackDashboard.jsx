@@ -73,7 +73,7 @@ export default function SlackDashboard({ sidebarOpen }) {
             {connected && listener?.connected
               ? <><CheckCircle2 className="size-2.5" strokeWidth={2.5} />Listening</>
               : connected
-                ? <><Plug className="size-2.5" strokeWidth={2.5} />{listener?.error ? 'Not connected' : 'Connecting'}</>
+                ? <><Plug className="size-2.5" strokeWidth={2.5} />{sl?.install?.needed ? 'Not installed' : listener?.error ? 'Not connected' : 'Connecting'}</>
                 : <><Plug className="size-2.5" strokeWidth={2.5} />Not connected</>}
           </span>
         }
@@ -112,8 +112,18 @@ export default function SlackDashboard({ sidebarOpen }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/30 px-6 py-3">
-        <span className="text-[12px] font-medium text-muted-foreground/70">Slack app</span>
+        <span className="text-[12px] font-medium text-muted-foreground/70">
+          {connected && sl?.install?.needed
+            ? (sl.install.possible ? 'The app is not installed in your workspace yet.' : 'No bot token yet: add it, or the app\'s client id and secret to install from here.')
+            : 'Slack app'}
+        </span>
         <div className="flex items-center gap-2">
+          {connected && sl?.install?.needed && sl.install.possible && (
+            <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
+              Install to your workspace
+            </a>
+          )}
           {sl && (
             <button type="button" onClick={() => setSetup(true)}
               className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
@@ -308,6 +318,7 @@ function ChannelCard({ group, canEdit, avatars, onChanged }) {
             <span>{group.requireMention ? 'when addressed' : 'ambient'}</span>
             <span className="text-muted-foreground/35">·</span>
             <span>{group.language || 'auto language'}</span>
+            {group.openAudience && (<><span className="text-muted-foreground/35">·</span><span>open audience</span></>)}
             {group.paused && (
               <>
                 <span className="text-muted-foreground/35">·</span>
@@ -336,6 +347,7 @@ function ChannelCard({ group, canEdit, avatars, onChanged }) {
 function ChannelModal({ group, avatars, onClose, onSaved }) {
   const [lang, setLang] = useState(group.language || '');
   const [ambient, setAmbient] = useState(!group.requireMention);
+  const [openAudience, setOpenAudience] = useState(!!group.openAudience);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
   const title = group.title || group.chatId;
@@ -345,7 +357,7 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
     setBusy(what); setErr('');
     try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); }
   };
-  const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), requireMention: !ambient }) }));
+  const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), requireMention: !ambient, openAudience }) }));
   const remove = () => run('remove', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }));
   const recheck = () => run('recheck', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}/recheck`, { method: 'POST' }));
 
@@ -374,6 +386,16 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
             <button type="button" role="switch" aria-checked={ambient} onClick={() => setAmbient(v => !v)}
               className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', ambient ? 'bg-foreground' : 'bg-muted-foreground/30')}>
               <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', ambient ? 'left-[18px]' : 'left-0.5')} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className={labelCls}>Open audience</div>
+              <div className="text-[11.5px] text-muted-foreground/55">Off: the room is paused while someone not on the team is in it. On: the assistant stays, but with this channel's own memory only — nothing the team keeps elsewhere.</div>
+            </div>
+            <button type="button" role="switch" aria-checked={openAudience} onClick={() => setOpenAudience(v => !v)}
+              className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', openAudience ? 'bg-foreground' : 'bg-muted-foreground/30')}>
+              <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', openAudience ? 'left-[18px]' : 'left-0.5')} />
             </button>
           </div>
           <label className="flex flex-col gap-1.5">
@@ -482,11 +504,73 @@ function People({ pendingPeople, onChanged }) {
                   </div>
                 </div>
               </div>
+              <LinkButton person={p} onChanged={onChanged} />
             </div>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+// An admin links (or unlinks) a person's Slack account by its id — for the
+// case where the email on their Slack account is not the roster one and the
+// automatic link never happens. Not a self-service control.
+function LinkButton({ person, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState(person.slackUserId || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async (clear = false) => {
+    setBusy(true); setErr('');
+    try {
+      await call(`${TEAM_URL}/${encodeURIComponent(person.email)}`, { method: 'PATCH', body: JSON.stringify({ slackUserId: clear ? '' : id.trim() }) });
+      setOpen(false); onChanged();
+    } catch (e) { setErr(e.message); setBusy(false); }
+  };
+  return (
+    <>
+      <button type="button" onClick={() => { setId(person.slackUserId || ''); setOpen(true); }}
+        className={cn('shrink-0 rounded-[6px] px-2.5 py-1 text-[12px] font-medium', person.slackUserId
+          ? 'text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90'
+          : 'inline-flex items-center gap-1.5 border border-border/60 bg-background text-foreground/80 transition-colors hover:border-foreground/25 hover:bg-muted/40')}>
+        {person.slackUserId ? 'Edit' : <><Plus className="size-3" strokeWidth={2} /> Link</>}
+      </button>
+      {open && (
+        <ModalShell onClose={() => setOpen(false)} ariaLabel={`Slack link for ${person.displayName || person.email}`}>
+          <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+              <div className="min-w-0">
+                <h2 className="truncate text-[14px] font-semibold text-foreground/90">{person.displayName || person.email}</h2>
+                <div className="text-[11.5px] text-muted-foreground/65">{person.slackUserId ? 'Edit Slack link' : 'Link to Slack by id'}</div>
+              </div>
+              <button type="button" onClick={() => setOpen(false)} className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85"><X className="size-3.5" strokeWidth={1.75} /></button>
+            </div>
+            <div className="flex flex-col gap-3 px-5 py-5">
+              <label className="flex flex-col gap-1.5">
+                <span className={labelCls}>Slack member id</span>
+                <input value={id} autoFocus onChange={e => setId(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && id.trim() && !busy) submit(); }}
+                  placeholder="e.g. U0123ABCD" spellCheck={false} autoComplete="off"
+                  className="w-full rounded border border-border/60 bg-background px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10" />
+                <span className="text-[11.5px] text-muted-foreground/55">Normally not needed: a person is linked by email the first time they write. Use this when the email on their Slack account differs. In Slack: their profile → ⋯ → Copy member ID.</span>
+              </label>
+              <ErrorLine err={err} />
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+              {person.slackUserId ? (
+                <button type="button" onClick={() => submit(true)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"><Trash2 className="size-3.5" strokeWidth={1.75} /> Unlink</button>
+              ) : <span />}
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setOpen(false)} disabled={busy} className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
+                <button type="button" onClick={() => submit()} disabled={busy || !id.trim()} className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}{busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+    </>
   );
 }
 

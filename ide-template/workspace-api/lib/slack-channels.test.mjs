@@ -123,6 +123,21 @@ channels.C0PRIVATE.is_ext_shared = true;
 let threw = null; try { await C.approveChannel('slack-C0PRIVATE', { actor: 'stan@example.test' }); } catch (e) { threw = e; }
 ok('a channel that turned shared cannot be approved, and is left', /shared/.test(threw?.message || '') && !team.getGroup('slack-C0PRIVATE') && left.includes('C0PRIVATE'));
 
+// open audience: outsiders do not pause the room (it reads its own memory only)
+channels.C0OPEN0001 = { id: 'C0OPEN0001', name: 'community', members: ['U0SELF', 'U0STAN001', 'U0GUEST01', 'U0GUEST02'] };
+await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0OPEN0001', user: 'U0SELF', inviter: 'U0STAN001' });
+const og = await C.approveChannel('slack-C0OPEN0001', { actor: 'stan@example.test', openAudience: true });
+ok('an open-audience channel with outsiders is registered and NOT paused', og.openAudience === true && !og.paused && og.audience?.ok === false && og.audience.outsiders.length === 2, og);
+r = await C.onChannelMessage({ type: 'app_mention', channel: 'C0OPEN0001', user: 'U0GUEST01', text: '<@U0SELF> hi', ts: '9.0' });
+ok('...a message there reaches the watcher', r.did === 'routed');
+channels.C0OPEN0001.is_ext_shared = true;
+await C.checkAudience('slack-C0OPEN0001');
+ok('...but a shared channel is paused even when open', team.getGroup('slack-C0OPEN0001').paused === true);
+channels.C0OPEN0001.is_ext_shared = false;
+team.touchGroupMeta('slack-C0OPEN0001', { openAudience: false });
+await C.checkAudience('slack-C0OPEN0001');
+ok('closing the audience again pauses it for the outsiders', team.getGroup('slack-C0OPEN0001').paused === true && !team.getGroup('slack-C0OPEN0001').openAudience);
+
 // an unknown channel event
 r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0UNKNOWN', user: 'U0ANN0001' });
 ok('a join in a channel the bot is not registered in is ignored', r.did === 'ignored');

@@ -952,7 +952,7 @@ export function isAllowedGroup(chatId) {
  * (ambient — the whole point of group mode); `beat` is an optional operator
  * override that steers what the relevance watcher treats as on-beat.
  */
-export function addGroup({ chatId, title, requireMention, beat, language, actor } = {}) {
+export function addGroup({ chatId, title, requireMention, beat, language, openAudience, actor } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) throw new Error('invalid group id (a Telegram chat id is a negative integer; a Slack channel is slack-C…)');
   const cfg = readConfig();
@@ -968,6 +968,9 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
     // audience check), so the assistant stays silent until it is ours again.
     ...(prev.paused ? { paused: true } : {}),
     ...(prev.audience ? { audience: prev.audience } : {}),
+    // Open audience: people outside the team may be in the room; the assistant
+    // speaks there from the room's own memory only, never the team's.
+    ...((openAudience != null ? !!openAudience : !!prev.openAudience) ? { openAudience: true } : {}),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
@@ -993,7 +996,7 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
  * from the gate's language verdicts). Writes only on a REAL change and emits no
  * audit event: this is drift-sync, not an operator action. Returns true if it wrote.
  */
-export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention } = {}) {
+export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention, openAudience } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) return false;
   const cfg = readConfig();
@@ -1014,6 +1017,10 @@ export function touchGroupMeta(chatId, { title, language, paused, audience, requ
   }
   if (requireMention != null && !!requireMention !== !!g.requireMention) {
     g.requireMention = !!requireMention;
+    changed = true;
+  }
+  if (openAudience != null && !!openAudience !== !!g.openAudience) {
+    if (openAudience) g.openAudience = true; else delete g.openAudience;
     changed = true;
   }
   if (language != null && String(language).slice(0, 40) !== (g.language || '')) {

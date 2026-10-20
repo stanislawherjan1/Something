@@ -597,9 +597,37 @@ it. What differs is how it gets in and who may be in it
   top-level.
 - **Memory**: the channel's history is filed into `memory/groups/slack-C…/`,
   that channel's own scope, as a Telegram group's is.
+- **Open audience** (per channel, off by default): an admin may keep the
+  assistant in a room that holds people outside the team. The room is then
+  never paused for them, and every turn there is **group-only** — it reads
+  and writes that channel's own memory and nothing of the team's shared
+  memory (`readableScopes({ groupOnly })`, carried on the turn token); the
+  prompt tells the assistant it is among outside parties. A shared (Slack
+  Connect) channel is paused whatever the setting.
+- **Threads**: each Slack thread keeps its own resumed session
+  (`.group-watcher/<id>-thread-<ts>-session.json`); the channel's history
+  ring is the context for all of them.
 - **People**: a teammate is linked by the email their Slack account carries,
   the first time they write (`slackUserId`); someone who writes without being
-  on the team appears as pending on the Slack page, to add with one click.
+  on the team appears as pending on the Slack page, to add with one click. An
+  admin may also link an account by its member id (`PATCH /api/team/:email
+  { slackUserId }`, the Link control on the Slack page) when the Slack email is
+  not the roster one — never a self-service link by id, which would let a
+  person claim another's account.
+
+### Where a person meets their surfaces — team mode
+
+One rule for every surface: the roster entry (email) is the person; each
+surface hangs an id on it; proactive messages follow the person's own
+**Reach me** set, except when a sender names a surface.
+
+| | Telegram | Slack | Web |
+|---|---|---|---|
+| Connected by | an admin, once, for the whole team (`teamWide`) | an admin, once: the workspace's own app | — |
+| A person is linked | by a chat id — an admin on the Telegram page, or the person in **Settings → Reach me** | by the email on their Slack account, the first time they write; an admin may link by member id | by signing in |
+| Rooms | groups the bot was added to by a roster member (auto-registered) | channels an admin approved, with the audience check | — |
+| Who sees the links | admins on the surface's page (People); everyone sees the marks on **Team** | the same | — |
+| The person's own view | **Settings → Reach me**: one row per surface — linked or not, and whether to be reached there | the same row | always on |
 
 ## 11. Privacy model
 

@@ -55,6 +55,10 @@ const st = {
 };
 const seen = new Map();        // `channel:ts` → first seen (ms)
 const told = new Set();        // Slack user ids already given the stranger line
+const recentDms = new Map();   // DM channel → when a message was last seen (ms; for the catch-up after a lost window)
+const titled = new Set();      // assistant-pane threads already given a title
+const CATCH_UP_WINDOW_MS = 6 * 3600_000;
+const CATCH_UP_CHANNELS = 5;
 
 /** For the Integrations page: is the surface up, since when, what was missed. */
 export function status() {
@@ -175,11 +179,22 @@ export function createHandler(deps = {}) {
     const text = plainText(ev.text, { selfId: self?.user_id });
     const body = `${text}${await attachmentsBlock(ev, member)}`.trim();
     if (!body) return { did: 'ignored', why: 'empty' };
-    d.api.addReaction(ev.channel, ev.ts, 'eyes').catch(() => {});
+    recentDms.set(ev.channel, Date.now());
     const thread = ev.thread_ts && ev.thread_ts !== ev.ts ? ev.thread_ts : null;
+    // In the assistant pane every conversation is a thread: a status line
+    // there says the assistant is on it, and the thread gets the person's
+    // first words as its title. Elsewhere a reaction does the same job.
+    const pane = !!ev.thread_ts;
+    if (pane) {
+      if (d.api.setAssistantStatus) d.api.setAssistantStatus(ev.channel, ev.thread_ts, 'is thinking…').catch?.(() => {});
+      if (d.api.setAssistantTitle && !titled.has(`${ev.channel}:${ev.thread_ts}`)) { titled.add(`${ev.channel}:${ev.thread_ts}`); d.api.setAssistantTitle(ev.channel, ev.thread_ts, text.slice(0, 60)).catch?.(() => {}); }
+    } else {
+      d.api.addReaction(ev.channel, ev.ts, 'eyes').catch(() => {});
+    }
     const send = (channel, reply) => d.api.postMessage({ channel, text: reply, ...(thread ? { thread_ts: thread } : {}) }).then(ts => ({ ok: ts.length > 0 }));
     const done = d.memberDm(member, body, { surface: 'slack', target: ev.channel, send });
     done.then((r) => {
+      if (pane) { if (d.api.setAssistantStatus) d.api.setAssistantStatus(ev.channel, ev.thread_ts, '').catch?.(() => {}); return; }
       d.api.removeReaction(ev.channel, ev.ts, 'eyes').catch(() => {});
       if (r && r.reason === 'error') d.api.addReaction(ev.channel, ev.ts, 'warning').catch(() => {});
       else d.api.addReaction(ev.channel, ev.ts, 'white_check_mark').catch(() => {});
@@ -219,6 +234,36 @@ export function createHandler(deps = {}) {
     if (d.onChannel) return d.onChannel(ev);
     return { did: 'ignored', why: 'channel (no handler)' };
   };
+}
+
+/**
+ * After a lost window, the DMs that were live shortly before it are read back
+ * from Slack (bounded: a few channels, a few messages each) and handled as if
+ * they had arrived — the dedup keeps anything already seen out. Channels are
+ * not caught up: a channel's history belongs to the room, and a missed mention
+ * is a message the person can repeat. Best-effort; a history read that fails
+ * (the rate limit, a closed DM) is logged and skipped.
+ */
+export async function catchUp(sinceIso, deps = {}) {
+  const a = deps.api || api;
+  const h = deps.handle || handler || (handler = createHandler());
+  const since = Date.parse(sinceIso || '') || 0;
+  if (!since) return { channels: 0, messages: 0 };
+  const now = deps.now ? deps.now() : Date.now();
+  const live = [...recentDms.entries()].filter(([, at]) => now - at < CATCH_UP_WINDOW_MS).slice(-CATCH_UP_CHANNELS);
+  let messages = 0;
+  for (const [channel] of live) {
+    let rows = [];
+    try { rows = await a.conversationsHistory(channel, { oldest: String(Math.floor(since / 1000) - 60), limit: 15 }); }
+    catch (err) { process.stderr.write(`[slack] catch-up ${channel}: ${err.message}\n`); continue; }
+    for (const m of rows) {
+      if (!m || !m.user || m.bot_id || m.subtype) continue;
+      try { const r = await h({ ...m, type: 'message', channel, channel_type: 'im' }); if (r?.did === 'member-dm') messages += 1; }
+      catch (err) { process.stderr.write(`[slack] catch-up message ${channel}/${m.ts}: ${err.message}\n`); }
+    }
+  }
+  if (messages) process.stderr.write(`[slack] caught up ${messages} message(s) in ${live.length} DM(s) after the lost window from ${sinceIso}\n`);
+  return { channels: live.length, messages };
 }
 
 let handler = null;
@@ -270,7 +315,7 @@ async function connectOnce(generation) {
       if (env.type === 'hello') {
         st.connected = true; st.since = new Date().toISOString(); st.error = null;
         const last = st.lost[st.lost.length - 1];
-        if (last && !last.to) last.to = st.since;
+        if (last && !last.to) { last.to = st.since; catchUp(last.from).catch(() => {}); }
         return;
       }
       if (env.type === 'disconnect') { try { ws.close(1000, env.reason || 'disconnect'); } catch { /* */ } return finish(env.reason || 'disconnect'); }

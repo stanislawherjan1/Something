@@ -332,18 +332,35 @@
       "process": "slack-listener", "teamWide": true,
       "fields": [
         {
-          "name": "SLACK_BOT_TOKEN",
-          "label": "Bot token",
-          "type": "secret",
-          "placeholder": "xoxb-...",
-          "helper": "Starts with \"xoxb-\". OAuth & Permissions → Bot User OAuth Token, after installing the app."
-        },
-        {
           "name": "SLACK_APP_TOKEN",
           "label": "App-level token",
           "type": "secret",
           "placeholder": "xapp-...",
           "helper": "Starts with \"xapp-\". Basic Information → App-Level Tokens → Generate, with the connections:write scope."
+        },
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "label": "Bot token",
+          "type": "secret",
+          "optional": true,
+          "placeholder": "xoxb-...",
+          "helper": "Starts with \"xoxb-\". OAuth & Permissions → Bot User OAuth Token, after installing the app. Leave it empty to install from here with the client id and secret instead."
+        },
+        {
+          "name": "SLACK_CLIENT_ID",
+          "label": "Client id",
+          "type": "text",
+          "optional": true,
+          "placeholder": "1234567890.1234567890",
+          "helper": "Basic Information → App Credentials. With the secret below, the Slack page gets an \"Install to your workspace\" button and no token needs pasting."
+        },
+        {
+          "name": "SLACK_CLIENT_SECRET",
+          "label": "Client secret",
+          "type": "secret",
+          "optional": true,
+          "placeholder": "abcdef…",
+          "helper": "Basic Information → App Credentials → Client Secret."
         }
       ],
       "steps": [
@@ -360,7 +377,7 @@
         },
         {
           "title": "Install it to your workspace",
-          "body": "On the app's page: **Install to Workspace** → **Allow**. On some paid plans a Slack admin must approve the request first. Then **OAuth & Permissions** → copy the **Bot User OAuth Token** (`xoxb-…`) as the **Bot token**."
+          "body": "Either: on the app's page **Install to Workspace** → **Allow**, then **OAuth & Permissions** → copy the **Bot User OAuth Token** (`xoxb-…`) as the **Bot token**. Or: copy the **Client id** and **Client secret** from **Basic Information → App Credentials**, save, and press **Install to your workspace** on the Slack page — the token then arrives on its own. On some paid plans a Slack admin must approve the install first."
         },
         {
           "title": "Generate the app-level token",

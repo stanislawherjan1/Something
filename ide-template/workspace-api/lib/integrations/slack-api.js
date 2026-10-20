@@ -200,6 +200,45 @@ export function removeReaction(channel, timestamp, name) {
   });
 }
 
+// ─── the assistant pane (Agents & AI Apps) ───────────────────────────────────
+
+/** "is thinking…" under the thread while a turn runs; '' clears it. Best-effort. */
+export function setAssistantStatus(channel, thread_ts, status) {
+  return call('assistant.threads.setStatus', { channel_id: channel, thread_ts, status: String(status || '') }).catch(() => null);
+}
+/** A title for an assistant-pane thread (the person's first words). Best-effort. */
+export function setAssistantTitle(channel, thread_ts, title) {
+  return call('assistant.threads.setTitle', { channel_id: channel, thread_ts, title: String(title || '').slice(0, 80) }).catch(() => null);
+}
+
+/** Recent messages of a conversation since `oldest` (a ts), oldest first, bounded. */
+export async function conversationsHistory(channel, { oldest = null, limit = 15 } = {}) {
+  const r = await call('conversations.history', { channel, limit, ...(oldest ? { oldest: String(oldest) } : {}) });
+  return (r.messages || []).slice().sort((a, b) => Number(a.ts) - Number(b.ts));
+}
+
+// ─── install (OAuth v2) ──────────────────────────────────────────────────────
+
+/** The URL that asks the workspace to install the app with these bot scopes. */
+export function installUrl({ clientId, redirectUri, scopes, state }) {
+  const u = new URL('https://slack.com/oauth/v2/authorize');
+  u.searchParams.set('client_id', clientId);
+  u.searchParams.set('scope', scopes.join(','));
+  u.searchParams.set('redirect_uri', redirectUri);
+  u.searchParams.set('state', state);
+  return u.href;
+}
+
+/** Trade the install code for the bot token: { access_token, team: { id, name }, bot_user_id }. */
+export async function oauthAccess({ clientId, clientSecret, code, redirectUri }) {
+  const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, redirect_uri: redirectUri });
+  const resp = await post(API + 'oauth.v2.access', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+  let data;
+  try { data = await resp.json(); } catch { throw new SlackError('oauth.v2.access', `http_${resp.status}`); }
+  if (!data || data.ok !== true || !data.access_token) throw new SlackError('oauth.v2.access', data?.error || `http_${resp.status}`);
+  return data;
+}
+
 // ─── files ───────────────────────────────────────────────────────────────────
 
 /**

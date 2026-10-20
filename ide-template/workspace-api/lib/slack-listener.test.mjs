@@ -114,6 +114,32 @@ ok('a file the person sent is saved and named to the turn', /\[Attachments — r
 const saved = readFileSync(join(ROOT, turns.at(-1).body.match(/- (\.attachments\/[^\n]+)/)[1]), 'utf8');
 ok('...with the bytes Slack served', saved === 'file from https://files.slack.com/f/notes.txt');
 
+// the assistant pane: a status line and a title instead of reactions
+const statuses = [], titles = [];
+fakeApi.setAssistantStatus = async (c, t, s) => { statuses.push(s); };
+fakeApi.setAssistantTitle = async (c, t, title) => { titles.push(title); };
+reactions.length = 0;
+r = await handle(dm({ ts: '7.5', thread_ts: '7.5', text: 'plan my week' }));
+await r.done;
+await new Promise(res => setTimeout(res, 10));
+ok('in the assistant pane the thread gets a status while working and a title from the first words', statuses.join('|') === 'is thinking…|' && titles[0] === 'plan my week' && reactions.length === 0, { statuses, titles, reactions });
+r = await handle(dm({ ts: '7.6', thread_ts: '7.5', text: 'and next week' }));
+await r.done;
+ok('...the title is set once per thread', titles.length === 1);
+
+// catch-up after a lost window: live DMs are read back, the dedup keeps repeats out
+fakeApi.conversationsHistory = async (channel, { oldest }) => (channel === 'D1' ? [
+  { ts: '7.6', user: 'U0ANN0001', text: 'and next week' },          // already seen
+  { ts: '7.9', user: 'U0ANN0001', text: 'missed while down' },
+  { ts: '7.95', user: 'U0SELF', text: 'own' },
+  { ts: '7.97', user: 'U0ANN0001', bot_id: 'B2', text: 'a bot' },
+  { ts: '7.98', user: 'U0ANN0001', subtype: 'channel_join', text: 'x' },
+] : []);
+const nTurns = turns.length;
+const cu = await L.catchUp(new Date(Date.now() - 60_000).toISOString(), { api: fakeApi, handle });
+ok('the catch-up handles only the messages not seen before, from people', cu.messages === 1 && turns.length === nTurns + 1 && turns.at(-1).body === 'missed while down', cu);
+ok('a catch-up with no window does nothing', (await L.catchUp(null, { api: fakeApi, handle })).messages === 0);
+
 // a channel message with no channel handler yet
 r = await handle({ type: 'message', channel: 'C1', channel_type: 'channel', user: 'U0ANN0001', text: 'hello all', ts: '8.0' });
 ok('a channel message with no channel handler is silent', r.did === 'ignored');
