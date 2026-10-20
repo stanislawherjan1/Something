@@ -109,8 +109,8 @@ without prompting.)
 1. Sign up / log in at <https://console.hetzner.com>.
 2. **Add Server**.
 3. **Location:** pick the one closest to you or your team.
-4. **Image:** **Ubuntu 24.04** — pick it explicitly; the panel may preselect
-   a newer release Something hasn't been tested on.
+4. **Image:** **Ubuntu** — the LTS the panel offers by default is fine
+   (24.04 and 26.04 are both verified).
 5. **Type:** **CX22** (2 vCPU / 4 GB RAM, ~€4.50/mo) is the cheapest that
    works. For faster builds and a bit more headroom, **CPX21** (3 vCPU / 4 GB,
    ~€8/mo). 4 GB RAM is the floor — don't go smaller.

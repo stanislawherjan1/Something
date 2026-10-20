@@ -51,8 +51,8 @@ smooth. You cannot click for the person — relay the click-by-click from
 [NEW_CLIENT.md](NEW_CLIENT.md) Part B and [QUICK_START.md](QUICK_START.md),
 one step at a time; don't guess at console UIs from memory.
 
-1. **A Linux server** — **Ubuntu 24.04, picked explicitly** (providers now
-   default to newer, untested images), at least 4 GB RAM (e.g. Hetzner CX22),
+1. **A Linux server** — Ubuntu LTS (24.04 and 26.04 are both verified; the
+   provider's default image is fine), at least 4 GB RAM (e.g. Hetzner CX22),
    with their SSH key added at creation. Check:
    `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@<IP> 'echo connected'`
    (without `accept-new` the first-ever contact fails on the unknown host

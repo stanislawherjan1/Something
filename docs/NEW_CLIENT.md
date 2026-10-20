@@ -80,8 +80,8 @@ In <https://console.hetzner.com>:
 
 1. **Servers → Add Server**
 2. Location: closest to the client's primary user base (e.g. `nbg1` = Nuremberg, `hel1` = Helsinki, `ash` = Ashburn US)
-3. Image: **Ubuntu 24.04** — pick it explicitly, the panel may preselect a
-   newer untested release (latest stable Debian also works)
+3. Image: **Ubuntu LTS** — the panel's default is fine (24.04 and 26.04
+   verified; latest stable Debian also works)
 4. Type: **CX22** (4 GB RAM, 2 vCPU, ~€4.50/mo) is the cheapest that works; **CPX21** (~€8/mo) builds faster and is fine for 1–7 active users. Bigger if multiple heavy users expected. 4 GB RAM is the floor.
 5. Networking: IPv4 + IPv6
 6. SSH keys: select the public key from A3 (or **Add SSH key** with `cat ~/.ssh/id_ed25519.pub` content)
