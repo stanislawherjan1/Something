@@ -26,6 +26,7 @@ import { seedLinks } from './memory-task-links.js';
 import { regateUngated } from './memory-regate.js';
 import { pruneBackups } from './migrate.js';
 import { list as rosterList, listGroups, memberGroupsOf } from './team.js';
+import { isGroupId } from './group-id.js';
 
 const RUN_HOUR = Number(process.env.MEMORY_V4_MAINTENANCE_HOUR) || 4;
 const TZ = process.env.IDE_TIMEZONE || 'UTC';
@@ -89,7 +90,7 @@ export function archiveOrphanUsers({ now = Date.now() } = {}) {
 /** The people and groups a night's digests cover. */
 function targets() {
   const people = rosterList().map(u => u.slug).filter(s => s && s !== 'default' && /^[a-z0-9-]+$/.test(s));
-  const groups = listGroups().map(g => String(g.chatId)).filter(g => /^-\d{4,20}$/.test(g));
+  const groups = listGroups().map(g => String(g.chatId)).filter(isGroupId);
   return { people, groups };
 }
 

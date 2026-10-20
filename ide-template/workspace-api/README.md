@@ -116,6 +116,8 @@ workspace-api/
 │   ├── attachments.js       # chat file-upload handling → .attachments/
 │   ├── branding.js          # bot name / avatar / logo metadata
 │   ├── team.js              # allowed-emails whitelist + audit log; per-person time zone/language (setPreferences, locks), workspace default zone
+│   ├── surfaces.js          # where a person can be reached, as a set (web/telegram/slack); reads the old one-word `preferredSurface` and still offers it
+│   ├── group-id.js          # what is a group id (a Telegram chat id, or another surface's prefixed id) — one check for the registry, the memory scopes and the files named after a group
 │   ├── planner-schedule.js  # morning planning at 06:00 in each person's zone (DST-safe; hourly realign)
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)

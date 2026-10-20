@@ -32,6 +32,7 @@ import { resolve as resolveBranding } from '../lib/branding.js';
 import { resolveTurnToken, isInternalCall } from '../lib/turn-identity.js';
 import { isShared } from '../lib/shares.js';
 import { pathInScope } from '../lib/scope-rule.js';
+import { prefers } from '../lib/surfaces.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
@@ -86,7 +87,7 @@ async function deliverRunOutcome(member, deliver, reply, sentItself) {
 
   let tgSent = false;
   let tgMessageId = null;
-  const prefersTg = member.preferredSurface === 'telegram' || member.preferredSurface === 'both';
+  const prefersTg = prefers(member, 'telegram');
   if (member.telegramChatId && (channel === 'telegram' || (channel === 'all' && prefersTg))) {
     try {
       const r = await sendTelegramMessage(member.telegramChatId, text);
@@ -269,6 +270,7 @@ export default function internalRouter() {
         ...(bot ? { telegramChatId: m.telegramChatId || null } : {}),
         telegramLinked: !!m.telegramChatId,
         preferredSurface: m.preferredSurface || null,
+        surfaces: m.surfaces || null,
         preferredLanguage: m.preferredLanguage || null,
         isOperator: !!op && m.slug === op,
       }));
@@ -306,8 +308,7 @@ export default function internalRouter() {
           try { publishNotification({ kind: 'reminder', title: t || '⏰ Reminder', body: b, recipient: slug }); web = true; }
           catch (e) { process.stderr.write(`[reminder-deliver] web leg ${slug}: ${e.message}\n`); }
         }
-        if ((ch === 'telegram' || ch === 'all') && m.telegramChatId
-            && (m.preferredSurface === 'telegram' || m.preferredSurface === 'both')) {
+        if ((ch === 'telegram' || ch === 'all') && m.telegramChatId && prefers(m, 'telegram')) {
           try { const r = await sendTelegramMessage(m.telegramChatId, `⏰ ${t}${b ? ': ' + b : ''}`.trim()); telegram = !!(r && r.ok); }
           catch (e) { process.stderr.write(`[reminder-deliver] tg leg ${slug}: ${e.message}\n`); }
         }
@@ -503,8 +504,7 @@ export default function internalRouter() {
       const deliverTo   = target || resolveMember(actor);
       const explicitTg  = channel === 'telegram';
       const explicitWeb = channel === 'web';
-      const prefersTg = !!(deliverTo?.telegramChatId &&
-        (deliverTo.preferredSurface === 'telegram' || deliverTo.preferredSurface === 'both'));
+      const prefersTg = !!(deliverTo?.telegramChatId && prefers(deliverTo, 'telegram'));
       // Send to Telegram when the sender EXPLICITLY asked for it (works for a
       // relay AND a self "send me on Telegram"), or — for a cross-user relay —
       // when the recipient's preference is Telegram. Proactive/reminders (not

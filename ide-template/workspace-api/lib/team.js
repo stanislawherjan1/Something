@@ -26,6 +26,8 @@ import { execFileSync } from 'node:child_process';
 import { PROJECT_DIR } from './config.js';
 import { v4Mode } from './memory-ledger.js';
 import * as integrationsStore from './integrations/store.js';
+import { normalizeGroupId } from './group-id.js';
+import { normalizeSurfaces, parseSurfaces, legacySurface, describeSurfaces } from './surfaces.js';
 
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
@@ -43,9 +45,9 @@ const VALID_ROLES = new Set(['admin', 'member', 'observer']);
 // slot per person on the roster. A build constant — enlarging it is a change
 // to the image.
 export const TURN_POOL_SIZE = Number(process.env.TURN_POOL_SIZE || 24);
-// Where a teammate prefers to be reached for relays. 'both' = web thread (always
-// the record) + a Telegram ping; 'telegram' = prefer TG; 'web' = web only.
-const VALID_SURFACES = new Set(['web', 'telegram', 'both']);
+// Where a teammate prefers to be reached for relays: a set of surfaces
+// (lib/surfaces.js). Stored as the set; read back as the set (`surfaces`) and
+// as the one word older clients know (`preferredSurface`: web/telegram/both).
 
 // Preferred WRITING LANGUAGE — SHARED roster metadata (not private), because
 // another teammate's bot needs it to compose a relay in the right language and
@@ -189,7 +191,8 @@ export function list() {
     // Cross-surface contact (team mode): the teammate's linked Telegram chat id
     // and where they prefer to be reached. Drives relay delivery routing.
     telegramChatId:   normalizeChatId(e.telegramChatId),
-    preferredSurface: VALID_SURFACES.has(e.preferredSurface) ? e.preferredSurface : null,
+    surfaces:         normalizeSurfaces(e.preferredSurface),
+    preferredSurface: legacySurface(e.preferredSurface),
     // Shared so a teammate's bot can relay to this person in their language.
     preferredLanguage: normalizeLang(e.preferredLanguage),
     // A session token issued before this moment is no longer accepted: set
@@ -645,11 +648,7 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
     }
   }
   if (preferredSurface !== undefined) {
-    const cleared = preferredSurface === '' || preferredSurface === null;
-    if (!cleared && !VALID_SURFACES.has(preferredSurface)) {
-      throw new Error('Preferred surface must be web, telegram, or both.');
-    }
-    patch.preferredSurface = cleared ? null : preferredSurface;
+    patch.preferredSurface = parseSurfaces(preferredSurface);   // the set, or null to clear; throws on junk
   }
   if (preferredLanguage !== undefined) {
     patch.preferredLanguage = normalizeLang(preferredLanguage);
@@ -859,14 +858,10 @@ export function setTeamMode(enabled, actor) {
 // watcher → isolated group brain). Stored under the team config's `groups` key,
 // NOT the member allowlist: group membership is the access boundary, not a
 // per-sender list (operator decision — the bot only joins the team's own group).
-// A group id is a NEGATIVE integer (supergroups are -100…); normalizeGroupId is
+// A Telegram group id is a NEGATIVE integer (supergroups are -100…), another
+// surface's carries its prefix (lib/group-id.js); normalizeGroupId is
 // deliberately SEPARATE from normalizeChatId (positive-only, guards the DM
 // fan-out invariant — see its comment). Design: docs/future-plans/TELEGRAM_GROUP_MODE.md
-function normalizeGroupId(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  return /^-\d{6,20}$/.test(s) ? s : null;
-}
 
 /** All allow-listed groups as [{ chatId, title, requireMention, beat, addedAt, addedBy }]. */
 export function listGroups() {
@@ -1068,8 +1063,8 @@ export function writeTeamRoster() {
     const contactHint = (m) => {
       // Bot-facing routing guideline — surface only, never the raw chat id.
       const linked = m.telegramChatId ? 'Telegram linked' : 'no Telegram';
-      const pref = m.preferredSurface
-        ? `prefers ${m.preferredSurface}`
+      const pref = m.surfaces
+        ? `prefers ${describeSurfaces(m.surfaces)}`
         : (m.telegramChatId ? 'prefers either' : 'web only');
       return `${pref} (${linked})`;
     };

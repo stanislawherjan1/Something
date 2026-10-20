@@ -21,6 +21,7 @@
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { primaryAdminSlug } from './team.js';
+import { normalizeGroupId } from './group-id.js';
 
 const turns = new Map();   // token → { actor, group, groupId }
 
@@ -30,7 +31,7 @@ export function issueTurnToken({ actor = null, group = false, groupId = null } =
     actor: actor && actor !== 'default' ? String(actor) : null,
     group: !!group,
     // Which group, for memory v4: a group turn reads and writes that group's scope only.
-    groupId: group && /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null,
+    groupId: group ? normalizeGroupId(groupId) : null,
   });
   return token;
 }

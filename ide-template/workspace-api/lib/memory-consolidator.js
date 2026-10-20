@@ -36,6 +36,7 @@ import { addAsk, listRules, decisions as askDecisions } from './memory-asks.js';
 import * as sharing from './memory-sharing.js';
 import { knownNames, knownKinds, dismissedNames } from './memory-views.js';
 import { getTeamMode, isAllowedGroup, dmOwnerSlug, primaryAdminSlug, list as rosterList } from './team.js';
+import { isGroupId } from './group-id.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 const IDLE_MS      = num('MEMORY_V4_IDLE_SECONDS', 900) * 1000;
@@ -182,8 +183,8 @@ export function listSources() {
   try {
     const dir = join(base, '.group-watcher');
     for (const f of readdirSync(dir)) {
-      const m = f.match(/^(-\d{4,20})-history\.jsonl$/);
-      if (!m || !isAllowedGroup(m[1])) continue;
+      const m = f.match(/^(.+)-history\.jsonl$/);
+      if (!m || !isGroupId(m[1]) || !isAllowedGroup(m[1])) continue;
       const path = join(dir, f);
       let st; try { st = statSync(path); } catch { continue; }
       out.push({ id: `group:${m[1]}`, kind: 'group', path, mtime: st.mtimeMs, owner: null, scope: `group:${m[1]}`, name: 'the team', conv: `group:${m[1]}` });

@@ -147,6 +147,16 @@ const HOST_NAME_RE = /^(?=.{1,253}$)(?!\d+(?:\.\d+){3}$)(?:[a-z0-9](?:[a-z0-9-]{
 export function isHostName(v) {
   return typeof v === 'string' && HOST_NAME_RE.test(v);
 }
+/**
+ * A host name, or a `*.example.com` suffix — the one wildcard form the proxy
+ * understands (scripts/egress-proxy.js: the suffix and the apex). Only a
+ * literal from the catalog may be a suffix: a Socket Mode endpoint is handed
+ * out on a host chosen at connect time (`wss-123.slack.com`), which no fixed
+ * list can name. A value typed into a settings field never is (isHostName).
+ */
+export function isHostPattern(v) {
+  return isHostName(v) || (typeof v === 'string' && v.startsWith('*.') && isHostName(v.slice(2)));
+}
 
 /**
  * Compute the union of platform allowlist + every active integration's
@@ -176,11 +186,13 @@ export function computeAllowedHosts() {
     const items   = isMulti ? plain : null;
 
     for (const host of cat.mcp.allowedHosts) {
+      // A catalog literal may be a `*.suffix`; a value that came from a
+      // settings field is only a host name when it looks like one: no IP
+      // literal, no wildcard, no whitespace or newline that would turn one
+      // line of the file into two.
+      const accept = host.includes('{{') ? isHostName : isHostPattern;
       for (const expanded of expandPlaceholders(host, fields, items)) {
-        // A value that came from a settings field is only a host name when it
-        // looks like one: no IP literal, no wildcard, no whitespace or
-        // newline that would turn one line of the file into two.
-        if (!isHostName(expanded)) {
+        if (!accept(expanded)) {
           if (expanded) process.stderr.write(`[egress] ${id}: not a host name, skipped: ${JSON.stringify(String(expanded).slice(0, 80))}\n`);
           continue;
         }

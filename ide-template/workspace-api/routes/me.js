@@ -69,6 +69,7 @@ function meEnvelope(req) {
     // prompt when Telegram is active but this user hasn't linked a chat id.
     telegramChatId:   member?.telegramChatId || null,
     preferredSurface: member?.preferredSurface || null,
+    surfaces:         member?.surfaces || null,
     preferredLanguage: member?.preferredLanguage || null,
     languageLocked:   !!member?.languageLocked,
     // Time zone: their own (or null), whether the bot may change it, where it

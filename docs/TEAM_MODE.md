@@ -123,7 +123,7 @@ role badges, and recipient pickers react live.
 ## 2. Roster & roles
 
 The whitelist lives in `.allowed-emails.json` (array of
-`{ email, role, addedAt, addedBy, slug, displayName, telegramChatId, preferredSurface }`)
+`{ email, role, addedAt, addedBy, slug, displayName, telegramChatId, preferredSurface }` — read back with `surfaces`, see §8)
 with an append-only `.allowed-emails.audit.log`. Anyone on the list can sign in
 with that Google account; everyone else is refused at auth.
 
@@ -162,7 +162,7 @@ Each teammate gets a path-safe **slug** (derived from their email, e.g.
 `users/<slug>/`) plus a `displayName` and an avatar. The slug is the stable key
 used everywhere a person is referenced: file scope, reminder recipients, task
 owners, relay routing. `GET /api/me` returns the caller's
-`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface, preferredLanguage, languageLocked, timezone, timezoneLocked, timezoneFrom, timezoneSetAt, defaultTimezone, effectiveTimezone }`.
+`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface, surfaces, preferredLanguage, languageLocked, timezone, timezoneLocked, timezoneFrom, timezoneSetAt, defaultTimezone, effectiveTimezone }`.
 
 Each person edits their own profile on the **Settings** page (user menu →
 Settings): picture, name, reply language and time zone, and their Telegram link
@@ -443,6 +443,11 @@ Each teammate can be reached on Telegram once linked:
   Telegram" prompt (which PATCHes `/api/me`).
 - `preferredSurface` — `web` / `telegram` / `both` — the teammate's own choice of
   where they want to be reached. It drives relay + reminder delivery routing.
+  Underneath it is a **set** of surfaces (`lib/surfaces.js`): the roster stores
+  and the API also returns `surfaces` (for example `["web","telegram"]`), and a
+  PATCH accepts either the word or an array. The word is what `both` always
+  meant — web and Telegram — kept so older clients keep working; a surface the
+  word cannot name shows up only in `surfaces`.
 
 Telegram itself is **team-wide** (`teamWide` in the catalog): an admin connects
 the bot once for everyone, with no read-only/read-and-write choice (it always

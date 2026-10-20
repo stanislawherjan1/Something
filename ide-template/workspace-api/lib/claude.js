@@ -33,6 +33,8 @@ import { buildRecallBlock, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
 import { setTurnRecall, issueTurnToken, revokeTurnToken } from './turn-identity.js';
+import { normalizeGroupId } from './group-id.js';
+import { prefers } from './surfaces.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 // How much of claude's stderr to keep for diagnosing a failed turn.
@@ -176,7 +178,7 @@ export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOpera
   // arrives per turn with the message (lib/memory-recall.js), not in here.
   if (['read', 'on'].includes(v4Mode())) {
     if (groupContext) {
-      const gid = /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null;
+      const gid = normalizeGroupId(groupId);
       return buildCachedPrefixV4({ memoryDir, extraCards: [
         { id: 'STANDING_RULES', body: gid ? rulesCard([`group:${gid}`]) : '' },
         { id: 'WHAT_IS_GOING_ON', body: gid ? groupGoingOnCard(gid) : '' },
@@ -226,9 +228,10 @@ function reachLine(slug, m) {
   try {
     const telegramOn = integrationsStore.isUsable('telegram');
     const linked = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
-    const prefers = m?.preferredSurface === 'telegram' ? ' They prefer Telegram.' : m?.preferredSurface === 'web' ? ' They prefer the web workspace.' : '';
+    const tg = prefers(m, 'telegram'), web = prefers(m, 'web');
+    const preference = tg && !web ? ' They prefer Telegram.' : web && !tg ? ' They prefer the web workspace.' : '';
     return linked
-      ? `Reaches them on: the web workspace and Telegram.${prefers}`
+      ? `Reaches them on: the web workspace and Telegram.${preference}`
       : `Reaches them on: the web workspace only${telegramOn ? ' (they have not linked Telegram)' : ''} — never set a reminder or a message for them on Telegram.`;
   } catch { return ''; }
 }
