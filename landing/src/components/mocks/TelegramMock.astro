@@ -1,5 +1,8 @@
 ---
-// A phone with the Telegram conversation, Telegram's own look.
+// A phone with the team's Telegram group, Telegram's own look: the coworker
+// answering with team context between the teammates' own messages. The group
+// wears the organization's logo, same as the web sidebar; senders show their
+// profile pictures beside their bubbles.
 import { svg } from '../../lib/icons';
 import '../../styles/mocks.css';
 ---
@@ -8,15 +11,24 @@ import '../../styles/mocks.css';
   <div class="tg-status"><b>9:41</b><span class="island"></span><span class="tg-batt"></span></div>
   <div class="tg-head">
     <span class="tg-back" set:html={svg('back') + '<i>Chats</i>'} />
-    <span class="tg-who"><b>Aria</b><span>bot</span></span>
-    <span class="tg-av"><span class="bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span></span>
+    <span class="tg-who"><b>Ops</b><span>6 members, 1 bot</span></span>
+    <span class="tg-av"><span class="tg-org"><img src="/favicon.svg" alt="" /></span></span>
   </div>
   <div class="tg-wall">
     <span class="tg-date">Today</span>
-    <div class="tg-msg out">Anything urgent today?<span class="tg-meta">9:02 <i>✓✓</i></span></div>
-    <div class="tg-msg in">Two things:<br />1. Your 10:00 call. Notes are in <u>investor-prep.md</u><br />2. A supplier invoice is 6 days overdue. Reply drafted, send it?<span class="tg-meta">9:02</span></div>
-    <div class="tg-msg out">Yes, send it<span class="tg-meta">9:03 <i>✓✓</i></span></div>
-    <div class="tg-msg in">Sent ✓ I’ll tell you when they reply.<span class="tg-meta">9:03</span></div>
+    <div class="tg-row">
+      <img class="tg-pava" src="/people/p1.jpg" alt="" width="28" height="28" />
+      <div class="tg-msg in"><b class="tg-name">Mara</b>Who can own the trade-fair checklist?<span class="tg-meta">10:12</span></div>
+    </div>
+    <div class="tg-row">
+      <span class="tg-pava bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+      <div class="tg-msg in"><b class="tg-name aria">Aria</b>Taking it. Leo’s stand booking is confirmed, so I’ll draft the checklist from last year’s and drop it in the shared drive by five.<span class="tg-meta">10:12</span></div>
+    </div>
+    <div class="tg-msg out">Add the badge printing, that was late last year<span class="tg-meta">10:14 <i>✓✓</i></span></div>
+    <div class="tg-row">
+      <span class="tg-pava bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+      <div class="tg-msg in"><b class="tg-name aria">Aria</b>Added ✓ with a reminder for the 3rd.<span class="tg-meta">10:14</span></div>
+    </div>
   </div>
   <div class="tg-input">
     <span set:html={svg('tgclip', 'tg-i')} />
@@ -25,3 +37,17 @@ import '../../styles/mocks.css';
   </div>
 </div>
 </div>
+
+<style>
+  /* Group extras over the shared Telegram mock styles. */
+  .tg-name { display: block; margin-bottom: 1px; font-size: 12.5px; font-weight: 600; color: #c05b2e; }
+  .tg-name.aria { color: #6d28d9; }
+  /* The group's avatar: the organization's logo, as the web sidebar wears it. */
+  .tg-org { display: block; width: 100%; height: 100%; border-radius: 99px; overflow: hidden; background: #fff; }
+  .tg-org img { width: 100%; height: 100%; object-fit: cover; }
+  /* A sender's profile picture, at the bubble's foot, Telegram style. */
+  .tg-row { display: flex; align-items: flex-end; gap: 7px; }
+  .tg-row :global(.tg-msg) { margin-left: 0; }
+  .tg-pava { width: 28px; height: 28px; flex-shrink: 0; border-radius: 99px; object-fit: cover; filter: saturate(.85) sepia(.06); box-shadow: 0 0 0 1px rgb(0 0 0 / .07); }
+  .tg-pava.bot { display: inline-block; overflow: hidden; background: #fff; }
+</style>
