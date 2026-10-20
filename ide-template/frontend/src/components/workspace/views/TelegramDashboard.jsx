@@ -10,7 +10,7 @@ import { TabBar } from './MemoryV4View.jsx';
 import StatusTag from './StatusTag.jsx';
 import { TEAM_URL, call, formatWhen, barBtn, barDanger, primaryBtn } from './surface-screen-helpers.js';
 import {
-  StatePill, BottomBar, AccessDenied, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, Switch, SettingsModal, LinkIdButton,
+  StatePill, BottomBar, AccessDenied, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, SettingsModal, LinkIdButton,
 } from './surface-screen.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -105,7 +105,7 @@ function GroupLine({ group, canEdit, avatars, onChanged }) {
     <Line
       who={<><RoomAvatar icon={Users} /><Name>{group.title || 'Untitled group'}</Name></>}
       state={<StatusTag tone="active">Active</StatusTag>}
-      text={group.requireMention ? 'Replies when mentioned' : 'Joins in on its own'}
+      text={group.language || 'auto language'}
       pile={members.length > 0 && <MemberPile members={members} avatars={avatars} />}
       actions={<>
         {canEdit && <EditButton onClick={() => setOpen(true)} />}
@@ -135,18 +135,19 @@ function PendingLine({ entry, onChanged }) {
 }
 
 function GroupModal({ group, avatars, onClose, onSaved }) {
-  const [ambient, setAmbient] = useState(!group.requireMention);
+  const [lang, setLang] = useState(group.language || '');
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
   const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
   const run = async (what, fn) => { setBusy(what); setErr(''); try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); } };
   return (
     <SettingsModal avatar={<RoomAvatar icon={Users} />} title={group.title || 'Untitled group'} sub={group.chatId} onClose={onClose}
-      onSave={() => run('save', () => call(GROUPS_URL, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, requireMention: !ambient }) }))}
+      onSave={() => run('save', () => call(GROUPS_URL, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim() }) }))}
       saving={busy === 'save'} busy={busy} err={err}
       danger dangerLabel="Remove group" dangerBusyLabel="Removing…" onDanger={() => run('danger', () => call(`${GROUPS_URL}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }))}>
-      <ModalRow label="Joins in on its own" tip="Whether the assistant follows the conversation and chimes in when it can help, or only answers when someone mentions it.">
-        <Switch on={ambient} onToggle={() => setAmbient(v => !v)} />
+      <ModalRow label="Reply language" tip="The language the assistant writes in this group, whatever language a message is in. Blank: the language of each message.">
+        <input value={lang} onChange={e => setLang(e.target.value)} placeholder="auto" spellCheck={false} autoComplete="off"
+          className="w-[150px] rounded-[6px] border border-border/60 bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors focus:border-foreground/35" />
       </ModalRow>
       <ModalRow label="In the group" tip="People the assistant has seen write in this group. Teammates show their face; anyone else is a grey one.">
         <RoomPile members={members} avatars={avatars} />
