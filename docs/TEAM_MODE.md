@@ -414,8 +414,10 @@ courier:
 - From a workspace, the assistant uses `web_send_message` with
   `recipient: <slug>` to deliver into that teammate's workspace (notification +
   chat). By default it routes to the recipient's **preferred surface** (their
-  workspace always; their Telegram too if that's their preference and they've
-  linked it). The sender can override with `channel: "web" | "telegram"`.
+  workspace always; their Telegram and/or Slack too if that's their preference
+  and they've linked it). The sender can override with `channel: "web" |
+  "telegram" | "slack"`; on Slack the message lands in the recipient's DM with
+  the bot.
 - On **Telegram**, a relay reaches the operator's assistant as an injected
   `[RELAY …]` frame (out-of-band, like a fired reminder): the bot presents it to
   the operator naming the person, and relays the operator's answer back in the

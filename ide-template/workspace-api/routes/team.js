@@ -82,7 +82,7 @@ export default function teamRouter() {
       // is visible to EVERYONE, so members can see each other's channels.
       // The raw chat id is a private contact handle, so only an admin or the
       // row's owner sees the actual value. `preferredSurface` stays visible too.
-      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId, operatorPinned: !!(opId && e.telegramChatId === opId) };
+      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId, slackLinked: !!e.slackUserId, operatorPinned: !!(opId && e.telegramChatId === opId) };
       if (!viewerIsAdmin && e.email !== viewerEmail) row.telegramChatId = null;
       return row;
     });

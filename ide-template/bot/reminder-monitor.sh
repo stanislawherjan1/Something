@@ -189,6 +189,21 @@ fire_operator() {
     # in global-claude.md). Everything else fires as a normal [REMINDER].
     local frame="REMINDER"
     [ "$urgency" = "ambient" ] && frame="AMBIENT"
+    # Slack is not a surface the tmux brain has (no Slack tool there). A
+    # Slack-bound reminder runs as a headless turn, which delivers its result
+    # through web_send_message with channel=slack — the operator is a person
+    # like any other on that surface. No tmux frame, no raw text.
+    if [ "$channel" = "slack" ]; then
+        [ -z "$OP_SLUG" ] && fetch_op_slug
+        if invoke_turn_operator "[${frame} channel=slack | ${message}]"; then
+            log "Slack-bound reminder ran as a headless turn (urgency=${urgency})"
+            FIRE_PATH="invoke-turn"
+            return 0
+        fi
+        log "Slack-bound reminder: no headless turn available — staying silent rather than sending machine text: ${message:0:60}"
+        FIRE_PATH="undelivered-no-brain"
+        return 1
+    fi
     # Route through the serialized, idle-gated injector (tmux-inject.sh) instead
     # of a raw send-keys. That guarantees this reminder can never interleave with
     # a live user turn or another injection (2026-07-13 incident). exit 3 =

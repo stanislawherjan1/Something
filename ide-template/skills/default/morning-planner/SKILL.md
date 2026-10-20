@@ -151,8 +151,8 @@ it and call again. Each item:
   `recur` only for the sub-hourly duties.
 - `kind`: `info` when it only tells them something, `action` when something should
   follow. `routine`: the title of the routine it comes from (omit for your own additions).
-- `channel`: from MY_SETTINGS "Reaches them on" — never Telegram for someone it does not
-  reach. `recipient`: the person (`slug`); omit in a solo workspace.
+- `channel`: from MY_SETTINGS "Reaches them on" — never Telegram or Slack for someone it
+  does not reach there. `recipient`: the person (`slug`); omit in a solo workspace.
 
 ## 6. Check before you stop
 

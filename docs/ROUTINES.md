@@ -282,7 +282,7 @@ history.
 | `due` | Next fire time (ISO, UTC). A one-shot more than 5 minutes in the past is refused by `set_reminder`, with the current time in the workspace timezone, so a plan placed on the wrong date is fixed instead of firing all at once |
 | `recur` | `interval` (every N minutes/hours/days/weeks), `weekly` (days + time), `monthly` (day or `last` + time); optional `until` / `count` / `skip_hours` / `skip_days`. Times are **UTC** |
 | `urgency` | `now` (default) or `ambient` — a soft item woven into conversation at a natural opening |
-| `channel` | `telegram`, `web` or `all` |
+| `channel` | `telegram`, `slack`, `web` or `all` (`slack`: the result goes to the person's Slack DM with the bot; for the operator it runs as a headless turn, since the tmux brain has no Slack) |
 | `recipients` | Roster slugs, or everyone (admin only) |
 | `origin` | `planner` for planner-placed items |
 | `timed` | `true` when the time itself matters; such an item is never held back for pacing |
@@ -307,7 +307,7 @@ history.
 | Targets a Telegram group (`chat`) | `/api/internal/group-say` — the group assistant composes it (a person's own "post this in the group" goes word for word through `/api/internal/group-post` instead) |
 | Solo, or for the operator | `[REMINDER …]` / `[AMBIENT …]` frame into the operator's session; if that session is busy or offline, a headless turn |
 | A teammate's planner trigger (`exec`) | `/api/internal/invoke-turn` — runs the planner as that teammate |
-| A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram per `channel`); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |
+| A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram and/or Slack per `channel` and their preference); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |
 | A plain reminder a user asked for ("remind me at 3…") | `/api/internal/reminder-deliver` — a notification with the stored text |
 
 A reminder is consumed only once delivery is confirmed; failures retry with backoff

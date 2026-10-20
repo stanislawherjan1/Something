@@ -37,6 +37,7 @@ export default function SettingsView({ sidebarOpen }) {
   const me = meQ.data;
   const integ = useApi('/api/integrations');
   const tgActive = !!(integ.data?.integrations || []).find(i => i.id === 'telegram')?.active;
+  const slActive = !!(integ.data?.integrations || []).find(i => i.id === 'slack')?.active;
   const [error, setError] = useState(null);
 
   // One PATCH per change; the fresh envelope goes to every mounted view.
@@ -67,6 +68,7 @@ export default function SettingsView({ sidebarOpen }) {
               <Group title="Profile"><ProfileRows me={me} patch={patch} onError={setError} /></Group>
               <Group title="Assistant"><AssistantRows me={me} patch={patch} /></Group>
               {tgActive && <Group title="Telegram"><TelegramRows me={me} patch={patch} /></Group>}
+              {(tgActive || slActive) && <Group title="Reach me"><ReachRows me={me} patch={patch} tgActive={tgActive} slActive={slActive} /></Group>}
               {me.role === 'admin' && <Group title="Workspace"><WorkspaceRows me={me} onError={setError} /></Group>}
               <SharedLinks isAdmin={me.role === 'admin'} onError={setError} />
             </>
@@ -247,28 +249,43 @@ function TelegramRows({ me, patch }) {
   const [chatId, setChatId] = useState(me.telegramChatId || '');
   const [seenId, setSeenId] = useState(me.telegramChatId);
   if (seenId !== me.telegramChatId) { setSeenId(me.telegramChatId); setChatId(me.telegramChatId || ''); }
-  const surface = me.preferredSurface || 'both';
-  const options = [{ value: 'both', label: 'Both' }, { value: 'telegram', label: 'Telegram' }, { value: 'web', label: 'Web' }];
   return (
-    <>
-      <Row label="Chat id" hint="Links your Telegram to this workspace.">
-        <input type="text" value={chatId} maxLength={20} className={inputCls} placeholder="e.g. 123456789"
-          onChange={(e) => setChatId(e.target.value)}
-          onBlur={() => { const v = chatId.trim(); if (v !== (me.telegramChatId || '')) patch({ telegramChatId: v }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-      </Row>
-      <Row label="Reach me on" hint="Where the assistant messages you first.">
-        <div className="grid w-full grid-cols-3 gap-1 rounded-[6px] bg-muted/40 p-1">
-          {options.map((o) => (
-            <button key={o.value} type="button" onClick={() => surface !== o.value && patch({ preferredSurface: o.value })}
-              className={cn('rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors',
-                surface === o.value ? 'bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-muted-foreground/75 hover:text-foreground/90')}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </Row>
-    </>
+    <Row label="Chat id" hint="Links your Telegram to this workspace.">
+      <input type="text" value={chatId} maxLength={20} className={inputCls} placeholder="e.g. 123456789"
+        onChange={(e) => setChatId(e.target.value)}
+        onBlur={() => { const v = chatId.trim(); if (v !== (me.telegramChatId || '')) patch({ telegramChatId: v }); }}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+    </Row>
+  );
+}
+
+// Where the assistant reaches this person first — a set of the surfaces this
+// workspace has. The web is always one of them; Telegram and Slack appear when
+// they are connected (a surface the person has not linked yet is still a
+// preference: it takes effect the moment they link it). Saved as the
+// `surfaces` array; `preferredSurface` (web / telegram / both) is what older
+// clients still read.
+function ReachRows({ me, patch, tgActive, slActive }) {
+  const chosen = new Set(Array.isArray(me.surfaces) && me.surfaces.length ? me.surfaces
+    : me.preferredSurface === 'both' ? ['web', 'telegram'] : me.preferredSurface ? [me.preferredSurface] : ['web', ...(tgActive ? ['telegram'] : []), ...(slActive ? ['slack'] : [])]);
+  const options = [{ value: 'web', label: 'Web' }, ...(tgActive ? [{ value: 'telegram', label: 'Telegram' }] : []), ...(slActive ? [{ value: 'slack', label: 'Slack' }] : [])];
+  const toggle = (v) => {
+    const next = new Set(chosen);
+    if (next.has(v)) { if (next.size === 1) return; next.delete(v); } else next.add(v);
+    patch({ preferredSurface: options.map(o => o.value).filter(x => next.has(x)) });
+  };
+  return (
+    <Row label="Reach me on" hint="Where the assistant messages you first. Pick one or several.">
+      <div className={cn('grid w-full gap-1 rounded-[6px] bg-muted/40 p-1', options.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+        {options.map((o) => (
+          <button key={o.value} type="button" role="checkbox" aria-checked={chosen.has(o.value)} onClick={() => toggle(o.value)}
+            className={cn('rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors',
+              chosen.has(o.value) ? 'bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-muted-foreground/75 hover:text-foreground/90')}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </Row>
   );
 }
 

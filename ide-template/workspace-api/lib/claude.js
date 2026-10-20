@@ -227,12 +227,17 @@ function localNow(tz) {
 function reachLine(slug, m) {
   try {
     const telegramOn = integrationsStore.isUsable('telegram');
-    const linked = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
-    const tg = prefers(m, 'telegram'), web = prefers(m, 'web');
-    const preference = tg && !web ? ' They prefer Telegram.' : web && !tg ? ' They prefer the web workspace.' : '';
-    return linked
-      ? `Reaches them on: the web workspace and Telegram.${preference}`
-      : `Reaches them on: the web workspace only${telegramOn ? ' (they have not linked Telegram)' : ''} — never set a reminder or a message for them on Telegram.`;
+    const slackOn = integrationsStore.isUsable('slack');
+    const linkedTg = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
+    const linkedSlack = slackOn && !!m?.slackUserId;
+    const on = ['the web workspace', ...(linkedTg ? ['Telegram'] : []), ...(linkedSlack ? ['Slack'] : [])];
+    const prefs = ['web', 'telegram', 'slack'].filter(s => prefers(m, s) && (s === 'web' || (s === 'telegram' ? linkedTg : linkedSlack)));
+    const names = { web: 'the web workspace', telegram: 'Telegram', slack: 'Slack' };
+    const preference = prefs.length && prefs.length < on.length ? ` They prefer ${prefs.map(p => names[p]).join(' and ')}.` : '';
+    const missing = [...(telegramOn && !linkedTg ? ['Telegram'] : []), ...(slackOn && !linkedSlack ? ['Slack'] : [])];
+    return on.length > 1
+      ? `Reaches them on: ${on.join(', ')}.${preference}${missing.length ? ` They have not linked ${missing.join(' or ')} — never set a reminder or a message for them there.` : ''}`
+      : `Reaches them on: the web workspace only${missing.length ? ` (they have not linked ${missing.join(' or ')})` : ''} — never set a reminder or a message for them on ${missing.length ? missing.join(' or ') : 'another surface'}.`;
   } catch { return ''; }
 }
 
@@ -494,7 +499,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
       ? ` Your teammates (DIFFERENT people): ${mates.map(fmtMate).join(', ')}. ` +
         `When the user names one of them, they mean that other person — not themselves. ` +
         `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list. ` +
-        `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram": there is NO separate Telegram tool on this surface. By default the recipient gets the message on whichever channel THEY prefer (their workspace always; their Telegram if that's their preference). But if the user EXPLICITLY names a channel ("on Telegram", "in their workspace"), pass channel="telegram" or channel="web" to web_send_message to honor it — that OVERRIDES the recipient's default. (The same applies to messaging the CURRENT user: "message me on Telegram" → web_send_message with channel="telegram" and no recipient.) ` +
+        `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram" or "on Slack": there is NO separate Telegram or Slack tool on this surface. By default the recipient gets the message on whichever surfaces THEY prefer (their workspace always; their Telegram or Slack if that's their preference). But if the user EXPLICITLY names a surface ("on Telegram", "on Slack", "in their workspace"), pass channel="telegram", channel="slack" or channel="web" to web_send_message to honor it — that OVERRIDES the recipient's default. (The same applies to messaging the CURRENT user: "message me on Slack" → web_send_message with channel="slack" and no recipient.) ` +
         `NEVER tell ${me} you sent or passed something on unless you ACTUALLY called web_send_message and it returned success — do not narrate a send you didn't make. The tool result says WHERE it landed; relay that truthfully (if it says web only, tell ${me} it's in the teammate's workspace, don't claim Telegram). ` +
         `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer. ` +
         `A team Telegram GROUP is a different thing: when ${me} asks for something to go to the group, use group_send_message with the exact text ${me} approved (it is posted word for word); web_send_message never reaches a group, and sending each teammate a copy is not posting to the group.`

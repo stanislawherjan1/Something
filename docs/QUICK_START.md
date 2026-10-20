@@ -3,7 +3,7 @@
 ## User guide
 
 You get your own AI coworker on a server that belongs to you. It answers in the
-web workspace, on Telegram and in Chrome, keeps your files and memory on that
+web workspace, on Telegram, in Slack and in Chrome, keeps your files and memory on that
 server, and connects to the tools you already use.
 
 Setting it up takes about an hour, most of it waiting:
@@ -306,6 +306,10 @@ server). When it finishes you'll see your workspace URL and the next steps.
    on Telegram" bar at the top of the workspace), paste a bot token
    from [@BotFather](https://t.me/BotFather) to chat with your assistant there
    too — same memory, same context.
+8. **Slack (optional).** In **AI Settings → Slack**, follow the steps: create
+   your workspace's own Slack app from the manifest the page gives you, install
+   it, paste its two tokens. Direct messages work at once; a channel joins in
+   after you invite the assistant and approve the channel on that page.
 
 That's it. Your assistant is live.
 

@@ -82,14 +82,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           channel: {
             type: 'string',
-            enum: ['telegram', 'web'],
+            enum: ['telegram', 'slack', 'web'],
             description:
               "Optional explicit delivery channel: set this ONLY when the user " +
-              "names one ('on Telegram' → 'telegram'; 'in their workspace' / 'on " +
-              "web' → 'web'). It OVERRIDES the recipient's default preference. " +
-              "Omit it normally: the recipient is then reached on whichever " +
-              "channel THEY prefer. 'telegram' delivers only to Telegram when " +
-              "they're linked (no duplicate web toast).",
+              "names one ('on Telegram' → 'telegram'; 'on Slack' → 'slack'; 'in " +
+              "their workspace' / 'on web' → 'web'). It OVERRIDES the recipient's " +
+              "default preference. Omit it normally: the recipient is then reached " +
+              "on whichever surfaces THEY prefer. A named surface delivers only " +
+              "there when they're linked (no duplicate web toast).",
           },
         },
       },
@@ -131,7 +131,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
     // Explicit delivery channel override ('telegram' | 'web'); '' = recipient's
     // own preference decides.
-    const channel = (args?.channel === 'telegram' || args?.channel === 'web') ? args.channel : '';
+    const channel = (args?.channel === 'telegram' || args?.channel === 'slack' || args?.channel === 'web') ? args.channel : '';
     const from = (process.env.IDE_ACTOR_SLUG || '').trim();
     // B3 v2 relay threading: the sender's current web session id, so wsapi can
     // pair it with the recipient's relay thread and keep replies in-thread.

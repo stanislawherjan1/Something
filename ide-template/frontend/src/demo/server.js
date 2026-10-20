@@ -76,7 +76,7 @@ function mePayload() {
   return {
     email: me.email, slug: me.slug, role: me.role, isAdmin: !isMember,
     teamMode: state.teamMode, personalRoot: state.teamMode ? `users/${me.slug}` : null,
-    avatarUrl: me.avatar, telegramChatId: me.telegramChatId, preferredSurface: 'both',
+    avatarUrl: me.avatar, telegramChatId: me.telegramChatId, preferredSurface: 'both', surfaces: ['web', 'telegram'], slackUserId: me.slackUserId || null,
     ...state.me, defaultTimezone: state.defaultTz, effectiveTimezone: state.me.timezone || state.defaultTz,
   };
 }
@@ -86,7 +86,7 @@ function teamPayload() {
     .map((p, i) => ({
       email: p.email, role: p.role, displayName: p.name, slug: p.slug, avatarUrl: p.avatar,
       addedAt: inMinutes(-60 * 24 * (120 - i * 9)), telegramChatId: p.telegramChatId, slackUserId: p.slackUserId || null,
-      preferredSurface: p.telegramChatId ? 'both' : 'web', preferredLanguage: p.language,
+      preferredSurface: p.telegramChatId ? 'both' : 'web', surfaces: p.telegramChatId ? ['web', 'telegram'] : ['web'], preferredLanguage: p.language, slackLinked: !!p.slackUserId,
     }));
   return { teamMode: state.teamMode, entries, me: { email: me.email, role: me.role, isAdmin: !isMember } };
 }

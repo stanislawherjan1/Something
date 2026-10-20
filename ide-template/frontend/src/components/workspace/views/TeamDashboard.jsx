@@ -516,9 +516,12 @@ function ChannelIcons({ entry }) {
   // `telegramLinked` is exposed to all viewers (members included); the raw chat
   // id is masked for non-admins, so prefer the flag and fall back to the id.
   const linked  = entry.telegramLinked ?? !!entry.telegramChatId;
+  const slackLinked = entry.slackLinked ?? !!entry.slackUserId;
   const surface = entry.preferredSurface;
-  const webPrimary = surface === 'web' || surface === 'both' || !linked;
-  const tgPrimary  = linked && (surface === 'telegram' || surface === 'both');
+  const surfaces = Array.isArray(entry.surfaces) ? entry.surfaces : null;
+  const webPrimary = surfaces ? surfaces.includes('web') : (surface === 'web' || surface === 'both' || !linked);
+  const tgPrimary  = linked && (surfaces ? surfaces.includes('telegram') : (surface === 'telegram' || surface === 'both'));
+  const slPrimary  = slackLinked && !!surfaces?.includes('slack');
   return (
     <div className="flex shrink-0 items-center gap-3">
       <Globe
@@ -534,6 +537,15 @@ function ChannelIcons({ entry }) {
           aria-label="Telegram linked"
           title={surface === 'both' ? 'Telegram linked · prefers web + telegram'
                : surface ? `Telegram linked · prefers ${surface}` : 'Telegram linked'}
+        />
+      )}
+      {slackLinked && (
+        <span
+          role="img"
+          aria-label="Slack linked"
+          title={slPrimary ? 'Slack linked · prefers Slack' : 'Slack linked'}
+          className={cn('inline-block size-3', slPrimary ? 'bg-foreground/55' : 'bg-muted-foreground/45')}
+          style={{ WebkitMask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/slack.svg) center / contain no-repeat`, mask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/slack.svg) center / contain no-repeat` }}
         />
       )}
     </div>

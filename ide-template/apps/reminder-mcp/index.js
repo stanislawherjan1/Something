@@ -313,13 +313,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           channel: {
             type: 'string',
-            enum: ['telegram', 'web', 'all'],
+            enum: ['telegram', 'slack', 'web', 'all'],
             description:
               'Which surface the user wants this reminder delivered on. ' +
               '"telegram": bot replies via Telegram only (mirror covers web ' +
-              'if the user has it open). "web": bot replies via ' +
-              'web_send_message; nothing goes to Telegram. "all": bot picks ' +
-              'whichever channels are wired and replies through them. ' +
+              'if the user has it open). "slack": the result goes to their ' +
+              'Slack DM with the bot (the system delivers it). "web": bot ' +
+              'replies via web_send_message; nothing goes to Telegram. "all": ' +
+              'bot picks whichever channels are wired and replies through them. ' +
               'Default: read from REMINDER_DEFAULT_CHANNEL env var (set at ' +
               'bot startup based on the channel the prompt came in on); ' +
               'falls back to "all" if not set. Override explicitly when the ' +
@@ -578,7 +579,7 @@ async function prepareReminder(args) {
       // it, and the group registry is what actually authorises the chat at fire
       // time (an id here is a request, not a permission).
       ...(typeof args.chat === 'string' && /^-?\d{4,20}$/.test(args.chat.trim()) ? { chat: args.chat.trim() } : {}),
-      channel: (typeof args.channel === 'string' && ['telegram', 'web', 'all'].includes(args.channel))
+      channel: (typeof args.channel === 'string' && ['telegram', 'slack', 'web', 'all'].includes(args.channel))
         ? args.channel
         : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
       // Delivery urgency: 'ambient' items are held + woven into conversation

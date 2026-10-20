@@ -7,12 +7,14 @@
  * Slack's own hosts. The transport is injected; no network.
  * Run: node lib/slack-api.test.mjs
  */
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 process.env.PROJECT_DIR = mkdtempSync(join(tmpdir(), 'slack-api-'));
 process.env.WSAPI_STORE_DIR = mkdtempSync(join(tmpdir(), 'slack-api-store-'));
+process.env.INTEGRATIONS_KEY_PATH = join(process.env.WSAPI_STORE_DIR, 'key');
+writeFileSync(process.env.INTEGRATIONS_KEY_PATH, '12'.repeat(32));
 process.env.SLACK_PROXY_URL = '';   // no proxy in the test rig
 
 let pass = 0, fail = 0;

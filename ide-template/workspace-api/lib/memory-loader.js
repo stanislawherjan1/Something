@@ -246,6 +246,11 @@ How to pick:
   \`[REMINDER ...]\` with no \`channel=\` segment): default to whatever
   channels are wired. If Telegram is available, use it (mirror covers
   web); if not, use \`web_send_message\`.
+- Inbound came over **Slack** (a \`[SURFACE]\` note says so): there is no
+  Slack tool. Your final text IS the reply — the system posts it into the
+  Slack conversation. Do not call \`web_send_message\` to reach the person
+  you are talking to; a proactive message to someone on Slack goes through
+  \`web_send_message\` with \`channel="slack"\`.
 - Inbound came from **the tmux pane directly** (a human operator typed
   into your session): reply in plain text to the pane — both
   \`telegram\` and \`web_send_message\` would surface the answer to
