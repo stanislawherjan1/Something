@@ -430,7 +430,7 @@ RUN set -eux; \
     curl -fsSL -o /tmp/github-mcp.tar.gz \
       "https://github.com/github/github-mcp-server/releases/download/${GITHUB_MCP_VERSION}/${asset}"; \
     tar -xzf /tmp/github-mcp.tar.gz -C /opt/ide/apps/github-mcp/ github-mcp-server; \
-    chmod +x /opt/ide/apps/github-mcp/github-mcp-server; \
+    chmod 755 /opt/ide/apps/github-mcp/github-mcp-server; \
     rm /tmp/github-mcp.tar.gz
 
 COPY apps/grok-mcp /opt/ide/apps/grok-mcp
@@ -495,17 +495,17 @@ COPY skills/default /opt/ide/skills/default
 # so user edits to a skill survive future activations.
 COPY skills/optional /opt/ide/skills/optional
 COPY bootstrap /opt/ide/bootstrap
-RUN chmod +x /opt/ide/bootstrap/bootstrap-project.sh
+RUN chmod 755 /opt/ide/bootstrap/bootstrap-project.sh
 
 # CC hooks — bash scripts wired into ~/.claude/settings.json that fire
 # at PostToolUse / Stop / etc. See ide-template/hooks/ for sources +
 # bootstrap/claude-settings.json for hook registration.
 COPY hooks /opt/ide/hooks
-RUN chmod +x /opt/ide/hooks/*.sh /opt/ide/hooks/*.py 2>/dev/null || true
+RUN chmod 755 /opt/ide/hooks/*.sh /opt/ide/hooks/*.py 2>/dev/null || true
 
 # Helper scripts — frontmatter stamping (Bundle 6), etc.
 COPY scripts /opt/ide/scripts
-RUN chmod +x /opt/ide/scripts/*.sh 2>/dev/null || true
+RUN chmod 755 /opt/ide/scripts/*.sh 2>/dev/null || true
 
 # === LAYER 7: Custom CSS + JS injection (overrides + mobile view switcher) ===
 COPY overrides.css /opt/ide/overrides.css
@@ -530,11 +530,11 @@ COPY bot/reminder-monitor.sh /opt/ide/reminder-monitor.sh
 COPY bot/recent-snapshot-monitor.sh /opt/ide/recent-snapshot-monitor.sh
 COPY bot/browser-watchdog.sh /opt/ide/browser-watchdog.sh
 COPY bot/ecosystem.config.js /opt/ide/ecosystem.config.js
-RUN chmod +x /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/mcp-auth-helper.sh /opt/ide/bot-relay.sh /opt/ide/tmux-inject.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
+RUN chmod 755 /opt/ide/bot.sh /opt/ide/bot-notify.sh /opt/ide/web-notify.sh /opt/ide/mcp-auth-helper.sh /opt/ide/bot-relay.sh /opt/ide/tmux-inject.sh /opt/ide/reminder-monitor.sh /opt/ide/recent-snapshot-monitor.sh /opt/ide/browser-watchdog.sh
 
 # === LAYER 9: Entrypoint ===
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 # === LAYER 10: Directories, permissions, and shell PATH ===
 RUN mkdir -p /home/coder/project \

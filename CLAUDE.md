@@ -206,6 +206,12 @@ Every integration gives the product a new key, new code and a new place data goe
   lost → false success). Never switch branches in the working tree while a deploy is
   uploading from it — use a `git worktree`. Check disk (`df -h`) before a build on a
   client server.
+- **umask around `deploy.sh`:** the image's file modes come from the uploaded build
+  context, and the upload staging honors the caller's umask — a leaked `umask 077`
+  (say, from a wrapper writing secrets first) ships scripts readable only by root,
+  and the main container crash-loops on "Permission denied" at the privilege-drop
+  re-exec. Tighten umask only around the secret write and restore it; keep the
+  Dockerfile's `chmod 755` (not `+x`) on anything executed.
 - **Reloading the backend:** a PM2 restart does not reload workspace-api's code on a
   running container; restart the container.
 - **UTC:** reminder recurrence is UTC-only today — mind DST when touching schedules.

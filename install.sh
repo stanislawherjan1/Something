@@ -202,7 +202,7 @@ say "  picks up where it left off."
 say ""
 say "  Along the way you'll need:"
 say "    ${ACCENT}·${NC} a Linux server ${DIM}(Ubuntu LTS — the provider's default is fine;${NC}"
-say "      ${DIM}e.g. Hetzner CX22, ~€4.50/mo)${NC}"
+say "      ${DIM}e.g. Hetzner CX23, ~€7/mo)${NC}"
 say "    ${ACCENT}·${NC} a domain, for your workspace's web address"
 say "    ${ACCENT}·${NC} a Google account ${DIM}(your team signs in with Google)${NC}"
 say "    ${ACCENT}·${NC} a paid Claude plan ${DIM}(Pro or Max — used at the very end)${NC}"
@@ -237,6 +237,8 @@ say "       ${DIM}and the developer contact email.${NC}"
 say "    ${ACCENT}4.${NC} Create the client    ${ACCENT}https://console.cloud.google.com/auth/clients/create${NC}"
 say "       ${DIM}Type: Web application. Leave redirect URIs empty for now —${NC}"
 say "       ${DIM}I'll hand you the exact URI later and verify it before deploying.${NC}"
+say "       ${DIM}An 'agentic' / AI-agent option, if shown, stays OFF — this client${NC}"
+say "       ${DIM}only signs people in.${NC}"
 say ""
 say "  ${DIM}Click-by-click guide:${NC} ${ACCENT}${QUICK_START_URL}#4-google-oauth-setup${NC}"
 say ""
@@ -465,6 +467,11 @@ fi
 # (SESSION_SECRET, CODE_SERVER_PASSWORD, …) survive, so "picks up where it
 # left off" stays true: a re-run never signs the team out.
 ENV_FILE="$CLIENT_DIR/.env"
+# Tighten umask ONLY for this write and restore it after: deploy.sh runs as
+# our child, and a leaked 077 strips group/other bits off every file its
+# upload stages — the image then carries unreadable scripts and the main
+# container crash-loops on "Permission denied" at the privilege-drop re-exec.
+OLD_UMASK="$(umask)"
 umask 077
 TMP_ENV="$(mktemp "$ENV_FILE.XXXXXX")"
 {
@@ -478,6 +485,7 @@ TMP_ENV="$(mktemp "$ENV_FILE.XXXXXX")"
 } > "$TMP_ENV" || true
 chmod 600 "$TMP_ENV"
 mv "$TMP_ENV" "$ENV_FILE"
+umask "$OLD_UMASK"
 ok "Wrote $ENV_FILE."
 
 # --- Fill the rest of the .env (idempotent) --------------------------------
