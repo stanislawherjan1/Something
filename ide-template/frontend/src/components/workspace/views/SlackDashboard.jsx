@@ -46,7 +46,7 @@ export default function SlackDashboard({ sidebarOpen }) {
   const [setup, setSetup] = useState(false);
   const [disconnect, setDisconnect] = useState(false);
   // Until it is connected the only thing to do is on the Connection tab.
-  const current = tab || (connected && !needsInstall ? 'channels' : 'connection');
+  const current = tab || 'channels';
 
   if (!isAdmin) {
     return (
@@ -84,7 +84,6 @@ export default function SlackDashboard({ sidebarOpen }) {
           <TabBar value={current} onChange={setTab} tabs={[
             ['channels', 'Channels', pending.length],
             ['people', 'People', pendingPeople.length],
-            ['connection', 'Connection', state === 'on' ? null : 1],
           ]} />
 
           {current === 'channels' && (
@@ -112,9 +111,32 @@ export default function SlackDashboard({ sidebarOpen }) {
             <People pendingPeople={pendingPeople} onChanged={() => { refresh(); invalidate(TEAM_URL); roster.reload(); }} />
           )}
 
-          {current === 'connection' && (
-            <ConnectionRows sl={sl} connected={connected} listener={listener} needsInstall={needsInstall}
-              onSetup={() => setSetup(true)} onDisconnect={() => setDisconnect(true)} />
+        </div>
+      </div>
+
+      {/* Bottom bar — the app's state and its token actions, as on the Telegram screen. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/30 px-6 py-3">
+        <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground/70" title={footerLine(connected, listener, needsInstall, sl)}>
+          {footerLine(connected, listener, needsInstall, sl)}
+        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {needsInstall && sl?.install?.possible && (
+            <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
+              Install to your workspace
+            </a>
+          )}
+          {sl && (
+            <button type="button" onClick={() => setSetup(true)}
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
+              {connected ? 'Manage tokens' : 'Set up'}
+            </button>
+          )}
+          {connected && sl && (
+            <button type="button" onClick={() => setDisconnect(true)}
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
+              Disconnect
+            </button>
           )}
         </div>
       </div>
@@ -131,72 +153,24 @@ export default function SlackDashboard({ sidebarOpen }) {
           busyLabel="Disconnecting…"
           doneLabel="Disconnected"
           onClose={() => setDisconnect(false)}
-          onSuccess={() => { setDisconnect(false); invalidate(INTEG_URL); integ.reload(); setTab('connection'); }}
+          onSuccess={() => { setDisconnect(false); invalidate(INTEG_URL); integ.reload(); }}
         />
       )}
     </div>
   );
 }
 
-/* ─── Connection ────────────────────────────────────────────────────────── */
+/* ─── Footer line ───────────────────────────────────────────────────────── */
 
-// The socket's state and the app's tokens, as rows in one card — the shape the
-// Settings page uses. The drop notice lives here, not above the channels.
-function ConnectionRows({ sl, connected, listener, needsInstall, onSetup, onDisconnect }) {
+// One sentence on the app's state, for the bottom bar: what it is doing, and
+// the last drop when there was one.
+function footerLine(connected, listener, needsInstall, sl) {
+  if (!connected) return 'Slack app · not connected';
+  if (needsInstall) return sl?.install?.possible ? 'Slack app · not installed in your workspace yet' : 'Slack app · no bot token yet: add it, or the app\'s client id and secret';
   const lost = listener?.lost?.length ? listener.lost[listener.lost.length - 1] : null;
-  const status = !connected ? 'Not connected'
-    : needsInstall ? 'Not installed in your workspace yet'
-    : listener?.connected ? `Listening since ${formatWhen(listener.since)}`
-    : listener?.error ? `Not connected — ${listener.error}` : 'Connecting…';
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="divide-y divide-border/50 rounded-[6px] border border-border/60 bg-card">
-        <ConnRow label="Status" hint={status}>
-          {connected && needsInstall && sl?.install?.possible && (
-            <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
-              Install to your workspace
-            </a>
-          )}
-          {connected && needsInstall && !sl?.install?.possible && (
-            <span className="text-[12px] text-muted-foreground/65">Add the bot token, or the app's client id and secret.</span>
-          )}
-        </ConnRow>
-        {connected && listener?.team && (
-          <ConnRow label="Workspace" hint={`${listener.team}${listener.botUserId ? ` · bot ${listener.botUserId}` : ''}`} />
-        )}
-        {connected && lost && (
-          <ConnRow label="Last drop" hint={`${formatWhen(lost.from)}${lost.to ? ` – ${formatWhen(lost.to)}` : ' (still down)'} · ${listener.lost.length} recently. Direct messages from just before a drop are read back; a channel message sent during one was not seen.`} />
-        )}
-        <ConnRow label="Tokens" hint={connected ? 'The app-level token keeps the connection open; the bot token lets it speak.' : 'Create the app from the manifest, then add its tokens.'}>
-          {sl && (
-            <button type="button" onClick={onSetup}
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
-              {connected ? 'Manage tokens' : 'Set up'}
-            </button>
-          )}
-          {connected && sl && (
-            <button type="button" onClick={onDisconnect}
-              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
-              Disconnect
-            </button>
-          )}
-        </ConnRow>
-      </div>
-    </div>
-  );
-}
-
-function ConnRow({ label, hint, children }) {
-  return (
-    <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <div className="min-w-0">
-        <div className="text-[13px] font-medium text-foreground/90">{label}</div>
-        {hint && <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/70">{hint}</div>}
-      </div>
-      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
-    </div>
-  );
+  if (listener?.connected) return `Listening${listener.team ? ` in ${listener.team}` : ''} since ${formatWhen(listener.since)}${lost ? ` · last drop ${formatWhen(lost.from)}` : ''}`;
+  if (listener?.error) return `Not connected · ${listener.error}`;
+  return 'Connecting…';
 }
 
 /* ─── Shared bits ───────────────────────────────────────────────────────── */
