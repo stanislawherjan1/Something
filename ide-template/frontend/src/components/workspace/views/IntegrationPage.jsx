@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Plug, Unplug, Link, Unlink, Plus, Trash2, Users, Loader2, RefreshCw, ChevronRight, Settings as SettingsIcon, BookOpen } from 'lucide-react';
+import { ArrowLeft, Check, Plug, Unplug, Link, Unlink, Plus, Trash2, Users, Loader2, RefreshCw, ChevronRight, Settings as SettingsIcon, BookOpen, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApi, invalidate } from '@/lib/useApi';
 import { Button } from '@/components/ui/button';
@@ -291,6 +291,17 @@ function ConnectionCard({ integration, reach, solo = false, detail, canManage, o
                   <div className="min-w-0 flex-1">
                     <div className="text-[13.5px] font-medium text-foreground/85">{interpolate(st.title, stepVars)}</div>
                     {st.body && <StepBody body={interpolate(st.body, stepVars)} />}
+                    {Array.isArray(st.downloads) && st.downloads.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {st.downloads.map((d, j) => (
+                          <a key={j} href={interpolate(d.url, stepVars)} download={interpolate(d.filename || '', stepVars) || true}
+                            className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99]">
+                            <Download className="size-3.5" strokeWidth={1.75} />
+                            {interpolate(d.label, stepVars)}
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}

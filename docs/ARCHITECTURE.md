@@ -510,6 +510,31 @@ Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger
 The Telegram brain (tmux) gets the v4 prefix through the same `GET /api/memory/prefix?raw=1`
 and the memory tools through the workspace-api MCP; see [MEMORY.md](MEMORY.md#how-it-works).
 
+## Slack surface
+
+Slack is a surface of the same product, not a second bot: one Socket Mode
+WebSocket held open **inside workspace-api** (`lib/integrations/slack-listener.js`,
+started by `reconcile()` at boot and after every save, pause or removal of the
+`slack` integration) brings every event in; `lib/integrations/slack-api.js` is
+the little of the Web API the surface uses (no SDK; the token is decrypted from
+the store per call). No process, uid or wrapper is added; nothing listens for
+Slack; the proxy's `*.slack.com` suffix rule covers the host Slack picks for
+the socket.
+
+What an event becomes:
+
+| Event | Path | Runs as |
+|---|---|---|
+| a DM from a roster person (matched once by the email Slack holds, kept as `slackUserId`) | `member-dm.js` with `surface: 'slack'` — a turn AS that person, own resumed session, mirrored into a "Slack" chat in their web history | their turn slot |
+| a DM from anyone else in the workspace | one fixed line, once; listed as pending for an admin | — |
+| a channel message | the group watcher, only in a channel an admin approved (phase 2) | `turn-group` |
+| `tokens_revoked`, `app_uninstalled` | the keys leave the store, the socket closes | — |
+
+Every envelope is acknowledged before it is looked at; a message is handled
+once (`channel:ts`); events sent while the socket was down are lost and the gap
+is recorded (`listener.lost` on `GET /api/integrations`), never hidden. The
+primary admin's Slack DM is a turn like anyone's: the tmux brain is Telegram's.
+
 ## Telegram Bot Architecture
 
 ### Process Model

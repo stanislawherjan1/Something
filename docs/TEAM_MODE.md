@@ -330,7 +330,13 @@ by a turn that runs **as that teammate** — their identity, their private memor
 and files, the tools a web turn of theirs has — never by the operator's
 assistant session. One conversation is kept per teammate (the turn resumes it),
 the reply goes back on Telegram, and the exchange is recorded in a "Telegram"
-chat in their web history. (`lib/integrations/member-dm.js`.)
+chat in their web history. (`lib/integrations/member-dm.js`.) A Slack direct
+message takes the same path for everyone, the primary admin included — Slack
+has no tmux brain — with its own resumed session (`slack-session.json`) and a
+"Slack" chat in the web history; the sender is matched to the roster by the
+email Slack holds for them, once, and kept as `slackUserId` on their entry
+(`setSlack`, `userBySlackId`). Someone in the Slack workspace who is not on
+the roster gets one fixed line asking to be added, and no turn.
 
 **Locks.** An admin marks a shared path read-only (`.team/locks.json`,
 `lib/locks.js`; `POST /api/files/lock|unlock` admin-only, `GET /api/files/locks`).

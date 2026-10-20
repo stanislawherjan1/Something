@@ -191,6 +191,9 @@ export function list() {
     // Cross-surface contact (team mode): the teammate's linked Telegram chat id
     // and where they prefer to be reached. Drives relay delivery routing.
     telegramChatId:   normalizeChatId(e.telegramChatId),
+    // Their Slack user id in the connected workspace — matched by email the
+    // first time they write, never typed in by hand.
+    slackUserId:      normalizeSlackUserId(e.slackUserId),
     surfaces:         normalizeSurfaces(e.preferredSurface),
     preferredSurface: legacySurface(e.preferredSurface),
     // Shared so a teammate's bot can relay to this person in their language.
@@ -802,6 +805,46 @@ export function userByChatId(chatId) {
   return list().find(m => m.telegramChatId === id) || null;
 }
 
+// ─── Slack identity ──────────────────────────────────────────────────────────
+// A Slack user id (U…/W…) is matched to a roster entry by the email Slack
+// holds for it, the first time that person writes to the bot; from then on
+// the id is the key. Removing someone from the roster cuts their Slack the
+// same moment: every lookup reads the roster live.
+function normalizeSlackUserId(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return /^[UW][A-Z0-9]{6,20}$/.test(s) ? s : null;
+}
+
+/** Which member is this Slack user (inbound routing), or null. */
+export function userBySlackId(userId) {
+  const id = normalizeSlackUserId(userId);
+  if (!id) return null;
+  return list().find(m => m.slackUserId === id) || null;
+}
+
+/**
+ * Link (or, with '' / null, unlink) a Slack user id to a roster entry. One id
+ * belongs to one person. Returns the updated member.
+ */
+export function setSlack(email, { userId } = {}, actor) {
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) throw new Error(`${e} is not on the team.`);
+  const cleared = userId === '' || userId === null || userId === undefined;
+  const id = cleared ? null : normalizeSlackUserId(userId);
+  if (!cleared && !id) throw new Error('That is not a Slack user id.');
+  if (id && entries.some((x, i) => i !== idx && normalizeSlackUserId(x.slackUserId) === id)) {
+    throw new Error('That Slack account is already linked to another teammate.');
+  }
+  entries[idx] = { ...entries[idx], slackUserId: id };
+  writeRaw(entries);
+  appendAudit('slack_update', e, { actor: normalize(actor) || null, linked: !!id });
+  writeTeamRoster();
+  return find(e);
+}
+
 // ─── Team config: solo vs collaborative ──────────────────────────────────────
 // A solo workspace shouldn't carry team UI (the Workspace/Personal split, role
 // badges, invite flow) — that's overkill for one person. `teamMode` gates all
@@ -1062,10 +1105,11 @@ export function writeTeamRoster() {
     }
     const contactHint = (m) => {
       // Bot-facing routing guideline — surface only, never the raw chat id.
-      const linked = m.telegramChatId ? 'Telegram linked' : 'no Telegram';
+      const on = [m.telegramChatId ? 'Telegram linked' : 'no Telegram', ...(m.slackUserId ? ['Slack linked'] : [])];
+      const linked = on.join(', ');
       const pref = m.surfaces
         ? `prefers ${describeSurfaces(m.surfaces)}`
-        : (m.telegramChatId ? 'prefers either' : 'web only');
+        : (m.telegramChatId || m.slackUserId ? 'prefers either' : 'web only');
       return `${pref} (${linked})`;
     };
     const langHint = (m) => (m.preferredLanguage ? `writes in ${m.preferredLanguage}` : 'unknown');

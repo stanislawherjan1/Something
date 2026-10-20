@@ -25,7 +25,7 @@ import { atomicWrite } from './atomic-write.js';
 import { isGroupId } from './group-id.js';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
-const SOURCES = new Set(['web', 'telegram', 'group', 'email', 'note', 'review', 'migration', 'integration']);
+const SOURCES = new Set(['web', 'telegram', 'slack', 'group', 'email', 'note', 'review', 'migration', 'integration']);
 const MAX_TEXT = 12000;
 export const HIDE_GRACE_DAYS = 30;
 

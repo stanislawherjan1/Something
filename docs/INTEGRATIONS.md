@@ -145,6 +145,7 @@ provider-side app the operator provisions; those steps are documented below.
 | **Docs Comments** | Drop inline comments anchored to a text range in a Google Doc |
 | **Email (IMAP)** | Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by default |
 | **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation). The bot reacts to messages with an emoji when it sees fit (👀 when it starts looking into something, 👍 for a short acknowledgement), in direct messages and in groups; `TELEGRAM_ACK_REACTION` in the deployment `.env` additionally makes it react to every direct message the moment it takes it on |
+| **Slack** | Talk to the assistant in Slack through the workspace's own app (Socket Mode: one outbound connection held open by workspace-api, no public address, no restart). A direct message is a turn as the person who wrote it — matched to the roster by email — with a 👀 reaction while it works and ✅ when done; people not on the team get one line asking to be added. Channels: the bot hears only where it was invited and an admin approved (see [TEAM_MODE.md](TEAM_MODE.md)). Memory: a DM is the person's own conversation and is filed like a web chat (`source: slack`); an approved channel is filed in that channel's own scope; there is no nightly feeder and no `memory` block |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
 | **Vercel** | Projects, deployments, build and runtime logs, domains — read-only (paste an access token) |
@@ -664,8 +665,17 @@ a person's own.
 
 Does the connection work: a remote-MCP one gets a fresh token from the
 provider (`reauth: true` when the sign-in expired), a stored-key one is
-decrypted and checked for its required fields. `{ ok, at, detail | error }`;
-never a secret.
+decrypted and checked for its required fields; Slack asks `auth.test` and
+reports the workspace, the bot user and whether the socket is up. `{ ok, at,
+detail | error }`; never a secret.
+
+### `GET /api/integrations/slack/manifest`
+
+The Slack app manifest for this workspace's bot (its name, the scopes and
+events the surface uses, Socket Mode on, distribution off), as a download the
+admin pastes at api.slack.com to create the app. Holds no secret. `GET
+/api/integrations` carries `listener: { connected, since, lastEventAt, lost[] }`
+on the Slack entry while it is connected.
 
 ### `PATCH /api/integrations/:id`
 

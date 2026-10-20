@@ -137,7 +137,7 @@ async function messagesOf(src) {
     // What the person attached: a Telegram row's kind (photo, document, voice…), or the
     // attachment block the web chat appends to the message.
     const sent = human && ((src.kind === 'dm' && !!m.kind && m.kind !== 'text') || (src.kind === 'web' && /\.attachments\//.test(text)));
-    out.push({ ts, human, worked, speaker, text: text.replace(/\n{3,}/g, '\n\n'), ...(sent ? { sent: true } : {}), ...(Array.isArray(m.tools) ? { tools: m.tools.map(t => String(t?.name || '')).filter(Boolean) } : {}) });
+    out.push({ ts, human, worked, speaker, text: text.replace(/\n{3,}/g, '\n\n'), ...(sent ? { sent: true } : {}), ...(human && src.kind === 'web' && typeof m.kind === 'string' ? { kind: m.kind } : {}), ...(Array.isArray(m.tools) ? { tools: m.tools.map(t => String(t?.name || '')).filter(Boolean) } : {}) });
   }
   return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 }
@@ -217,7 +217,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // memory files with Read or Bash is a recital too (seen in a replay — every
 // such answer came back marked as a finding).
 const READING_TOOLS = /^(WebSearch|WebFetch)$|(^|__)(tab_snapshot|tab_screenshot|use_integrations)$/;
-const NOT_A_FINDING = new Set(['openai', 'gemini-chat', 'grok', 'nano-banana', 'seedream', 'deepl', 'telegram']);
+const NOT_A_FINDING = new Set(['openai', 'gemini-chat', 'grok', 'nano-banana', 'seedream', 'deepl', 'telegram', 'slack']);
 const READING_MCPS = (() => {
   const names = new Set(['playwright', 'google-workspace', 'email']);
   try {
@@ -268,6 +268,18 @@ export function chunk(messages) {
 // ─── one source ──────────────────────────────────────────────────────────────
 
 const SOURCE_OF = { web: 'web', dm: 'telegram', group: 'group' };
+/**
+ * Where a window of messages came from. A web chat file is also where a
+ * person's Telegram or Slack DMs are mirrored (member-dm.js marks each of their
+ * lines with the surface), so a window whose every human line carries one
+ * surface is that surface's — "See source" then says Slack, not web.
+ */
+export function sourceOf(src, messages = []) {
+  if (src.kind !== 'web') return SOURCE_OF[src.kind];
+  const kinds = new Set(messages.filter(m => m.human).map(m => m.kind || 'web'));
+  if (kinds.size === 1) { const k = [...kinds][0]; if (k === 'telegram' || k === 'slack') return k; }
+  return 'web';
+}
 
 /**
  * File the new messages of one source. Returns counts; never throws — a failure
@@ -294,6 +306,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
 
   const text = fresh.map(line).join('\n');
   const group = src.kind === 'group';
+  const source = sourceOf(src, fresh);
 
   // The router (who may read what) sees the whole window. A failed call is
   // not a decision: nothing is filed and the next tick retries the window —
@@ -303,7 +316,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
   let routed = null;
   if (!group) {
     try {
-      routed = await router.route({ name: src.name, channel: SOURCE_OF[src.kind], ts: fresh[0].ts, text, org: orgContext({ person: src.name }) });
+      routed = await router.route({ name: src.name, channel: source, ts: fresh[0].ts, text, org: orgContext({ person: src.name }) });
     } catch (e) {
       const tries = prev.notesFailures || 0;
       if (tries < NOTES_RETRIES) {
@@ -402,13 +415,13 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
       // The conversation is recorded as it was; what it holds goes to the facts
       // store (lib/memory-facts.js), which keeps one fact per thing: a repeat
       // confirms the fact memory has, a change replaces it.
-      const r = await ledger.append({ scope: src.scope, source: SOURCE_OF[src.kind], ts: c.ts, conv: src.conv, speaker: c.speaker, text: c.text, tags });
+      const r = await ledger.append({ scope: src.scope, source: source, ts: c.ts, conv: src.conv, speaker: c.speaker, text: c.text, tags });
       if (r.ok) {
         result.records++; result.rules += tags.rules?.length || 0;
         if (n?.notes?.length) {
           // `convSince`: this window is one conversation; an earlier window of
           // the same chat is another (lib/memory-facts.js, apply).
-          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said', conv: src.conv, convSince: fresh[0].ts });
+          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: source, standing: 'said', conv: src.conv, convSince: fresh[0].ts });
           result.notes += got.added; result.updated = (result.updated || 0) + got.updated.length; result.superseded = (result.superseded || 0) + got.superseded.length;
           for (const t of got.titles) if (result.titles.length < 5) result.titles.push(t);
           // A note the model tied to a task made during this conversation: the
@@ -440,10 +453,10 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
               if (got.fresh && !got.fresh[fi]) continue;
               const d = sharing.decide({ mode: gate.mode, fact: f, routed, rules: gate.rules, decided: gate.decided });
               if (d.outcome === 'team') {
-                const out = await sharing.fileTeamFact(src.owner, f, { ts: c.ts, conv: src.conv, source: SOURCE_OF[src.kind], name: src.name, by: SOURCE_OF[src.kind] });
+                const out = await sharing.fileTeamFact(src.owner, f, { ts: c.ts, conv: src.conv, source: source, name: src.name, by: source });
                 if (out.recordId) { result.shared++; sharedIds.push(out.recordId); }
               } else if (d.outcome === 'ask') {
-                addAsk(src.owner, { text: f.text, question: routed.askQuestion || '', conv: src.conv, ts: c.ts, source: SOURCE_OF[src.kind], fact: f, reason: d.reason, key: sharing.factKey(f) });
+                addAsk(src.owner, { text: f.text, question: routed.askQuestion || '', conv: src.conv, ts: c.ts, source: source, fact: f, reason: d.reason, key: sharing.factKey(f) });
                 result.asks++;
               }
             }
@@ -455,7 +468,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
     if (result.records) {
       // `dropped`: notes the model offered whose quote was not in the person's
       // words — visible in Changes, so a thin filing is not a silent one.
-      ledger.logEvent({ op: 'file', scope: src.scope, source: SOURCE_OF[src.kind], conv: src.conv, records: result.records, notes: result.notes, rules: result.rules, dropped: result.dropped || 0, ...(result.updated ? { updated: result.updated } : {}), ...(result.superseded ? { superseded: result.superseded } : {}), ...(result.titles.length ? { titles: result.titles } : {}), shared: sharedId, asks: result.asks });
+      ledger.logEvent({ op: 'file', scope: src.scope, source: source, conv: src.conv, records: result.records, notes: result.notes, rules: result.rules, dropped: result.dropped || 0, ...(result.updated ? { updated: result.updated } : {}), ...(result.superseded ? { superseded: result.superseded } : {}), ...(result.titles.length ? { titles: result.titles } : {}), shared: sharedId, asks: result.asks });
     }
   } catch (e) {
     result.errors.push(`append: ${e.message}`);

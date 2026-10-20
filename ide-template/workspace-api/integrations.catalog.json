@@ -324,6 +324,65 @@
       "personal": false
     },
     {
+      "id": "slack",
+      "label": "Slack",
+      "logo": "/integrations/slack.svg",
+      "description": "Talk to your coworker in Slack: a direct message is a private conversation as you; in a channel an admin approved it joins in when addressed. Messages you send it and channels it is in are read by the workspace; nothing else in Slack is.",
+      "category": "messaging",
+      "process": "slack-listener", "teamWide": true,
+      "fields": [
+        {
+          "name": "SLACK_BOT_TOKEN",
+          "label": "Bot token",
+          "type": "secret",
+          "placeholder": "xoxb-...",
+          "helper": "Starts with \"xoxb-\". OAuth & Permissions → Bot User OAuth Token, after installing the app."
+        },
+        {
+          "name": "SLACK_APP_TOKEN",
+          "label": "App-level token",
+          "type": "secret",
+          "placeholder": "xapp-...",
+          "helper": "Starts with \"xapp-\". Basic Information → App-Level Tokens → Generate, with the connections:write scope."
+        }
+      ],
+      "steps": [
+        {
+          "title": "Create the Slack app from our manifest",
+          "body": "Open [api.slack.com/apps](https://api.slack.com/apps?new_app=1) → **Create New App** → **From a manifest**, pick your workspace and paste the manifest from **Download manifest** below (it carries the bot's name, its permissions and Socket Mode). Review it and click **Create**.",
+          "downloads": [
+            {
+              "label": "Download manifest",
+              "url": "/api/integrations/slack/manifest",
+              "filename": "{{botName}}-slack-manifest.json"
+            }
+          ]
+        },
+        {
+          "title": "Install it to your workspace",
+          "body": "On the app's page: **Install to Workspace** → **Allow**. On some paid plans a Slack admin must approve the request first. Then **OAuth & Permissions** → copy the **Bot User OAuth Token** (`xoxb-…`) as the **Bot token**."
+        },
+        {
+          "title": "Generate the app-level token",
+          "body": "**Basic Information** → **App-Level Tokens** → **Generate Token and Scopes** → add `connections:write` → **Generate**. Copy it (`xapp-…`) as the **App-level token**. This is what keeps the bot's connection to Slack open — no public address is needed."
+        },
+        {
+          "title": "What the bot reads, and where it talks",
+          "body": "Direct messages to the bot from people on this workspace's team are answered as them. In a channel the bot only hears what is said after someone invites it, and only speaks there once an admin approves that channel on the **Team** page. People not on the team get one line asking them to be added; shared (Slack Connect) channels are never approved. Message and file content is sent to Claude to answer; Slack itself receives only the replies."
+        }
+      ],
+      "mcp": {
+        "allowedHosts": [
+          "slack.com",
+          "*.slack.com",
+          "files.slack.com",
+          "slack-files.com",
+          "*.slack-files.com"
+        ]
+      },
+      "personal": false
+    },
+    {
       "id": "shopify",
       "label": "Shopify",
       "logo": "/integrations/shopify.svg",

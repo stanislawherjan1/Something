@@ -91,12 +91,13 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 
 ## Talk to them anywhere
 
-Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, the **team Telegram groups** it's part of, and **Chrome's side panel**, next to whatever page you're on. Same name, same memory, same context, whichever you reach for.
+Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, the **team Telegram groups** it's part of, a **Slack** DM or channel, and **Chrome's side panel**, next to whatever page you're on. Same name, same memory, same context, whichever you reach for.
 
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
 - **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
 - **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
 - **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into, never barging in on its own.
+- **Slack**: an admin connects your workspace's own Slack app once (a two-minute setup, nothing passes through anyone else's servers). A direct message to it is your private conversation, answered as you; in a channel it listens only where it was invited and an admin approved, and answers in a thread when addressed.
 
 It's all connected. What you said on Telegram is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 

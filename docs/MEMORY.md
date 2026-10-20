@@ -206,7 +206,9 @@ ends the day it happens.
 
 `lib/memory-consolidator.js`, poked every minute by the snapshot monitor. A
 conversation that has been quiet for 15 minutes is filed **whole** in its
-owner's scope — web chat → that user, a Telegram DM → the roster person whose
+owner's scope — web chat → that user (a Telegram or Slack DM mirrored into
+their web history is filed under them with that surface as its `source`), a
+Telegram DM → the roster person whose
 chat it is (a stranger's chat → nobody), a registered group → that group's
 scope. Code decides the owner, never a model. Two small-model calls then only
 *add* (every memory model call thinks within a cap, `MEMORY_V4_THINKING_TOKENS`,

@@ -453,6 +453,7 @@ export async function handle(method, url, body) {
   }
 
   // Integrations.
+  if (path === '/api/integrations/slack/manifest') return json({ display_information: { name: 'Aria' }, features: { bot_user: { display_name: 'Aria', always_online: true }, app_home: { messages_tab_enabled: true } }, oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'users:read.email'] } }, settings: { socket_mode_enabled: true, event_subscriptions: { bot_events: ['message.im', 'app_mention'] } } });
   if (path === '/api/integrations' && method === 'GET') return json(integrationsList());
   if (path === '/api/integrations/make-personal') return json({ ok: true, moved: (b.ids || []).map((i) => `${i}@${meSlug}`), failed: [], restarting: false });
   if (/^\/api\/integrations\/[^/]+\/make-personal$/.test(path)) return json({ ok: true, key: `${path.split('/')[3]}@${meSlug}`, restarting: false });

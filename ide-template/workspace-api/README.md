@@ -122,7 +122,7 @@ workspace-api/
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
-│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine
+│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine; member-dm (a teammate's Telegram/Slack DM as a turn as them) · slack-api (the Web API, no SDK) · slack-listener (one Socket Mode socket, what each event becomes)
 └── routes/
     ├── health.js            # GET /api/health
     ├── chat.js              # the /api/chat group (turn + sessions, history, reset, stop, forward)

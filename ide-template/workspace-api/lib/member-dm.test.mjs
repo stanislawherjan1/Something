@@ -63,5 +63,18 @@ const slowTurn = async (p) => { await new Promise(r => setTimeout(r, p.body === 
 await Promise.all([startMemberDm(ann, 'first', { runTurn: slowTurn, send }), startMemberDm(ann, 'second', { runTurn: slowTurn, send })]);
 ok('two messages from one person are answered in order', order.join(',') === 'first,second', order);
 
+// the Slack surface: its own session, its own web chat, the reply into the Slack conversation
+const slackSends = [];
+const slackSend = async (target, text) => { slackSends.push({ target, text }); return { ok: true }; };
+script = [{ text: 'Hi from Slack.', sessionId: 'K1' }];
+r = await answerMemberDm(ann, 'hello from slack', { runTurn, send: slackSend, surface: 'slack', target: 'D123' });
+ok('a Slack DM is answered into the Slack conversation it came from', r.delivered && r.reason === 'slack' && slackSends[0]?.target === 'D123' && slackSends[0].text === 'Hi from Slack.', slackSends);
+ok('the Slack session is kept apart from the Telegram one', existsSync(join(ROOT, '.team/users/ann/slack-session.json')) && JSON.parse(readFileSync(join(ROOT, '.team/users/ann/slack-session.json'), 'utf8')).sessionId === 'K1' && JSON.parse(readFileSync(sessFile, 'utf8')).sessionId === 'S2');
+ok('the turn is told which surface it is on', turns.at(-1).surface === 'slack' && turns.at(-1).sessionId === null);
+const slackWeb = listSessions('ann').find(s => s.title === 'Slack');
+const slackMsgs = slackWeb ? readUndelivered('ann', slackWeb.id, 0).messages : [];
+ok('the exchange is recorded in a "Slack" chat in the web history, the person\'s line marked as Slack', !!slackWeb && slackMsgs.some(m => m.role === 'user' && m.kind === 'slack') && slackMsgs.some(m => m.role === 'assistant' && m.delivery?.channel === 'slack' && m.delivery.slackChannel === 'D123'), slackMsgs);
+ok('an unknown surface name falls back to Telegram', (await import('./integrations/member-dm.js')).surfaceOf('fax') === 'telegram');
+
 console.log(`member-dm: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

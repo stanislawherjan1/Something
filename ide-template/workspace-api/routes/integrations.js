@@ -30,6 +30,9 @@ import { isReady, readinessError } from '../lib/integrations/crypto.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { publish as notify } from '../lib/notify.js';
 import { flushAllWaiting } from '../lib/routines-add.js';
+import * as slackListener from '../lib/integrations/slack-listener.js';
+import * as slackApi from '../lib/integrations/slack-api.js';
+import { resolve as resolveBranding } from '../lib/branding.js';
 
 // Tiny in-memory rate limiter — sliding window. Keyed on the verified actor
 // email (req.actor) when present, falling back to req.ip when not. The actor
@@ -148,7 +151,52 @@ async function afterChange(key, { files = true, skill = true, forceRestart = fal
   catch (err) { process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`); }
   const restarting = changed || forceRestart;
   const restartOk = restarting ? await runtime.restartBot() : true;
+  // The Slack socket lives in this process: it follows the store, no restart.
+  if (key === 'slack') {
+    try { slackListener.reconcile(); } catch (err) { process.stderr.write(`[integrations] slack listener: ${err.message}\n`); }
+  }
   return { restarting, restartFailed: restarting && !restartOk };
+}
+
+/**
+ * The Slack app manifest for this workspace's bot: Socket Mode on, the bot's
+ * name, the scopes the surface uses, the events it listens to — and nothing
+ * for distribution, joining channels on its own, posting where it is not, or
+ * acting as a person. See docs/future-plans/SLACK_CHANNEL.md §13.
+ */
+export function slackManifest(branding = {}) {
+  const name = String(branding.botDisplayName || branding.botName || 'Assistant').slice(0, 35);
+  return {
+    display_information: { name, description: `${name} — your team's coworker, reachable in Slack.` },
+    features: {
+      bot_user: { display_name: name, always_online: true },
+      app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false, home_tab_enabled: false },
+      assistant_view: { assistant_description: `Ask ${name} anything, as you would a colleague.` },
+    },
+    oauth_config: {
+      scopes: {
+        bot: [
+          'app_mentions:read', 'assistant:write', 'chat:write', 'channels:history', 'channels:read', 'groups:history', 'groups:read',
+          'im:history', 'im:read', 'im:write', 'mpim:history', 'mpim:read', 'reactions:write', 'files:read', 'files:write',
+          'users:read', 'users:read.email',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        bot_events: [
+          'app_mention', 'message.im', 'message.channels', 'message.groups', 'message.mpim', 'member_joined_channel',
+          'member_left_channel', 'channel_left', 'channel_shared', 'channel_unshared', 'channel_archive', 'channel_deleted',
+          'group_left', 'group_archive', 'app_uninstalled', 'tokens_revoked', 'app_home_opened', 'assistant_thread_started',
+          'assistant_thread_context_changed',
+        ],
+      },
+      interactivity: { is_enabled: false },
+      org_deploy_enabled: false,
+      socket_mode_enabled: true,
+      token_rotation_enabled: false,
+    },
+  };
 }
 
 function escapeHtml(s) {
@@ -220,6 +268,8 @@ export default function integrationsRouter() {
         canConnectPersonal:  Boolean(entry.personal) && Boolean(me),
         // Pausable integrations: switched off for now, key kept.
         ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
+        // The Slack socket: up or not, since when, what it missed.
+        ...(entry.process === 'slack-listener' && s?.active ? { listener: slackListener.status() } : {}),
       };
     });
     // no-store so the dashboard's post-OAuth refetch always sees the freshly
@@ -235,6 +285,15 @@ export default function integrationsRouter() {
   // Pause / resume a `pausable` integration without removing it: the key stays,
   // its tools and its egress hosts go away until resumed. No bot restart —
   // the tools that use it check at the start of every turn.
+  // The Slack app manifest, with this workspace's bot name in it: what the
+  // admin pastes at api.slack.com to create the app. No secret in it.
+  router.get('/integrations/slack/manifest', requireActor, (req, res) => {
+    const b = resolveBranding();
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Disposition', `attachment; filename="${(b.botName || 'bot').replace(/[^a-z0-9_-]/gi, '')}-slack-manifest.json"`);
+    res.json(slackManifest(b));
+  });
+
   router.put('/integrations/:id/paused', requireAdmin, readyOr503, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
@@ -466,6 +525,12 @@ export default function integrationsRouter() {
       if ((cat.fields || []).some(f => f.type === 'remote-mcp-oauth')) {
         await oauth.getFreshToken(target.key);
         return res.json({ ok: true, at, detail: 'Signed in; the provider accepted the token.' });
+      }
+      if (cat.process === 'slack-listener') {
+        // Ask Slack itself: the bot token names the workspace, the socket says whether it is up.
+        const who = await slackApi.authTest();
+        const l = slackListener.status();
+        return res.json({ ok: true, at, detail: `Installed in ${who.team} as @${who.user}; ${l.connected ? `listening since ${l.since}` : (l.error ? `not connected: ${l.error}` : 'connecting…')}.` });
       }
       const plain = store.decryptFor(target.key);
       const items = Array.isArray(plain) ? plain : [plain];
