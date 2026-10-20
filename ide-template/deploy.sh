@@ -944,8 +944,20 @@ print(p['pm2_env']['restart_time'] if p else 'missing')" 2>/dev/null || true
 
     BOT_STABLE=true
     if [ "$RESTART_T0" = "missing" ] || [ "$RESTART_T1" = "missing" ]; then
-        echo -e "${YELLOW}  WARNING: ${BOT_NAME} not registered in pm2 — bot did not start.${NC}"
-        BOT_STABLE=false
+        # A fresh install has no Claude token yet: the bot is deliberately
+        # deferred (the entrypoint's token-watcher cold-starts it once the
+        # person pastes the token in the browser wizard). That is a good
+        # deploy, not a crashloop — but take this exit ONLY when credentials
+        # are provably absent; a glitched probe falls through to the loud
+        # failure below, keeping the 2026-05-30 crashloop guard intact.
+        HAS_CREDS=$(ssh "$HETZNER_HOST" "docker exec '$IDE_NAME' bash -c 'test -s /home/bot/.claude/.credentials.json -o -s /home/coder/.claude/.credentials.json && echo yes || echo no'" 2>/dev/null || echo unknown)
+        if [ "$HAS_CREDS" = "no" ]; then
+            echo -e "${GREEN}  ${BOT_NAME} is waiting for its Claude token — expected on a fresh install.${NC}"
+            echo -e "${GREEN}  Paste the token in the wizard at https://${FRONTEND_DOMAIN}/app/ and the bot starts by itself.${NC}"
+        else
+            echo -e "${YELLOW}  WARNING: ${BOT_NAME} not registered in pm2 — bot did not start.${NC}"
+            BOT_STABLE=false
+        fi
     elif [[ "$RESTART_T0" =~ ^[0-9]+$ ]] && [[ "$RESTART_T1" =~ ^[0-9]+$ ]]; then
         RESTART_DELTA=$((RESTART_T1 - RESTART_T0))
         if [ "$RESTART_DELTA" -gt 2 ]; then
