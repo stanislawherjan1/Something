@@ -96,7 +96,7 @@ export default function SlackDashboard({ sidebarOpen }) {
                 </section>
               )}
               <section className="flex flex-col gap-2">
-                <SectionHead title="Channels" lock={!canEdit} subtitle="Invite the assistant to a channel in Slack; it joins in once you approve it here." />
+                <div className="text-[12px] leading-relaxed text-muted-foreground/70">Invite the assistant to a channel in Slack; it joins in once you approve it here.</div>
                 {loading && !data ? (
                   <><Skeleton className="h-16 rounded-[6px]" /><Skeleton className="h-16 rounded-[6px]" /></>
                 ) : groups.length === 0 ? (
@@ -251,7 +251,7 @@ function PendingChannelCard({ entry, onChanged }) {
     } catch (e) { setErr(e.message); setBusy(null); }
   };
   return (
-    <div className="flex flex-col gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-3">
+    <div className="flex flex-col gap-2 rounded-[6px] border border-border/60 bg-card px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <ChannelAvatar />
@@ -474,10 +474,10 @@ function People({ pendingPeople, onChanged }) {
 
   return (
     <section className="flex flex-col gap-2.5">
-      <SectionHead title="People" subtitle="Linked by the email on their Slack account, the first time they write."
-        trailing={entries.length ? (
-          <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-muted-foreground/80">{linked.length}/{entries.length} linked</span>
-        ) : null} />
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[12px] leading-relaxed text-muted-foreground/70">Linked by the email on their Slack account, the first time they write.</div>
+        {entries.length > 0 && <span className="shrink-0 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-muted-foreground/80">{linked.length}/{entries.length} linked</span>}
+      </div>
       {pendingPeople.length > 0 && (
         <div className="flex flex-col gap-2">
           {pendingPeople.map(p => <PendingPersonRow key={p.id} person={p} onChanged={onChanged} />)}
@@ -490,7 +490,7 @@ function People({ pendingPeople, onChanged }) {
       ) : (
         <div className="flex flex-col gap-2">
           {[...linked, ...unlinked].map(p => (
-            <div key={p.email} className={cn('flex items-center justify-between gap-3 rounded-[6px] border px-4 py-3', p.slackUserId ? 'border-border/60 bg-card' : 'border-dashed border-border/70 bg-muted/15')}>
+            <div key={p.email} className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-card px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="relative shrink-0">
                   <PersonAvatar name={p.displayName || p.slug || p.email} avatar={p.avatarUrl} />
@@ -598,7 +598,7 @@ function PendingPersonRow({ person, onChanged }) {
     catch (e) { setErr(e.message); setBusy(null); }
   };
   return (
-    <div className="flex flex-col gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-3">
+    <div className="flex flex-col gap-2 rounded-[6px] border border-border/60 bg-card px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <PersonAvatar name={person.name || person.email || person.id} />
