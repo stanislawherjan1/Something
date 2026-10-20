@@ -713,8 +713,10 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
   );
 }
 
-function AddMemberModal({ onClose, onSuccess }) {
-  const [email, setEmail] = useState('');
+// Also opened from the Slack page for someone who wrote there without being
+// on the team: their email comes prefilled, and the caller gets it back.
+export function AddMemberModal({ onClose, onSuccess, initialEmail = '' }) {
+  const [email, setEmail] = useState(initialEmail);
   const [role, setRole]   = useState('member');
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState(null);
@@ -731,7 +733,7 @@ function AddMemberModal({ onClose, onSuccess }) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      onSuccess();
+      onSuccess(email.trim());
     } catch (err) {
       setError(err.message);
       setBusy(false);

@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
+import { AddMemberModal } from './TeamDashboard.jsx';
 import StatusTag from './StatusTag.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -183,23 +184,24 @@ function PeopleBody({ pendingPeople, entries, onChanged }) {
 
 function PendingPersonActions({ person, onChanged }) {
   const [busy, setBusy] = useState(null);
-  // Add: the same as inviting on the Team page (their email joins the roster
-  // as a member), then their Slack account is linked at once — we know its id —
+  const [adding, setAdding] = useState(false);
+  // Add opens the Team page's invite with the email prefilled; once they are
+  // on the roster their Slack account is linked at once — we know its id —
   // so their next message is already a turn as them.
-  const add = async () => {
-    setBusy('add');
+  const added = async (email) => {
+    setAdding(false);
     try {
-      await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) });
-      await call(`${TEAM_URL}/${encodeURIComponent(person.email)}`, { method: 'PATCH', body: JSON.stringify({ slackUserId: person.id }) });
+      await call(`${TEAM_URL}/${encodeURIComponent(email)}`, { method: 'PATCH', body: JSON.stringify({ slackUserId: person.id }) });
       await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' });
-      onChanged();
-    } catch { setBusy(null); }
+    } catch { /* they are on the team; the link happens on their next message */ }
+    onChanged();
   };
   const forget = async () => { setBusy('forget'); try { await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); } catch { setBusy(null); } };
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap">
       <button type="button" disabled={!!busy} onClick={forget} className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">Forget</button>
-      {person.email && <button type="button" disabled={!!busy} onClick={add} className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-50"><Plus className="size-3" strokeWidth={2} /> Add</button>}
+      <button type="button" disabled={!!busy} onClick={() => setAdding(true)} className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-50"><Plus className="size-3" strokeWidth={2} /> Add</button>
+      {adding && <AddMemberModal initialEmail={person.email || ''} onClose={() => setAdding(false)} onSuccess={added} />}
     </span>
   );
 }
