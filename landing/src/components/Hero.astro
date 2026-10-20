@@ -16,9 +16,14 @@ const heroLogos = [
 <div class="hero-zone">
 <div class="grid-bg" aria-hidden="true"></div>
 <header class="hero wrap">
+  <!-- Downscaled copies under /avatars/hero/ (the full-size originals serve
+       the rest of the site), preloaded so the fetch starts with the HTML
+       parse instead of after the halftone script boots — together they close
+       most of the gap between first paint and the portraits appearing. -->
+  {faces.map((n) => <link rel="preload" as="image" href={`/avatars/hero/${n}.png`} />)}
   <div class="faces fade-up" aria-hidden="true">
     {faces.map((n) => (
-      <div class="face" data-halftone data-image={`/avatars/${n}.png`} data-mode="dark" data-center data-plain data-cutout data-step="1.8" data-scale="1.1" data-seed={`bot-${n}`}></div>
+      <div class="face" data-halftone data-image={`/avatars/hero/${n}.png`} data-mode="dark" data-center data-plain data-cutout data-step="1.8" data-scale="1.1" data-seed={`bot-${n}`}></div>
     ))}
   </div>
   <h1 class="fade-up">Build your own employee.</h1>
