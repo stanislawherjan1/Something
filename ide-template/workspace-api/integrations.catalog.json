@@ -382,10 +382,6 @@
         {
           "title": "Generate the app-level token",
           "body": "**Basic Information** → **App-Level Tokens** → **Generate Token and Scopes** → add `connections:write` → **Generate**. Copy it (`xapp-…`) as the **App-level token**. This is what keeps the bot's connection to Slack open — no public address is needed."
-        },
-        {
-          "title": "What it reads",
-          "body": "Direct messages from your team, and channels you invite it to and approve on the **Slack** page. What people write there goes to Claude to answer; Slack gets only the replies."
         }
       ],
       "mcp": {
