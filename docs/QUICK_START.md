@@ -13,7 +13,9 @@ Setting it up takes about an hour, most of it waiting:
 3. Create a Google sign-in app, so you and your team log in with Google. The
    page walks you through the clicks.
 4. Run the one install command on the server and answer its questions: the
-   domain, the Google app details, your email as the first admin.
+   domain, the Google app details, your email as the first admin. The long
+   build at the end shows up as a short checklist of phases ticking off, not
+   a wall of text.
 5. Open your domain and sign in with Google. A short setup follows: give the
    coworker a name and a face, say what your company does (and its website, if
    you like), tell it a little about you and what you want help with, and paste
@@ -46,9 +48,10 @@ Google sign-in app → run one install command. The installer does the rest.
 > **Prefer to let an AI do the work?** You don't have to do any of this by
 > hand. Open this repository in an AI coding assistant —
 > [Claude Code](https://www.anthropic.com/claude-code), Cursor, Codex, or
-> similar — and ask it to walk you through the install, paste any error back to
-> it for a fix, and request changes ("rename the assistant", "add an
-> integration") in plain English. You'll still create the accounts in section 1
+> similar — and ask it to set Something up for you. The repo guides the agent
+> itself ([AGENT_SETUP.md](AGENT_SETUP.md)): it knows the steps, and secrets
+> (like the Google Client Secret) are typed by you in your own terminal, never
+> pasted into the chat. You'll still create the accounts in section 1
 > yourself; the agent can handle the terminal and the code.
 
 ---
@@ -207,6 +210,9 @@ fiddliest step — follow it closely. ~5 minutes.
 **d. Publish the consent screen**
 - **APIs & Services → OAuth consent screen**.
 - **User type: External** → fill app name + your email where required.
+  - On Google Workspace, with your whole team on your own domain? Choose
+    **Internal** instead — Internal apps need no publishing, so the rest of
+    this step doesn't apply.
 - Set **Publishing status** to **Production** (click **Publish app**), not
   *Testing*. In *Testing* mode only a handful of allow-listed accounts can sign
   in — Production lets your whole team in.

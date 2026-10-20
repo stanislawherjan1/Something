@@ -81,11 +81,11 @@ less install.sh    # review exactly what it does
 bash install.sh
 ```
 
-The installer is interactive: it asks for your Google sign-in app, server address, domain, and admin email, then deploys. Plan for 45-60 minutes end to end, most of it waiting on the server, DNS, and the first build. Then open your domain, sign in, and a short setup takes it from there.
+The installer is interactive: it asks for your Google sign-in app, server address, domain, and admin email, then deploys — showing the build as a calm phase checklist, with the full log saved next to your workspace folder. Plan for 45-60 minutes end to end, most of it waiting on the server, DNS, and the first build. Then open your domain, sign in, and a short setup takes it from there.
 
 First time renting a server or pointing a domain? **[Full step-by-step guide →](docs/QUICK_START.md)**
 
-**Not comfortable in the terminal?** Open this repo in an AI coding tool ([Claude Code](https://www.anthropic.com/claude-code), Cursor, or Codex) and ask it to run the installer, read back errors, and customize the project for you. You create the accounts (Google, server, domain); the agent does the rest.
+**Not comfortable in the terminal?** Open this repo in an AI coding tool ([Claude Code](https://www.anthropic.com/claude-code), Cursor, or Codex) and ask it to set Something up for you. The repo carries its own agent runbook ([docs/AGENT_SETUP.md](docs/AGENT_SETUP.md)), so the agent knows every step — and secrets stay out of the chat: those you type in your own terminal. You create the accounts (Google, server, domain); the agent does the rest.
 
 <br/>
 

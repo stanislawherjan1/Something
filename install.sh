@@ -9,8 +9,8 @@
 #   bin/add-redirect-uri.sh       — registers the OAuth callback (optional)
 #   clients/<name>/deploy.sh      — the real deploy (SSH, Docker, health check)
 #
-# It does NOT re-implement any deploy logic. It only collects 4 answers,
-# writes two small files, and calls the scripts above in order.
+# It does NOT re-implement any deploy logic. It only collects a handful of
+# answers, writes two small files, and calls the scripts above in order.
 #
 # Run it with:
 #   curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/Something/main/install.sh | bash
@@ -28,26 +28,52 @@ QUICK_START_URL="https://github.com/stanislawherjan1/Something/blob/main/docs/QU
 # --- Pretty output ----------------------------------------------------------
 if [ -t 1 ]; then
     BOLD='\033[1m'; RED='\033[0;31m'; GREEN='\033[0;32m'
-    YELLOW='\033[1;33m'; CYAN='\033[0;36m'; DIM='\033[2m'; NC='\033[0m'
+    # ACCENT is the single brand accent (dots, prompts, links, spinner):
+    # 256-color deep honey, the readable-on-light cousin of the landing's
+    # --yellow #f2c14e. Swap this one value to re-skin the installer.
+    YELLOW='\033[1;33m'; ACCENT='\033[38;5;178m'; DIM='\033[2m'; NC='\033[0m'
 else
-    BOLD=''; RED=''; GREEN=''; YELLOW=''; CYAN=''; DIM=''; NC=''
+    BOLD=''; RED=''; GREEN=''; YELLOW=''; ACCENT=''; DIM=''; NC=''
 fi
 
+# Visual language: a calm, narrow column. Everything the user reads is
+# indented two spaces; glyphs carry the color, text stays plain.
 say()  { printf '%b\n' "$*"; }
-info() { printf '%b\n' "${CYAN}$*${NC}"; }
-ok()   { printf '%b\n' "${GREEN}✓ $*${NC}"; }
-warn() { printf '%b\n' "${YELLOW}⚠ $*${NC}" >&2; }
-err()  { printf '%b\n' "${RED}✗ $*${NC}" >&2; }
-hr()   { printf '%b\n' "${DIM}────────────────────────────────────────────────────────────${NC}"; }
+info() { printf '%b\n' "  ${DIM}$*${NC}"; }
+ok()   { printf '%b\n' "  ${GREEN}✓${NC} $*"; }
+warn() { printf '%b\n' "  ${YELLOW}⚠${NC} $*" >&2; }
+err()  { printf '%b\n' "  ${RED}✗${NC} $*" >&2; }
+hr()   { say ""; }
+
+# step <n> <title> — the shared skeleton of every step: dot progress + header
+STEPS_TOTAL=6
+step() {
+    local n="$1" title="$2" dots="" i
+    for ((i=1; i<=STEPS_TOTAL; i++)); do
+        # Braces are load-bearing: macOS bash 3.2 counts a multibyte char
+        # right after an unbraced $var as part of the variable name.
+        if [ "$i" -le "$n" ]; then dots="${dots}${ACCENT}●${NC} "; else dots="${dots}${DIM}○${NC} "; fi
+    done
+    say ""; say ""
+    say "  $dots ${DIM}Step $n of $STEPS_TOTAL —${NC} ${BOLD}$title${NC}"
+    say ""
+}
+
+# m:ss, for phase durations
+mmss() { printf '%d:%02d' "$(( $1 / 60 ))" "$(( $1 % 60 ))"; }
 
 # When run as `curl ... | bash`, stdin is the script — read answers from the
 # terminal directly so prompts still work.
 if [ -t 0 ]; then TTY="/dev/stdin"; else TTY="/dev/tty"; fi
-if [ ! -r "$TTY" ]; then
+# `-r` is not enough: with no controlling terminal /dev/tty exists and passes
+# the permission check, but opening it fails ("Device not configured" on
+# macOS) — probe by actually opening it for read.
+if ! { : <"$TTY"; } 2>/dev/null; then
     err "No interactive terminal available."
-    say "This installer asks a few questions, so it needs a terminal."
-    say "Clone the repo and run it directly instead:"
-    say "  ${BOLD}git clone $REPO_URL && cd Something && ./install.sh${NC}"
+    say "  This installer asks a few questions, so it needs a terminal."
+    say "  Clone the repo and run it directly instead:"
+    say "    ${BOLD}git clone $REPO_URL && cd Something && ./install.sh${NC}"
+    say "  An AI coding agent? Don't re-run this — follow ${BOLD}docs/AGENT_SETUP.md${NC} instead."
     exit 1
 fi
 
@@ -55,9 +81,9 @@ fi
 ask() {
     local prompt="$1" default="${2:-}" reply=""
     if [ -n "$default" ]; then
-        printf '%b' "${BOLD}$prompt${NC} ${DIM}[$default]${NC} " >&2
+        printf '%b' "  ${BOLD}$prompt${NC} ${DIM}[$default]${NC} ${ACCENT}›${NC} " >&2
     else
-        printf '%b' "${BOLD}$prompt${NC} " >&2
+        printf '%b' "  ${BOLD}$prompt${NC} ${ACCENT}›${NC} " >&2
     fi
     IFS= read -r reply <"$TTY" || true
     [ -z "$reply" ] && reply="$default"
@@ -68,7 +94,7 @@ ask() {
 confirm() {
     local prompt="$1" default="${2:-yes}" reply=""
     local hint="[Y/n]"; [ "$default" = "no" ] && hint="[y/N]"
-    printf '%b' "${BOLD}$prompt${NC} $hint " >&2
+    printf '%b' "  ${BOLD}$prompt${NC} ${DIM}$hint${NC} ${ACCENT}›${NC} " >&2
     IFS= read -r reply <"$TTY" || true
     reply="$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')"
     [ -z "$reply" ] && reply="$default"
@@ -79,8 +105,8 @@ confirm() {
 # Pre-flight — required tooling
 # =============================================================================
 say ""
-say "${BOLD}Something — installer${NC}"
-say "${DIM}A guided setup from an empty server to a running workspace.${NC}"
+say "  ${ACCENT}${BOLD}Something${NC}"
+say "  ${DIM}Your AI coworker, on your own server.${NC}"
 say ""
 
 os_hint() {
@@ -97,8 +123,8 @@ for cmd in git ssh scp openssl curl; do
 done
 if [ ${#missing[@]} -gt 0 ]; then
     err "Missing required tools: ${missing[*]}"
-    say "Install them first, then re-run this installer:"
-    for m in "${missing[@]}"; do say "  ${BOLD}$(os_hint "$m")${NC}"; done
+    say "  Install them first, then re-run this installer:"
+    for m in "${missing[@]}"; do say "    ${BOLD}$(os_hint "$m")${NC}"; done
     exit 1
 fi
 ok "All required tools present (git, ssh, scp, openssl, curl)"
@@ -155,112 +181,70 @@ done
 # =============================================================================
 # Overview — what's about to happen, and what to have ready
 # =============================================================================
-say ""; hr
-say "${BOLD}Here's the plan${NC}"
-say "I'll ask 4 short questions, then build and deploy your workspace to your"
-say "server. End to end it's ~45–60 min — most of it waiting on the build and DNS."
 say ""
-say "${BOLD}Have these ready before continuing:${NC}"
-say "  ${CYAN}1.${NC} A Linux server (e.g. Hetzner CX22, ~€4.50/mo) with your SSH key on it"
-say "  ${CYAN}2.${NC} A domain with a DNS A record pointing at that server's IP"
-say "  ${CYAN}3.${NC} A Google OAuth app — Client ID + Secret"
-say "  ${CYAN}4.${NC} The Google email you'll sign in with"
-say "  ${CYAN}5.${NC} ${DIM}(after deploy, in the wizard)${NC} a paid Claude plan (Pro/Max) for the token"
+say "  ${BOLD}Here's the plan${NC}"
 say ""
-say "${DIM}New to any of this? The full step-by-step is at:${NC}"
-say "${DIM}  ${QUICK_START_URL}${NC}"
+say "  Six short steps, then the build. End to end it's usually 45–60 minutes,"
+say "  most of it waiting — and it's always safe to re-run this installer: it"
+say "  picks up where it left off."
 say ""
-say "${BOLD}Tip — you don't have to do this alone.${NC} Open this folder in an AI coding"
-say "tool and ask ${BOLD}Claude Code${NC}, ${BOLD}Codex${NC}, or ${BOLD}Cursor${NC} to walk you through it: it can"
-say "run each step with you, explain what's happening, fix errors as they come"
-say "up, and adjust the project to what you need."
+say "  Along the way you'll need:"
+say "    ${ACCENT}·${NC} a Linux server ${DIM}(e.g. Hetzner CX22, ~€4.50/mo)${NC}"
+say "    ${ACCENT}·${NC} a domain, for your workspace's web address"
+say "    ${ACCENT}·${NC} a Google account ${DIM}(your team signs in with Google)${NC}"
+say "    ${ACCENT}·${NC} a paid Claude plan ${DIM}(Pro or Max — used at the very end)${NC}"
 say ""
-printf '%b' "${BOLD}Ready? Press Enter to begin${NC} ${DIM}(or Ctrl-C to prepare first)${NC} " >&2
+say "  ${DIM}New to any of this? Full step-by-step guide:${NC}"
+say "  ${ACCENT}${QUICK_START_URL}${NC}"
+say ""
+say "  ${DIM}Tip: an AI coding tool (Claude Code, Codex, Cursor) can run this whole${NC}"
+say "  ${DIM}setup with you — open this folder there and ask it to install Something.${NC}"
+say ""
+printf '%b' "  ${BOLD}Ready? Press Enter to begin${NC} ${DIM}(or Ctrl-C to prepare first)${NC} " >&2
 IFS= read -r _ <"$TTY" || true
 
 # =============================================================================
-# Step 0/4 — Google OAuth credentials
+# Step 1/6 — Google sign-in
 # =============================================================================
-say ""; hr
-say "${BOLD}Step 0/4 — Google sign-in${NC}"
-say "Something uses Google for login. You'll need a Google Cloud OAuth 2.0 app."
-say "This is the fiddliest step — do it in your browser now (~5 min):"
+step 1 "Google sign-in"
+say "  Your team will sign in with Google, so Google has to know this app."
+say "  It's the fiddliest part, all in the browser (~5 min) — and then it's"
+say "  done forever:"
 say ""
-say "  ${CYAN}1.${NC} Create a project:      ${BOLD}https://console.cloud.google.com/projectcreate${NC}"
-say "  ${CYAN}2.${NC} Consent screen:        ${BOLD}https://console.cloud.google.com/auth/branding${NC}"
-say "     ${DIM}App name + your email, audience: External.${NC}"
-say "  ${CYAN}3.${NC} ${YELLOW}Publish the app${NC} (Audience page → 'Publish app' → In production)."
-say "     ${DIM}Left in 'Testing', everyone except allow-listed test users gets${NC}"
-say "     ${DIM}'access blocked' at login — the #2 support issue. No review is${NC}"
-say "     ${DIM}needed for basic email/profile scopes.${NC}"
-say "  ${CYAN}4.${NC} Create the client:     ${BOLD}https://console.cloud.google.com/auth/clients/create${NC}"
-say "     ${DIM}Type: Web application. Leave redirect URIs EMPTY for now —${NC}"
-say "     ${DIM}I'll hand you the exact URI later and verify it before deploying.${NC}"
+say "    ${ACCENT}1.${NC} Create a project     ${ACCENT}https://console.cloud.google.com/projectcreate${NC}"
+say "    ${ACCENT}2.${NC} Consent screen       ${ACCENT}https://console.cloud.google.com/auth/branding${NC}"
+say "       ${DIM}App name + your email; audience: External — or Internal, if your${NC}"
+say "       ${DIM}whole team is on one Google Workspace domain (then skip step 3).${NC}"
+say "    ${ACCENT}3.${NC} ${YELLOW}Publish the app${NC}      ${DIM}Audience page → 'Publish app' → In production.${NC}"
+say "       ${DIM}Left in 'Testing', sign-in later fails with 'access blocked'.${NC}"
+say "       ${DIM}No review is needed for basic email/profile scopes.${NC}"
+say "    ${ACCENT}4.${NC} Create the client    ${ACCENT}https://console.cloud.google.com/auth/clients/create${NC}"
+say "       ${DIM}Type: Web application. Leave redirect URIs empty for now —${NC}"
+say "       ${DIM}I'll hand you the exact URI later and verify it before deploying.${NC}"
 say ""
-say "${DIM}Step-by-step with screenshots: ${QUICK_START_URL}#google-oauth${NC}"
+say "  ${DIM}Click-by-click guide:${NC} ${ACCENT}${QUICK_START_URL}#4-google-oauth-setup${NC}"
 say ""
 
 ADMIN_ENV="clients/admin.env"
-WRITE_OAUTH=1
-if [ -f "$ADMIN_ENV" ] && [ -s "$ADMIN_ENV" ]; then
-    if confirm "Found existing Google credentials in $ADMIN_ENV. Use them?" yes; then
-        WRITE_OAUTH=0
-        ok "Reusing existing credentials."
-    fi
-fi
-
-if [ "$WRITE_OAUTH" -eq 1 ]; then
-    GOOGLE_CLIENT_ID=""
-    while :; do
-        GOOGLE_CLIENT_ID="$(ask "Google Client ID (ends in .apps.googleusercontent.com):")"
-        case "$GOOGLE_CLIENT_ID" in
-            *.apps.googleusercontent.com) break ;;
-            "") warn "Can't be empty." ;;
-            *) warn "That doesn't look right — it should end in .apps.googleusercontent.com" ;;
-        esac
-    done
-
-    GOOGLE_CLIENT_SECRET=""
-    while :; do
-        GOOGLE_CLIENT_SECRET="$(ask "Google Client Secret (starts with GOCSPX-):")"
-        case "$GOOGLE_CLIENT_SECRET" in
-            GOCSPX-*) break ;;
-            "") warn "Can't be empty." ;;
-            *) if confirm "That doesn't start with GOCSPX- . Use it anyway?" no; then break; fi ;;
-        esac
-    done
-
-    # Preserve an existing project id (set by an advanced operator) if present.
-    EXISTING_PROJECT_ID=""
-    if [ -f "$ADMIN_ENV" ]; then
-        EXISTING_PROJECT_ID="$(grep -E '^GOOGLE_OAUTH_PROJECT_ID=' "$ADMIN_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-    fi
-
-    umask 077
-    {
-        echo "# clients/admin.env — shared operator OAuth secrets (written by install.sh)"
-        echo "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID"
-        echo "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
-        echo "GOOGLE_OAUTH_CLIENT_ID=$GOOGLE_CLIENT_ID"
-        [ -n "$EXISTING_PROJECT_ID" ] && echo "GOOGLE_OAUTH_PROJECT_ID=$EXISTING_PROJECT_ID"
-    } > "$ADMIN_ENV"
-    chmod 600 "$ADMIN_ENV"
-    ok "Saved credentials to $ADMIN_ENV (chmod 600)."
+# The prompts live in bin/collect-secrets.sh — shared with the agent-driven
+# path (docs/AGENT_SETUP.md), so secrets have exactly one implementation.
+if ! bin/collect-secrets.sh; then
+    err "Couldn't save the Google credentials — fix the issue above and re-run."
+    exit 1
 fi
 
 # =============================================================================
-# Step 1/4 — Server address
+# Step 2/6 — Your server
 # =============================================================================
-say ""; hr
-say "${BOLD}Step 1/4 — Your server${NC}"
-say "Paste your server's IP address (copy it straight from your provider)."
-say "${DIM}Example: 203.0.113.4   — we log in as root. Use user@host only if you${NC}"
-say "${DIM}created a different user.${NC}"
+step 2 "Your server"
+say "  Where your workspace will live. Copy the IP address straight from your"
+say "  provider's panel."
+say "  ${DIM}example: 203.0.113.4 — or user@host, if you created a non-root user${NC}"
 say ""
 
 HETZNER_HOST=""
 while :; do
-    raw="$(ask "Server IP:")"
+    raw="$(ask "Server IP")"
     raw="$(printf '%s' "$raw" | tr -d '[:space:]')"   # tolerate stray spaces
     if printf '%s' "$raw" | grep -qE '^[a-zA-Z0-9_-]+@[a-zA-Z0-9._-]+$'; then
         HETZNER_HOST="$raw"                    # already user@host
@@ -289,14 +273,15 @@ if ssh_works; then
 else
     SSH_OK=0
     warn "Couldn't connect to $HETZNER_HOST over SSH yet."
-    say  "Let's fix it — pick what matches your server:"
-    say  "  ${BOLD}1${NC}) It uses an SSH key with a custom name — point me at the key file"
-    say  "  ${BOLD}2${NC}) It only has a root password — generate a key and install it for me"
-    say  "  ${BOLD}3${NC}) Skip — I'll sort SSH out myself"
-    choice="$(ask "Choose 1, 2, or 3:")"
+    say  "  Let's fix it — pick what matches your server:"
+    say  "    ${ACCENT}1${NC}  I have the server's root password ${DIM}(your provider emailed it)${NC} — set it up for me"
+    say  "    ${ACCENT}2${NC}  It uses an SSH key with a custom name — point me at the key file"
+    say  "    ${ACCENT}3${NC}  Skip — I'll sort SSH out myself"
+    say  ""
+    choice="$(ask "Choose 1, 2, or 3" "1")"
     case "$choice" in
-        1)
-            keypath="$(ask "Path to the SSH private key for this server:")"
+        2)
+            keypath="$(ask "Path to the SSH private key for this server")"
             keypath="${keypath/#\~/$HOME}"
             if [ -n "$keypath" ] && [ -f "$keypath" ] && ssh -n -i "$keypath" -o BatchMode=yes \
                    -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" 'echo ok' >/dev/null 2>&1; then
@@ -314,15 +299,15 @@ else
                 warn "Couldn't connect with that key."
             fi
             ;;
-        2)
+        1)
             if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
                 info "No SSH key found — generating ~/.ssh/id_ed25519 ..."
                 mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"
                 ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519" >/dev/null 2>&1 && ok "Key created."
             fi
-            say "Installing your public key on the server."
-            say "${BOLD}Enter the server's root password when prompted${NC} ${DIM}(Hetzner emails it when${NC}"
-            say "${DIM}you create a server without an SSH key).${NC}"
+            say "  Installing your public key on the server."
+            say "  ${BOLD}Enter the server's root password when prompted${NC} ${DIM}(Hetzner emails it${NC}"
+            say "  ${DIM}when you create a server without an SSH key).${NC}"
             if command -v ssh-copy-id >/dev/null 2>&1; then
                 ssh-copy-id -i "$HOME/.ssh/id_ed25519.pub" -o StrictHostKeyChecking=accept-new "$HETZNER_HOST" </dev/null || true
             else
@@ -336,27 +321,26 @@ else
     esac
     if [ "$SSH_OK" -ne 1 ]; then
         warn "SSH still isn't working. Fix it manually, then re-run the installer:"
-        say  "  • Install your key:  ${BOLD}ssh-copy-id $HETZNER_HOST${NC}"
-        say  "  • Custom key name?  add to ~/.ssh/config:  Host $SERVER_HOST / IdentityFile ~/.ssh/<key> / IdentitiesOnly yes"
-        say  "  • Re-test:  ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
+        say  "    ${DIM}·${NC} Install your key:  ${BOLD}ssh-copy-id $HETZNER_HOST${NC}"
+        say  "    ${DIM}·${NC} Custom key name?  add to ~/.ssh/config:  Host $SERVER_HOST / IdentityFile ~/.ssh/<key> / IdentitiesOnly yes"
+        say  "    ${DIM}·${NC} Re-test:  ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
         confirm "Continue anyway? (the deploy will fail later if SSH can't connect)" no \
-            || { say "Stopped. Fix SSH and re-run the installer."; exit 1; }
+            || { say "  Stopped. Fix SSH and re-run the installer."; exit 1; }
     fi
 fi
 
 # =============================================================================
-# Step 2/4 — Domain
+# Step 3/6 — Your domain
 # =============================================================================
-say ""; hr
-say "${BOLD}Step 2/4 — Your domain${NC}"
-say "The web address for your workspace. Its DNS A record must point to the"
-say "server IP above."
-say "${DIM}Example: workspace.mycompany.com${NC}"
+step 3 "Your domain"
+say "  The web address of your workspace — the one you'll open every day. In"
+say "  your domain provider's panel, point a DNS ${BOLD}A record${NC} at ${BOLD}$SERVER_HOST${NC}."
+say "  ${DIM}example: workspace.mycompany.com — on Cloudflare: proxy OFF ('DNS only')${NC}"
 say ""
 
 FRONTEND_DOMAIN=""
 while :; do
-    raw="$(ask "Domain:")"
+    raw="$(ask "Domain")"
     # Strip a pasted scheme and any trailing slash/path.
     raw="$(printf '%s' "$raw" | sed -E 's#^https?://##; s#/.*$##')"
     if printf '%s' "$raw" | grep -qE '^[a-zA-Z0-9]([a-zA-Z0-9.-]{0,253})$' \
@@ -381,12 +365,13 @@ if [ "$HAVE_DIG" -eq 1 ] && printf '%s' "$SERVER_HOST" | grep -qE '^[0-9]+(\.[0-
         fi
         if [ -z "$resolved" ]; then
             warn "$FRONTEND_DOMAIN doesn't resolve yet."
-            say  "  In your domain provider's DNS panel, add an A record:"
-            say  "    ${BOLD}$FRONTEND_DOMAIN → $SERVER_HOST${NC}"
-            say  "  ${DIM}(Cloudflare: proxy OFF / 'DNS only'. Propagation is usually <1 min.)${NC}"
+            say  "    In your domain provider's DNS panel, add an A record:"
+            say  "      ${BOLD}$FRONTEND_DOMAIN → $SERVER_HOST${NC}"
+            say  "    ${DIM}(Cloudflare: proxy OFF / 'DNS only'. Propagation is usually <1 min.)${NC}"
         else
             warn "$FRONTEND_DOMAIN points to $resolved, not your server ($SERVER_HOST)."
-            say  "  Update the A record to ${BOLD}$SERVER_HOST${NC} — the TLS cert won't issue otherwise."
+            say  "    Update the A record to ${BOLD}$SERVER_HOST${NC} — the secure-connection"
+            say  "    certificate can't be issued otherwise."
         fi
         if ! confirm "Record added/fixed? Press Enter to re-check (or 'n' to continue anyway)" yes; then
             warn "Continuing with unverified DNS — the deploy's preflight will re-check and stop if it's still wrong."
@@ -394,33 +379,38 @@ if [ "$HAVE_DIG" -eq 1 ] && printf '%s' "$SERVER_HOST" | grep -qE '^[0-9]+(\.[0-
         fi
     done
 else
-    say "${DIM}(Skipping DNS pre-check — install 'dig' or use an IP server address to enable it.)${NC}"
+    say "  ${DIM}(Skipping DNS pre-check — install 'dig' or use an IP server address to enable it.)${NC}"
 fi
 
 # =============================================================================
-# Step 3/4 — Admin email
+# Step 4/6 — About you
 # =============================================================================
-say ""; hr
-say "${BOLD}Step 3/4 — Admin email${NC}"
-say "The Google account you'll use to sign in. You can add more team members"
-say "later from the workspace."
+step 4 "About you"
+say "  The Google account you'll sign in with. Teammates can be added later,"
+say "  from inside the workspace."
 say ""
 
 ADMIN_EMAIL=""
 while :; do
-    ADMIN_EMAIL="$(ask "Your Google email:")"
+    ADMIN_EMAIL="$(ask "Your Google email")"
     if printf '%s' "$ADMIN_EMAIL" | grep -qE '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'; then
         break
     fi
     warn "That doesn't look like an email address."
 done
 
+# Timezone: detected silently from this machine (/etc/localtime is a
+# zoneinfo symlink on macOS and most Linux distros; fallback UTC). Daily
+# rituals freeze the hour they're created with, so a close guess beats UTC —
+# but it's not worth a question: it shows on the Review card and can be
+# changed anytime in the workspace Settings.
+IDE_TIMEZONE="$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')"
+case "$IDE_TIMEZONE" in */*) : ;; *) IDE_TIMEZONE="UTC" ;; esac
+
 # =============================================================================
-# Step 4/4 — Deploy
+# Step 5/6 — Review
 # =============================================================================
-say ""; hr
-say "${BOLD}Step 4/4 — Deploy${NC}"
-say ""
+step 5 "Review"
 
 # Folder name = sanitized domain. The folder name becomes IDE_NAME /
 # REMOTE_PATH (bootstrap-client-env.sh derives them), so keep it docker-safe.
@@ -430,13 +420,15 @@ CLIENT_NAME="$(printf '%s' "$FRONTEND_DOMAIN" \
 [ -n "$CLIENT_NAME" ] || CLIENT_NAME="workspace"
 CLIENT_DIR="clients/$CLIENT_NAME"
 
-say "Configuration:"
-say "  ${DIM}Server:${NC}  $HETZNER_HOST"
-say "  ${DIM}Domain:${NC}  $FRONTEND_DOMAIN"
-say "  ${DIM}Admin:${NC}   $ADMIN_EMAIL"
-say "  ${DIM}Folder:${NC}  $CLIENT_DIR"
+say "  Everything your workspace will be created with:"
 say ""
-confirm "Create this workspace and deploy now?" yes || { say "Stopped. Nothing was deployed."; exit 0; }
+say "    ${DIM}Server${NC}    $HETZNER_HOST"
+say "    ${DIM}Address${NC}   ${ACCENT}https://$FRONTEND_DOMAIN${NC}"
+say "    ${DIM}Admin${NC}     $ADMIN_EMAIL"
+say "    ${DIM}Timezone${NC}  $IDE_TIMEZONE ${DIM}(from this computer — change anytime in Settings)${NC}"
+say "    ${DIM}Folder${NC}    $CLIENT_DIR"
+say ""
+confirm "Create this workspace and deploy now?" yes || { say "  Stopped. Nothing was deployed."; exit 0; }
 
 # --- Create the client directory from the template -------------------------
 if [ -d "$CLIENT_DIR" ]; then
@@ -448,16 +440,17 @@ else
     ok "Created $CLIENT_DIR from the template."
 fi
 
-# --- Write the 3 operator inputs into .env ---------------------------------
+# --- Write the operator inputs into .env ------------------------------------
 # bootstrap-client-env.sh derives/generates everything else from these.
 ENV_FILE="$CLIENT_DIR/.env"
 umask 077
 {
-    echo "# Written by install.sh — the 3 operator inputs."
+    echo "# Written by install.sh — the operator inputs."
     echo "# bootstrap-client-env.sh auto-fills the rest on deploy."
     echo "HETZNER_HOST=$HETZNER_HOST"
     echo "FRONTEND_DOMAIN=$FRONTEND_DOMAIN"
     echo "IDE_ALLOWED_EMAILS=$ADMIN_EMAIL"
+    echo "IDE_TIMEZONE=$IDE_TIMEZONE"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 ok "Wrote $ENV_FILE."
@@ -504,11 +497,11 @@ while :; do
         0)  ok "Google confirms: client valid, $CALLBACK_URI registered."
             break ;;
         1)  warn "The redirect URI isn't registered yet."
-            say  "  In the Google console, open your OAuth client:"
-            say  "    ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
-            say  "  Under ${BOLD}Authorized redirect URIs → Add URI${NC}, paste exactly:"
-            say  "    ${BOLD}$CALLBACK_URI${NC}"
-            say  "  ${DIM}(no trailing slash) → Save. Google needs a few seconds to apply it.${NC}"
+            say  "    In the Google console, open your OAuth client:"
+            say  "      ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
+            say  "    Under ${BOLD}Authorized redirect URIs → Add URI${NC}, paste exactly:"
+            say  "      ${BOLD}$CALLBACK_URI${NC}"
+            say  "    ${DIM}(no trailing slash) → Save. Google needs a few seconds to apply it.${NC}"
             if confirm "Done? Press Enter to re-check (or 'n' to continue without verifying)" yes; then
                 continue
             else
@@ -516,8 +509,8 @@ while :; do
                 break
             fi ;;
         2)  warn "Google rejected the Client ID from $ADMIN_ENV."
-            say  "  Compare it against ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
-            say  "  and fix $ADMIN_ENV, then re-check."
+            say  "    Compare it against ${BOLD}https://console.cloud.google.com/auth/clients${NC}"
+            say  "    and fix $ADMIN_ENV, then re-check."
             if confirm "Fixed? Press Enter to re-check (or 'n' to continue anyway)" yes; then
                 CID="$(grep -E '^GOOGLE_CLIENT_ID=' "$ADMIN_ENV" 2>/dev/null | head -1 | cut -d= -f2- || true)"
                 continue
@@ -545,8 +538,8 @@ if [ "${SSH_OK:-0}" -eq 1 ]; then
                 ok "Docker installed on the server."
             else
                 err "Docker install failed on the server."
-                say "  Install it manually, then re-run:"
-                say "    ${BOLD}ssh $HETZNER_HOST 'curl -fsSL https://get.docker.com | sh'${NC}"
+                say "    Install it manually, then re-run:"
+                say "      ${BOLD}ssh $HETZNER_HOST 'curl -fsSL https://get.docker.com | sh'${NC}"
                 exit 1
             fi
         else
@@ -555,59 +548,130 @@ if [ "${SSH_OK:-0}" -eq 1 ]; then
     fi
 fi
 
-# --- Deploy ----------------------------------------------------------------
-say ""; hr
-info "Deploying — building on the server and swapping in the new containers."
-say ""
-say "${BOLD}What to expect:${NC}"
-say "  • First it runs quick preflight checks — if one fails, you'll get a"
-say "    specific fix hint; fix it and re-run, nothing is half-done."
-say "  • Then the server gets its baseline (firewall, swap, security patches)."
-say "  • Then the build: ${BOLD}5–15 minutes${NC} and a WALL of scrolling Docker text."
-say "    ${DIM}That's normal — it's not stuck and nothing is wrong. Good time for${NC}"
-say "    ${DIM}a coffee; don't close the terminal. A health check runs at the end.${NC}"
+# =============================================================================
+# Step 6/6 — Deploy
+# =============================================================================
+# deploy.sh's full output goes to a log file — REDIRECTED, never piped, so its
+# exit code survives (the exit code is the signal). On a terminal we render
+# deploy.sh's own [k/5] phase markers as a calm live checklist; without one we
+# print each phase once as it starts.
+PHASE_NAMES=("Preflight checks" "Server baseline (firewall, swap, security)" "Uploading the code" "Building the workspace" "Swapping in the new version" "Health check")
+PHASE_MARKS=("[0/5]" "[0b/5]" "[1/5]" "[3/5]" "[4/5]" "[5/5]")
+SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+
+run_deploy() {
+    local log="$1" pid rc i j cur=-1 frame=0 start elapsed dur
+    local t=(0 0 0 0 0 0)   # seconds (since start) each phase was first seen
+    : > "$log"
+    # </dev/null so deploy.sh's own ssh/scp calls don't read this (possibly
+    # piped) script's stdin.
+    "./$CLIENT_DIR/deploy.sh" </dev/null >"$log" 2>&1 &
+    pid=$!
+    start=$SECONDS
+
+    if [ ! -t 1 ]; then
+        # No terminal to repaint on: print each phase once as it starts.
+        while kill -0 "$pid" 2>/dev/null; do
+            while [ $((cur + 1)) -lt 6 ] && grep -qF -- "${PHASE_MARKS[cur+1]}" "$log"; do
+                cur=$((cur + 1))
+                say "  → ${PHASE_NAMES[cur]} ..."
+            done
+            sleep 2
+        done
+        wait "$pid"
+        return $?
+    fi
+
+    for ((i=0; i<6; i++)); do printf '  %b○  %s%b\n' "$DIM" "${PHASE_NAMES[i]}" "$NC"; done
+    while kill -0 "$pid" 2>/dev/null; do
+        elapsed=$((SECONDS - start))
+        for ((i=5; i>cur; i--)); do
+            if grep -qF -- "${PHASE_MARKS[i]}" "$log"; then
+                for ((j=cur+1; j<=i; j++)); do t[j]=$elapsed; done
+                cur=$i
+                break
+            fi
+        done
+        printf '\033[6A'
+        for ((i=0; i<6; i++)); do
+            printf '\033[2K'
+            if [ "$i" -lt "$cur" ]; then
+                dur=$(( ${t[i+1]} - ${t[i]} )); [ "$dur" -lt 0 ] && dur=0
+                printf '  %b✓%b  %s  %b%s%b\n' "$GREEN" "$NC" "${PHASE_NAMES[i]}" "$DIM" "$(mmss "$dur")" "$NC"
+            elif [ "$i" -eq "$cur" ]; then
+                dur=$(( elapsed - ${t[i]} )); [ "$dur" -lt 0 ] && dur=0
+                printf '  %b%s%b  %s  %b%s%b\n' "$ACCENT" "${SPIN[frame % 10]}" "$NC" "${PHASE_NAMES[i]}" "$DIM" "$(mmss "$dur")" "$NC"
+            else
+                printf '  %b○  %s%b\n' "$DIM" "${PHASE_NAMES[i]}" "$NC"
+            fi
+        done
+        frame=$((frame + 1))
+        sleep 1
+    done
+    wait "$pid"; rc=$?
+    elapsed=$((SECONDS - start))
+
+    # Final repaint: everything green on success; a red mark where it stopped.
+    printf '\033[6A'
+    for ((i=0; i<6; i++)); do
+        printf '\033[2K'
+        if [ "$rc" -eq 0 ] || [ "$i" -lt "$cur" ]; then
+            if [ "$i" -lt 5 ] && [ "${t[i+1]}" -gt 0 ]; then dur=$(( ${t[i+1]} - ${t[i]} )); else dur=$(( elapsed - ${t[i]} )); fi
+            [ "$dur" -lt 0 ] && dur=0
+            printf '  %b✓%b  %s  %b%s%b\n' "$GREEN" "$NC" "${PHASE_NAMES[i]}" "$DIM" "$(mmss "$dur")" "$NC"
+        elif [ "$i" -eq "$cur" ] || { [ "$cur" -lt 0 ] && [ "$i" -eq 0 ]; }; then
+            printf '  %b✗%b  %s\n' "$RED" "$NC" "${PHASE_NAMES[i]}"
+        else
+            printf '  %b○  %s%b\n' "$DIM" "${PHASE_NAMES[i]}" "$NC"
+        fi
+    done
+    return "$rc"
+}
+
+step 6 "Deploy"
+say "  Building your workspace on the server — the long part, usually 10–30"
+say "  minutes. You can leave it running."
+say "  ${DIM}Full build log: $CLIENT_DIR/deploy.log${NC}"
 say ""
 
-# </dev/null so deploy.sh's own ssh/scp calls don't read this (possibly piped)
-# script's stdin.
-"./$CLIENT_DIR/deploy.sh" </dev/null
+DEPLOY_LOG="$CLIENT_DIR/deploy.log"
+run_deploy "$DEPLOY_LOG"
 DEPLOY_RC=$?
 
 if [ "$DEPLOY_RC" -ne 0 ]; then
-    say ""; hr
-    err "Deploy did not finish cleanly (exit code $DEPLOY_RC)."
     say ""
-    say "${BOLD}Common causes:${NC}"
-    say "  ${YELLOW}•${NC} SSH/permission denied → ${BOLD}ssh-copy-id $HETZNER_HOST${NC}, then test ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
-    say "  ${YELLOW}•${NC} Docker missing on server → ${BOLD}ssh $HETZNER_HOST 'curl -fsSL https://get.docker.com | sh'${NC}"
-    say "  ${YELLOW}•${NC} 'address already in use' / port conflict → another stack owns 80/443. Use a fresh server (one workspace per server)."
-    say "  ${YELLOW}•${NC} TLS/cert errors → DNS for $FRONTEND_DOMAIN must point to $SERVER_HOST before deploy."
+    err "The deploy stopped early (exit code $DEPLOY_RC)."
     say ""
-    say "The deploy is idempotent — fix the issue and re-run:"
-    say "  ${BOLD}./$CLIENT_DIR/deploy.sh${NC}"
-    say "More help: ${QUICK_START_URL}#troubleshooting"
+    say "  ${DIM}Last lines of the build log ($DEPLOY_LOG):${NC}"
+    tail -n 20 "$DEPLOY_LOG" 2>/dev/null | sed 's/^/    /'
+    say ""
+    say "  ${BOLD}Common causes:${NC}"
+    say "    ${DIM}·${NC} SSH/permission denied → ${BOLD}ssh-copy-id $HETZNER_HOST${NC}, then test ${BOLD}ssh $HETZNER_HOST 'echo ok'${NC}"
+    say "    ${DIM}·${NC} Docker missing on server → ${BOLD}ssh $HETZNER_HOST 'curl -fsSL https://get.docker.com | sh'${NC}"
+    say "    ${DIM}·${NC} 'address already in use' → another stack owns 80/443; use a fresh server (one workspace per server)."
+    say "    ${DIM}·${NC} TLS/cert errors → DNS for $FRONTEND_DOMAIN must point to $SERVER_HOST before deploy."
+    say ""
+    say "  Nothing is half-done. Fix the cause and re-run this installer — it"
+    say "  picks up where it left off ${DIM}(or run ./$CLIENT_DIR/deploy.sh directly)${NC}."
+    say "  ${DIM}More help: ${QUICK_START_URL}#troubleshooting${NC}"
     exit "$DEPLOY_RC"
 fi
 
 # =============================================================================
 # Success
 # =============================================================================
+say ""; say ""
+say "  ${GREEN}✓${NC} ${BOLD}Your workspace is ready.${NC}"
 say ""
-say "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-say "${GREEN}║              Your workspace is ready. 🎉                    ║${NC}"
-say "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
+say "      ${BOLD}Open${NC}  ${ACCENT}https://$FRONTEND_DOMAIN${NC}"
 say ""
-say "  ${BOLD}Open:${NC}  ${CYAN}https://$FRONTEND_DOMAIN${NC}"
-say ""
-say "  ${BOLD}Next steps${NC}"
-say "    1. Sign in with ${BOLD}$ADMIN_EMAIL${NC} (Google)."
-say "    2. Complete the first-login wizard (name, logo, personality)."
-say "    3. Paste a Claude token when asked — generate it with:"
+say "      1. Sign in with ${BOLD}$ADMIN_EMAIL${NC} (Google)."
+say "      2. A short setup follows — name your coworker, describe your company."
+say "      3. It asks for a Claude token. Generate one on this computer with"
 say "         ${DIM}npm install -g @anthropic-ai/claude-code && claude setup-token${NC}"
-say "    4. Open ${BOLD}Integrations${NC} to add your Telegram bot token and tools."
+say "         and paste it into the setup."
+say "      4. Then connect your tools from ${BOLD}Integrations${NC} in the sidebar."
 say ""
 say "  ${DIM}Full walkthrough: ${QUICK_START_URL}${NC}"
-say ""
-say "  ${BOLD}To update later${NC} (pull new code + redeploy):"
-say "    ${DIM}cd \"$REPO_ROOT\" && ./update.sh${NC}"
+say "  ${DIM}To update later:  cd \"$REPO_ROOT\" && ./update.sh${NC}"
 say ""

@@ -5,6 +5,10 @@ Something is a self-hosted AI coworker: one Docker stack per business, a Claude 
 for agents **changing this repository**. It is not the bot's own prompt — that is
 `ide-template/global-claude.md`.
 
+**Installing, not developing?** If the person asked you to set Something up for
+them rather than to change the repo, follow
+[docs/AGENT_SETUP.md](docs/AGENT_SETUP.md) and ignore the rest of this file.
+
 Operator-specific context (which server is the canary, hosts, identities) lives in a
 gitignored `CLAUDE.local.md` next to this file, when present.
 
