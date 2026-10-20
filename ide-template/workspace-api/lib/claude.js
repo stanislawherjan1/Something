@@ -235,8 +235,9 @@ function reachLine(slug, m) {
     const names = { web: 'the web workspace', telegram: 'Telegram', slack: 'Slack' };
     const preference = prefs.length && prefs.length < on.length ? ` They prefer ${prefs.map(p => names[p]).join(' and ')}.` : '';
     const missing = [...(telegramOn && !linkedTg ? ['Telegram'] : []), ...(slackOn && !linkedSlack ? ['Slack'] : [])];
+    const list = on.length > 2 ? `${on.slice(0, -1).join(', ')} and ${on[on.length - 1]}` : on.join(' and ');
     return on.length > 1
-      ? `Reaches them on: ${on.join(', ')}.${preference}${missing.length ? ` They have not linked ${missing.join(' or ')} — never set a reminder or a message for them there.` : ''}`
+      ? `Reaches them on: ${list}.${preference}${missing.length ? ` They have not linked ${missing.join(' or ')} — never set a reminder or a message for them there.` : ''}`
       : `Reaches them on: the web workspace only${missing.length ? ` (they have not linked ${missing.join(' or ')})` : ''} — never set a reminder or a message for them on ${missing.length ? missing.join(' or ') : 'another surface'}.`;
   } catch { return ''; }
 }
