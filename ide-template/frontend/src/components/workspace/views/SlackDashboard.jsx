@@ -76,7 +76,7 @@ export default function SlackDashboard({ sidebarOpen }) {
         icon={SlackIcon}
         title="Slack"
         sidebarOpen={sidebarOpen}
-        meta={<span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider', pill[0])}>{pill[1]}</span>}
+        meta={<span title={pillTitle(listener)} className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider', pill[0])}>{pill[1]}</span>}
       />
 
       <div className="flex-1 overflow-auto">
@@ -116,9 +116,7 @@ export default function SlackDashboard({ sidebarOpen }) {
 
       {/* Bottom bar — the app's state and its token actions, as on the Telegram screen. */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/30 px-6 py-3">
-        <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground/70" title={footerLine(connected, listener, needsInstall, sl)}>
-          {footerLine(connected, listener, needsInstall, sl)}
-        </span>
+        <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground/70">{footerLine(connected, listener, needsInstall, sl)}</span>
         <div className="flex shrink-0 items-center gap-2">
           {needsInstall && sl?.install?.possible && (
             <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
@@ -164,13 +162,18 @@ export default function SlackDashboard({ sidebarOpen }) {
 
 // One sentence on the app's state, for the bottom bar: what it is doing, and
 // the last drop when there was one.
+// Since when, and the last drop, on hover of the status pill only.
+function pillTitle(listener) {
+  if (!listener?.connected) return undefined;
+  const lost = listener.lost?.length ? listener.lost[listener.lost.length - 1] : null;
+  return `Listening${listener.team ? ` in ${listener.team}` : ''} since ${formatWhen(listener.since)}${lost ? ` · last drop ${formatWhen(lost.from)}` : ''}`;
+}
+
 function footerLine(connected, listener, needsInstall, sl) {
-  if (!connected) return 'Slack app · not connected';
-  if (needsInstall) return sl?.install?.possible ? 'Slack app · not installed in your workspace yet' : 'Slack app · no bot token yet: add it, or the app\'s client id and secret';
-  const lost = listener?.lost?.length ? listener.lost[listener.lost.length - 1] : null;
-  if (listener?.connected) return `Listening${listener.team ? ` in ${listener.team}` : ''} since ${formatWhen(listener.since)}${lost ? ` · last drop ${formatWhen(lost.from)}` : ''}`;
-  if (listener?.error) return `Not connected · ${listener.error}`;
-  return 'Connecting…';
+  if (!connected) return 'Slack app';
+  if (needsInstall) return sl?.install?.possible ? 'Not installed in your workspace yet' : 'No bot token yet';
+  if (listener?.error && !listener.connected) return `Not connected: ${listener.error}`;
+  return 'Slack app';
 }
 
 /* ─── Shared bits ───────────────────────────────────────────────────────── */
