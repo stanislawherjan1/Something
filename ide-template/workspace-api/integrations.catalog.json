@@ -384,8 +384,8 @@
           "body": "**Basic Information** → **App-Level Tokens** → **Generate Token and Scopes** → add `connections:write` → **Generate**. Copy it (`xapp-…`) as the **App-level token**. This is what keeps the bot's connection to Slack open — no public address is needed."
         },
         {
-          "title": "What the bot reads, and where it talks",
-          "body": "Direct messages to the bot from people on this workspace's team are answered as them. In a channel the bot only hears what is said after someone invites it, and only speaks there once an admin approves that channel on the **Team** page. People not on the team get one line asking them to be added; shared (Slack Connect) channels are never approved. Message and file content is sent to Claude to answer; Slack itself receives only the replies."
+          "title": "What it reads",
+          "body": "Direct messages from your team, and channels you invite it to and approve on the **Slack** page. What people write there goes to Claude to answer; Slack gets only the replies."
         }
       ],
       "mcp": {
