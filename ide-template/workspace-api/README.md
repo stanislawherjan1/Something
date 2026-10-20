@@ -122,7 +122,7 @@ workspace-api/
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
-│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine; member-dm (a teammate's Telegram/Slack DM as a turn as them) · slack-api (the Web API, no SDK) · slack-listener (one Socket Mode socket, what each event becomes)
+│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine; member-dm (a teammate's Telegram/Slack DM as a turn as them) · slack-api (the Web API, no SDK) · slack-listener (one Socket Mode socket, what each event becomes) · slack-channels (channel requests, approval, the audience check) · channel-adapter (what the group watcher does to a Telegram group or a Slack channel)
 └── routes/
     ├── health.js            # GET /api/health
     ├── chat.js              # the /api/chat group (turn + sessions, history, reset, stop, forward)
@@ -132,7 +132,7 @@ workspace-api/
     ├── memory.js            # /api/memory — graph, grep, prefix, threads, snapshot refresh
     ├── memory-v4.js         # /api/memory/v4/* (the Memory screen; /sources = what feeds memory, a switch per source, /sources/:id/run; /prefs = add/remove a line on the person's USER_PROFILE / USER_PREFERENCES or, admin-only in a team, the team's MISSION / RULES), /api/routines (+ `waiting`: routines picked before their app was connected; POST/PATCH/DELETE your own, + /catalog: the Marketplace, POST /catalog/:id?later=1 keeps one waiting, DELETE /catalog/:id also drops a waiting one), /api/internal/memory/v4/* (the memory tools, incl. /import; /now ends with the planner feedback)
     ├── migrations.js        # /api/migrations/status|:id/start|:id/job (upgrade bar), /api/memory/backup
-    ├── team.js              # /api/team — whitelist CRUD (admin only); PUT /api/team/default-timezone
+    ├── team.js              # /api/team — whitelist CRUD (admin only); PUT /api/team/default-timezone; /api/team/telegram-groups and /api/team/channels (rooms of every kind: approve, edit, leave, audience recheck)
     ├── branding.js          # /api/branding — name / avatar / logo
     ├── setup.js             # /api/setup — first-run wizard, Claude token rotation
     ├── onboarding.js        # /api/onboarding — each person's setup: company, about them, research, confirm, starter plan (see below)

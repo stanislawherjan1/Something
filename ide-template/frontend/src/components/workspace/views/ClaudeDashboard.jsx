@@ -60,6 +60,7 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
 
   // Telegram — connection state (from the integrations catalog) + group count.
   const tg = useApi('/api/team/telegram-groups');
+  const sl = useApi('/api/team/channels?kind=slack');
   const integrations = useApi('/api/integrations');
   const skills = useApi('/api/skills');
 
@@ -192,6 +193,24 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     activatedAt: tgConnected ? (tgIntegration?.activatedAt || null) : null,
   };
 
+  // Slack — the channels the assistant is in, the ones waiting for a yes.
+  const slCount = sl.data?.groups?.length || 0;
+  const slPending = sl.data?.pending?.length || 0;
+  const slIntegration = (integrations.data?.integrations || []).find(i => i.id === 'slack') || null;
+  const slConnected = !!slIntegration?.active;
+  const slackTile = {
+    id: 'slack',
+    mark: `${BASE}/integrations/slack.svg`,
+    logo: <TileBanner image={`${BASE}/integrations/slack.svg`} mode="dark" seed="slack" soft />,
+    label: 'Slack',
+    description: slConnected
+      ? (slPending ? `${slPending} channel${slPending > 1 ? 's' : ''} waiting for approval` : slCount ? `In ${slCount} channel${slCount > 1 ? 's' : ''}` : 'Connected · direct messages, channels on approval')
+      : 'The bot in your Slack workspace: connect your own app to get started.',
+    active: slConnected,
+    credential: slConnected ? `••••${slIntegration?.credentialSummary?.last4 || ''}` : null,
+    activatedAt: slConnected ? (slIntegration?.activatedAt || null) : null,
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Hexagon} title="AI Settings" sidebarOpen={sidebarOpen} />
@@ -246,6 +265,11 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
                     onOpen={() => tgConnected
                       ? onSelect && onSelect({ path: '.claude/telegram', type: 'telegram' })
                       : setOpen('telegram-setup')}
+                    canEdit={isAdmin}
+                  />
+                  <SettingTile
+                    tile={slackTile}
+                    onOpen={() => onSelect && onSelect({ path: '.claude/slack', type: 'slack' })}
                     canEdit={isAdmin}
                   />
                 </>

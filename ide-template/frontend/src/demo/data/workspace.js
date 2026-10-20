@@ -1472,6 +1472,25 @@ export const INTEGRATIONS = {
 
 const tgMembers = (...slugs) => Object.fromEntries(slugs.map(s => [PEOPLE[s].telegramChatId, PEOPLE[s].name]));
 
+export const SLACK_CHANNELS = {
+  groups: [
+    { chatId: 'slack-C0SALT0001', kind: 'slack', title: '#studio', requireMention: true, language: '',
+      members: { U0SALTNORA: 'Nora Vale', U0SALTMARA: 'Mara Quill', U0SALTLEO: 'Leo Brandt' },
+      audience: { ok: true, outsiders: [], shared: false, members: 4, checkedAt: at(-1, '09:12') },
+      addedAt: at(-30, '10:00'), addedBy: PEOPLE.nora.email },
+    { chatId: 'slack-C0SALT0002', kind: 'slack', title: '#wholesale', requireMention: false, language: 'English', paused: true,
+      members: { U0SALTNORA: 'Nora Vale', U0SALTTOM: 'Tom Ashby' },
+      audience: { ok: false, outsiders: ['U0GUEST001'], shared: false, members: 4, checkedAt: at(0, '08:40') },
+      addedAt: at(-12, '15:30'), addedBy: PEOPLE.nora.email },
+  ],
+  pending: [
+    { chatId: 'slack-C0SALT0003', channel: 'C0SALT0003', title: '#kiln-log', inviterSlug: 'lena', members: 5, private: false, at: at(0, '07:55') },
+  ],
+  pendingPeople: [
+    { id: 'U0NEWHIRE1', email: 'pia@saltmarshceramics.example', name: 'Pia Larsen', at: at(0, '08:10') },
+  ],
+};
+
 export const TELEGRAM_GROUPS = [
   { chatId: '-1007001000001', title: `${COMPANY.short} team`, requireMention: false, language: 'English',
     beat: 'The whole team. Day-to-day questions about orders, stock, the kiln and the newsletter.',

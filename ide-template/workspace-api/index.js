@@ -66,6 +66,7 @@ import { writeAllowedHostsFile } from './lib/integrations/egress.js';
 import { rehydrateRuntimeFiles } from './lib/setup.js';
 import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-sync.js';
 import * as slackListener from './lib/integrations/slack-listener.js';
+import * as slackChannels from './lib/integrations/slack-channels.js';
 import { startBroker } from './lib/integrations/broker.js';
 import { decryptFor, ensureOwners as ensureIntegrationOwners } from './lib/integrations/store.js';
 import { get as getCatalog } from './lib/integrations/catalog.js';
@@ -201,6 +202,8 @@ if (cryptoReady()) {
   }
   // Slack is held open from here (one Socket Mode connection) whenever it is
   // connected and not paused; nothing to do when it is not.
+  slackListener.setChannelHandlers({ onChannel: slackChannels.onChannelMessage, onChannelEvent: slackChannels.onChannelEvent });
+  slackChannels.startSweep();
   try { if (slackListener.reconcile()) process.stdout.write('[workspace-api] slack: connecting\n'); }
   catch (err) { process.stderr.write(`[workspace-api] slack listener failed to start: ${err.message}\n`); }
 }

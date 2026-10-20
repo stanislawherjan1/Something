@@ -26,7 +26,7 @@ import { execFileSync } from 'node:child_process';
 import { PROJECT_DIR } from './config.js';
 import { v4Mode } from './memory-ledger.js';
 import * as integrationsStore from './integrations/store.js';
-import { normalizeGroupId } from './group-id.js';
+import { normalizeGroupId, groupIdKind } from './group-id.js';
 import { normalizeSurfaces, parseSurfaces, legacySurface, describeSurfaces } from './surfaces.js';
 
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
@@ -906,13 +906,19 @@ export function setTeamMode(enabled, actor) {
 // deliberately SEPARATE from normalizeChatId (positive-only, guards the DM
 // fan-out invariant — see its comment). Design: docs/future-plans/TELEGRAM_GROUP_MODE.md
 
-/** All allow-listed groups as [{ chatId, title, requireMention, beat, addedAt, addedBy }]. */
+/** All allow-listed groups as [{ chatId, kind, title, requireMention, beat, paused, audience, addedAt, addedBy }]. */
 export function listGroups() {
   const cfg = readConfig();
   const g = (cfg && typeof cfg.groups === 'object' && cfg.groups) ? cfg.groups : {};
   return Object.entries(g)
     .filter(([chatId]) => normalizeGroupId(chatId))
-    .map(([chatId, v]) => ({ chatId, ...(v && typeof v === 'object' ? v : {}) }));
+    .map(([chatId, v]) => ({ chatId, kind: groupIdKind(chatId), ...(v && typeof v === 'object' ? v : {}) }));
+}
+
+/** Registered and not paused: the assistant may speak there now. */
+export function isGroupActive(chatId) {
+  const g = getGroup(chatId);
+  return !!g && !g.paused;
 }
 
 /** Config for one group, or null if not allow-listed. */
@@ -921,7 +927,7 @@ export function getGroup(chatId) {
   if (!id) return null;
   const cfg = readConfig();
   const v = cfg.groups && cfg.groups[id];
-  return v && typeof v === 'object' ? { chatId: id, ...v } : null;
+  return v && typeof v === 'object' ? { chatId: id, kind: groupIdKind(id), ...v } : null;
 }
 
 /**
@@ -931,9 +937,9 @@ export function getGroup(chatId) {
  */
 export function memberGroupsOf(slug) {
   const u = list().find(x => x.slug === slug);
-  const tid = u?.telegramChatId;
-  if (!tid) return [];
-  return listGroups().filter(g => g.members && Object.prototype.hasOwnProperty.call(g.members, tid)).map(g => g.chatId);
+  const ids = [u?.telegramChatId, u?.slackUserId].filter(Boolean);
+  if (!ids.length) return [];
+  return listGroups().filter(g => g.members && ids.some(id => Object.prototype.hasOwnProperty.call(g.members, id))).map(g => g.chatId);
 }
 
 /** Is this group allow-listed (the assistant may operate in it)? */
@@ -948,13 +954,20 @@ export function isAllowedGroup(chatId) {
  */
 export function addGroup({ chatId, title, requireMention, beat, language, actor } = {}) {
   const id = normalizeGroupId(chatId);
-  if (!id) throw new Error('invalid group id (must be a negative integer)');
+  if (!id) throw new Error('invalid group id (a Telegram chat id is a negative integer; a Slack channel is slack-C…)');
   const cfg = readConfig();
   if (!cfg.groups || typeof cfg.groups !== 'object') cfg.groups = {};
   const prev = cfg.groups[id] && typeof cfg.groups[id] === 'object' ? cfg.groups[id] : {};
+  // A Slack channel is far busier than a team's Telegram group: it answers
+  // when addressed unless an admin turns ambient listening on.
+  const mentionDefault = groupIdKind(id) === 'slack';
   cfg.groups[id] = {
     title:          title != null ? String(title).slice(0, 120) : (prev.title || ''),
-    requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? false),
+    requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? mentionDefault),
+    // Paused: registered, but the room holds someone not on the roster (the
+    // audience check), so the assistant stays silent until it is ours again.
+    ...(prev.paused ? { paused: true } : {}),
+    ...(prev.audience ? { audience: prev.audience } : {}),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
@@ -980,7 +993,7 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
  * from the gate's language verdicts). Writes only on a REAL change and emits no
  * audit event: this is drift-sync, not an operator action. Returns true if it wrote.
  */
-export function touchGroupMeta(chatId, { title, language } = {}) {
+export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) return false;
   const cfg = readConfig();
@@ -989,6 +1002,18 @@ export function touchGroupMeta(chatId, { title, language } = {}) {
   let changed = false;
   if (title != null && String(title).slice(0, 120) !== (g.title || '')) {
     g.title = String(title).slice(0, 120);
+    changed = true;
+  }
+  if (paused != null && !!paused !== !!g.paused) {
+    if (paused) g.paused = true; else delete g.paused;
+    changed = true;
+  }
+  if (audience !== undefined && JSON.stringify(audience) !== JSON.stringify(g.audience)) {
+    if (audience) g.audience = audience; else delete g.audience;
+    changed = true;
+  }
+  if (requireMention != null && !!requireMention !== !!g.requireMention) {
+    g.requireMention = !!requireMention;
     changed = true;
   }
   if (language != null && String(language).slice(0, 40) !== (g.language || '')) {
@@ -1026,7 +1051,7 @@ export function removeGroup(chatId, actor) {
 export function recordGroupMember(chatId, fromId, name) {
   const id = normalizeGroupId(chatId);
   const fid = String(fromId == null ? '' : fromId).trim();
-  if (!id || !/^\d{4,20}$/.test(fid)) return false;
+  if (!id || !/^(\d{4,20}|[UW][A-Z0-9]{6,20})$/.test(fid)) return false;
   const cfg = readConfig();
   if (!cfg.groups || !cfg.groups[id]) return false;
   const g = cfg.groups[id];
@@ -1054,21 +1079,24 @@ export function writeChannelsCard() {
     const groups = listGroups();
     const head = `---
 card: CHANNELS
-purpose: The Telegram GROUPS this assistant is in + who's in them + their chat_ids. Auto-maintained by workspace-api — do NOT hand-edit.
+purpose: The Telegram GROUPS and Slack CHANNELS this assistant is in + who's in them + their ids. Auto-maintained by workspace-api — do NOT hand-edit.
 write_when: a group is registered/removed, or a new member is seen in a group. Never written by the agent.
 ---
 
-# CHANNELS — Telegram groups I'm in
+# CHANNELS — groups and channels I'm in
 
 `;
     let body;
     if (!groups.length) {
-      body = "_Not in any Telegram group yet._\n";
+      body = "_Not in any group or channel yet._\n";
     } else {
       body = groups.map(g => {
         const members = g.members && typeof g.members === 'object' ? Object.values(g.members) : [];
         const mlist = members.length ? members.join(', ') : '(no members seen yet)';
-        return `## ${g.title || 'Untitled group'}\n- chat_id: \`${g.chatId}\` (use this with the Telegram reply tool to post here)\n- members seen: ${mlist}\n`;
+        const where = g.kind === 'slack' ? 'Slack channel' : 'Telegram group';
+        const how = g.kind === 'slack' ? 'use this with group_send_message to post here' : 'use this with the Telegram reply tool to post here';
+        const state = g.paused ? ' — PAUSED: someone not on the team is in it, so I stay silent there' : (g.requireMention ? ' — answers only when addressed' : '');
+        return `## ${g.title || 'Untitled group'} (${where})\n- id: \`${g.chatId}\` (${how})${state}\n- members seen: ${mlist}\n`;
       }).join('\n');
     }
     const content = head + body;

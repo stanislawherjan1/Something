@@ -26,6 +26,8 @@ import { restoreDefaultMemory, migrateDefaultMemory } from '../lib/memory-loader
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
 import { listUnregistered } from '../lib/integrations/group-watcher.js';
+import * as slackChannels from '../lib/integrations/slack-channels.js';
+import { pendingUsers as slackPendingUsers, forgetPending as slackForgetPending } from '../lib/integrations/slack-listener.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -219,7 +221,73 @@ export default function teamRouter() {
   router.get('/team/telegram-groups', (req, res) => {
     if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
     const canEdit = team.isAdmin(req.actor);
-    res.json({ ok: true, groups: canEdit ? team.listGroups() : [], canEdit });
+    res.json({ ok: true, groups: canEdit ? team.listGroups().filter(g => g.kind === 'telegram') : [], canEdit });
+  });
+
+  // ─── Channels of every kind (today: Slack) ──────────────────────────────
+  // The registered rooms, the rooms waiting for an admin's yes, and the people
+  // who wrote to the bot on Slack without being on the team. Admins only see
+  // the pending lists; everyone sees that the surface exists.
+  router.get('/team/channels', (req, res) => {
+    if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+    const canEdit = team.isAdmin(req.actor);
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : null;
+    const groups = canEdit ? team.listGroups().filter(g => !kind || g.kind === kind) : [];
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true, canEdit, groups,
+      pending: canEdit ? slackChannels.pendingChannels() : [],
+      pendingPeople: canEdit ? slackPendingUsers() : [],
+    });
+  });
+
+  // Approve a room (a Slack channel the bot was added to), or change one.
+  router.post('/team/channels', requireAdmin, rateLimit, express.json({ limit: '2kb' }), async (req, res) => {
+    const { chatId, title, beat, requireMention, language } = req.body || {};
+    try {
+      const id = String(chatId || '').trim();
+      if (id.startsWith('slack-')) {
+        const group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language });
+        return res.status(201).json({ ok: true, group });
+      }
+      const group = team.addGroup({ chatId: id, title, beat, requireMention, language, actor: req.actor });
+      syncTelegramGroups().catch(() => {});
+      res.status(201).json({ ok: true, group });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Decline or remove a room: the bot leaves a Slack channel it is removed from here.
+  router.delete('/team/channels/:chatId', requireAdmin, rateLimit, async (req, res) => {
+    const id = String(req.params.chatId || '').trim();
+    if (id.startsWith('slack-')) {
+      const known = !!team.getGroup(id) || slackChannels.pendingChannels().some(p => p.chatId === id);
+      if (!known) return res.status(404).json({ error: 'not a known channel' });
+      await slackChannels.rejectChannel(id, 'removed by an admin');
+      return res.json({ ok: true, removed: id });
+    }
+    const removed = team.removeGroup(id, req.actor);
+    if (!removed) return res.status(404).json({ error: 'group not allow-listed' });
+    syncTelegramGroups().catch(() => {});
+    res.json({ ok: true, removed: id });
+  });
+
+  // Who is in the room now — re-run the audience check on demand.
+  router.post('/team/channels/:chatId/recheck', requireAdmin, rateLimit, async (req, res) => {
+    const id = String(req.params.chatId || '').trim();
+    if (!team.getGroup(id)) return res.status(404).json({ error: 'not a registered channel' });
+    try {
+      const audience = await slackChannels.checkAudience(id);
+      res.json({ ok: true, audience, group: team.getGroup(id) });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // A person who wrote on Slack without being on the team: forget the request
+  // (adding them is POST /api/team with their email, as for anyone).
+  router.delete('/team/channels/pending-people/:id', requireAdmin, rateLimit, (req, res) => {
+    slackForgetPending(String(req.params.id || ''));
+    res.json({ ok: true });
   });
 
   // Groups the bot is IN but NOT registered yet — admin-only; powers the one-click

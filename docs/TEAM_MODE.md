@@ -569,6 +569,36 @@ in `group-watcher.js`.
 
 ---
 
+### Slack channels
+
+A Slack channel is a room of the same kind as a Telegram group — the same
+watcher, the same two-stage decision, the same group turn (`turn-group`, this
+channel's scope and the shared one, every private tree fenced), the same
+markers — behind the channel adapter (`lib/integrations/channel-adapter.js`);
+its id in the registry is `slack-<channel id>` and its files are named after
+it. What differs is how it gets in and who may be in it
+(`lib/integrations/slack-channels.js`):
+
+- **Admission is an admin's yes, never automatic.** Anyone in a workspace can
+  add an app to a channel, so being added only makes a request (the Slack page
+  under AI Settings lists it; admins are notified). Approved → registered,
+  answering **when addressed** unless an admin turns ambient on. Not approved
+  within 24 h, or declined → the bot leaves the channel.
+- **The audience check.** At approval and on every join, leave, share or
+  unshare, every member must be a roster person of this workspace. Anyone else
+  — a guest, another workspace's user, a bot — **pauses** the channel: the bot
+  is silent there (a message, a reminder or a direct post into it is refused,
+  not swallowed) until they leave; admins hear both ways. A shared (Slack
+  Connect) channel is left at once and can never be approved.
+- **Replies go into the thread** of the message they answer (a top-level
+  message starts one); a reminder or a direct post into the channel is
+  top-level.
+- **Memory**: the channel's history is filed into `memory/groups/slack-C…/`,
+  that channel's own scope, as a Telegram group's is.
+- **People**: a teammate is linked by the email their Slack account carries,
+  the first time they write (`slackUserId`); someone who writes without being
+  on the team appears as pending on the Slack page, to add with one click.
+
 ## 11. Privacy model
 
 **Default to the shared space — collaboration, not secrecy.** Most questions
@@ -592,11 +622,12 @@ though it can **relay** a question straight to that teammate.
 |------|----------|
 | `.allowed-emails.json` | Roster: email, role, slug, displayName, telegram contact. |
 | `.allowed-emails.audit.log` | Append-only roster change log. |
-| `.team-config.json` | Solo vs collaborative flag **+ registered Telegram groups** (`groups`). |
+| `.team-config.json` | Solo vs collaborative flag **+ registered rooms** (`groups`: Telegram groups by chat id, Slack channels as `slack-C…`, with `paused` / `audience` for the latter). |
+| `.team/slack-pending-channels.json`, `.team/slack-pending.json` | Slack channels waiting for an admin's approval; people who wrote on Slack without being on the team. |
 | `users/<slug>/…` | Each teammate's personal files. |
 | `memory/users/<slug>/…` | Each teammate's private memory cards. |
 | `memory/groups/<id>/…` | A registered group's brain working notes (admin-only via the file API). |
-| `memory/CHANNELS.md` | Generated shared card: the registered groups + their members (see §10). |
+| `memory/CHANNELS.md` | Generated shared card: the registered groups and channels + their members (see §10). |
 
 All of the above are workspace-managed state: hidden from the normal file tree
 and excluded from Drive sync.
@@ -609,6 +640,7 @@ and excluded from Drive sync.
 | `PUT /api/team/default-timezone` | Admin — the workspace default time zone. |
 | `GET/POST/PATCH/DELETE /api/team`, `PUT /api/team/mode` | Roster + mode (admin-gated writes). |
 | `GET/POST/DELETE /api/team/telegram-groups` | Registered Telegram groups (admin-gated). |
+| `GET /api/team/channels[?kind=slack]`, `POST /api/team/channels`, `DELETE /api/team/channels/:id`, `POST …/:id/recheck`, `DELETE …/pending-people/:id` | Rooms of every kind: the registered ones, the Slack channels waiting for approval and the people pending; approve / edit (`requireMention`, `language`), decline or leave, re-run the audience check, forget a pending person (admin-gated). |
 | `GET /api/reminders`, `POST /api/reminders/cancel` | Actor-scoped reminder board. |
 | `GET/POST/PATCH/DELETE /api/tasks` | Shared task board (DELETE removes a task for good; finished work moves to Done). |
 | `GET /internal/roster` | Loopback — roster for the reminder MCP's name→slug resolution. |

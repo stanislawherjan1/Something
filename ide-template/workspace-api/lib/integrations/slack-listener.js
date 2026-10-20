@@ -29,6 +29,7 @@ import { writeAllowedHostsFile } from './egress.js';
 import { userBySlackId, setSlack, find as memberByEmail } from '../team.js';
 import { startMemberDm } from './member-dm.js';
 import { saveAttachments } from '../attachments.js';
+import { __setSlackStatus } from './channel-adapter.js';
 
 const ID = 'slack';
 const RECONNECT_MIN_MS = 1000, RECONNECT_MAX_MS = 60_000;
@@ -60,9 +61,10 @@ export function status() {
   return {
     running: st.running, connected: st.connected, since: st.since, lastEventAt: st.lastEventAt,
     lastDisconnectAt: st.lastDisconnectAt, lost: st.lost.slice(-LOST_WINDOWS_KEPT),
-    team: st.self?.team || null, botUserId: st.self?.user_id || null, error: st.error,
+    team: st.self?.team || null, teamId: st.self?.team_id || null, botUserId: st.self?.user_id || null, error: st.error,
   };
 }
+__setSlackStatus(status);   // the channel adapter learns the bot's own id from here
 
 // ─── pending people (DMs from workspace users not on the roster) ─────────────
 

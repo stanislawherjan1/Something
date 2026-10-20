@@ -44,6 +44,7 @@ const VIEW_ROUTES = [
   { path: '/ai',           selected: { path: '.claude',            type: 'dashboard' } },
   { path: '/memory',       selected: { path: 'memory',             type: 'memory' } },
   { path: '/telegram',     selected: { path: '.claude/telegram',   type: 'telegram' } },
+  { path: '/slack',        selected: { path: '.claude/slack',      type: 'slack' } },
   { path: '/notifications',selected: { path: '.notifications',     type: 'notifications' } },
   { path: '/settings',     selected: { path: '.settings',          type: 'settings' } },
 ];

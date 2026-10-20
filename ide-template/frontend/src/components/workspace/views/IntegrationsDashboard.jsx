@@ -169,7 +169,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
 
   // Telegram is configured in AI Settings (its own tile), not here — exclude it
   // from the Integrations catalog so it isn't set up in two places.
-  const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram'), [data]);
+  // Telegram and Slack have screens of their own under AI Settings.
+  const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram' && i.id !== 'slack'), [data]);
   // Sync URL → activating state. When ?activate=<id> changes, find the
   // matching integration tile and open the activation modal on it.
   // Remote-MCP OAuth entries have no modal — a deep link can't open their

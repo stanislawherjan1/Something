@@ -1,0 +1,541 @@
+import { useState } from 'react';
+import {
+  Trash2, Check, Loader2, Users, User, Lock, X, Plug, CheckCircle2, AlertTriangle, RefreshCw, Plus, Hash, PauseCircle,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import EditorHeader from '../EditorHeader.jsx';
+import { useApi, invalidate } from '@/lib/useApi';
+import useMe from '../useMe.js';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+const CHANNELS_URL = '/api/team/channels?kind=slack';
+const CHANNELS_API = '/api/team/channels';
+const TEAM_URL     = '/api/team';
+const INTEG_URL    = '/api/integrations';
+
+const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
+
+/**
+ * Slack — the surface's home in AI Settings, the Telegram screen's twin.
+ * Admins only: the channels the assistant was added to and waits for a yes
+ * on, the channels it is in (with whether it answers only when addressed and
+ * whether the room is paused because someone in it is not on the team), the
+ * people linked by their Slack account, and the people who wrote to it on
+ * Slack without being on the team.
+ */
+export default function SlackDashboard({ sidebarOpen }) {
+  const { me, loading: meLoading } = useMe();
+  const isAdmin = !!me?.isAdmin;
+  const { data, loading, reload } = useApi(CHANNELS_URL);
+  const integ = useApi(INTEG_URL);
+  const roster = useApi(TEAM_URL);
+  const groups = data?.groups || [];
+  const pending = data?.pending || [];
+  const pendingPeople = data?.pendingPeople || [];
+  const canEdit = !!data?.canEdit;
+  const refresh = () => { invalidate(CHANNELS_URL); reload(); };
+
+  const sl = (integ.data?.integrations || []).find(i => i.id === 'slack');
+  const connected = !!sl?.active;
+  const listener = sl?.listener || null;
+  const [setup, setSetup] = useState(false);
+  const [disconnect, setDisconnect] = useState(false);
+
+  if (!isAdmin) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <EditorHeader icon={SlackIcon} title="Slack" sidebarOpen={sidebarOpen} />
+        <div className="flex-1 overflow-auto">{!meLoading && <AccessDenied />}</div>
+      </div>
+    );
+  }
+
+  const memberAvatars = {};
+  for (const e of (roster.data?.entries || [])) {
+    if (e.slackUserId) memberAvatars[String(e.slackUserId)] = e.avatarUrl;
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <EditorHeader
+        icon={SlackIcon}
+        title="Slack"
+        sidebarOpen={sidebarOpen}
+        meta={
+          <span className={cn(
+            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider',
+            connected && listener?.connected
+              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+              : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+          )}>
+            {connected && listener?.connected
+              ? <><CheckCircle2 className="size-2.5" strokeWidth={2.5} />Listening</>
+              : connected
+                ? <><Plug className="size-2.5" strokeWidth={2.5} />{listener?.error ? 'Not connected' : 'Connecting'}</>
+                : <><Plug className="size-2.5" strokeWidth={2.5} />Not connected</>}
+          </span>
+        }
+      />
+
+      <div className="flex-1 overflow-auto">
+        <div className="flex max-w-2xl flex-col gap-6 px-6 pb-12 pt-2">
+          {connected && listener && (listener.error || listener.lost?.length > 0) && (
+            <div className="rounded-[6px] border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-[12.5px] text-amber-800 dark:text-amber-300">
+              {listener.error
+                ? <>Slack refused the connection: <span className="font-mono">{listener.error}</span>. Check the tokens.</>
+                : <>The connection dropped {listener.lost.length} time{listener.lost.length > 1 ? 's' : ''} recently (last {formatWhen(listener.lost.at(-1)?.from)}); messages sent while it was down did not reach the assistant.</>}
+            </div>
+          )}
+
+          {pending.length > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <SectionHead title="Waiting for your approval" subtitle="The assistant was added to these channels. It stays silent until you approve; after a day it leaves." />
+              {pending.map(p => <PendingChannelCard key={p.chatId} entry={p} onChanged={refresh} />)}
+            </section>
+          )}
+
+          <section className="flex flex-col gap-2.5">
+            <SectionHead title="Channels" lock={!canEdit} subtitle="Where the assistant takes part. It answers when addressed; turn on ambient to let it chime in on its own. A room with someone not on the team is paused." />
+            {loading && !data ? (
+              <><Skeleton className="h-20 rounded-[6px]" /><Skeleton className="h-20 rounded-[6px]" /></>
+            ) : groups.length === 0 ? (
+              <EmptyHint>No channels yet. Invite the assistant to a channel in Slack and approve it here.</EmptyHint>
+            ) : (
+              groups.map(g => <ChannelCard key={g.chatId} group={g} canEdit={canEdit} avatars={memberAvatars} onChanged={refresh} />)
+            )}
+          </section>
+
+          <People pendingPeople={pendingPeople} onChanged={() => { refresh(); invalidate(TEAM_URL); roster.reload(); }} />
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/30 px-6 py-3">
+        <span className="text-[12px] font-medium text-muted-foreground/70">Slack app</span>
+        <div className="flex items-center gap-2">
+          {sl && (
+            <button type="button" onClick={() => setSetup(true)}
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
+              {connected ? 'Manage tokens' : 'Set up'}
+            </button>
+          )}
+          {connected && sl && (
+            <button type="button" onClick={() => setDisconnect(true)}
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
+              Disconnect
+            </button>
+          )}
+        </div>
+      </div>
+
+      {setup && sl && (
+        <ActivateModal integration={sl} onClose={() => setSetup(false)} onSuccess={() => { setSetup(false); invalidate(INTEG_URL); integ.reload(); }} />
+      )}
+      {disconnect && sl && (
+        <RemoveDialog
+          integration={sl}
+          title="Disconnect Slack?"
+          body="This erases the stored tokens and takes the assistant off Slack. Approved channels and linked people are kept: reconnect any time by adding the tokens again."
+          confirmLabel="Disconnect"
+          busyLabel="Disconnecting…"
+          doneLabel="Disconnected"
+          onClose={() => setDisconnect(false)}
+          onSuccess={() => { setDisconnect(false); invalidate(INTEG_URL); integ.reload(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Shared bits ───────────────────────────────────────────────────────── */
+
+function formatWhen(iso) {
+  if (!iso) return 'a while ago';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? 'a while ago' : d.toLocaleString();
+}
+
+function AccessDenied() {
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted/50">
+          <Lock className="size-5 text-muted-foreground/70" />
+        </div>
+        <div className="text-[15px] font-semibold text-foreground/90">Admins only</div>
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground/70">
+          Slack settings are managed by workspace admins. Ask an admin if you need a channel approved.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SectionHead({ title, subtitle, lock, trailing }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[14.5px] font-semibold text-foreground/90">{title}</span>
+        {lock && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70">
+            <Lock className="size-2.5" /> read-only
+          </span>
+        )}
+        {trailing && <span className="ml-auto shrink-0">{trailing}</span>}
+      </div>
+      {subtitle && <div className="text-[12px] leading-relaxed text-muted-foreground/70">{subtitle}</div>}
+    </div>
+  );
+}
+
+function EmptyHint({ children }) {
+  return <div className="rounded-[6px] border border-dashed border-border/60 px-4 py-7 text-center text-[12.5px] text-muted-foreground/70">{children}</div>;
+}
+
+function ErrorLine({ err }) {
+  if (!err) return null;
+  return (
+    <div className="flex items-start gap-2 rounded-[6px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} /><span>{err}</span>
+    </div>
+  );
+}
+
+async function call(url, init) {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+  return r.json().catch(() => ({}));
+}
+
+/* ─── A channel waiting for a yes ───────────────────────────────────────── */
+
+function PendingChannelCard({ entry, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
+  const act = async (approve) => {
+    setBusy(approve ? 'approve' : 'decline'); setErr('');
+    try {
+      if (approve) await call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: entry.chatId }) });
+      else await call(`${CHANNELS_API}/${encodeURIComponent(entry.chatId)}`, { method: 'DELETE' });
+      onChanged();
+    } catch (e) { setErr(e.message); setBusy(null); }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ChannelAvatar />
+          <div className="min-w-0">
+            <div className="truncate text-[13.5px] font-medium text-foreground/90">{entry.title || entry.chatId}</div>
+            <div className="mt-0.5 text-[11.5px] text-muted-foreground/65">
+              Added by {entry.inviterSlug ? <span className="text-foreground/80">{entry.inviterSlug}</span> : 'someone not on the team'}
+              {entry.members ? ` · ${entry.members} members` : ''}{entry.private ? ' · private' : ''} · {formatWhen(entry.at)}
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" disabled={!!busy} onClick={() => act(false)}
+            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">
+            {busy === 'decline' ? 'Leaving…' : 'Decline'}
+          </button>
+          <button type="button" disabled={!!busy} onClick={() => act(true)}
+            className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1 text-[12px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+            {busy === 'approve' ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}
+            {busy === 'approve' ? 'Approving…' : 'Approve'}
+          </button>
+        </div>
+      </div>
+      <ErrorLine err={err} />
+    </div>
+  );
+}
+
+/* ─── One registered channel ────────────────────────────────────────────── */
+
+function ChannelAvatar() {
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted ring-1 ring-border/60">
+      <Hash className="size-4 text-muted-foreground/70" strokeWidth={1.75} />
+    </span>
+  );
+}
+
+function MemberAvatar({ name, avatar }) {
+  const [errored, setErrored] = useState(false);
+  return (
+    <span title={name || undefined} className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ring-2 ring-card">
+      {avatar && !errored
+        ? <img src={avatar} alt="" className="size-full object-cover" onError={() => setErrored(true)} />
+        : <User className="size-3 text-muted-foreground/40" strokeWidth={2} />}
+    </span>
+  );
+}
+
+function MemberPile({ members, avatars }) {
+  const shown = members.slice(0, 5);
+  const extra = members.length - shown.length;
+  return (
+    <span className="flex items-center -space-x-1.5">
+      {shown.map(([id, name]) => <MemberAvatar key={id} name={name} avatar={avatars?.[String(id)]} />)}
+      {extra > 0 && (
+        <span className="z-10 flex size-6 items-center justify-center rounded-full bg-muted text-[9.5px] font-semibold text-muted-foreground/70 ring-2 ring-card">+{extra}</span>
+      )}
+    </span>
+  );
+}
+
+function ChannelCard({ group, canEdit, avatars, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+  const title = group.title || group.chatId;
+  const outsiders = group.audience?.outsiders?.length || 0;
+
+  return (
+    <div className={cn('flex items-center justify-between gap-3 rounded-[6px] border bg-card px-4 py-3', group.paused ? 'border-amber-500/40' : 'border-border/60')}>
+      <div className="flex min-w-0 items-center gap-3">
+        <ChannelAvatar />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[13.5px] font-medium text-foreground/90">{title}</span>
+            {group.paused && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                <PauseCircle className="size-2.5" strokeWidth={2.5} /> paused
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 inline-flex items-center gap-2 text-[11.5px] text-muted-foreground/65">
+            <span>{group.requireMention ? 'when addressed' : 'ambient'}</span>
+            <span className="text-muted-foreground/35">·</span>
+            <span>{group.language || 'auto language'}</span>
+            {group.paused && (
+              <>
+                <span className="text-muted-foreground/35">·</span>
+                <span className="text-amber-700 dark:text-amber-400">
+                  {group.audience?.shared ? 'shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        {members.length > 0 && <MemberPile members={members} avatars={avatars} />}
+        {canEdit && (
+          <button type="button" onClick={() => setOpen(true)}
+            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
+            Edit
+          </button>
+        )}
+      </div>
+      {open && <ChannelModal group={group} avatars={avatars} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
+    </div>
+  );
+}
+
+function ChannelModal({ group, avatars, onClose, onSaved }) {
+  const [lang, setLang] = useState(group.language || '');
+  const [ambient, setAmbient] = useState(!group.requireMention);
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
+  const title = group.title || group.chatId;
+  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+
+  const run = async (what, fn) => {
+    setBusy(what); setErr('');
+    try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); }
+  };
+  const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), requireMention: !ambient }) }));
+  const remove = () => run('remove', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }));
+  const recheck = () => run('recheck', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}/recheck`, { method: 'POST' }));
+
+  return (
+    <ModalShell onClose={onClose} ariaLabel={`Settings for ${title}`}>
+      <div className="w-full max-w-md overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <ChannelAvatar />
+            <div className="min-w-0">
+              <h2 className="truncate text-[14px] font-semibold text-foreground/90">{title}</h2>
+              <div className="font-mono text-[11px] text-muted-foreground/60">{group.chatId}</div>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground/65 hover:bg-muted/40 hover:text-foreground/85">
+            <X className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-4 px-5 py-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className={labelCls}>Ambient</div>
+              <div className="text-[11.5px] text-muted-foreground/55">Off: answers only when addressed. On: follows the channel and chimes in when it can help.</div>
+            </div>
+            <button type="button" role="switch" aria-checked={ambient} onClick={() => setAmbient(v => !v)}
+              className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', ambient ? 'bg-foreground' : 'bg-muted-foreground/30')}>
+              <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', ambient ? 'left-[18px]' : 'left-0.5')} />
+            </button>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelCls}>Reply language</span>
+            <input value={lang} onChange={e => setLang(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !busy) save(); }}
+              placeholder="e.g. English (blank = auto)" spellCheck={false} autoComplete="off"
+              className="w-full rounded border border-border/60 bg-background px-3 py-2 text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10" />
+          </label>
+          {group.audience && (
+            <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/50 bg-muted/20 px-3 py-2">
+              <div className="text-[12px] text-muted-foreground/80">
+                {group.audience.ok
+                  ? <>Everyone in the room is on the team ({group.audience.members}).</>
+                  : group.audience.shared
+                    ? <>Shared with another organisation — paused.</>
+                    : <>{group.audience.outsiders.length} not on the team — paused.</>}
+                <span className="text-muted-foreground/50"> Checked {formatWhen(group.audience.checkedAt)}.</span>
+              </div>
+              <button type="button" onClick={recheck} disabled={!!busy}
+                className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-2 py-1 text-[11.5px] font-medium text-muted-foreground/75 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">
+                <RefreshCw className={cn('size-3', busy === 'recheck' && 'animate-spin')} strokeWidth={2} /> Check again
+              </button>
+            </div>
+          )}
+          {members.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className={labelCls}>Members the assistant has seen</span>
+              <MemberPile members={members} avatars={avatars} />
+            </div>
+          )}
+          <ErrorLine err={err} />
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
+          <button type="button" onClick={remove} disabled={!!busy}
+            className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50">
+            <Trash2 className="size-3.5" strokeWidth={1.75} /> {busy === 'remove' ? 'Leaving…' : 'Leave channel'}
+          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onClose} disabled={!!busy}
+              className="rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/85 hover:bg-muted/45 hover:text-foreground/90 disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={save} disabled={!!busy}
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
+              {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}
+              {busy === 'save' ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ─── People ────────────────────────────────────────────────────────────── */
+
+function PersonAvatar({ name, avatar }) {
+  const [errored, setErrored] = useState(false);
+  const initial = (name || '?').trim().charAt(0).toUpperCase();
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[13px] font-semibold text-muted-foreground/80 ring-1 ring-border/60">
+      {avatar && !errored ? <img src={avatar} alt="" className="size-full object-cover" onError={() => setErrored(true)} /> : initial}
+    </span>
+  );
+}
+
+function People({ pendingPeople, onChanged }) {
+  const { data, loading } = useApi(TEAM_URL);
+  const entries = data?.entries || [];
+  const linked = entries.filter(p => p.slackUserId);
+  const unlinked = entries.filter(p => !p.slackUserId);
+
+  return (
+    <section className="flex flex-col gap-2.5">
+      <SectionHead title="People" subtitle="A teammate is linked the first time they write to the assistant on Slack, by the email their Slack account carries."
+        trailing={entries.length ? (
+          <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-muted-foreground/80">{linked.length}/{entries.length} linked</span>
+        ) : null} />
+      {pendingPeople.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {pendingPeople.map(p => <PendingPersonRow key={p.id} person={p} onChanged={onChanged} />)}
+        </div>
+      )}
+      {loading && !data ? (
+        <Skeleton className="h-16 rounded-[6px]" />
+      ) : entries.length === 0 ? (
+        <EmptyHint>No teammates yet.</EmptyHint>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {[...linked, ...unlinked].map(p => (
+            <div key={p.email} className={cn('flex items-center justify-between gap-3 rounded-[6px] border px-4 py-3', p.slackUserId ? 'border-border/60 bg-card' : 'border-dashed border-border/70 bg-muted/15')}>
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="relative shrink-0">
+                  <PersonAvatar name={p.displayName || p.slug || p.email} avatar={p.avatarUrl} />
+                  {p.slackUserId && (
+                    <span className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-white ring-2 ring-card">
+                      <SlackIcon className="size-3" />
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-[13.5px] font-medium text-foreground/90">{p.displayName || p.slug || p.email}</div>
+                  <div className="mt-0.5 text-[11.5px]">
+                    {p.slackUserId
+                      ? <span className="text-muted-foreground/65">Linked <span className="font-mono text-muted-foreground/85">{p.slackUserId}</span></span>
+                      : <span className="text-muted-foreground/55">Not seen on Slack yet</span>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Someone wrote to the assistant on Slack but is not on the team: add them
+// (their email joins the roster, as from the Team page) or forget the request.
+function PendingPersonRow({ person, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
+  const add = async () => {
+    setBusy('add'); setErr('');
+    try {
+      await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) });
+      await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' });
+      onChanged();
+    } catch (e) { setErr(e.message); setBusy(null); }
+  };
+  const forget = async () => {
+    setBusy('forget'); setErr('');
+    try { await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); }
+    catch (e) { setErr(e.message); setBusy(null); }
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-[6px] border border-dashed border-border/70 bg-muted/15 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <PersonAvatar name={person.name || person.email || person.id} />
+          <div className="min-w-0">
+            <div className="truncate text-[13.5px] font-medium text-foreground/90">{person.name || person.email || person.id}</div>
+            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">Wrote to the assistant on Slack · {person.email || 'no email on their Slack account'} · {formatWhen(person.at)}</div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" disabled={!!busy} onClick={forget}
+            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">Forget</button>
+          {person.email && (
+            <button type="button" disabled={!!busy} onClick={add}
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-50">
+              {busy === 'add' ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" strokeWidth={2} />} Add to the team
+            </button>
+          )}
+        </div>
+      </div>
+      <ErrorLine err={err} />
+    </div>
+  );
+}
+
+/* ─── Logo ──────────────────────────────────────────────────────────────── */
+
+function SlackIcon({ className }) {
+  return <img src={`${BASE}/integrations/slack.svg`} alt="" className={cn('object-contain', className)} />;
+}
