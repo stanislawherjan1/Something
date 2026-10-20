@@ -8,6 +8,7 @@ import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
+import { TabBar } from './MemoryV4View.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const CHANNELS_URL = '/api/team/channels?kind=slack';
@@ -40,8 +41,12 @@ export default function SlackDashboard({ sidebarOpen }) {
   const sl = (integ.data?.integrations || []).find(i => i.id === 'slack');
   const connected = !!sl?.active;
   const listener = sl?.listener || null;
+  const needsInstall = connected && !!sl?.install?.needed;
+  const [tab, setTab] = useState(null);
   const [setup, setSetup] = useState(false);
   const [disconnect, setDisconnect] = useState(false);
+  // Until it is connected the only thing to do is on the Connection tab.
+  const current = tab || (connected && !needsInstall ? 'channels' : 'connection');
 
   if (!isAdmin) {
     return (
@@ -56,6 +61,14 @@ export default function SlackDashboard({ sidebarOpen }) {
   for (const e of (roster.data?.entries || [])) {
     if (e.slackUserId) memberAvatars[String(e.slackUserId)] = e.avatarUrl;
   }
+  const state = !connected ? 'off' : needsInstall ? 'install' : listener?.connected ? 'on' : listener?.error ? 'error' : 'connecting';
+  const pill = {
+    on: ['bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', <><CheckCircle2 className="size-2.5" strokeWidth={2.5} />Listening</>],
+    connecting: ['bg-amber-500/10 text-amber-700 dark:text-amber-400', <><Plug className="size-2.5" strokeWidth={2.5} />Connecting</>],
+    install: ['bg-amber-500/10 text-amber-700 dark:text-amber-400', <><Plug className="size-2.5" strokeWidth={2.5} />Not installed</>],
+    error: ['bg-amber-500/10 text-amber-700 dark:text-amber-400', <><Plug className="size-2.5" strokeWidth={2.5} />Not connected</>],
+    off: ['bg-amber-500/10 text-amber-700 dark:text-amber-400', <><Plug className="size-2.5" strokeWidth={2.5} />Not connected</>],
+  }[state];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -63,78 +76,45 @@ export default function SlackDashboard({ sidebarOpen }) {
         icon={SlackIcon}
         title="Slack"
         sidebarOpen={sidebarOpen}
-        meta={
-          <span className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider',
-            connected && listener?.connected
-              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-              : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-          )}>
-            {connected && listener?.connected
-              ? <><CheckCircle2 className="size-2.5" strokeWidth={2.5} />Listening</>
-              : connected
-                ? <><Plug className="size-2.5" strokeWidth={2.5} />{sl?.install?.needed ? 'Not installed' : listener?.error ? 'Not connected' : 'Connecting'}</>
-                : <><Plug className="size-2.5" strokeWidth={2.5} />Not connected</>}
-          </span>
-        }
+        meta={<span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider', pill[0])}>{pill[1]}</span>}
       />
 
       <div className="flex-1 overflow-auto">
-        <div className="flex max-w-2xl flex-col gap-6 px-6 pb-12 pt-2">
-          {connected && listener && (listener.error || listener.lost?.length > 0) && (
-            <div className="rounded-[6px] border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-[12.5px] text-amber-800 dark:text-amber-300">
-              {listener.error
-                ? <>Slack refused the connection: <span className="font-mono">{listener.error}</span>. Check the tokens.</>
-                : <>The connection dropped {listener.lost.length} time{listener.lost.length > 1 ? 's' : ''} recently (last {formatWhen(listener.lost.at(-1)?.from)}); messages sent while it was down did not reach the assistant.</>}
+        <div className="flex max-w-2xl flex-col gap-5 px-6 pb-12 pt-2">
+          <TabBar value={current} onChange={setTab} tabs={[
+            ['channels', 'Channels', pending.length],
+            ['people', 'People', pendingPeople.length],
+            ['connection', 'Connection', state === 'on' ? null : 1],
+          ]} />
+
+          {current === 'channels' && (
+            <div className="flex flex-col gap-5">
+              {pending.length > 0 && (
+                <section className="flex flex-col gap-2">
+                  <SectionHead title="Waiting for approval" subtitle="Silent until you approve; after a day it leaves." />
+                  {pending.map(p => <PendingChannelCard key={p.chatId} entry={p} onChanged={refresh} />)}
+                </section>
+              )}
+              <section className="flex flex-col gap-2">
+                <SectionHead title="Channels" lock={!canEdit} subtitle="Invite the assistant to a channel in Slack; it joins in once you approve it here." />
+                {loading && !data ? (
+                  <><Skeleton className="h-16 rounded-[6px]" /><Skeleton className="h-16 rounded-[6px]" /></>
+                ) : groups.length === 0 ? (
+                  <EmptyHint>No channels yet.</EmptyHint>
+                ) : (
+                  groups.map(g => <ChannelCard key={g.chatId} group={g} canEdit={canEdit} avatars={memberAvatars} onChanged={refresh} />)
+                )}
+              </section>
             </div>
           )}
 
-          {pending.length > 0 && (
-            <section className="flex flex-col gap-2.5">
-              <SectionHead title="Waiting for your approval" subtitle="The assistant was added to these channels. It stays silent until you approve; after a day it leaves." />
-              {pending.map(p => <PendingChannelCard key={p.chatId} entry={p} onChanged={refresh} />)}
-            </section>
+          {current === 'people' && (
+            <People pendingPeople={pendingPeople} onChanged={() => { refresh(); invalidate(TEAM_URL); roster.reload(); }} />
           )}
 
-          <section className="flex flex-col gap-2.5">
-            <SectionHead title="Channels" lock={!canEdit} subtitle="Where the assistant takes part. It answers when addressed; turn on ambient to let it chime in on its own. A room with someone not on the team is paused." />
-            {loading && !data ? (
-              <><Skeleton className="h-20 rounded-[6px]" /><Skeleton className="h-20 rounded-[6px]" /></>
-            ) : groups.length === 0 ? (
-              <EmptyHint>No channels yet. Invite the assistant to a channel in Slack and approve it here.</EmptyHint>
-            ) : (
-              groups.map(g => <ChannelCard key={g.chatId} group={g} canEdit={canEdit} avatars={memberAvatars} onChanged={refresh} />)
-            )}
-          </section>
-
-          <People pendingPeople={pendingPeople} onChanged={() => { refresh(); invalidate(TEAM_URL); roster.reload(); }} />
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/30 px-6 py-3">
-        <span className="text-[12px] font-medium text-muted-foreground/70">
-          {connected && sl?.install?.needed
-            ? (sl.install.possible ? 'The app is not installed in your workspace yet.' : 'No bot token yet: add it, or the app\'s client id and secret to install from here.')
-            : 'Slack app'}
-        </span>
-        <div className="flex items-center gap-2">
-          {connected && sl?.install?.needed && sl.install.possible && (
-            <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
-              Install to your workspace
-            </a>
-          )}
-          {sl && (
-            <button type="button" onClick={() => setSetup(true)}
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
-              {connected ? 'Manage tokens' : 'Set up'}
-            </button>
-          )}
-          {connected && sl && (
-            <button type="button" onClick={() => setDisconnect(true)}
-              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
-              Disconnect
-            </button>
+          {current === 'connection' && (
+            <ConnectionRows sl={sl} connected={connected} listener={listener} needsInstall={needsInstall}
+              onSetup={() => setSetup(true)} onDisconnect={() => setDisconnect(true)} />
           )}
         </div>
       </div>
@@ -151,9 +131,70 @@ export default function SlackDashboard({ sidebarOpen }) {
           busyLabel="Disconnecting…"
           doneLabel="Disconnected"
           onClose={() => setDisconnect(false)}
-          onSuccess={() => { setDisconnect(false); invalidate(INTEG_URL); integ.reload(); }}
+          onSuccess={() => { setDisconnect(false); invalidate(INTEG_URL); integ.reload(); setTab('connection'); }}
         />
       )}
+    </div>
+  );
+}
+
+/* ─── Connection ────────────────────────────────────────────────────────── */
+
+// The socket's state and the app's tokens, as rows in one card — the shape the
+// Settings page uses. The drop notice lives here, not above the channels.
+function ConnectionRows({ sl, connected, listener, needsInstall, onSetup, onDisconnect }) {
+  const lost = listener?.lost?.length ? listener.lost[listener.lost.length - 1] : null;
+  const status = !connected ? 'Not connected'
+    : needsInstall ? 'Not installed in your workspace yet'
+    : listener?.connected ? `Listening since ${formatWhen(listener.since)}`
+    : listener?.error ? `Not connected — ${listener.error}` : 'Connecting…';
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="divide-y divide-border/50 rounded-[6px] border border-border/60 bg-card">
+        <ConnRow label="Status" hint={status}>
+          {connected && needsInstall && sl?.install?.possible && (
+            <a href="/api/integrations/slack/install" target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85">
+              Install to your workspace
+            </a>
+          )}
+          {connected && needsInstall && !sl?.install?.possible && (
+            <span className="text-[12px] text-muted-foreground/65">Add the bot token, or the app's client id and secret.</span>
+          )}
+        </ConnRow>
+        {connected && listener?.team && (
+          <ConnRow label="Workspace" hint={`${listener.team}${listener.botUserId ? ` · bot ${listener.botUserId}` : ''}`} />
+        )}
+        {connected && lost && (
+          <ConnRow label="Last drop" hint={`${formatWhen(lost.from)}${lost.to ? ` – ${formatWhen(lost.to)}` : ' (still down)'} · ${listener.lost.length} recently. Direct messages from just before a drop are read back; a channel message sent during one was not seen.`} />
+        )}
+        <ConnRow label="Tokens" hint={connected ? 'The app-level token keeps the connection open; the bot token lets it speak.' : 'Create the app from the manifest, then add its tokens.'}>
+          {sl && (
+            <button type="button" onClick={onSetup}
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground/80 transition-colors hover:border-foreground/20 hover:text-foreground/90">
+              {connected ? 'Manage tokens' : 'Set up'}
+            </button>
+          )}
+          {connected && sl && (
+            <button type="button" onClick={onDisconnect}
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[12.5px] font-medium text-destructive transition-colors hover:bg-destructive/10">
+              Disconnect
+            </button>
+          )}
+        </ConnRow>
+      </div>
+    </div>
+  );
+}
+
+function ConnRow({ label, hint, children }) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium text-foreground/90">{label}</div>
+        {hint && <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/70">{hint}</div>}
+      </div>
+      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
     </div>
   );
 }
@@ -238,9 +279,8 @@ function PendingChannelCard({ entry, onChanged }) {
           <ChannelAvatar />
           <div className="min-w-0">
             <div className="truncate text-[13.5px] font-medium text-foreground/90">{entry.title || entry.chatId}</div>
-            <div className="mt-0.5 text-[11.5px] text-muted-foreground/65">
-              Added by {entry.inviterSlug ? <span className="text-foreground/80">{entry.inviterSlug}</span> : 'someone not on the team'}
-              {entry.members ? ` · ${entry.members} members` : ''}{entry.private ? ' · private' : ''} · {formatWhen(entry.at)}
+            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">
+              Added by {entry.inviterSlug ? <span className="text-foreground/80">{entry.inviterSlug}</span> : 'someone not on the team'}{entry.members ? ` · ${entry.members} members` : ''}
             </div>
           </div>
         </div>
@@ -314,19 +354,10 @@ function ChannelCard({ group, canEdit, avatars, onChanged }) {
               </span>
             )}
           </div>
-          <div className="mt-0.5 inline-flex items-center gap-2 text-[11.5px] text-muted-foreground/65">
-            <span>{group.requireMention ? 'when addressed' : 'ambient'}</span>
-            <span className="text-muted-foreground/35">·</span>
-            <span>{group.language || 'auto language'}</span>
-            {group.openAudience && (<><span className="text-muted-foreground/35">·</span><span>open audience</span></>)}
-            {group.paused && (
-              <>
-                <span className="text-muted-foreground/35">·</span>
-                <span className="text-amber-700 dark:text-amber-400">
-                  {group.audience?.shared ? 'shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`}
-                </span>
-              </>
-            )}
+          <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">
+            {group.paused
+              ? <span className="text-amber-700 dark:text-amber-400">{group.audience?.shared ? 'Shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`}</span>
+              : group.openAudience ? 'Open audience · answers when addressed' : group.requireMention ? 'Answers when addressed' : 'Ambient'}
           </div>
         </div>
       </div>
@@ -469,7 +500,7 @@ function People({ pendingPeople, onChanged }) {
 
   return (
     <section className="flex flex-col gap-2.5">
-      <SectionHead title="People" subtitle="A teammate is linked the first time they write to the assistant on Slack, by the email their Slack account carries."
+      <SectionHead title="People" subtitle="Linked by the email on their Slack account, the first time they write."
         trailing={entries.length ? (
           <span className="rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-muted-foreground/80">{linked.length}/{entries.length} linked</span>
         ) : null} />
@@ -599,7 +630,7 @@ function PendingPersonRow({ person, onChanged }) {
           <PersonAvatar name={person.name || person.email || person.id} />
           <div className="min-w-0">
             <div className="truncate text-[13.5px] font-medium text-foreground/90">{person.name || person.email || person.id}</div>
-            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">Wrote to the assistant on Slack · {person.email || 'no email on their Slack account'} · {formatWhen(person.at)}</div>
+            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">Not on the team · {person.email || 'no email on their Slack account'}</div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
