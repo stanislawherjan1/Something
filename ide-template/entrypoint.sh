@@ -2012,7 +2012,7 @@ if has_claude_creds; then
     echo "[entrypoint] Claude credentials present — starting ${BOT_NAME} + reminders."
     start_bot_stack
 else
-    echo "[entrypoint] Claude not logged in — ${BOT_NAME} bot deferred. Paste a token in the wizard (Step 4); the bot starts automatically within seconds — no restart needed."
+    echo "[entrypoint] Claude not logged in — ${BOT_NAME} deferred. Paste a token in the wizard (Step 4); the bot starts automatically within seconds — no restart needed."
     pm2 save 2>/dev/null || true
     # Alert via Telegram only if creds were ever expected (token configured but missing now)
     if [ -x /home/coder/bot-notify.sh ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
