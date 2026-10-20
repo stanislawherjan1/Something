@@ -344,7 +344,7 @@ function RoomPile({ members, outsiders, avatars }) {
       <span className="flex items-center -space-x-1.5">
         {ours.slice(0, 6).map(([id, name]) => <MemberAvatar key={id} name={name} avatar={avatars?.[String(id)]} />)}
         {outsiders.slice(0, 4).map(id => (
-          <Tip key={id} text="Not on the team — the assistant is paused here while they are in the room, unless the channel is open to outsiders.">
+          <Tip key={id} text="Not on the team">
             <span className="flex size-6 shrink-0 cursor-help items-center justify-center rounded-full bg-muted ring-2 ring-card">
               <span className="flex size-full items-center justify-center rounded-full ring-1 ring-inset ring-amber-500/80"><User className="size-3 text-muted-foreground/60" strokeWidth={2} /></span>
             </span>
@@ -404,13 +404,13 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
         <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
         <div className="px-5 py-4">
         <div className="divide-y divide-border/50 rounded-[6px] border border-border/60 bg-card">
-          <ModalRow label="Joins in on its own" tip="Off: replies only when someone mentions it. On: follows the channel and chimes in when it can help.">
+          <ModalRow label="Joins in on its own" tip="Whether the assistant follows the conversation and chimes in when it can help, or only answers when someone mentions it.">
             <Switch on={ambient} onToggle={() => setAmbient(v => !v)} />
           </ModalRow>
-          <ModalRow label="Open to outsiders" tip="Off: paused while someone not on the team is in the room. On: stays, with this channel's own memory only.">
+          <ModalRow label="Open to outsiders" tip="Whether the assistant keeps working when someone outside the team is in the room. It then uses this channel's own memory only, never the team's.">
             <Switch on={openAudience} onToggle={() => setOpenAudience(v => !v)} />
           </ModalRow>
-          <ModalRow label="In the room" tip={outsiders.length ? 'Someone not on the team is in the room, so the assistant is paused here (unless open to outsiders). Checked on every join and leave, and once an hour.' : 'Everyone the assistant has seen here is on the team. Checked on every join and leave, and once an hour.'}>
+          <ModalRow label="In the room" tip="Who is in the room. Someone outside the team pauses the assistant here, unless the channel is open to outsiders.">
             <RoomPile members={members} outsiders={outsiders} avatars={avatars} />
           </ModalRow>
         </div>
