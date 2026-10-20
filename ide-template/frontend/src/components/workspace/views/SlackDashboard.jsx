@@ -344,12 +344,13 @@ function RoomPile({ members, outsiders, avatars }) {
       <span className="flex items-center -space-x-1.5">
         {ours.slice(0, 6).map(([id, name]) => <MemberAvatar key={id} name={name} avatar={avatars?.[String(id)]} />)}
         {outsiders.slice(0, 4).map(id => (
-          <span key={id} title="Not on the team" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 ring-2 ring-card">
-            <span className="flex size-full items-center justify-center rounded-full ring-1 ring-inset ring-amber-500/60"><User className="size-3 text-amber-700 dark:text-amber-400" strokeWidth={2} /></span>
-          </span>
+          <Tip key={id} text="Not on the team — the assistant is paused here while they are in the room, unless the channel is open to outsiders.">
+            <span className="flex size-6 shrink-0 cursor-help items-center justify-center rounded-full bg-muted ring-2 ring-card">
+              <span className="flex size-full items-center justify-center rounded-full ring-1 ring-inset ring-amber-500/80"><User className="size-3 text-muted-foreground/60" strokeWidth={2} /></span>
+            </span>
+          </Tip>
         ))}
       </span>
-      {outsiders.length > 0 && <span className="text-[12px] text-amber-700 dark:text-amber-400">{outsiders.length} not on the team</span>}
       {!ours.length && !outsiders.length && <span className="text-[12px] text-muted-foreground/55">Nobody seen yet</span>}
     </span>
   );
@@ -443,22 +444,24 @@ function ModalRow({ label, tip, children }) {
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/90">
         {label}
-        {tip && (
-          <TooltipPrimitive.Root>
-            <TooltipPrimitive.Trigger asChild>
-              <span className="inline-flex cursor-help text-muted-foreground/55 hover:text-foreground/80"><Info className="size-3.5" strokeWidth={2} aria-label={tip} /></span>
-            </TooltipPrimitive.Trigger>
-            <TooltipPrimitive.Portal>
-              <TooltipPrimitive.Content side="top" sideOffset={6} collisionPadding={10}
-                className="z-[60] max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] font-normal leading-snug text-popover-foreground shadow-md">
-                {tip}<TooltipPrimitive.Arrow className="fill-popover" />
-              </TooltipPrimitive.Content>
-            </TooltipPrimitive.Portal>
-          </TooltipPrimitive.Root>
-        )}
+        {tip && <Tip text={tip}><span className="inline-flex cursor-help text-muted-foreground/55 hover:text-foreground/80"><Info className="size-3.5" strokeWidth={2} aria-label={tip} /></span></Tip>}
       </span>
       <span className="flex shrink-0 items-center gap-2">{children}</span>
     </div>
+  );
+}
+// The portal tooltip the Responsibilities screen uses: it is not clipped by a modal.
+function Tip({ text, children }) {
+  return (
+    <TooltipPrimitive.Root>
+      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+      <TooltipPrimitive.Portal>
+        <TooltipPrimitive.Content side="top" sideOffset={6} collisionPadding={10}
+          className="z-[60] max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] font-normal leading-snug text-popover-foreground shadow-md">
+          {text}<TooltipPrimitive.Arrow className="fill-popover" />
+        </TooltipPrimitive.Content>
+      </TooltipPrimitive.Portal>
+    </TooltipPrimitive.Root>
   );
 }
 function Switch({ on, onToggle }) {
