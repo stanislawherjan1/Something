@@ -99,7 +99,9 @@ confirm() {
 }
 
 # --- Collect ------------------------------------------------------------------
-if [ -f "$ADMIN_ENV" ] && [ -s "$ADMIN_ENV" ]; then
+# Offer to keep only a COMPLETE set — a hand-edited file missing the secret
+# would otherwise sail through and fail much later, at the OAuth verify.
+if has_field GOOGLE_CLIENT_ID && has_field GOOGLE_CLIENT_SECRET; then
     if confirm "Found existing Google credentials in clients/admin.env. Keep them?" yes; then
         ok "Keeping the existing credentials."
         exit 0

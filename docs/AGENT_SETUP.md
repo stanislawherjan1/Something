@@ -1,13 +1,20 @@
 # Setting up Something with an AI coding agent
 
 This runbook is for the **AI coding agent** (Claude Code, Codex, Cursor, …)
-installing Something for the person it is talking to. Follow it top to bottom;
-every step starts with a check, so you can enter mid-way and resume. If your
-task is to *change* this repository instead, this is the wrong file — read
-[CLAUDE.md](../CLAUDE.md).
+helping a person install Something. Your role is **navigator, not operator**:
+the person runs the installer in their own terminal; you prepare the ground,
+brief them on each prompt, watch the installer's state, and help at exactly
+the step they are on.
 
-A person doing this by hand wants [QUICK_START.md](QUICK_START.md) (guided)
-or [NEW_CLIENT.md](NEW_CLIENT.md) (click-by-click) instead.
+Why this split is firm: agent shells have no terminal, and permission
+classifiers routinely refuse to execute a just-cloned repo's scripts — so a
+hand-driven copy of the install flow degrades into pasting commands back and
+forth, and drifts from the real flow the moment the installer changes. The
+installer (`install.sh`) is the single source of truth; you make it easier,
+you don't compete with it.
+
+If your task is to *change* this repository instead, this is the wrong file —
+read [CLAUDE.md](../CLAUDE.md).
 
 ## The one hard rule: secrets never enter the chat
 
@@ -15,178 +22,122 @@ Anything typed into the conversation reaches the model and its logs, so:
 
 - **Fine to ask for and handle in chat:** the server IP, the domain, the
   sign-in email addresses, the timezone. These are not secrets.
-- **Never ask for, read, echo or log:** the Google OAuth Client Secret (treat
-  the ID/secret pair as one), tokens of any kind, private key material. When
-  they are needed, have the person run, **in their own terminal window**:
-
-  ```bash
-  ./bin/collect-secrets.sh
-  ```
-
-  Your own shell has no terminal, so the script will refuse you — by design.
-  Verify progress with `./bin/collect-secrets.sh --check`: it prints only
-  `set`/`missing` per field (exit 0 = complete, 2 = not yet). Never `cat` or
-  `grep` values out of `clients/admin.env`, and never write a secret field
-  into any `.env` yourself. If debugging ever seems to need a secret's value
-  — the Client ID for a manual OAuth probe, say — it doesn't: have the
-  person run the probing command in their own terminal and tell you what it
-  printed.
+- **Never ask for, read, echo or log:** the Google OAuth Client Secret
+  (treat the ID/secret pair as one), tokens of any kind, private key
+  material. The installer collects the Google credentials itself, at its
+  step 1, typed by the person into their own terminal. Never `cat` or
+  `grep` values out of `clients/admin.env` or any `.env`. If debugging ever
+  seems to need a secret's value, it doesn't: have the person run the
+  probing command in their own terminal and tell you what it printed. If
+  they paste a secret into the chat by accident, say so and have them
+  rotate it at the provider.
 - The Claude token is pasted by the person **into the browser wizard after
   deploy** — never into the chat, never into a file you touch. Never run
   `claude setup-token` yourself, even if the person asks you to handle that
   step: the token prints to whoever runs it.
 
-## Step 0 — tools on this machine
+## Step 0 — clone and look around
 
-Check: `command -v git ssh scp openssl curl`. Install anything missing
-(macOS: `brew install <tool>`; Debian/Ubuntu: `apt-get install <tool>`).
-`gcloud` is optional — step 4 has a manual fallback.
+Clone the repository the person named and check provenance (`git remote -v`)
+— if the checkout isn't a clone of that repo, re-clone fresh: it is about to
+be deployed to their server as root. Skim [QUICK_START.md](QUICK_START.md)
+so you can brief, and check basic tools exist (`command -v git ssh scp
+openssl curl`).
 
-Also check provenance: `git remote -v`. If this checkout is not a clone of
-the repository the person named, clone that repository fresh and continue
-there — you are about to deploy it to their server as root.
+## Step 1 — browser work, ahead of the installer
 
-## Step 1 — things the person creates in the browser
+The installer will ask for these; getting them ready first keeps its run
+smooth. You cannot click for the person — relay the click-by-click from
+[NEW_CLIENT.md](NEW_CLIENT.md) Part B and [QUICK_START.md](QUICK_START.md),
+one step at a time; don't guess at console UIs from memory.
 
-You cannot do these for them, but don't make them figure it out alone either:
-[NEW_CLIENT.md](NEW_CLIENT.md) Part B has the click-by-click for the server
-(B1) and DNS (B2), and [QUICK_START.md](QUICK_START.md) the gentler version
-with more context. Read the relevant section and relay the clicks in chat one
-step at a time — don't guess at console UIs from memory. Wait until the
-person confirms each item:
+1. **A Linux server** — **Ubuntu 24.04, picked explicitly** (providers now
+   default to newer, untested images), at least 4 GB RAM (e.g. Hetzner CX22),
+   with their SSH key added at creation. Check:
+   `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@<IP> 'echo connected'`
+   (without `accept-new` the first-ever contact fails on the unknown host
+   key). No key at creation? The installer's SSH step can install one using
+   the root password — don't fix it by hand.
+2. **A domain or subdomain** with a DNS **A record** at that IP. On
+   Cloudflare: **DNS only** (orange cloud OFF) — Caddy terminates TLS itself.
+   Check: `dig +short <domain>` returns the IP.
+3. **A Google OAuth app** for sign-in: project → consent screen (External; or
+   Internal when the whole team shares one Google Workspace domain — then no
+   publishing is needed) → **publish to "In production"** → a Web-application
+   client. Two realities the consoles hide:
+   - The **Publish button stays greyed out** until Branding also carries an
+     app home page and a privacy-policy link (their own domain is accepted)
+     and the developer contact email.
+   - Nothing can verify the publishing status remotely — have the person
+     read it back to you. Left on "Testing", sign-in later fails with
+     "access blocked" (the most common support issue).
+4. **A paid Claude plan** (Pro or Max) — used after deploy, in the wizard.
 
-1. **A Linux server** — Ubuntu 24.04, at least 4 GB RAM (e.g. Hetzner CX22 at
-   <https://console.hetzner.com>), with **their SSH key added at creation**.
-   You need its IP (chat-safe).
-2. **A domain or subdomain** with a DNS **A record** pointing at that IP.
-   On Cloudflare the record must be **DNS only** (proxy / orange cloud OFF) —
-   Caddy on the server terminates TLS itself, and provisioning fails behind
-   the proxy. Check: `dig +short <domain>` returns the IP. DNS can take a
-   few minutes.
-3. **A Google OAuth app** for sign-in (~5 min):
-   - Create a project: <https://console.cloud.google.com/projectcreate>
-   - Consent screen: <https://console.cloud.google.com/auth/branding> —
-     app name + their email, audience **External**. If the whole team is on
-     one Google Workspace domain, **Internal** is simpler: the publish step
-     below then disappears (Internal apps need no publishing).
-   - **Publish the app** (Audience page → "Publish app" → In production).
-     Left in "Testing", every non-allow-listed login gets "access blocked" —
-     the most common support issue. No review is needed for basic scopes.
-     Nothing can verify this remotely, so have the person read the
-     publishing status back to you before moving on.
-   - Create the client: <https://console.cloud.google.com/auth/clients/create>
-     — type **Web application**, redirect URIs **left empty** (step 4 adds
-     the exact URI, and preflight verifies it before deploy). QUICK_START
-     has the person add the URI already during creation — either order
-     works; don't mix the two scripts when relaying.
-4. **A paid Claude plan** (Pro or Max) — needed after deploy, in the wizard.
+## Step 2 — hand over the installer
 
-Check for SSH:
-`ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@<IP> 'echo connected'`
-prints `connected` (without `accept-new`, the first-ever contact fails on
-the unknown host key even when the person's key is right). Don't run the server-hardening steps yourself — `deploy.sh`
-converges the server (Docker, firewall, swap, fail2ban) on every run.
-
-## Step 2 — secrets, in the person's terminal
-
-Check: `./bin/collect-secrets.sh --check` exits 0.
-
-If not: hand the person one ready-to-paste line with the absolute path —
-`cd '<checkout path>' && ./bin/collect-secrets.sh` — for their own terminal
-(don't assume they know how to find the repo there), and have them paste the
-Google Client ID and Secret from step 1.3 at its prompts. It also offers an
-optional Google Cloud project ID: only the automated redirect-URI step uses
-it, Enter skips. Then re-run the check. Do not open or edit
-`clients/admin.env`.
-
-## Step 3 — the client directory
-
-Check: `clients/<name>/.env` exists with the three fields below filled.
-
-Pick a short machine name with the person (e.g. `acme-ide`) — **the folder
-name becomes the server path and Docker volume names; renaming later is
-painful**. Then:
+Give the person one ready-to-paste line with the absolute path:
 
 ```bash
-cp -r clients/example-client clients/<name>
-cp clients/<name>/.env.example clients/<name>/.env
+cd '<checkout path>' && ./install.sh
 ```
 
-Edit `clients/<name>/.env` yourself — these are not secrets:
+Brief them on what it asks, in order: the Google Client ID/Secret (typed
+there, never here), the server IP, the domain, their email; the timezone is
+detected automatically; a Review card sums everything up before anything is
+created; then the build runs 10–30 minutes as a calm phase checklist. Tell
+them to keep this chat open and paste anything they're unsure about —
+prompts, warnings, whole screens.
 
-```env
-HETZNER_HOST=root@<server IP>
-FRONTEND_DOMAIN=<domain>
-IDE_ALLOWED_EMAILS=<admin email>[,<member email>,…]   # first = admin
-```
+## Step 3 — navigate while it runs
 
-If the team is not on UTC, also set `IDE_TIMEZONE=<IANA zone>` now — daily
-rituals freeze their hour when first created, so setting it later leaves them
-on the old time. Everything else (names, secrets, cookies) is filled by
-`bin/bootstrap-client-env.sh` automatically on deploy. **Do not pre-fill
-branding** (`VITE_APP_TITLE`, `BOT_NAME`) — the first-login wizard owns it.
+Your two instruments (both plain file reads, no script execution):
 
-## Step 4 — register the OAuth callback
+- **`.install-state`** in the repo root — three lines, `step=`, `status=`,
+  `detail=`, overwritten at every transition, never holding a secret.
+  Status values: `at-step` (what the person currently sees), `deploying`
+  (detail = the current build phase), `stopped`, `failed` (detail = exit
+  code), `done` (detail = the workspace URL).
+- **`clients/<name>/deploy.log`** — the full build output; on a failure read
+  its tail and translate the cause.
 
-Check: the `oauth` preflight check — with a caveat. Standalone
-`bin/preflight.sh --env-file clients/<name>/.env --json` reports `oauth` as
-`warn`, because only `./deploy.sh` loads `clients/admin.env` (where the
-Client ID lives) before running preflight. That warn is expected, not a
-failure: the real verification is deploy's own preflight, which fails fast —
-in seconds, before the build — if the URI isn't registered.
+Where people typically stall, and what to do:
 
-With `gcloud` installed and authenticated **and** the optional project ID
-entered in step 2: `./bin/add-redirect-uri.sh <domain>`. Otherwise — the
-common case — have the person add it by hand: GCP Console → APIs & Services →
-Credentials → their OAuth client → Authorized redirect URIs → ADD URI →
-`https://<domain>/auth/callback`.
+| State says | Help with |
+|---|---|
+| step 1 (Google sign-in) | The browser work from step 1 above, incl. the branding gate |
+| step 2 (Your server) | SSH menu: option 1 installs a key using the root password |
+| step 3 (Your domain) | The A record; Cloudflare proxy OFF; propagation takes minutes |
+| step 5 (Review) | The OAuth-callback loop: add `https://<domain>/auth/callback` by hand in the Google console if gcloud isn't set up |
+| `failed` during deploy | `deploy.log` tail; the installer's own hints; re-run is safe |
 
-## Step 5 — deploy
+Never run `install.sh` or `deploy.sh` yourself, and never edit a `.env`
+(users commonly deny that to agents anyway) — if a value must change, hand
+the person a single ready-made command. Re-running the installer is always
+safe: it picks up where it left off and never rotates already-saved secrets.
 
-```bash
-cd clients/<name> && ./deploy.sh
-```
-
-Run it plain — **never pipe `deploy.sh` through `tail`, `head` or anything
-else**: the exit code is the signal, and piping loses it. The first build
-takes tens of minutes on a small server; that is normal — and longer than
-most agent tools wait in the foreground, so run it as a background job with
-output **redirected** to a log file (`./deploy.sh > deploy.log 2>&1` —
-redirection is not piping; the exit code survives), follow the log, and
-judge by the exit code plus the final line.
-
-It starts with preflight (SSH, DNS, OAuth, disk, clean git tree) and fails
-fast with a fix hint. On failure, run
-`bin/preflight.sh --env-file clients/<name>/.env --json`, fix the failing
-check, re-run. Deeper problems: [DEPLOY.md → Troubleshooting](DEPLOY.md#troubleshooting).
-
-Success ends with `Deploy successful! Bot is healthy.` The bot being offline
-at this point is expected — it needs the Claude token from the wizard.
-
-Two things never to do on a deployed server: `docker compose down -v`
-(destroys the TLS certificate volume; Let's Encrypt allows five per domain
-per week) and a second client on the same server (Caddy owns ports 80/443).
-
-## Step 6 — verify and hand off
+## Step 4 — verify and hand off
 
 Check: `curl -sI https://<domain>/ | head -1` returns `HTTP/2 200`.
 
-Then hand off in the person's own words:
+Then, in the person's own words: open `https://<domain>/app/`, sign in with
+the admin email, and the browser wizard takes over — name the coworker,
+describe the company, and paste the Claude token, generated on their own
+computer with:
 
-1. Open `https://<domain>/app/` and sign in with the first admin email.
-2. The setup wizard runs in the browser: name the coworker, describe the
-   company, a bit about them — and the Claude token. For that they run, on
-   their own computer:
+```bash
+npm install -g @anthropic-ai/claude-code
+claude setup-token
+```
 
-   ```bash
-   npm install -g @anthropic-ai/claude-code
-   claude setup-token
-   ```
+pasted **into the wizard** (valid a year, encrypted on their server). Not
+into the chat. After the wizard: integrations, Telegram and teammates live
+inside the workspace. Day-2 operations: [DEPLOY.md](DEPLOY.md).
 
-   and paste the printed `sk-ant-oat01-…` **into the wizard** (valid a year,
-   encrypted on their server). Not into the chat.
-3. After the wizard, everything else happens inside the workspace:
-   integrations, Telegram, teammates, routines.
+## If the installer can't be used
 
-Done. Day-2 operations (updates, backups, troubleshooting) live in
-[DEPLOY.md](DEPLOY.md).
+The installer needs a macOS or Linux terminal (Windows: WSL2). In the rare
+setup where the person truly cannot run it, fall back to the manual
+[NEW_CLIENT.md](NEW_CLIENT.md) flow under the same secret rules — the Google
+credentials still go through `./bin/collect-secrets.sh` in their terminal,
+never through you. Never pipe `deploy.sh` through anything; run it with
+output redirected to a log file.

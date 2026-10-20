@@ -49,6 +49,7 @@ hr()   { say ""; }
 STEPS_TOTAL=6
 step() {
     local n="$1" title="$2" dots="" i
+    state "$n" "at-step" "$title"
     for ((i=1; i<=STEPS_TOTAL; i++)); do
         # Braces are load-bearing: macOS bash 3.2 counts a multibyte char
         # right after an unbraced $var as part of the variable name.
@@ -61,6 +62,17 @@ step() {
 
 # m:ss, for phase durations
 mmss() { printf '%d:%02d' "$(( $1 / 60 ))" "$(( $1 % 60 ))"; }
+
+# Machine-readable progress for an AI agent navigating this install from the
+# outside (docs/AGENT_SETUP.md): one tiny file, overwritten at every
+# transition, never holding a secret.
+STATE_FILE=".install-state"
+CURRENT_STEP=0
+state() {
+    CURRENT_STEP="$1"
+    printf 'step=%s\nstatus=%s\ndetail=%s\n' "$1" "$2" "${3:-}" > "$STATE_FILE" 2>/dev/null || true
+}
+trap 'rc=$?; [ "$rc" -ne 0 ] && state "$CURRENT_STEP" failed "exited with code $rc"' EXIT
 
 # When run as `curl ... | bash`, stdin is the script — read answers from the
 # terminal directly so prompts still work.
@@ -189,7 +201,8 @@ say "  most of it waiting — and it's always safe to re-run this installer: it"
 say "  picks up where it left off."
 say ""
 say "  Along the way you'll need:"
-say "    ${ACCENT}·${NC} a Linux server ${DIM}(e.g. Hetzner CX22, ~€4.50/mo)${NC}"
+say "    ${ACCENT}·${NC} a Linux server ${DIM}(Ubuntu 24.04 — pick it explicitly, providers now${NC}"
+say "      ${DIM}default to newer untested images; e.g. Hetzner CX22, ~€4.50/mo)${NC}"
 say "    ${ACCENT}·${NC} a domain, for your workspace's web address"
 say "    ${ACCENT}·${NC} a Google account ${DIM}(your team signs in with Google)${NC}"
 say "    ${ACCENT}·${NC} a paid Claude plan ${DIM}(Pro or Max — used at the very end)${NC}"
@@ -217,7 +230,10 @@ say "       ${DIM}App name + your email; audience: External — or Internal, if 
 say "       ${DIM}whole team is on one Google Workspace domain (then skip step 3).${NC}"
 say "    ${ACCENT}3.${NC} ${YELLOW}Publish the app${NC}      ${DIM}Audience page → 'Publish app' → In production.${NC}"
 say "       ${DIM}Left in 'Testing', sign-in later fails with 'access blocked'.${NC}"
-say "       ${DIM}No review is needed for basic email/profile scopes.${NC}"
+say "       ${DIM}No review is needed for basic email/profile scopes — but the${NC}"
+say "       ${DIM}Publish button stays greyed out until Branding also has an app${NC}"
+say "       ${DIM}home page + privacy-policy link (your own domain is accepted)${NC}"
+say "       ${DIM}and the developer contact email.${NC}"
 say "    ${ACCENT}4.${NC} Create the client    ${ACCENT}https://console.cloud.google.com/auth/clients/create${NC}"
 say "       ${DIM}Type: Web application. Leave redirect URIs empty for now —${NC}"
 say "       ${DIM}I'll hand you the exact URI later and verify it before deploying.${NC}"
@@ -405,7 +421,9 @@ done
 # but it's not worth a question: it shows on the Review card and can be
 # changed anytime in the workspace Settings.
 IDE_TIMEZONE="$(readlink /etc/localtime 2>/dev/null | sed 's|.*/zoneinfo/||')"
-case "$IDE_TIMEZONE" in */*) : ;; *) IDE_TIMEZONE="UTC" ;; esac
+# Validate against the zoneinfo database itself — slash-less zones (Japan,
+# GMT, Singapore …) are valid too, so a `*/*` pattern is not enough.
+{ [ -n "$IDE_TIMEZONE" ] && [ -f "/usr/share/zoneinfo/$IDE_TIMEZONE" ]; } || IDE_TIMEZONE="UTC"
 
 # =============================================================================
 # Step 5/6 — Review
@@ -428,7 +446,8 @@ say "    ${DIM}Admin${NC}     $ADMIN_EMAIL"
 say "    ${DIM}Timezone${NC}  $IDE_TIMEZONE ${DIM}(from this computer — change anytime in Settings)${NC}"
 say "    ${DIM}Folder${NC}    $CLIENT_DIR"
 say ""
-confirm "Create this workspace and deploy now?" yes || { say "  Stopped. Nothing was deployed."; exit 0; }
+confirm "Create this workspace and deploy now?" yes \
+    || { state 5 stopped "declined at review"; say "  Stopped. Nothing was deployed."; exit 0; }
 
 # --- Create the client directory from the template -------------------------
 if [ -d "$CLIENT_DIR" ]; then
@@ -441,9 +460,13 @@ else
 fi
 
 # --- Write the operator inputs into .env ------------------------------------
-# bootstrap-client-env.sh derives/generates everything else from these.
+# bootstrap-client-env.sh derives/generates everything else from these. On a
+# re-run only these four lines are replaced — generated secrets
+# (SESSION_SECRET, CODE_SERVER_PASSWORD, …) survive, so "picks up where it
+# left off" stays true: a re-run never signs the team out.
 ENV_FILE="$CLIENT_DIR/.env"
 umask 077
+TMP_ENV="$(mktemp "$ENV_FILE.XXXXXX")"
 {
     echo "# Written by install.sh — the operator inputs."
     echo "# bootstrap-client-env.sh auto-fills the rest on deploy."
@@ -451,8 +474,10 @@ umask 077
     echo "FRONTEND_DOMAIN=$FRONTEND_DOMAIN"
     echo "IDE_ALLOWED_EMAILS=$ADMIN_EMAIL"
     echo "IDE_TIMEZONE=$IDE_TIMEZONE"
-} > "$ENV_FILE"
-chmod 600 "$ENV_FILE"
+    [ -f "$ENV_FILE" ] && grep -vE '^#|^(HETZNER_HOST|FRONTEND_DOMAIN|IDE_ALLOWED_EMAILS|IDE_TIMEZONE)=' "$ENV_FILE"
+} > "$TMP_ENV" || true
+chmod 600 "$TMP_ENV"
+mv "$TMP_ENV" "$ENV_FILE"
 ok "Wrote $ENV_FILE."
 
 # --- Fill the rest of the .env (idempotent) --------------------------------
@@ -567,6 +592,9 @@ run_deploy() {
     # piped) script's stdin.
     "./$CLIENT_DIR/deploy.sh" </dev/null >"$log" 2>&1 &
     pid=$!
+    # Ctrl-C must stop the deploy too: a background child of a non-job-control
+    # shell ignores SIGINT, so forward the signal explicitly.
+    trap 'kill -TERM "$pid" 2>/dev/null' INT TERM
     start=$SECONDS
 
     if [ ! -t 1 ]; then
@@ -574,12 +602,18 @@ run_deploy() {
         while kill -0 "$pid" 2>/dev/null; do
             while [ $((cur + 1)) -lt 6 ] && grep -qF -- "${PHASE_MARKS[cur+1]}" "$log"; do
                 cur=$((cur + 1))
+                state 6 deploying "${PHASE_NAMES[cur]}"
                 say "  → ${PHASE_NAMES[cur]} ..."
             done
             sleep 2
         done
-        wait "$pid"
-        return $?
+        wait "$pid"; rc=$?
+        # Final sweep — phases that started between the last poll and exit.
+        while [ $((cur + 1)) -lt 6 ] && grep -qF -- "${PHASE_MARKS[cur+1]}" "$log"; do
+            cur=$((cur + 1)); say "  → ${PHASE_NAMES[cur]} ..."
+        done
+        trap - INT TERM
+        return "$rc"
     fi
 
     for ((i=0; i<6; i++)); do printf '  %b○  %s%b\n' "$DIM" "${PHASE_NAMES[i]}" "$NC"; done
@@ -589,6 +623,7 @@ run_deploy() {
             if grep -qF -- "${PHASE_MARKS[i]}" "$log"; then
                 for ((j=cur+1; j<=i; j++)); do t[j]=$elapsed; done
                 cur=$i
+                state 6 deploying "${PHASE_NAMES[cur]}"
                 break
             fi
         done
@@ -616,7 +651,9 @@ run_deploy() {
     for ((i=0; i<6; i++)); do
         printf '\033[2K'
         if [ "$rc" -eq 0 ] || [ "$i" -lt "$cur" ]; then
-            if [ "$i" -lt 5 ] && [ "${t[i+1]}" -gt 0 ]; then dur=$(( ${t[i+1]} - ${t[i]} )); else dur=$(( elapsed - ${t[i]} )); fi
+            # A phase's end time is the next phase's start — but only when
+            # that next phase was actually seen (its index is ≤ cur).
+            if [ $((i + 1)) -le "$cur" ]; then dur=$(( ${t[i+1]} - ${t[i]} )); else dur=$(( elapsed - ${t[i]} )); fi
             [ "$dur" -lt 0 ] && dur=0
             printf '  %b✓%b  %s  %b%s%b\n' "$GREEN" "$NC" "${PHASE_NAMES[i]}" "$DIM" "$(mmss "$dur")" "$NC"
         elif [ "$i" -eq "$cur" ] || { [ "$cur" -lt 0 ] && [ "$i" -eq 0 ]; }; then
@@ -625,6 +662,7 @@ run_deploy() {
             printf '  %b○  %s%b\n' "$DIM" "${PHASE_NAMES[i]}" "$NC"
         fi
     done
+    trap - INT TERM
     return "$rc"
 }
 
@@ -637,6 +675,13 @@ say ""
 DEPLOY_LOG="$CLIENT_DIR/deploy.log"
 run_deploy "$DEPLOY_LOG"
 DEPLOY_RC=$?
+
+if [ "$DEPLOY_RC" -ge 128 ]; then
+    say ""
+    err "Interrupted — the deploy was stopped; nothing is left running on the server."
+    say "  Re-run this installer to continue where it left off."
+    exit "$DEPLOY_RC"
+fi
 
 if [ "$DEPLOY_RC" -ne 0 ]; then
     say ""
@@ -660,6 +705,7 @@ fi
 # =============================================================================
 # Success
 # =============================================================================
+state done ok "https://$FRONTEND_DOMAIN"
 say ""; say ""
 say "  ${GREEN}✓${NC} ${BOLD}Your workspace is ready.${NC}"
 say ""

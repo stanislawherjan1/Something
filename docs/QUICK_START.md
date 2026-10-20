@@ -109,7 +109,8 @@ without prompting.)
 1. Sign up / log in at <https://console.hetzner.com>.
 2. **Add Server**.
 3. **Location:** pick the one closest to you or your team.
-4. **Image:** **Ubuntu 24.04**.
+4. **Image:** **Ubuntu 24.04** — pick it explicitly; the panel may preselect
+   a newer release Something hasn't been tested on.
 5. **Type:** **CX22** (2 vCPU / 4 GB RAM, ~€4.50/mo) is the cheapest that
    works. For faster builds and a bit more headroom, **CPX21** (3 vCPU / 4 GB,
    ~€8/mo). 4 GB RAM is the floor — don't go smaller.
@@ -213,6 +214,10 @@ fiddliest step — follow it closely. ~5 minutes.
   - On Google Workspace, with your whole team on your own domain? Choose
     **Internal** instead — Internal apps need no publishing, so the rest of
     this step doesn't apply.
+- If **Publish app** is greyed out, the Branding page is incomplete: fill
+  **App home page** and **Privacy policy link** (your own domain, e.g.
+  `https://workspace.yourcompany.com/`, is accepted — Google doesn't verify
+  it at this tier) plus the **Developer contact** email, Save, and retry.
 - Set **Publishing status** to **Production** (click **Publish app**), not
   *Testing*. In *Testing* mode only a handful of allow-listed accounts can sign
   in — Production lets your whole team in.

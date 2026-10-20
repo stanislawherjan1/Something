@@ -48,3 +48,4 @@ demo-video/
 # Memory v4 embedder model — fetched by deploy.sh on the deploy host, never committed.
 ide-template/models/*
 !ide-template/models/.keep
+.install-state
