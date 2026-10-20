@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Trash2, Check, Loader2, Users, User, Lock, X, Plug, CheckCircle2, AlertTriangle, RefreshCw, Plus, Hash, PauseCircle,
+  Trash2, Check, Loader2, Users, User, Lock, X, Plug, CheckCircle2, AlertTriangle, RefreshCw, Plus, Hash,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -9,6 +9,7 @@ import useMe from '../useMe.js';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
+import StatusTag from './StatusTag.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const CHANNELS_URL = '/api/team/channels?kind=slack';
@@ -319,21 +320,17 @@ function ChannelCard({ group, canEdit, avatars, onChanged }) {
   const outsiders = group.audience?.outsiders?.length || 0;
 
   return (
-    <div className={cn('flex items-center justify-between gap-3 rounded-[6px] border bg-card px-4 py-3', group.paused ? 'border-amber-500/40' : 'border-border/60')}>
+    <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-card px-4 py-3">
       <div className="flex min-w-0 items-center gap-3">
         <ChannelAvatar />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-[13.5px] font-medium text-foreground/90">{title}</span>
-            {group.paused && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                <PauseCircle className="size-2.5" strokeWidth={2.5} /> paused
-              </span>
-            )}
+            {group.paused && <StatusTag tone="paused">Paused</StatusTag>}
           </div>
           <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">
             {group.paused
-              ? <span className="text-amber-700 dark:text-amber-400">{group.audience?.shared ? 'Shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`}</span>
+              ? (group.audience?.shared ? 'Shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`)
               : group.openAudience ? 'Open audience · answers when addressed' : group.requireMention ? 'Answers when addressed' : 'Ambient'}
           </div>
         </div>

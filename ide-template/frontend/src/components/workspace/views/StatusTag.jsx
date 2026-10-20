@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 // A dot only where it carries a state; Beta is a quiet label, no dot.
 const DOTS = {
   active: 'bg-emerald-500',
+  paused: 'bg-amber-500',
   soon: 'bg-muted-foreground/50',
 };
 
