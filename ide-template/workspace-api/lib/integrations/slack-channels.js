@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as api from './slack-api.js';
 import { resolveMember, plainText, status as listenerStatus } from './slack-listener.js';
-import { addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, list as teamList } from '../team.js';
+import { addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, list as teamList, listGroups } from '../team.js';
 import { publish as publishNotification } from '../notify.js';
 import { routeGroupMessage } from './group-watcher.js';
 
@@ -36,7 +36,7 @@ export const groupIdOf = (channel) => `slack-${String(channel || '').trim()}`;
 
 // ─── dependencies (tests swap them) ──────────────────────────────────────────
 let d = {
-  api, resolveMember, self: () => listenerStatus(), addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, teamList,
+  api, resolveMember, self: () => listenerStatus(), addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, teamList, listGroups,
   notify: publishNotification, route: routeGroupMessage, now: () => Date.now(), log: (s) => process.stderr.write(`[slack-channels] ${s}\n`),
 };
 export function __setDeps(over) { d = { ...d, ...over }; }
@@ -164,10 +164,30 @@ export async function sweepPending() {
   }
   return left;
 }
+
+/**
+ * Who is in each room, once an hour — besides every join, leave or share
+ * event, which check at once. A membership change the socket missed (a lost
+ * window) is caught here, so a room never stays open to an outsider for long
+ * and never stays paused after they left. Nothing for a person to press.
+ */
+const AUDIENCE_SWEEP_MS = 60 * 60_000;
+let lastAudienceSweep = 0;
+export async function sweepAudience({ force = false } = {}) {
+  const now = d.now();
+  if (!force && now - lastAudienceSweep < AUDIENCE_SWEEP_MS) return 0;
+  lastAudienceSweep = now;
+  let n = 0;
+  for (const g of (d.listGroups ? d.listGroups() : [])) {
+    if (g.kind !== 'slack') continue;
+    try { await checkAudience(g.chatId); n += 1; } catch (err) { d.log(`audience sweep ${g.chatId}: ${err.message}`); }
+  }
+  return n;
+}
 let sweeper = null;
 export function startSweep() {
   if (sweeper) return;
-  sweeper = setInterval(() => sweepPending().catch(() => {}), SWEEP_MS);
+  sweeper = setInterval(() => { sweepPending().catch(() => {}); sweepAudience().catch(() => {}); }, SWEEP_MS);
   sweeper.unref?.();
 }
 export function stopSweep() { if (sweeper) clearInterval(sweeper); sweeper = null; }

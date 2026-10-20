@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import {
-  Trash2, Check, Loader2, Users, User, Lock, X, Plug, CheckCircle2, AlertTriangle, RefreshCw, Plus, Hash,
+  Trash2, Check, Loader2, User, Lock, X, Plug, CheckCircle2, AlertTriangle, Plus, Hash, Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
+import { ActivateModal, RemoveDialog, ModalShell, InfoTip } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
 import StatusTag from './StatusTag.jsx';
 
@@ -18,6 +18,7 @@ const TEAM_URL     = '/api/team';
 const INTEG_URL    = '/api/integrations';
 
 const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
+const LANGUAGES = ['English', 'Polish', 'German', 'French', 'Spanish', 'Italian', 'Portuguese', 'Dutch'];
 
 /**
  * Slack — the surface's home in AI Settings, the Telegram screen's twin.
@@ -58,10 +59,12 @@ export default function SlackDashboard({ sidebarOpen }) {
     );
   }
 
+  const entries = roster.data?.entries || [];
   const memberAvatars = {};
-  for (const e of (roster.data?.entries || [])) {
+  for (const e of entries) {
     if (e.slackUserId) memberAvatars[String(e.slackUserId)] = e.avatarUrl;
   }
+  const onPeopleChanged = () => { refresh(); invalidate(TEAM_URL); roster.reload(); };
   const state = !connected ? 'off' : needsInstall ? 'install' : listener?.connected ? 'on' : listener?.error ? 'error' : 'connecting';
   const pill = {
     on: ['bg-emerald-500/10 text-emerald-700 dark:text-emerald-400', <><CheckCircle2 className="size-2.5" strokeWidth={2.5} />Listening</>],
@@ -86,32 +89,9 @@ export default function SlackDashboard({ sidebarOpen }) {
             ['channels', 'Channels', pending.length],
             ['people', 'People', pendingPeople.length],
           ]} />
-
-          {current === 'channels' && (
-            <div className="flex flex-col gap-5">
-              {pending.length > 0 && (
-                <section className="flex flex-col gap-2">
-                  <SectionHead title="Waiting for approval" subtitle="Silent until you approve; after a day it leaves." />
-                  {pending.map(p => <PendingChannelCard key={p.chatId} entry={p} onChanged={refresh} />)}
-                </section>
-              )}
-              <section className="flex flex-col gap-2">
-                <div className="text-[12px] leading-relaxed text-muted-foreground/70">Invite the assistant to a channel in Slack; it joins in once you approve it here.</div>
-                {loading && !data ? (
-                  <><Skeleton className="h-16 rounded-[6px]" /><Skeleton className="h-16 rounded-[6px]" /></>
-                ) : groups.length === 0 ? (
-                  <EmptyHint>No channels yet.</EmptyHint>
-                ) : (
-                  groups.map(g => <ChannelCard key={g.chatId} group={g} canEdit={canEdit} avatars={memberAvatars} onChanged={refresh} />)
-                )}
-              </section>
-            </div>
-          )}
-
-          {current === 'people' && (
-            <People pendingPeople={pendingPeople} onChanged={() => { refresh(); invalidate(TEAM_URL); roster.reload(); }} />
-          )}
-
+          {current === 'channels'
+            ? <ChannelsBody groups={groups} pending={pending} loading={loading && !data} canEdit={canEdit} avatars={memberAvatars} onChanged={refresh} />
+            : <PeopleBody pendingPeople={pendingPeople} entries={entries} onChanged={onPeopleChanged} />}
         </div>
       </div>
 
@@ -177,6 +157,122 @@ function footerLine(connected, listener, needsInstall, sl) {
   return 'Slack app';
 }
 
+/* ─── Layouts ───────────────────────────────────────────────────────────── */
+// Five ways to show a tab's content (?layout=1..5 in the mock); 1 ships.
+
+function ChannelsBody({ groups, pending, loading, canEdit, avatars, onChanged }) {
+  if (loading) return <><Skeleton className="h-10 rounded-[6px]" /><Skeleton className="h-10 rounded-[6px]" /></>;
+  // One grid for the whole list, as on the Team screen: every column as wide
+  // as its widest cell, a hairline under every row, actions on the right edge.
+  return (
+    <ul className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] items-center">
+      {pending.map(p => <PendingLine key={p.chatId} entry={p} onChanged={onChanged} />)}
+      {groups.map(g => <ChannelLine key={g.chatId} group={g} canEdit={canEdit} avatars={avatars} onChanged={onChanged} />)}
+    </ul>
+  );
+}
+
+function PeopleBody({ pendingPeople, entries, onChanged }) {
+  return (
+    <ul className="grid grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] items-center">
+      {pendingPeople.map(p => <StrangerLine key={p.id} person={p} onChanged={onChanged} />)}
+      {entries.map(p => <PersonLine key={p.email} person={p} onChanged={onChanged} />)}
+    </ul>
+  );
+}
+
+function PendingPersonActions({ person, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const add = async () => { setBusy('add'); try { await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) }); await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); } catch { setBusy(null); } };
+  const forget = async () => { setBusy('forget'); try { await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); } catch { setBusy(null); } };
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <button type="button" disabled={!!busy} onClick={forget} className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">Forget</button>
+      {person.email && <button type="button" disabled={!!busy} onClick={add} className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-50"><Plus className="size-3" strokeWidth={2} /> Add</button>}
+    </span>
+  );
+}
+
+// Rows of the Team-style grid (layout 6): five cells each, hairline under every row.
+const gcell = 'flex h-full items-center border-b border-border/60 py-2.5 pr-4';
+function ChannelLine({ group, canEdit, avatars, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+  return (
+    <li className="contents">
+      <div className={cn(gcell, 'gap-3 pl-1')}><ChannelAvatar /><span className="whitespace-nowrap text-[14px] text-foreground/90">{group.title || group.chatId}</span></div>
+      <div className={gcell}>{group.paused ? <StatusTag tone="paused">Paused</StatusTag> : <StatusTag tone="active">Active</StatusTag>}</div>
+      <div className={gcell}><span className="max-w-[260px] truncate text-[12.5px] text-muted-foreground/60">{stateLine(group)}</span></div>
+      <div className={gcell}>{members.length > 0 && <MemberPile members={members} avatars={avatars} />}</div>
+      <div className={cn(gcell, 'justify-end pr-1')}>
+        {canEdit && <button type="button" onClick={() => setOpen(true)} title="Edit" className="flex size-7 items-center justify-center rounded-[6px] text-muted-foreground/70 hover:bg-muted/60 hover:text-foreground/90"><Pencil className="size-3.5" strokeWidth={1.75} /></button>}
+        {open && <ChannelModal group={group} avatars={avatars} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
+      </div>
+    </li>
+  );
+}
+function PendingLine({ entry, onChanged }) {
+  return (
+    <li className="contents">
+      <div className={cn(gcell, 'gap-3 pl-1')}><ChannelAvatar /><span className="whitespace-nowrap text-[14px] text-foreground/90">{entry.title || entry.chatId}</span></div>
+      <div className={gcell}><StatusTag tone="soon">Waiting</StatusTag></div>
+      <div className={gcell}><span className="max-w-[260px] truncate text-[12.5px] text-muted-foreground/60">Added by {entry.inviterSlug || 'someone not on the team'}{entry.members ? ` · ${entry.members} members` : ''}</span></div>
+      <div className={gcell} />
+      <div className={cn(gcell, 'justify-end pr-1')}><PendingActions entry={entry} onChanged={onChanged} /></div>
+    </li>
+  );
+}
+function PersonLine({ person, onChanged }) {
+  const name = person.displayName || person.slug || person.email;
+  return (
+    <li className="contents">
+      <div className={cn(gcell, 'gap-3 pl-1')}><PersonAvatar name={name} avatar={person.avatarUrl} /><span className="whitespace-nowrap text-[14px] text-foreground/90">{name}</span></div>
+      <div className={gcell}>{person.slackUserId ? <StatusTag tone="active">Linked</StatusTag> : <StatusTag tone="soon">Not seen yet</StatusTag>}</div>
+      <div className={gcell}><span className="max-w-[260px] truncate font-mono text-[12.5px] text-muted-foreground/60">{person.slackUserId || ''}</span></div>
+      <div className={gcell} />
+      <div className={cn(gcell, 'justify-end pr-1')}><LinkButton person={person} onChanged={onChanged} /></div>
+    </li>
+  );
+}
+function StrangerLine({ person, onChanged }) {
+  const name = person.name || person.email || person.id;
+  return (
+    <li className="contents">
+      <div className={cn(gcell, 'gap-3 pl-1')}><PersonAvatar name={name} /><span className="whitespace-nowrap text-[14px] text-foreground/90">{name}</span></div>
+      <div className={gcell}><StatusTag tone="soon">Not on the team</StatusTag></div>
+      <div className={gcell}><span className="max-w-[260px] truncate text-[12.5px] text-muted-foreground/60">{person.email || 'no email on their Slack account'}</span></div>
+      <div className={gcell} />
+      <div className={cn(gcell, 'justify-end pr-1')}><PendingPersonActions person={person} onChanged={onChanged} /></div>
+    </li>
+  );
+}
+
+// One line on how the assistant behaves in the room.
+function stateLine(g) {
+  const outsiders = g.audience?.outsiders?.length || 0;
+  if (g.paused) return g.audience?.shared ? 'Shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`;
+  const how = g.requireMention ? 'Replies when mentioned' : 'Joins in on its own';
+  return g.openAudience ? `${how} · open to outsiders` : how;
+}
+
+function PendingActions({ entry, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const act = async (approve) => {
+    setBusy(approve ? 'approve' : 'decline');
+    try {
+      if (approve) await call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: entry.chatId }) });
+      else await call(`${CHANNELS_API}/${encodeURIComponent(entry.chatId)}`, { method: 'DELETE' });
+      onChanged();
+    } catch { setBusy(null); }
+  };
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <button type="button" disabled={!!busy} onClick={() => act(false)} className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">Decline</button>
+      <button type="button" disabled={!!busy} onClick={() => act(true)} className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1 text-[12px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50"><Check className="size-3.5" strokeWidth={2} />Approve</button>
+    </span>
+  );
+}
+
 /* ─── Shared bits ───────────────────────────────────────────────────────── */
 
 function formatWhen(iso) {
@@ -201,27 +297,6 @@ function AccessDenied() {
   );
 }
 
-function SectionHead({ title, subtitle, lock, trailing }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-2">
-        <span className="text-[14.5px] font-semibold text-foreground/90">{title}</span>
-        {lock && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/70">
-            <Lock className="size-2.5" /> read-only
-          </span>
-        )}
-        {trailing && <span className="ml-auto shrink-0">{trailing}</span>}
-      </div>
-      {subtitle && <div className="text-[12px] leading-relaxed text-muted-foreground/70">{subtitle}</div>}
-    </div>
-  );
-}
-
-function EmptyHint({ children }) {
-  return <div className="rounded-[6px] border border-dashed border-border/60 px-4 py-7 text-center text-[12.5px] text-muted-foreground/70">{children}</div>;
-}
-
 function ErrorLine({ err }) {
   if (!err) return null;
   return (
@@ -238,46 +313,6 @@ async function call(url, init) {
 }
 
 /* ─── A channel waiting for a yes ───────────────────────────────────────── */
-
-function PendingChannelCard({ entry, onChanged }) {
-  const [busy, setBusy] = useState(null);
-  const [err, setErr] = useState('');
-  const act = async (approve) => {
-    setBusy(approve ? 'approve' : 'decline'); setErr('');
-    try {
-      if (approve) await call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: entry.chatId }) });
-      else await call(`${CHANNELS_API}/${encodeURIComponent(entry.chatId)}`, { method: 'DELETE' });
-      onChanged();
-    } catch (e) { setErr(e.message); setBusy(null); }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-[6px] border border-border/60 bg-card px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <ChannelAvatar />
-          <div className="min-w-0">
-            <div className="truncate text-[13.5px] font-medium text-foreground/90">{entry.title || entry.chatId}</div>
-            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">
-              Added by {entry.inviterSlug ? <span className="text-foreground/80">{entry.inviterSlug}</span> : 'someone not on the team'}{entry.members ? ` · ${entry.members} members` : ''}
-            </div>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button type="button" disabled={!!busy} onClick={() => act(false)}
-            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">
-            {busy === 'decline' ? 'Leaving…' : 'Decline'}
-          </button>
-          <button type="button" disabled={!!busy} onClick={() => act(true)}
-            className="inline-flex items-center gap-1.5 rounded-[6px] bg-foreground px-3 py-1 text-[12px] font-medium text-background hover:bg-foreground/85 disabled:opacity-50">
-            {busy === 'approve' ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" strokeWidth={2} />}
-            {busy === 'approve' ? 'Approving…' : 'Approve'}
-          </button>
-        </div>
-      </div>
-      <ErrorLine err={err} />
-    </div>
-  );
-}
 
 /* ─── One registered channel ────────────────────────────────────────────── */
 
@@ -300,6 +335,26 @@ function MemberAvatar({ name, avatar }) {
   );
 }
 
+// Everyone in the room: teammates with their faces, anyone not on the team
+// marked with a warning ring — the one place the two are shown together.
+function RoomPile({ members, outsiders, avatars }) {
+  const ours = members.filter(([id]) => !outsiders.includes(id));
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex items-center -space-x-1.5">
+        {ours.slice(0, 6).map(([id, name]) => <MemberAvatar key={id} name={name} avatar={avatars?.[String(id)]} />)}
+        {outsiders.slice(0, 4).map(id => (
+          <span key={id} title="Not on the team" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 ring-2 ring-card">
+            <span className="flex size-full items-center justify-center rounded-full ring-1 ring-inset ring-amber-500/60"><User className="size-3 text-amber-700 dark:text-amber-400" strokeWidth={2} /></span>
+          </span>
+        ))}
+      </span>
+      {outsiders.length > 0 && <span className="text-[12px] text-amber-700 dark:text-amber-400">{outsiders.length} not on the team</span>}
+      {!ours.length && !outsiders.length && <span className="text-[12px] text-muted-foreground/55">Nobody seen yet</span>}
+    </span>
+  );
+}
+
 function MemberPile({ members, avatars }) {
   const shown = members.slice(0, 5);
   const extra = members.length - shown.length;
@@ -313,42 +368,6 @@ function MemberPile({ members, avatars }) {
   );
 }
 
-function ChannelCard({ group, canEdit, avatars, onChanged }) {
-  const [open, setOpen] = useState(false);
-  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
-  const title = group.title || group.chatId;
-  const outsiders = group.audience?.outsiders?.length || 0;
-
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-card px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <ChannelAvatar />
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-[13.5px] font-medium text-foreground/90">{title}</span>
-            {group.paused && <StatusTag tone="paused">Paused</StatusTag>}
-          </div>
-          <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">
-            {group.paused
-              ? (group.audience?.shared ? 'Shared with another organisation' : `${outsiders} ${outsiders === 1 ? 'person' : 'people'} not on the team`)
-              : group.openAudience ? 'Open audience · answers when addressed' : group.requireMention ? 'Answers when addressed' : 'Ambient'}
-          </div>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        {members.length > 0 && <MemberPile members={members} avatars={avatars} />}
-        {canEdit && (
-          <button type="button" onClick={() => setOpen(true)}
-            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90">
-            Edit
-          </button>
-        )}
-      </div>
-      {open && <ChannelModal group={group} avatars={avatars} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
-    </div>
-  );
-}
-
 function ChannelModal({ group, avatars, onClose, onSaved }) {
   const [lang, setLang] = useState(group.language || '');
   const [ambient, setAmbient] = useState(!group.requireMention);
@@ -357,6 +376,7 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
   const [err, setErr] = useState('');
   const title = group.title || group.chatId;
   const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+  const outsiders = group.audience?.outsiders || [];
 
   const run = async (what, fn) => {
     setBusy(what); setErr('');
@@ -364,7 +384,6 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
   };
   const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), requireMention: !ambient, openAudience }) }));
   const remove = () => run('remove', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }));
-  const recheck = () => run('recheck', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}/recheck`, { method: 'POST' }));
 
   return (
     <ModalShell onClose={onClose} ariaLabel={`Settings for ${title}`}>
@@ -382,56 +401,26 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-4 px-5 py-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className={labelCls}>Ambient</div>
-              <div className="text-[11.5px] text-muted-foreground/55">Off: answers only when addressed. On: follows the channel and chimes in when it can help.</div>
-            </div>
-            <button type="button" role="switch" aria-checked={ambient} onClick={() => setAmbient(v => !v)}
-              className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', ambient ? 'bg-foreground' : 'bg-muted-foreground/30')}>
-              <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', ambient ? 'left-[18px]' : 'left-0.5')} />
-            </button>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className={labelCls}>Open audience</div>
-              <div className="text-[11.5px] text-muted-foreground/55">Off: the room is paused while someone not on the team is in it. On: the assistant stays, but with this channel's own memory only — nothing the team keeps elsewhere.</div>
-            </div>
-            <button type="button" role="switch" aria-checked={openAudience} onClick={() => setOpenAudience(v => !v)}
-              className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', openAudience ? 'bg-foreground' : 'bg-muted-foreground/30')}>
-              <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', openAudience ? 'left-[18px]' : 'left-0.5')} />
-            </button>
-          </div>
-          <label className="flex flex-col gap-1.5">
-            <span className={labelCls}>Reply language</span>
-            <input value={lang} onChange={e => setLang(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !busy) save(); }}
-              placeholder="e.g. English (blank = auto)" spellCheck={false} autoComplete="off"
-              className="w-full rounded border border-border/60 bg-background px-3 py-2 text-[13px] text-foreground outline-none transition-all focus:border-foreground/60 focus:ring-2 focus:ring-foreground/10" />
-          </label>
-          {group.audience && (
-            <div className="flex items-center justify-between gap-3 rounded-[6px] border border-border/50 bg-muted/20 px-3 py-2">
-              <div className="text-[12px] text-muted-foreground/80">
-                {group.audience.ok
-                  ? <>Everyone in the room is on the team ({group.audience.members}).</>
-                  : group.audience.shared
-                    ? <>Shared with another organisation — paused.</>
-                    : <>{group.audience.outsiders.length} not on the team — paused.</>}
-                <span className="text-muted-foreground/50"> Checked {formatWhen(group.audience.checkedAt)}.</span>
-              </div>
-              <button type="button" onClick={recheck} disabled={!!busy}
-                className="inline-flex shrink-0 items-center gap-1 rounded-[6px] px-2 py-1 text-[11.5px] font-medium text-muted-foreground/75 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">
-                <RefreshCw className={cn('size-3', busy === 'recheck' && 'animate-spin')} strokeWidth={2} /> Check again
-              </button>
-            </div>
-          )}
-          {members.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <span className={labelCls}>Members the assistant has seen</span>
-              <MemberPile members={members} avatars={avatars} />
-            </div>
-          )}
-          <ErrorLine err={err} />
+        <div className="px-5 py-4">
+        <div className="divide-y divide-border/50 rounded-[6px] border border-border/60 bg-card">
+          <ModalRow label="Joins in on its own" tip="Off: replies only when someone mentions it. On: follows the channel and chimes in when it can help.">
+            <Switch on={ambient} onToggle={() => setAmbient(v => !v)} />
+          </ModalRow>
+          <ModalRow label="Open to outsiders" tip="Off: paused while someone not on the team is in the room. On: stays, with this channel's own memory only.">
+            <Switch on={openAudience} onToggle={() => setOpenAudience(v => !v)} />
+          </ModalRow>
+          <ModalRow label="Reply language" tip="Blank: the language of each message.">
+            <select value={lang} onChange={e => setLang(e.target.value)}
+              className="rounded-[6px] border border-border/60 bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors focus:border-foreground/35">
+              <option value="">Same as the message</option>
+              {[...LANGUAGES, ...(lang && !LANGUAGES.includes(lang) ? [lang] : [])].map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </ModalRow>
+          <ModalRow label="In the room" tip={outsiders.length ? 'Someone not on the team is in the room, so the assistant is paused here (unless open to outsiders). Checked on every join and leave, and once an hour.' : 'Everyone the assistant has seen here is on the team. Checked on every join and leave, and once an hour.'}>
+            <RoomPile members={members} outsiders={outsiders} avatars={avatars} />
+          </ModalRow>
+        </div>
+        <ErrorLine err={err} />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
@@ -454,6 +443,27 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
   );
 }
 
+// One setting: a short label with the explanation on hover, the control on the right.
+function ModalRow({ label, tip, children }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/90">
+        {label}
+        <InfoTip text={tip} />
+      </span>
+      <span className="flex shrink-0 items-center gap-2">{children}</span>
+    </div>
+  );
+}
+function Switch({ on, onToggle }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onToggle}
+      className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', on ? 'bg-foreground' : 'bg-muted-foreground/30')}>
+      <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', on ? 'left-[18px]' : 'left-0.5')} />
+    </button>
+  );
+}
+
 /* ─── People ────────────────────────────────────────────────────────────── */
 
 function PersonAvatar({ name, avatar }) {
@@ -463,58 +473,6 @@ function PersonAvatar({ name, avatar }) {
     <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[13px] font-semibold text-muted-foreground/80 ring-1 ring-border/60">
       {avatar && !errored ? <img src={avatar} alt="" className="size-full object-cover" onError={() => setErrored(true)} /> : initial}
     </span>
-  );
-}
-
-function People({ pendingPeople, onChanged }) {
-  const { data, loading } = useApi(TEAM_URL);
-  const entries = data?.entries || [];
-  const linked = entries.filter(p => p.slackUserId);
-  const unlinked = entries.filter(p => !p.slackUserId);
-
-  return (
-    <section className="flex flex-col gap-2.5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[12px] leading-relaxed text-muted-foreground/70">Linked by the email on their Slack account, the first time they write.</div>
-        {entries.length > 0 && <span className="shrink-0 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-muted-foreground/80">{linked.length}/{entries.length} linked</span>}
-      </div>
-      {pendingPeople.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {pendingPeople.map(p => <PendingPersonRow key={p.id} person={p} onChanged={onChanged} />)}
-        </div>
-      )}
-      {loading && !data ? (
-        <Skeleton className="h-16 rounded-[6px]" />
-      ) : entries.length === 0 ? (
-        <EmptyHint>No teammates yet.</EmptyHint>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {[...linked, ...unlinked].map(p => (
-            <div key={p.email} className="flex items-center justify-between gap-3 rounded-[6px] border border-border/60 bg-card px-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="relative shrink-0">
-                  <PersonAvatar name={p.displayName || p.slug || p.email} avatar={p.avatarUrl} />
-                  {p.slackUserId && (
-                    <span className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-white ring-2 ring-card">
-                      <SlackIcon className="size-3" />
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[13.5px] font-medium text-foreground/90">{p.displayName || p.slug || p.email}</div>
-                  <div className="mt-0.5 text-[11.5px]">
-                    {p.slackUserId
-                      ? <span className="text-muted-foreground/65">Linked <span className="font-mono text-muted-foreground/85">{p.slackUserId}</span></span>
-                      : <span className="text-muted-foreground/55">Not seen on Slack yet</span>}
-                  </div>
-                </div>
-              </div>
-              <LinkButton person={p} onChanged={onChanged} />
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -576,50 +534,6 @@ function LinkButton({ person, onChanged }) {
         </ModalShell>
       )}
     </>
-  );
-}
-
-// Someone wrote to the assistant on Slack but is not on the team: add them
-// (their email joins the roster, as from the Team page) or forget the request.
-function PendingPersonRow({ person, onChanged }) {
-  const [busy, setBusy] = useState(null);
-  const [err, setErr] = useState('');
-  const add = async () => {
-    setBusy('add'); setErr('');
-    try {
-      await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) });
-      await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' });
-      onChanged();
-    } catch (e) { setErr(e.message); setBusy(null); }
-  };
-  const forget = async () => {
-    setBusy('forget'); setErr('');
-    try { await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); }
-    catch (e) { setErr(e.message); setBusy(null); }
-  };
-  return (
-    <div className="flex flex-col gap-2 rounded-[6px] border border-border/60 bg-card px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <PersonAvatar name={person.name || person.email || person.id} />
-          <div className="min-w-0">
-            <div className="truncate text-[13.5px] font-medium text-foreground/90">{person.name || person.email || person.id}</div>
-            <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground/65">Not on the team · {person.email || 'no email on their Slack account'}</div>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <button type="button" disabled={!!busy} onClick={forget}
-            className="rounded-[6px] px-2.5 py-1 text-[12px] font-medium text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground/90 disabled:opacity-50">Forget</button>
-          {person.email && (
-            <button type="button" disabled={!!busy} onClick={add}
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/60 bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 transition-colors hover:border-foreground/25 hover:bg-muted/40 disabled:opacity-50">
-              {busy === 'add' ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" strokeWidth={2} />} Add to the team
-            </button>
-          )}
-        </div>
-      </div>
-      <ErrorLine err={err} />
-    </div>
   );
 }
 

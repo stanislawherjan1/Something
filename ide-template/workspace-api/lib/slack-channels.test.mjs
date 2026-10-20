@@ -138,6 +138,16 @@ team.touchGroupMeta('slack-C0OPEN0001', { openAudience: false });
 await C.checkAudience('slack-C0OPEN0001');
 ok('closing the audience again pauses it for the outsiders', team.getGroup('slack-C0OPEN0001').paused === true && !team.getGroup('slack-C0OPEN0001').openAudience);
 
+// the hourly sweep rechecks every room on its own
+channels.C0GENERAL = { id: 'C0GENERAL', name: 'general', members: ['U0SELF', 'U0STAN001', 'U0ANN0001', 'U0GUEST09'] };
+await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0GENERAL', user: 'U0SELF', inviter: 'U0STAN001' });
+await C.approveChannel('slack-C0GENERAL', { actor: 'stan@example.test' });
+ok('(setup) a room with a guest the events missed is registered paused', team.getGroup('slack-C0GENERAL').paused === true);
+channels.C0GENERAL.members = channels.C0GENERAL.members.filter(m => m !== 'U0GUEST09');
+C.__setDeps({ listGroups: team.listGroups });
+ok('the audience sweep is hourly', (await C.sweepAudience()) >= 1 && (await C.sweepAudience()) === 0);
+ok('...and it resumed the room the guest left without anyone pressing anything', !team.getGroup('slack-C0GENERAL').paused);
+
 // an unknown channel event
 r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0UNKNOWN', user: 'U0ANN0001' });
 ok('a join in a channel the bot is not registered in is ignored', r.did === 'ignored');
