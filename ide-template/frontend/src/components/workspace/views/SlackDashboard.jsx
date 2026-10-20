@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import {
-  Trash2, Check, Loader2, User, Lock, X, Plug, CheckCircle2, AlertTriangle, Plus, Hash, Pencil,
+  Trash2, Check, Loader2, User, Lock, X, Plug, CheckCircle2, AlertTriangle, Plus, Hash, Pencil, Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
 import { useApi, invalidate } from '@/lib/useApi';
 import useMe from '../useMe.js';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { ActivateModal, RemoveDialog, ModalShell, InfoTip } from './IntegrationsDashboard.jsx';
+import { Tooltip as TooltipPrimitive } from 'radix-ui';
+import { ActivateModal, RemoveDialog, ModalShell } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
 import StatusTag from './StatusTag.jsx';
 
@@ -18,7 +19,6 @@ const TEAM_URL     = '/api/team';
 const INTEG_URL    = '/api/integrations';
 
 const labelCls = 'text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground/75';
-const LANGUAGES = ['English', 'Polish', 'German', 'French', 'Spanish', 'Italian', 'Portuguese', 'Dutch'];
 
 /**
  * Slack — the surface's home in AI Settings, the Telegram screen's twin.
@@ -369,7 +369,6 @@ function MemberPile({ members, avatars }) {
 }
 
 function ChannelModal({ group, avatars, onClose, onSaved }) {
-  const [lang, setLang] = useState(group.language || '');
   const [ambient, setAmbient] = useState(!group.requireMention);
   const [openAudience, setOpenAudience] = useState(!!group.openAudience);
   const [busy, setBusy] = useState(null);
@@ -382,7 +381,7 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
     setBusy(what); setErr('');
     try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); }
   };
-  const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), requireMention: !ambient, openAudience }) }));
+  const save = () => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, requireMention: !ambient, openAudience }) }));
   const remove = () => run('remove', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }));
 
   return (
@@ -401,6 +400,7 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
           </button>
         </div>
 
+        <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
         <div className="px-5 py-4">
         <div className="divide-y divide-border/50 rounded-[6px] border border-border/60 bg-card">
           <ModalRow label="Joins in on its own" tip="Off: replies only when someone mentions it. On: follows the channel and chimes in when it can help.">
@@ -409,19 +409,13 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
           <ModalRow label="Open to outsiders" tip="Off: paused while someone not on the team is in the room. On: stays, with this channel's own memory only.">
             <Switch on={openAudience} onToggle={() => setOpenAudience(v => !v)} />
           </ModalRow>
-          <ModalRow label="Reply language" tip="Blank: the language of each message.">
-            <select value={lang} onChange={e => setLang(e.target.value)}
-              className="rounded-[6px] border border-border/60 bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors focus:border-foreground/35">
-              <option value="">Same as the message</option>
-              {[...LANGUAGES, ...(lang && !LANGUAGES.includes(lang) ? [lang] : [])].map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
-          </ModalRow>
           <ModalRow label="In the room" tip={outsiders.length ? 'Someone not on the team is in the room, so the assistant is paused here (unless open to outsiders). Checked on every join and leave, and once an hour.' : 'Everyone the assistant has seen here is on the team. Checked on every join and leave, and once an hour.'}>
             <RoomPile members={members} outsiders={outsiders} avatars={avatars} />
           </ModalRow>
         </div>
         <ErrorLine err={err} />
         </div>
+        </TooltipPrimitive.Provider>
 
         <div className="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/20 px-5 py-3">
           <button type="button" onClick={remove} disabled={!!busy}
@@ -449,7 +443,19 @@ function ModalRow({ label, tip, children }) {
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/90">
         {label}
-        <InfoTip text={tip} />
+        {tip && (
+          <TooltipPrimitive.Root>
+            <TooltipPrimitive.Trigger asChild>
+              <span className="inline-flex cursor-help text-muted-foreground/55 hover:text-foreground/80"><Info className="size-3.5" strokeWidth={2} aria-label={tip} /></span>
+            </TooltipPrimitive.Trigger>
+            <TooltipPrimitive.Portal>
+              <TooltipPrimitive.Content side="top" sideOffset={6} collisionPadding={10}
+                className="z-[60] max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] font-normal leading-snug text-popover-foreground shadow-md">
+                {tip}<TooltipPrimitive.Arrow className="fill-popover" />
+              </TooltipPrimitive.Content>
+            </TooltipPrimitive.Portal>
+          </TooltipPrimitive.Root>
+        )}
       </span>
       <span className="flex shrink-0 items-center gap-2">{children}</span>
     </div>
