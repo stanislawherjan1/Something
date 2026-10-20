@@ -583,9 +583,11 @@ it. What differs is how it gets in and who may be in it
 
 - **Admission is an admin's yes, never automatic.** Anyone in a workspace can
   add an app to a channel, so being added only makes a request (the Slack page
-  under AI Settings lists it; admins are notified). Approved → registered,
-  answering **when addressed** unless an admin turns ambient on. Not approved
-  within 24 h, or declined → the bot leaves the channel.
+  under AI Settings lists it; admins are notified). Approved → registered;
+  an approved channel gets the whole of it by default — the assistant joins
+  in on its own and the room is **open to outsiders** (below) — and an admin
+  can turn either off. Not approved within 24 h, or declined → the bot leaves
+  the channel.
 - **The audience check.** At approval and on every join, leave, share or
   unshare, every member must be a roster person of this workspace. Anyone else
   — a guest, another workspace's user, a bot — **pauses** the channel: the bot
@@ -597,19 +599,22 @@ it. What differs is how it gets in and who may be in it
   top-level.
 - **Memory**: the channel's history is filed into `memory/groups/slack-C…/`,
   that channel's own scope, as a Telegram group's is.
-- **Open audience** (per channel, off by default): an admin may keep the
-  assistant in a room that holds people outside the team. The room is then
-  never paused for them, and every turn there is **group-only** — it reads
-  and writes that channel's own memory and nothing of the team's shared
-  memory (`readableScopes({ groupOnly })`, carried on the turn token); the
-  prompt tells the assistant it is among outside parties. A shared (Slack
-  Connect) channel is paused whatever the setting.
+- **Open to outsiders** (per channel, on by default): the assistant stays in
+  a room that holds people outside the team. While someone outside the team
+  is actually in it, every turn there is **group-only** — it reads and writes
+  that channel's own memory and nothing of the team's shared memory
+  (`readableScopes({ groupOnly })`, carried on the turn token); the prompt
+  tells the assistant it is among outside parties. With everyone on the team
+  it is an ordinary room. Turned off, the room is paused while an outsider is
+  in it. A shared (Slack Connect) channel is paused whatever the setting.
 - **Threads**: each Slack thread keeps its own resumed session
   (`.group-watcher/<id>-thread-<ts>-session.json`); the channel's history
   ring is the context for all of them.
 - **People**: a teammate is linked by the email their Slack account carries,
   the first time they write (`slackUserId`); someone who writes without being
-  on the team appears as pending on the Slack page, to add with one click. An
+  on the team appears as pending on the Slack page, to add with one click
+  (their email joins the roster as a member and their Slack account is linked
+  at once). An
   admin may also link an account by its member id (`PATCH /api/team/:email
   { slackUserId }`, the Link control on the Slack page) when the Slack email is
   not the roster one — never a self-service link by id, which would let a
