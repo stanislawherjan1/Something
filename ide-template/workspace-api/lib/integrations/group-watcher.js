@@ -1025,6 +1025,13 @@ export async function postToGroup({ chatId, text }) {
   return { ok: true, messageId: sent.messageId ?? null };
 }
 
+// An open-to-outsiders room with someone outside the team actually in it:
+// the turn reads the room's own memory and nothing of the team's. With
+// everyone on the team the room is an ordinary one (shared memory included).
+function roomHasOutsiders(group) {
+  return !!(group && group.openAudience && group.audience && group.audience.ok === false && !group.audience.shared);
+}
+
 // Build the runClaudeTurn params for a group turn (exported for the guard test).
 // opts.resumed — a persistent session is live: the context window below carries
 // only the messages SINCE the last turn; everything earlier is session memory.
@@ -1059,7 +1066,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     '----',
     `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — the SHARED workspace, shared memory, skills, integrations, reminders — and you may act. This is a GROUP context: NO private space is reachable (not even the requester's own) and nothing private may enter the conversation; genuinely private work is delegated via [[PRIVATE_TASK]] (below). Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group.`,
     lang ? `This group's language is ${lang} — reply ONLY in ${lang}, whatever language a message happens to be written in. Even when quoting or discussing text in another language, your own words stay in ${lang}.` : '',
-    group.openAudience ? 'OPEN AUDIENCE: people who are NOT on your team are in this room. You have ONLY this room\'s own memory here — nothing the team keeps elsewhere reaches you, and nothing you learn elsewhere may be said here. Treat everyone as an outside party: be helpful, be polite, share nothing internal.' : '',
+    roomHasOutsiders(group) ? 'OPEN AUDIENCE: people who are NOT on your team are in this room. You have ONLY this room\'s own memory here — nothing the team keeps elsewhere reaches you, and nothing you learn elsewhere may be said here. Treat everyone as an outside party: be helpful, be polite, share nothing internal.' : '',
     '',
     'Before anything else, DECIDE whether to speak. If you have nothing genuinely useful or fitting to add, output exactly `[[SILENT]]` and nothing is posted (the group never even sees you typing). Staying silent is a perfectly good, expected outcome: better silence than noise. ONE exception to going straight to `[[SILENT]]`: if the conversation stated something durable and worth remembering — a decision, an agreement, a role, a stable fact about a client or project — write it with `memory_write` FIRST, then go silent. Saying nothing and remembering nothing are different things, and most of what is worth remembering here needs no reply at all. Otherwise reply — you are an ambient presence here and the real judge of when to chime in: when you can genuinely help, answer, move something forward, proactively offer something useful, greet someone who greeted or named you, or (sparingly, only when the mood is casual) drop a brief, well-timed light remark.',
     '',
@@ -1098,7 +1105,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     // scope-guard hook blocks EVERY private tree at tool time.
     groupContext: true,
     groupId: String(group.chatId),     // memory v4 recall: shared + this group only
-    groupOnly: !!group.openAudience,   // an open-audience room: this group's scope and nothing shared
+    groupOnly: roomHasOutsiders(group),   // outsiders in the room: this group's scope and nothing shared
     // Redundant with the groupContext prefix exclusion — kept as belt-and-braces
     // for older claude.js versions that only honour excludeIds.
     excludeIds: ['USER_INDEX'],

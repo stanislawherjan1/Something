@@ -183,7 +183,18 @@ function PeopleBody({ pendingPeople, entries, onChanged }) {
 
 function PendingPersonActions({ person, onChanged }) {
   const [busy, setBusy] = useState(null);
-  const add = async () => { setBusy('add'); try { await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) }); await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); } catch { setBusy(null); } };
+  // Add: the same as inviting on the Team page (their email joins the roster
+  // as a member), then their Slack account is linked at once — we know its id —
+  // so their next message is already a turn as them.
+  const add = async () => {
+    setBusy('add');
+    try {
+      await call(TEAM_URL, { method: 'POST', body: JSON.stringify({ email: person.email, role: 'member' }) });
+      await call(`${TEAM_URL}/${encodeURIComponent(person.email)}`, { method: 'PATCH', body: JSON.stringify({ slackUserId: person.id }) });
+      await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' });
+      onChanged();
+    } catch { setBusy(null); }
+  };
   const forget = async () => { setBusy('forget'); try { await call(`${CHANNELS_API}/pending-people/${encodeURIComponent(person.id)}`, { method: 'DELETE' }); onChanged(); } catch { setBusy(null); } };
   return (
     <span className="inline-flex items-center gap-2 whitespace-nowrap">

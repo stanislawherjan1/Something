@@ -65,8 +65,8 @@ r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0SHARED1'
 ok('a shared (Slack Connect) channel is left at once and never pending', r.did === 'left-shared' && left.includes('C0SHARED1') && C.pendingChannels().every(p => p.channel !== 'C0SHARED1'));
 
 // approval
-const g = await C.approveChannel('slack-C0GENERAL', { actor: 'stan@example.test' });
-ok('approval registers the channel, mentions only by default, and clears the request', g && g.kind === 'slack' && g.requireMention === true && !g.paused && C.pendingChannels().length === 0, g);
+const g = await C.approveChannel('slack-C0GENERAL', { actor: 'stan@example.test', openAudience: false });
+ok('approval registers the channel (joining in on its own by default) and clears the request', g && g.kind === 'slack' && g.requireMention === false && !g.paused && C.pendingChannels().length === 0, g);
 ok('the audience was checked at approval: all ours', g.audience?.ok === true && g.audience.members === 3);
 
 // a channel message → the watcher
@@ -126,8 +126,8 @@ ok('a channel that turned shared cannot be approved, and is left', /shared/.test
 // open audience: outsiders do not pause the room (it reads its own memory only)
 channels.C0OPEN0001 = { id: 'C0OPEN0001', name: 'community', members: ['U0SELF', 'U0STAN001', 'U0GUEST01', 'U0GUEST02'] };
 await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0OPEN0001', user: 'U0SELF', inviter: 'U0STAN001' });
-const og = await C.approveChannel('slack-C0OPEN0001', { actor: 'stan@example.test', openAudience: true });
-ok('an open-audience channel with outsiders is registered and NOT paused', og.openAudience === true && !og.paused && og.audience?.ok === false && og.audience.outsiders.length === 2, og);
+const og = await C.approveChannel('slack-C0OPEN0001', { actor: 'stan@example.test' });
+ok('an approved channel is open to outsiders by default: registered and NOT paused with outsiders in it', og.openAudience === true && !og.paused && og.audience?.ok === false && og.audience.outsiders.length === 2, og);
 r = await C.onChannelMessage({ type: 'app_mention', channel: 'C0OPEN0001', user: 'U0GUEST01', text: '<@U0SELF> hi', ts: '9.0' });
 ok('...a message there reaches the watcher', r.did === 'routed');
 channels.C0OPEN0001.is_ext_shared = true;
@@ -141,8 +141,8 @@ ok('closing the audience again pauses it for the outsiders', team.getGroup('slac
 // the hourly sweep rechecks every room on its own
 channels.C0GENERAL = { id: 'C0GENERAL', name: 'general', members: ['U0SELF', 'U0STAN001', 'U0ANN0001', 'U0GUEST09'] };
 await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0GENERAL', user: 'U0SELF', inviter: 'U0STAN001' });
-await C.approveChannel('slack-C0GENERAL', { actor: 'stan@example.test' });
-ok('(setup) a room with a guest the events missed is registered paused', team.getGroup('slack-C0GENERAL').paused === true);
+await C.approveChannel('slack-C0GENERAL', { actor: 'stan@example.test', openAudience: false });
+ok('(setup) a closed room with a guest the events missed is registered paused', team.getGroup('slack-C0GENERAL').paused === true);
 channels.C0GENERAL.members = channels.C0GENERAL.members.filter(m => m !== 'U0GUEST09');
 C.__setDeps({ listGroups: team.listGroups });
 ok('the audience sweep is hourly', (await C.sweepAudience()) >= 1 && (await C.sweepAudience()) === 0);

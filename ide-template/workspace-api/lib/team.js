@@ -958,19 +958,20 @@ export function addGroup({ chatId, title, requireMention, beat, language, openAu
   const cfg = readConfig();
   if (!cfg.groups || typeof cfg.groups !== 'object') cfg.groups = {};
   const prev = cfg.groups[id] && typeof cfg.groups[id] === 'object' ? cfg.groups[id] : {};
-  // A Slack channel is far busier than a team's Telegram group: it answers
-  // when addressed unless an admin turns ambient listening on.
-  const mentionDefault = groupIdKind(id) === 'slack';
+  // An admin approves every Slack channel, so an approved one gets the
+  // whole of it: it joins in on its own and stays when an outsider is in the
+  // room (with the room's own memory only, then). Both can be turned off.
+  const slack = groupIdKind(id) === 'slack';
   cfg.groups[id] = {
     title:          title != null ? String(title).slice(0, 120) : (prev.title || ''),
-    requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? mentionDefault),
+    requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? false),
     // Paused: registered, but the room holds someone not on the roster (the
     // audience check), so the assistant stays silent until it is ours again.
     ...(prev.paused ? { paused: true } : {}),
     ...(prev.audience ? { audience: prev.audience } : {}),
     // Open audience: people outside the team may be in the room; the assistant
     // speaks there from the room's own memory only, never the team's.
-    ...((openAudience != null ? !!openAudience : !!prev.openAudience) ? { openAudience: true } : {}),
+    ...((openAudience != null ? !!openAudience : (prev.openAudience ?? slack)) ? { openAudience: true } : {}),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
