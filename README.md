@@ -65,7 +65,7 @@ Your coworkers:
 
 **Want to look around first?** Click through **[the demo](https://something.md/demo/)**: a made-up ceramics shop with a team of seven, every screen on sample data. Switch between the founder and a teammate to see what stays private. The chat is off; there's no AI behind it.
 
-**You'll need:** a Linux server (from ~€4.50/mo), a domain, a Google account, and a **paid Claude plan** (Pro or Max). Run the installer from macOS or Linux (on Windows, use WSL2).
+**You'll need:** a Linux server (from ~€7/mo), a domain, a Google account, and a **paid Claude plan** (Pro or Max). Run the installer from macOS or Linux (on Windows, use WSL2).
 
 Then, from your own computer, run:
 
@@ -240,7 +240,7 @@ Every line of code is public. You give your coworker access to your inbox, your 
 
 ## Deploy your own
 
-Requires a Linux server (a Hetzner VPS from ~€4.50/mo works well), a domain, and a paid Claude plan. Nothing runs locally; `deploy.sh` SSHs into the server and builds there.
+Requires a Linux server (a Hetzner VPS from ~€7/mo works well), a domain, and a paid Claude plan. Nothing runs locally; `deploy.sh` SSHs into the server and builds there.
 
 The easiest way is the installer in [Get started](#get-started). Once a client dir exists, redeploying is a one-liner:
 

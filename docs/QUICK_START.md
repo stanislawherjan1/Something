@@ -60,7 +60,7 @@ Google sign-in app → run one install command. The installer does the rest.
 
 | Thing | Why | Cost |
 |---|---|---|
-| A Linux server (VPS) | Your workspace runs here 24/7 | from ~€4.50/mo (Hetzner **CX22**); **CPX21** (~€8) builds faster |
+| A Linux server (VPS) | Your workspace runs here 24/7 | from ~€7/mo (Hetzner **CX23**); more vCPUs build faster |
 | A domain (or subdomain) | The web address you'll open, e.g. `workspace.yourcompany.com` | You may already own one |
 | A Google account | Sign-in is via Google | Free |
 | A **paid** Claude plan (Pro or Max) | The assistant runs on Claude; you paste a token after install. **Free Claude accounts can't generate that token.** | from ~$20/mo at [claude.ai](https://claude.ai) |
@@ -81,7 +81,7 @@ We use [Hetzner Cloud](https://console.hetzner.com) in this guide (cheap,
 reliable, fast). Any Ubuntu server works, but the steps below are for Hetzner.
 
 > Hetzner asks for a payment method (card or PayPal) at signup before you can
-> create a server. The server itself is ~€4.50–8/mo depending on the size.
+> create a server. The server itself is ~€7–15/mo depending on the size.
 
 ### 2a. First, make your SSH key  *(on your computer)*
 
@@ -111,9 +111,10 @@ without prompting.)
 3. **Location:** pick the one closest to you or your team.
 4. **Image:** **Ubuntu** — the LTS the panel offers by default is fine
    (24.04 and 26.04 are both verified).
-5. **Type:** **CX22** (2 vCPU / 4 GB RAM, ~€4.50/mo) is the cheapest that
-   works. For faster builds and a bit more headroom, **CPX21** (3 vCPU / 4 GB,
-   ~€8/mo). 4 GB RAM is the floor — don't go smaller.
+5. **Type:** **CX23** (2 vCPU / 4 GB RAM, ~€7/mo) is the cheapest that
+   works. Hetzner's plan names and prices shift — just take the cheapest
+   plan with **at least 4 GB RAM**; more vCPUs build faster. 4 GB RAM is
+   the floor — don't go smaller.
 6. **SSH key:** click **Add SSH key** and paste the line you copied in 2a.
 7. **Create & Buy**.
 
@@ -199,6 +200,9 @@ fiddliest step — follow it closely. ~5 minutes.
   come back here.
 - **Application type:** **Web application**.
 - **Name:** anything (e.g. `workspace`).
+- If Google offers an **"agentic" / AI-agent** option on the client (rolling
+  out since Oct 2026), leave it **off** — this client only signs people in.
+  (From 12 Nov 2026 that choice is permanent per client.)
 
 **c. Add the redirect URI**
 - Under **Authorized redirect URIs → Add URI**, paste exactly:

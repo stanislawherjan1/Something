@@ -52,8 +52,9 @@ smooth. You cannot click for the person — relay the click-by-click from
 one step at a time; don't guess at console UIs from memory.
 
 1. **A Linux server** — Ubuntu LTS (24.04 and 26.04 are both verified; the
-   provider's default image is fine), at least 4 GB RAM (e.g. Hetzner CX22),
-   with their SSH key added at creation. Check:
+   provider's default image is fine), at least 4 GB RAM (e.g. Hetzner CX23,
+   ~€7/mo — plan names shift; any ≥4 GB plan works), with their SSH key
+   added at creation. Check:
    `ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@<IP> 'echo connected'`
    (without `accept-new` the first-ever contact fails on the unknown host
    key). No key at creation? The installer's SSH step can install one using
@@ -68,6 +69,9 @@ one step at a time; don't guess at console UIs from memory.
    - The **Publish button stays greyed out** until Branding also carries an
      app home page and a privacy-policy link (their own domain is accepted)
      and the developer contact email.
+   - If the client form offers an **"agentic" / AI-agent** option, it stays
+     **off** — this client only signs people in, and the choice becomes
+     permanent per client from 12 Nov 2026.
    - Nothing can verify the publishing status remotely — have the person
      read it back to you. Left on "Testing", sign-in later fails with
      "access blocked" (the most common support issue).
