@@ -283,5 +283,36 @@ ok('...and the list covers web_send_message, not only Telegram',
 const claudeSrc = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
 ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', (disallowedTools|blocked)\.join/.test(claudeSrc));
 
+// (x) A resumed turn re-reads the thread. The group's session is summarised by
+// the CLI when it grows; a turn that got only the messages since its last reply
+// lost what was being talked about after a gap.
+const { recapFor, gateFailureKind } = await import('./integrations/group-watcher.js');
+const NOW = Date.parse('2026-10-21T12:00:00Z');
+const hist = Array.from({ length: 50 }, (_, i) => ({ role: i % 3 ? 'user' : 'assistant', message_id: `m${i}`, who: 'Sam', text: `line ${i}`, ts: new Date(NOW - (50 - i) * 60_000).toISOString() }));
+const lastSeen = hist[39].ts;   // the session's last turn saw up to line 39
+const recent = { sessionId: 's', lastTs: lastSeen, updatedAt: new Date(NOW - 10 * 60_000).toISOString() };
+const stale = { sessionId: 's', lastTs: lastSeen, updatedAt: new Date(NOW - 5 * 3600_000).toISOString() };
+let rc = recapFor(hist, recent, NOW);
+ok('a resumed turn soon after the last one re-reads its last 10 lines', rc.length === 10 && rc[0].text === 'line 30' && rc[9].text === 'line 39', rc.map(r => r.text));
+rc = recapFor(hist, stale, NOW);
+ok('...after a long gap, its last 30 (the session was likely summarised)', rc.length === 30 && rc[0].text === 'line 10' && rc[29].text === 'line 39', rc.map(r => r.text));
+ok('...never a line it has not seen (those are the NEW window)', !recapFor(hist, stale, NOW).some(r => r.ts > lastSeen));
+ok('no session → no recap (a fresh session gets the whole ring anyway)', recapFor(hist, null, NOW).length === 0);
+const newer = hist.slice(40);
+const pr = groupTurnParams({ chatId: '-1001234567890' }, newer, { ...newer[newer.length - 1], from_id: '987654321' }, {}, { resumed: true, recap: recapFor(hist, stale, NOW) });
+ok('the resumed prompt carries the earlier lines, marked as already seen', /EARLIER IN THIS GROUP/.test(pr.message) && pr.message.includes('line 10') && pr.message.includes('line 39'));
+ok('...before the messages since the last turn', pr.message.indexOf('line 39') < pr.message.indexOf('The messages since your last turn') && pr.message.indexOf('The messages since your last turn') < pr.message.indexOf('line 49'));
+ok('...and no longer tells the brain to trust its session blindly', !/trust it\. Below are ONLY/.test(pr.message) && /may have been summarised/.test(pr.message));
+const fresh = groupTurnParams({ chatId: '-1001234567890' }, hist, { ...hist[49], from_id: '987654321' });
+ok('a fresh session gets the plain recent conversation, no recap block', !/EARLIER IN THIS GROUP/.test(fresh.message) && /Recent conversation:/.test(fresh.message));
+
+// (y) A failed gate: out of plan → silent; anything else → the brain judges.
+ok('the gate out of plan keeps silent (the brain would fail too)', gateFailureKind({ ok: false, error: "You've hit your weekly limit · resets Oct 22, 12pm (UTC)" }) === 'limit');
+ok('...said through the classifier\'s exit too', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: "exit 1: You've hit your weekly limit · resets Oct 22, 12pm (UTC)" }) === 'limit');
+ok('a sentence that merely says "hit your limit" is no usage limit', isUsageLimit('I think the client hit your limit of patience') === false);
+ok('a crashed gate passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: 'exit 1' }) === 'gate-down');
+ok('a timed-out gate passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-timeout' }) === 'gate-down');
+ok('an unparseable answer passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: 'unparseable' }) === 'gate-down');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

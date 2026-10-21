@@ -45,7 +45,10 @@ instructions are an admin's to set.
 Each person links their own Telegram, so a message from you is from you. Only
 an admin is asked to set the coworker up on Telegram, and it is the whole
 team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
-the group's own conversation and never anyone's private memory. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
+the group's own conversation and never anyone's private memory. Come back to a
+group after a day and it re-reads where the conversation stopped before it
+answers. In a group it knows what the team knows: what was said in that group,
+and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
 tasks go to the person they are for.
 
 
@@ -496,7 +499,11 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    prior replies), never the last line alone. It drops only obvious noise (a bare
    reaction, two people clearly talking to each other); when unsure, it passes. A
    direct address — `@mention`, a reply to the bot, or the bot's **name** (incl.
-   inflected forms) — bypasses the gate outright.
+   inflected forms) — bypasses the gate outright. A gate that fails (a crash, a
+   timeout, an unreadable answer) hands the message to the brain rather than
+   dropping it — the brain is the real judge and stays silent on its own; only a
+   spent plan ("You've hit your weekly limit", which the brain would hit too)
+   keeps the message out, and the breaker tells the group so.
    The durable history each group keeps (`.group-watcher/<chatId>-history.jsonl`)
    names a sender as the roster names them when their Telegram id is on it, and
    by their Telegram profile otherwise — it is what memory files a group from,
@@ -507,6 +514,12 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    is the real judge: if it has nothing useful to add it stays **silent** (no
    message, no "typing…"). The cheap gate is deliberately permissive precisely
    because the brain makes the final call.
+   Each group keeps **one resumable session** (`.group-watcher/<chatId>-session.json`);
+   a turn on it gets the messages since its last turn — and, because the CLI
+   summarises a session that grows long (it lost the thread after a gap), the
+   last lines it already saw: 10 always, 30 after more than three hours
+   (`GROUP_RECAP_LINES`, `GROUP_RECAP_LINES_AFTER_GAP`, `GROUP_RECAP_GAP_MS`).
+   Where those lines and the session's recollection differ, the lines win.
 
 ### Behaviour
 

@@ -19,7 +19,9 @@
 
 // "Claude usage limit reached", "usage limit reached", "you've hit your limit",
 // "rate limit exceeded", "/rate-limit-options" (the interactive menu's marker).
-const LIMIT_RE = /(usage|rate)[ -]limit (reached|exceeded|exhausted)|limit reached[.!]?\s*(your|the)? ?limit will reset|rate-limit-options|out of (usage|credits)|insufficient (credits|quota)|quota exceeded/i;
+// The CLI today says "You've hit your weekly limit · resets Oct 22, 12pm (UTC)"
+// (also session / 5-hour / daily): unmatched, a spent plan read as a crash.
+const LIMIT_RE = /(usage|rate)[ -]limit (reached|exceeded|exhausted)|\byou(?:'ve| have) hit your (?:[\w-]+ )?limit\b|limit reached[.!]?\s*(your|the)? ?limit will reset|rate-limit-options|out of (usage|credits)|insufficient (credits|quota)|quota exceeded/i;
 
 // "…will reset at 3pm", "resets at 10:00 (Europe/Warsaw)", "reset at 15:40 CET".
 // Captures the time as PRINTED, with an optional zone/AM-PM, and passes it

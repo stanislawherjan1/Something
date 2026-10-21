@@ -307,6 +307,23 @@ function renderContext(ctxMsgs, newIds, clamp = TEXT_CLAMP) {
     return `[${who}${isNew ? '  ← NEW' : ''}] ${txt}`;
   }).join('\n');
 }
+// The thread a resumed turn re-reads. A group's session is one long
+// conversation that the CLI summarises when it grows (compaction): after that
+// the session "remembers" the gist, not the thread, and a turn that got ONLY
+// the messages since its last reply lost what was being talked about. So a
+// resumed turn also gets the last lines it already saw — a few always, more
+// after a long gap, when the session is most likely to have been summarised.
+const RECAP_LINES      = num('GROUP_RECAP_LINES', 10);
+const RECAP_LINES_GAP  = num('GROUP_RECAP_LINES_AFTER_GAP', 30);
+const RECAP_GAP_MS     = num('GROUP_RECAP_GAP_MS', 3 * 3600_000);
+export function recapFor(hist, session, now = Date.now()) {
+  if (!session || !session.lastTs || !Array.isArray(hist)) return [];
+  const seen = hist.filter(h => h.ts && h.ts <= session.lastTs);
+  const last = Date.parse(session.updatedAt || session.lastTs) || 0;
+  const n = now - last > RECAP_GAP_MS ? RECAP_LINES_GAP : RECAP_LINES;
+  return n > 0 ? seen.slice(-n) : [];
+}
+
 let   inflight  = 0;           // global classify semaphore counter
 let   budgetWindowStart = 0;   // hourly budget rolling window
 let   budgetCount = 0;
@@ -717,7 +734,9 @@ function classify(group, ctxMsgs, newIds) {
     proc.stderr.on('data', c => process.stderr.write(`[group-watcher/haiku] ${c}`));
     proc.on('error', err => finish({ ok: false, reason_enum: 'classify-error', error: err.message }));
     proc.on('close', (code) => {
-      if (code !== 0) return finish({ ok: false, reason_enum: 'classify-error', error: `exit ${code}` });
+      // What the CLI said, not just its exit code: a spent plan is said there
+      // ("You've hit your weekly limit"), and a bare "exit 1" read as a crash.
+      if (code !== 0) return finish({ ok: false, reason_enum: 'classify-error', error: `exit ${code}${out.trim() ? `: ${out.trim().slice(0, 200)}` : ''}` });
       const parsed = parseDecision(out);
       if (!parsed) return finish({ ok: false, reason_enum: 'classify-error', error: 'unparseable' });
       finish({ ok: true, decision: parsed });
@@ -751,6 +770,16 @@ export function parseDecision(text) {
 // One retry on a gate failure (timeout / crash / unparseable) — a Haiku CLI cold
 // start is a lottery under load and the live audit measured 19% of messages lost
 // to a single-shot gate. The retry is budget-counted like any classify.
+/**
+ * What a failed gate means for the message. Out of plan ('limit'): the brain
+ * would fail the same way — stay silent and let the breaker say so. Any other
+ * failure (a crash, a timeout) is the cheap filter's, not the brain's
+ * ('gate-down'): the message goes to the brain, the real judge, which stays
+ * silent on its own when there is nothing to add. Dropping it once lost a run
+ * of team messages in a row.
+ */
+export function gateFailureKind(res) { return isUsageLimit(res?.error) ? 'limit' : 'gate-down'; }
+
 async function classifyWithRetry(group, ctxMsgs, newIds) {
   let res = await classify(group, ctxMsgs, newIds);
   if (!res.ok && budgetAllows()) {
@@ -916,7 +945,7 @@ export async function sayInGroup({ chatId, text, frame = 'REMINDER' }) {
     const base = session && session.lastTs ? hist.filter(h => !h.ts || h.ts > session.lastTs) : hist;
     const ctx = [...base, { ...target, ts: new Date().toISOString() }];
     let reply;
-    try { reply = await groupCompose(group, ctx, target, session); }
+    try { reply = await groupCompose(group, ctx, target, session, recapFor(hist, session)); }
     catch (err) { reply = { ok: false, error: err.message }; }
 
     // Same session rotation the inbound path does: a stale or dropped session
@@ -1004,8 +1033,13 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   const replyLang = lang || `${senderName}'s language`;
   const message = [
     opts.resumed
-      ? 'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). You have an ongoing session memory of this group\'s earlier conversation — trust it. Below are ONLY the messages since your last turn:'
+      ? 'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). You have an ongoing session memory of this group\'s earlier conversation, but it may have been summarised and lost detail.'
       : 'You are replying in a Telegram GROUP CHAT for your team (not a 1:1 DM). Recent conversation:',
+    ...(opts.resumed && opts.recap?.length ? [
+      'EARLIER IN THIS GROUP — the last lines you already saw, word for word. Where they and your recollection differ, they are right; pick the thread up from here:',
+      '----', renderContext(opts.recap, new Set(), BRAIN_CONTEXT_CLAMP), '----',
+    ] : []),
+    ...(opts.resumed ? ['The messages since your last turn:'] : []),
     '----',
     window,
     '----',
@@ -1129,7 +1163,7 @@ function isSilentPrefix(s) {
   return c.length > 0 && '[[silent]]'.startsWith(c);
 }
 
-function groupCompose(group, ctxMsgs, target, session = null) {
+function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
   return new Promise((resolve) => {
     let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
     let filesDm = 0;   // subset of `files` that went to the requester's DM (observability)
@@ -1292,7 +1326,7 @@ function groupCompose(group, ctxMsgs, target, session = null) {
           extractReaction();
           finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, reaction, sessionId: capturedSessionId });
         },
-      }, { resumed: !!(session && session.sessionId) }));
+      }, { resumed: !!(session && session.sessionId), recap: session && session.sessionId ? recap : [] }));
       startTyping();   // typing from turn start — the gate already decided this message is for the bot
     } catch (err) { finish({ ok: false, error: err.message }); }
   });
@@ -1554,25 +1588,32 @@ async function flush(chatId) {
       // exit used to be assumed to be the usage limit, so a plain crash was
       // announced to the chat as "out of capacity" — a confident lie about
       // something the reader might act on (wait, instead of report it).
-      const kind = isUsageLimit(res.error) ? 'limit' : 'gate-down';
-      noteGateFailure(chatId, group, kind, String(res.error || ''));
-      return audit({ chat_id: chatId, msg_id: lastTargetable.message_id, decision: 'ignore', reason_enum: res.reason_enum, error: res.error, retried: !!res.retried });
+      const kind = gateFailureKind(res);
+      if (kind === 'limit') {
+        noteGateFailure(chatId, group, kind, String(res.error || ''));
+        return audit({ chat_id: chatId, msg_id: lastTargetable.message_id, decision: 'ignore', reason_enum: res.reason_enum, error: res.error, retried: !!res.retried });
+      }
+      process.stderr.write(`[group-watcher] gate down for ${chatId} (${res.reason_enum}: ${res.error || ''}) — the brain judges this one\n`);
+      target = lastTargetable; beat = 'gate-down'; confidence = 0.5;
+      reason_enum = 'gate-down-pass'; speak = true;
     }
-    const d = res.decision;
-    if (d.lang && !String(group.language || '').trim()) maybePinLanguage(chatId, d.lang);
-    target = burst.find(m => String(m.message_id) === String(d.target_message_id)) || lastTargetable;
-    beat = d.beat; confidence = d.confidence;
-    speak = d.respond && d.confidence >= SPEAK_THRESHOLD;
-    // Distinguish the two non-speak reasons (the old single 'below-threshold' was
-    // misleading when confidence was high but the gate chose not to respond):
-    //   gate-skip       → gate judged it noise (respond=false)
-    //   below-threshold → gate wanted in, but confidence < the (permissive) bar
-    reason_enum = speak ? null : (d.respond ? 'below-threshold' : 'gate-skip');
-    // The gate saw something worth remembering. Leave a marker so the memory
-    // sweep reaches this group FIRST when it goes quiet. Deliberately a
-    // priority hint and not a gate: a missed flag must never mean a lost fact,
-    // so an unflagged group is still swept, just later.
-    if (d.durable) markDurable(chatId);
+    const d = res.ok ? res.decision : null;
+    if (d) {
+      if (d.lang && !String(group.language || '').trim()) maybePinLanguage(chatId, d.lang);
+      target = burst.find(m => String(m.message_id) === String(d.target_message_id)) || lastTargetable;
+      beat = d.beat; confidence = d.confidence;
+      speak = d.respond && d.confidence >= SPEAK_THRESHOLD;
+      // Distinguish the two non-speak reasons (the old single 'below-threshold' was
+      // misleading when confidence was high but the gate chose not to respond):
+      //   gate-skip       → gate judged it noise (respond=false)
+      //   below-threshold → gate wanted in, but confidence < the (permissive) bar
+      reason_enum = speak ? null : (d.respond ? 'below-threshold' : 'gate-skip');
+      // The gate saw something worth remembering. Leave a marker so the memory
+      // sweep reaches this group FIRST when it goes quiet. Deliberately a
+      // priority hint and not a gate: a missed flag must never mean a lost fact,
+      // so an unflagged group is still swept, just later.
+      if (d.durable) markDurable(chatId);
+    }
   }
 
   // Not sending → log the decision and stop. Either observe-only is set
@@ -1627,7 +1668,7 @@ async function flush(chatId) {
   const lastTsSnapshot = hist.length ? hist[hist.length - 1].ts : (session && session.lastTs) || null;
   let reply;
   try {
-    try { reply = await groupCompose(group, ctxForBrain, target, session); }
+    try { reply = await groupCompose(group, ctxForBrain, target, session, recapFor(hist, session)); }
     catch (err) { reply = { ok: false, error: err.message }; }
 
     // Session rotation (P1d): a failed --resume (stale/corrupt session id) exits
