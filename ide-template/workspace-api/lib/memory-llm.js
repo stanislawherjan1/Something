@@ -28,17 +28,31 @@ let override = null;
 /** Replace the transport (tests). `fn({system, user, schema, model}) → object`, or null to restore. */
 export function configureRunner(fn) { override = fn; }
 
+// How much the model may think before it answers. Unbounded, the small model
+// thought for twelve thousand tokens over a two-line conversation: a notes call
+// took 100 s (four seconds of it the answer), timed out on longer windows, and
+// a note saved mid-turn ran past the tool's limit. Off entirely is worse: the
+// router then paraphrases the lines it must copy word for word, and nothing
+// crosses. A cap keeps the care and drops the minutes.
+export const THINKING_TOKENS = Number(process.env.MEMORY_V4_THINKING_TOKENS) || 2000;
+
+/** The environment one memory call runs with (exported for the test). */
+export function cliEnv({ tools = [], base = process.env } = {}) {
+  // No auto-memory either: with cwd in /tmp the CLI kept a MEMORY.md there and
+  // fed it to every call — someone else's notes in front of the sorter.
+  const env = { ...base, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', MAX_THINKING_TOKENS: String(THINKING_TOKENS) };
+  // Not for a call that may search: with it set, WebSearch's request goes out
+  // with thinking disabled, the API refuses it (400) and the model reports
+  // "nothing found" — a silent empty look-up.
+  if (!tools.length) env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  return env;
+}
+
 // `tools`: the built-in tools the call may use — none by default. Onboarding's
 // look-up allows WebSearch alone (it runs on Anthropic's side; nothing else opens).
 function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS, tools = [] }) {
   return new Promise((resolve, reject) => {
-    // No auto-memory either: with cwd in /tmp the CLI kept a MEMORY.md there and
-    // fed it to every call — someone else's notes in front of the sorter.
-    const env = { ...process.env, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
-    // Not for a call that may search: with it set, WebSearch's request goes out
-    // with thinking disabled, the API refuses it (400) and the model reports
-    // "nothing found" — a silent empty look-up.
-    if (!tools.length) env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+    const env = cliEnv({ tools });
     if (!env.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
       try { env.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); } catch { /* fall through */ }
     }
