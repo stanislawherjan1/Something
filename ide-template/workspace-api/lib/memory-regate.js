@@ -13,13 +13,14 @@
 import * as ledger from './memory-ledger.js';
 import * as facts from './memory-facts.js';
 import { route as routeWords } from './memory-router.js';
+import { orgContext } from './memory-org.js';
 import { modeOf, decide, fileTeamFact, factKey } from './memory-sharing.js';
 import { addAsk, listRules, decisions as askDecisions } from './memory-asks.js';
 import { getTeamMode, list as rosterList } from './team.js';
 
 /** The router's reading of what the person said, or null when the call failed. */
 export async function routeSaid({ name, said, ts = new Date().toISOString() }) {
-  try { return await routeWords({ name, channel: 'web', ts, text: `${name}: ${said}` }); } catch { return null; }
+  try { return await routeWords({ name, channel: 'web', ts, text: `${name}: ${said}`, org: orgContext({ person: name }) }); } catch { return null; }
 }
 
 /**

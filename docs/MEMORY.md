@@ -20,6 +20,12 @@ remark under it. Say something is no longer true ("I didn't get the job") and
 the old fact is struck through, with what replaced it next to it. You correct
 it the way you would a colleague: just tell it.
 
+What reaches the team from your own chats is the outcome of work for the
+company that a teammate depends on (a supplier chosen, an order booked), judged
+against what the company card says about who does what. Your own life never
+does, nor anything you ask it to keep to itself; when in doubt, it stays
+yours. With sharing set to ask, it asks you first.
+
 Ask it to remember something and it writes it down there and then. How you
 want it to work ("no emoji", "always suggest a time"), a fact about you, a team
 rule or what the company does goes straight onto its card; anything else
@@ -203,10 +209,22 @@ conversation that has been quiet for 15 minutes is filed **whole** in its
 owner's scope — web chat → that user, a Telegram DM → the roster person whose
 chat it is (a stranger's chat → nobody), a registered group → that group's
 scope. Code decides the owner, never a model. Two small-model calls then only
-*add*:
+*add* (every memory model call thinks within a cap, `MEMORY_V4_THINKING_TOKENS`,
+2000 by default: unbounded, a notes call thought for twelve thousand tokens over
+two lines and took 100 s; off, the router paraphrased the lines it must copy):
 
 - **the router** (1:1 conversations) marks the lines that are team-relevant
-  (`shared`) or borderline (`ask`). Every marked line must be word-for-word in
+  (`shared`) or borderline (`ask`). It reads the conversation with the
+  organisation in mind (`lib/memory-org.js`): who is on the team and the
+  company card's own bullets, as data — so the outcome of work a member does
+  for the company (a supplier chosen, a quote received, a client order booked)
+  can reach the teammate whose role the card says depends on it. It never
+  moves anything out of private (the member's own life, pay, health, HR,
+  judgements, anything asked to be kept), and when it cannot tell, the line
+  stays private: a private fact shared costs far more than a team fact missed.
+  The notes pass labels such work "a company or project", not "the person
+  themselves", so the sharing gate does not turn every supplier call into a
+  question; an owner in `ask` mode is still asked. Every marked line must be word-for-word in
   the conversation, so an invented or injected line cannot count. A router
   failure is not a decision: the window is not filed and the next tick retries
   it (three times, like a failed notes pass); only then is it filed as private

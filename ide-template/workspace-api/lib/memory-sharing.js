@@ -74,7 +74,13 @@ export function factKey(fact) {
  * Returns { outcome: 'team' | 'ask' | 'private', reason }.
  */
 export function decide({ mode = 'ask', fact, routed, rules = [], decided = new Map() } = {}) {
-  const signal = quotedIn(fact?.evidence, routed?.shared) ? 'team' : quotedIn(fact?.evidence, routed?.ask) ? 'ask' : 'private';
+  // A line the router marked, or — with the company in mind — a note the notes
+  // pass said a teammate depends on (company or team work only; see
+  // NOTES_TEAM_NEEDS). The router's marks alone shared nothing on real data.
+  const signal = quotedIn(fact?.evidence, routed?.shared) ? 'team'
+    : quotedIn(fact?.evidence, routed?.ask) ? 'ask'
+    : fact?.teamNeeds === true && !concernsAPerson(fact) ? 'team'
+    : 'private';
   if (signal === 'private') return { outcome: 'private', reason: 'not about the team' };
   const key = factKey(fact);
   const earlier = key ? decided.get(key) : null;

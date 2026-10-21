@@ -80,6 +80,7 @@ suites one at a time, when a change touches what they cover.
 | `imports` | A notetaker connection feeds the scope of whoever connected it; nothing reaches the shared scope | few | 3–7 min |
 | `access` | Chat turns as admin and member, a member kept out of the admin's private files, the browser, the Granola bridge, a reminder for a teammate | ~8 | 6–10 min |
 | `sharing` | The Sharing screen as admin and member; a member's work fact reaches the team in their name, a personal one never; make private and restore | 1 + filing | 2–4 min |
+| `sharing-org` | With the company in mind: an invented studio's card and twelve conversations through the deployed router, notes pass and sharing gate, in a throwaway directory. Nothing private may reach the team; work outcomes should reach it or a question to their owner | ~36 small-model calls | 3–6 min |
 | `shared-spaces` | Turn slots and kernel-level isolation of private trees, read-only locks, integrations with a reach (personal vs workspace) | 5 | 3–4 min |
 | `accounts` | What one account tells the bot or keeps in its files, and what the other can and cannot get at | 7 | 4–8 min |
 | `skills` | Personal and team skills: who can make, use and change which | 9 | 5–10 min |

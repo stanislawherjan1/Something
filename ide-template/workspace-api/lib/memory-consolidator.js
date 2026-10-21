@@ -24,6 +24,7 @@
  */
 import { tasksCreatedDuring, linkFactToTask } from './memory-task-links.js';
 import { filesWrittenDuring, linkFactToFiles } from './memory-file-links.js';
+import { orgContext } from './memory-org.js';
 import * as facts from './memory-facts.js';
 import { readdirSync, readFileSync, statSync, mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -301,7 +302,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
   let routed = null;
   if (!group) {
     try {
-      routed = await router.route({ name: src.name, channel: SOURCE_OF[src.kind], ts: fresh[0].ts, text });
+      routed = await router.route({ name: src.name, channel: SOURCE_OF[src.kind], ts: fresh[0].ts, text, org: orgContext({ person: src.name }) });
     } catch (e) {
       const tries = prev.notesFailures || 0;
       if (tries < NOTES_RETRIES) {
@@ -345,7 +346,7 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
       const wroteHere = c.messages.some(m => (m.tools || []).some(t => WRITES_FILES.test(t)));
       const named = (f) => c.text.toLowerCase().includes(String(f.path).split('/').pop().toLowerCase());
       const written = filesWrittenDuring(span).filter(f => wroteHere || named(f));
-      const n = await router.notes({ tasks: boardTasks, files: written, name: src.name, group, ts: c.ts, text: c.text, attest: spoken, known: knownNames([src.scope, 'shared']), kinds: knownKinds([src.scope, 'shared']), exclude: [await botName(), ...dismissedNames(src.scope)], max: router.notesCap(c.messages.filter(m => m.human).length) });
+      const n = await router.notes({ tasks: boardTasks, files: written, name: src.name, group, ...(group ? {} : { org: orgContext({ person: src.name }) }), ts: c.ts, text: c.text, attest: spoken, known: knownNames([src.scope, 'shared']), kinds: knownKinds([src.scope, 'shared']), exclude: [await botName(), ...dismissedNames(src.scope)], max: router.notesCap(c.messages.filter(m => m.human).length) });
       // Where each note stands: on what a person said, or on what the
       // assistant found — its quote is in one or the other. One standing for
       // the whole chunk once marked a registry check "said".
