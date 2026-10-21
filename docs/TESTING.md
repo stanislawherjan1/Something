@@ -85,6 +85,7 @@ suites one at a time, when a change touches what they cover.
 | `skills` | Personal and team skills: who can make, use and change which | 9 | 5–10 min |
 | `lifestyle` | Health, money and a partner never reach the team in any sharing mode; a household chore crosses only in automatic mode | 3 | 2–4 min |
 | `group` | The Telegram group never reaches anyone's private memory, files, skills or connections; what it decides reaches only its members | ~10 | 10–30 min |
+| `group-window` | A decision in the group is filed once it goes quiet; a later "ok, sent" is its own window and updates the fact with history and today's date, counted in Changes — never reworded in place; a note saved mid-turn never says memory is down | ~12 | 5–10 min |
 | `tasks-memory` | A task and the memory fact behind it point at each other; the bot answers from the board; done on the board closes the fact; files written in a conversation are linked | ~12 | 10–15 min |
 | `conversation` | The company card reaches the turn; a preference asked to be kept is on the person's card when the turn ends; a new message stops the running reply cleanly (no "kill EPERM"); a reply says it is settled before its process exits | 4–5 | 3–5 min |
 | `memory-sight` | What the bot sees of memory: the person's own cards are answered from and followed, another person's are not, a note from an earlier conversation is found, a team rule an admin asks for reaches a member, routines and integrations are listed right (built-in abilities are not integrations) | ~10 | 5–8 min |

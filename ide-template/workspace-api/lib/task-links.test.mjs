@@ -187,6 +187,22 @@ s = await C.consolidateIdle({ now: NOW + 20 * 60_000 });
 const hq = F.all('user:ann').find(f => f.title === 'Orbis HQ in Gdansk');
 ok('(i) the only file a conversation wrote is linked without the model naming it', s.filesLinked === 1 && JSON.stringify(hq?.files) === JSON.stringify(['notes/orbis-brief.md']), { linked: s.filesLinked, files: hq?.files });
 
+// ─── (i2) a file another job wrote in that minute is not the conversation's ─
+// Seen on the canary: a group decision got a slide an autopilot run wrote at
+// the same time, as "the one file the conversation wrote".
+chat('ann', 'nofile', [
+  { ts: at(4), role: 'user', text: 'Remember that Vexa moved its office to Poznan.' },
+  { ts: at(3), role: 'assistant', text: 'Noted: Vexa moved to Poznan.' },
+]);
+utimesSync(brief, new Date(now - 3 * 3600_000), new Date(now - 3 * 3600_000));
+const slide = wf('Autopilot/competitor-slide.md'); utimesSync(slide, new Date(NOW - 3 * 60_000 - 20_000), new Date(NOW - 3 * 60_000 - 20_000));
+notesAnswer = () => ({ notes: [{ title: 'Vexa office in Poznan', text: 'Vexa moved its office to Poznan.', importance: 2, kind: 'fact', concerns: 'a company or project', evidence: 'Vexa moved its office to Poznan' }], rules: [], entities: [{ name: 'Vexa', kind: 'company' }] });
+calls.length = 0;
+s = await C.consolidateIdle({ now: NOW + 20 * 60_000 });
+const vexa = F.all('user:ann').find(f => f.title === 'Vexa office in Poznan');
+ok('(i2) a file the conversation neither named nor wrote is not linked', vexa && !vexa.files?.length && !s.filesLinked, { files: vexa?.files, linked: s.filesLinked });
+ok('(i2) ...nor offered to the model', !/competitor-slide/.test(calls.find(c => c.kind === 'notes')?.user || ''));
+
 // ─── (j) the bot names nothing: the excerpt its turn was handed carries the task's words ─
 const { setTurnRecall } = await import('./turn-identity.js');
 const recK = await L.append({ scope: 'user:ann', source: 'web', ts: '2026-10-13T09:00:00Z', text: 'Ann: Kowalski asked me for the invoice summary by Monday.' });

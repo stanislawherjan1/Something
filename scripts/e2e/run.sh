@@ -10,7 +10,7 @@
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SMOKE="isolation imports"
-FULL="isolation imports access sharing shared-spaces accounts skills lifestyle group tasks-memory conversation memory-sight planner"
+FULL="isolation imports access sharing shared-spaces accounts skills lifestyle group group-window tasks-memory conversation memory-sight planner"
 usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 [ $# -gt 0 ] || usage
 case "$1" in

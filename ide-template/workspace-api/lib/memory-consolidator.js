@@ -191,6 +191,9 @@ export function listSources() {
   return out;
 }
 
+// Tools that write a file in the workspace (not memory's own write tool).
+const WRITES_FILES = /^(Write|Edit|MultiEdit|NotebookEdit)$|^mcp__.*(write_file|create_file|save_file|render_pdf|create_pdf)/;
+
 // ─── chunking ────────────────────────────────────────────────────────────────
 
 // The assistant's own turns are kept short in a record: asked "what do you
@@ -335,7 +338,13 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
       // Tasks put on the board while this was being said: the model may tie a note to the one it was made for.
       const span = { from: c.ts, to: c.messages[c.messages.length - 1]?.ts || c.ts, owner: src.owner, group };
       const boardTasks = tasksCreatedDuring(span);
-      const written = filesWrittenDuring(span);
+      // Only a file this conversation is about: one it names, or any written
+      // while the assistant here used a tool that writes files. A file is found
+      // by its time alone, and in a group a slide another job wrote in that
+      // minute was linked to the group's decision as "the one file it wrote".
+      const wroteHere = c.messages.some(m => (m.tools || []).some(t => WRITES_FILES.test(t)));
+      const named = (f) => c.text.toLowerCase().includes(String(f.path).split('/').pop().toLowerCase());
+      const written = filesWrittenDuring(span).filter(f => wroteHere || named(f));
       const n = await router.notes({ tasks: boardTasks, files: written, name: src.name, group, ts: c.ts, text: c.text, attest: spoken, known: knownNames([src.scope, 'shared']), kinds: knownKinds([src.scope, 'shared']), exclude: [await botName(), ...dismissedNames(src.scope)], max: router.notesCap(c.messages.filter(m => m.human).length) });
       // Where each note stands: on what a person said, or on what the
       // assistant found — its quote is in one or the other. One standing for
