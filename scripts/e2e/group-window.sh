@@ -89,7 +89,9 @@ check "one fact about the decision" "1" "$(echo "$A1" | jsonq 'a["current"]')"
 
 echo "== window 2, later: ok, sent"
 G="$(gsay "@bot Update for the record on $MARK: the quote requests went out today to the two local printers, with purchasing on cc; now waiting for their answers. One short line is enough.")"
-check "the bot answered again" "yes" "$([ -n "$G" ] && echo yes || echo no)"
+# An update "for the record" may be answered or left in silence — the brain's call.
+AUD="$(R "docker exec $C sh -c 'grep -h ORW-$TAG $P/.group-watcher/$GROUP.jsonl | tail -1'")"
+check "the brain took the update (an answer or a deliberate silence)" "yes" "$(echo "$AUD" | jsonq '"yes" if a.get("reason_enum")=="brain-pass" or a.get("decision")=="respond" else "no"' 2>/dev/null || echo no)"
 ok "the update is filed as a fact once the group goes quiet" "$(file_group "quote request" && echo 1 || echo 0)"
 A2="$(facts_about)"
 echo "       facts: $A2"
