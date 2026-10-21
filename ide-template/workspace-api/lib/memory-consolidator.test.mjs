@@ -128,17 +128,35 @@ const quarryRecs = L.read({ scopes: ['user:stan'] }).filter(r => /Quarry launch/
 ok('(b) only the new message is filed', s.records === 1 && quarryRecs.length === 1 && /Friday at noon/.test(scopeText('user:stan')), s);
 ok('(b) the model saw only the new message', calls.every(c => !/Quarry launch/.test(c.user)) && calls.some(c => /Friday at noon/.test(c.user)));
 
-// ─── (c) router failure: nothing shared, nothing lost ────────────────────────
+// ─── (c) router failure: the window waits, then is filed private, loudly ─────
+// A failed router call is not a sharing decision: nothing is filed and the
+// window is retried next tick (a night with the model down once filed every
+// window with no decision, and nothing ever came back to them).
 routerFails = true;
 webChat('kasia', 'k1', [
   { ts: at(50), role: 'user', text: 'The Northbeam contract renews in March.' },
   { ts: at(49), role: 'assistant', text: 'Got it.' },
 ]);
 s = await tick();
+ok('(c) with the router down, nothing is filed yet', !/Northbeam/.test(scopeText('user:kasia')) && s.records === 0, s);
+ok('(c) the failure is reported as a retry, not swallowed', s.failures.length === 1 && /router.*retried next tick \(1\/3\)/.test(s.failures[0].errors.join()), s.failures);
+ok('(c) ...and the notes pass was not even called', !calls.some(c => c.kind === 'notes' && /Northbeam/.test(c.user)));
 routerFails = false;
-ok('(c) the conversation is still filed in its owner\'s scope', /Northbeam contract/.test(scopeText('user:kasia')));
-ok('(c) nothing is shared', !/Northbeam/.test(scopeText('shared')));
-ok('(c) the failure is reported, not swallowed', s.failures.length === 1 && /router/.test(s.failures[0].errors.join()), s.failures);
+answers.route = () => ({ shared: 'Kasia: The Northbeam contract renews in March.', private: '', ask: '', ask_question: '' });
+answers.notes = () => ({ notes: [{ title: 'Northbeam renewal', text: 'The Northbeam contract renews in March.', importance: 2, kind: 'fact', evidence: 'The Northbeam contract renews in March', subject: 'Northbeam', concerns: 'a company or project' }], rules: [] });
+s = await tick();
+ok('(c) the router back, the window is filed with its sharing decision', /Northbeam contract/.test(scopeText('user:kasia')) && s.failures.length === 0, s);
+ok('(c) ...kasia shares by asking: the fact waits for her, nothing in shared', A.listAsks('kasia').some(a => /Northbeam/.test(a.text)) && !/Northbeam/.test(scopeText('shared')), A.listAsks('kasia'));
+answers.route = () => ({ shared: '', private: '', ask: '', ask_question: '' });
+answers.notes = () => ({ notes: [], rules: [] });
+// Three failed ticks: the fourth files the window private and says so.
+routerFails = true;
+webChat('kasia', 'k1b', [{ ts: at(45), role: 'user', text: 'Southgate renews in April.' }]);
+for (let i = 0; i < 3; i++) s = await tick();
+ok('(c) after three failed ticks nothing is filed', !/Southgate/.test(scopeText('user:kasia')) && /\(3\/3\)/.test(s.failures[0]?.errors.join()), s.failures);
+s = await tick();
+routerFails = false;
+ok('(c) the fourth files it private, loudly', /Southgate/.test(scopeText('user:kasia')) && !/Southgate/.test(scopeText('shared')) && /router.*filed private, nothing offered to the team, after 3 failed ticks/.test(s.failures[0]?.errors.join()), s.failures);
 calls.length = 0;
 s = await tick();
 ok('(c) the window is not retried in a loop', s.sources === 0 && calls.length === 0);

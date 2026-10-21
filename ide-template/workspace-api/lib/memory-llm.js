@@ -67,12 +67,29 @@ function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS, tools = [
   });
 }
 
-/** One structured call; retried once. Throws when both attempts fail. */
+/**
+ * One structured call; a failed call is retried once — but not a timeout:
+ * a model that took the whole budget once takes it again, and the retry
+ * doubled every wait (a note the assistant saved mid-turn once ran for five
+ * minutes and the tool gave up). Throws when the attempts fail. How long a
+ * call took is logged when it failed or was slow, so a slow night shows why.
+ */
 export async function runStructured({ system, user, schema, model = MEMORY_MODEL, timeoutMs, tools = [] }) {
   const call = override || viaCli;
   let last;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { return await call({ system, user, schema, model, timeoutMs, tools }); } catch (e) { last = e; }
+    const t0 = Date.now();
+    try {
+      const out = await call({ system, user, schema, model, timeoutMs, tools });
+      const took = Date.now() - t0;
+      if (took > SLOW_MS) process.stderr.write(`[memory-llm] slow: ${model} answered in ${Math.round(took / 1000)} s\n`);
+      return out;
+    } catch (e) {
+      last = e;
+      process.stderr.write(`[memory-llm] ${model} failed after ${Math.round((Date.now() - t0) / 1000)} s: ${e.message}${e.message === 'timeout' || attempt ? '' : ' — retrying once'}\n`);
+      if (e.message === 'timeout') break;
+    }
   }
   throw last;
 }
+const SLOW_MS = 30_000;

@@ -486,7 +486,9 @@ export function FactRow({ f, open, onToggle, onChanged, selecting = false, picke
               line here, in full when opened); a fact written before titles shows
               its sentence alone, as before. */}
           {f.title ? (
-            <span className={cn('truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
+            // `block`: an inline span never truncates — on a wide screen the
+            // title ran under the pills beside it.
+            <span className={cn('block truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           ) : (
             <span className={cn('line-clamp-2 text-[12.5px] leading-snug text-foreground/85 sm:block sm:truncate', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{plain(f.text)}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           )}

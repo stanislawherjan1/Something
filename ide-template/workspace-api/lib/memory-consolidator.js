@@ -290,9 +290,25 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
   const text = fresh.map(line).join('\n');
   const group = src.kind === 'group';
 
-  // The router (who may read what) sees the whole window; it may fail on its own.
-  const routed = group ? null : await router.route({ name: src.name, channel: SOURCE_OF[src.kind], ts: fresh[0].ts, text })
-    .catch(e => { result.errors.push(`router: ${e.message}`); return null; });
+  // The router (who may read what) sees the whole window. A failed call is
+  // not a decision: nothing is filed and the next tick retries the window —
+  // three times, then it is filed as private with nothing offered to the
+  // team, loudly. (A night when the model was down once filed every window
+  // without a sharing decision, and nothing ever came back to them.)
+  let routed = null;
+  if (!group) {
+    try {
+      routed = await router.route({ name: src.name, channel: SOURCE_OF[src.kind], ts: fresh[0].ts, text });
+    } catch (e) {
+      const tries = prev.notesFailures || 0;
+      if (tries < NOTES_RETRIES) {
+        result.errors.push(`router: ${e.message} — nothing filed, the window is retried next tick (${tries + 1}/${NOTES_RETRIES})`);
+        state.sources[src.id] = { ...prev, notesFailures: tries + 1 };
+        return result;
+      }
+      result.errors.push(`router: ${e.message} — filed private, nothing offered to the team, after ${tries} failed ticks`);
+    }
+  }
 
   // Near-verbatim repeats inside a week (the same message sent twice) are not re-filed.
   const since = new Date(now - DEDUPE_DAYS * 86400_000).toISOString();
@@ -379,7 +395,9 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
       if (r.ok) {
         result.records++; result.rules += tags.rules?.length || 0;
         if (n?.notes?.length) {
-          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said', conv: src.conv });
+          // `convSince`: this window is one conversation; an earlier window of
+          // the same chat is another (lib/memory-facts.js, apply).
+          const got = await facts.remember(src.scope, n.notes, { record: r.id, ts: c.ts, entities: n.entities || [], by: SOURCE_OF[src.kind], standing: 'said', conv: src.conv, convSince: fresh[0].ts });
           result.notes += got.added; result.updated = (result.updated || 0) + got.updated.length; result.superseded = (result.superseded || 0) + got.superseded.length;
           for (const t of got.titles) if (result.titles.length < 5) result.titles.push(t);
           // A note the model tied to a task made during this conversation: the

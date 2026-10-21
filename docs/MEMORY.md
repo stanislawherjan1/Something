@@ -207,8 +207,12 @@ scope. Code decides the owner, never a model. Two small-model calls then only
 
 - **the router** (1:1 conversations) marks the lines that are team-relevant
   (`shared`) or borderline (`ask`). Every marked line must be word-for-word in
-  the conversation, so an invented or injected line cannot count; a router
-  failure shares nothing and loses nothing. The router is a signal, not the
+  the conversation, so an invented or injected line cannot count. A router
+  failure is not a decision: the window is not filed and the next tick retries
+  it (three times, like a failed notes pass); only then is it filed as private
+  with nothing offered to the team, and the run says so. (A night with the
+  model down once filed every window with no sharing decision, and nothing
+  ever came back to them.) The router is a signal, not the
   decision: `lib/memory-sharing.js` decides **per fact** once the notes pass
   has filed it. A fact whose evidence sits in a `shared` line may cross; one in
   an `ask` line always asks; the rest stay. The person's mode on the roster
@@ -369,7 +373,10 @@ fields came back — names and lengths only, never what was said.
   person's own memory then goes through the same sharing gate as a filed
   conversation — the router reads the person's words, each new fact goes to
   the team, to a question or stays by their mode, and the answer carries
-  `shared` / `asked` counts; takes the fact as
+  `shared` / `asked` counts. When the router does not answer, the note is
+  still saved, its record is tagged `ungated`, the answer says `ungated` and
+  the nightly run's `regate` step judges it once the model is back —
+  `lib/memory-regate.js`; it used to stay private with nobody told; takes the fact as
   it now stands **and the person's own words it comes from** — a name that is
   in neither those words nor memory is refused by name, so a correction cannot
   arrive with an invented first name — the person's own name in any form and a
@@ -508,6 +515,17 @@ Per candidate, against the facts **current in the same scope**:
   old is marked `replacedBy` it with `why: superseded`, struck through under
   Past & superseded with what says so now) | `unrelated` (added). Any failure →
   added: a fact is never lost to this.
+- **one conversation filed in parts is one conversation.** A long window filed
+  in chunks, a meeting's notes and its transcript: a fuller wording of a thing
+  the earlier part already made a fact of is written into that fact in place —
+  no earlier version, no second source. The parts are told by the record's
+  conversation id *and the window*: a chat that never ends (a group, a Telegram
+  DM) is filed window by window, and a later window is another conversation,
+  so what it adds is a `merge`, `corrects` or `supersedes` like any other — with
+  the earlier wording kept as a version, the earlier record as a source, and
+  the fact dated by the day memory learned it (the Facts list shows it under
+  today, Changes counts it). Before this, a group's "ok, sent" days after the
+  decision it followed was folded into the decision's fact silently.
 
 Never across scopes: a private fact never meets a shared one. What crosses
 scopes is the **view**: "Right now" shows the same thing said in a group and in

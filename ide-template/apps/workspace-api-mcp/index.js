@@ -211,11 +211,16 @@ const V4_TOOLS = [
   },
 ];
 
+// A note is checked against memory by a model before it is written (up to a
+// few minutes when the model is slow); past this the tool answers instead of
+// hanging until the socket gives up with "fetch failed".
+const V4_TIMEOUT_MS = 240_000;
 async function v4Call(method, path, body) {
   const res = await fetch(`${API_BASE}/api/internal/memory/v4/${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', ...turnIdentityHeaders() },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(V4_TIMEOUT_MS),
   });
   return res.json();
 }
@@ -680,7 +685,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Say what actually happened — the bot reported "saved as a topic" when
         // all it had was "Saved".
         if (r.ok && r.already) r.text = `Already in memory${r.repeats?.length ? ` ("${r.repeats.join('", "')}")` : ''} — nothing new saved.`;
-        else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}${r.shared ? `; ${r.shared > 1 ? `${r.shared} facts` : 'the fact'} reached the team's shared memory by the person's sharing mode` : ''}${r.asked ? `; ${r.asked > 1 ? `${r.asked} facts wait` : 'one fact waits'} for the person's OK on the Memory screen's Sharing tab` : ''}.`;
+        else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}${r.shared ? `; ${r.shared > 1 ? `${r.shared} facts` : 'the fact'} reached the team's shared memory by the person's sharing mode` : ''}${r.asked ? `; ${r.asked > 1 ? `${r.asked} facts wait` : 'one fact waits'} for the person's OK on the Memory screen's Sharing tab` : ''}${r.ungated ? '; whether any of it should reach the team could not be judged right now — memory looks at it again tonight' : ''}.`;
       } else if (name === 'memory_import') {
         r = await v4Call('POST', 'import', {
           integration: String(args?.integration || ''), item: String(args?.item || ''), title: String(args?.title || ''), at: args?.at ? String(args.at) : null,
@@ -696,7 +701,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!r.ok) return { content: [{ type: 'text', text: r.error || 'Memory did not answer.' }], isError: true };
       return { content: [{ type: 'text', text: r.text }] };
     } catch (err) {
-      return { content: [{ type: 'text', text: `Memory is unreachable: ${err.message}` }], isError: true };
+      // Not "memory is down": the store is on disk and every conversation is
+      // filed on its own once it goes quiet. The assistant once told the person
+      // the memory server had crashed because one check ran long.
+      const slow = err?.name === 'TimeoutError' || /timeout|fetch failed/i.test(String(err?.message || ''));
+      return { content: [{ type: 'text', text: slow
+        ? `Memory did not answer in time (${err.message}). Nothing is lost: this conversation is filed by itself once it goes quiet. Do not tell the person memory is down; say the note is not confirmed yet, and try once more later if it matters now.`
+        : `Memory did not answer: ${err.message}. This conversation is still filed by itself once it goes quiet.` }], isError: true };
     }
   }
 

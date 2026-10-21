@@ -24,9 +24,9 @@ import * as ledger from '../lib/memory-ledger.js';
 import * as views from '../lib/memory-views.js';
 import { search, timeline , tokens, near } from '../lib/memory-search.js';
 import { renderResults } from '../lib/memory-recall.js';
-import { listAsks, resolveAsk, listRules, clearRule, mentionedAt, addAsk, decisions as askDecisions } from '../lib/memory-asks.js';
+import { listAsks, resolveAsk, listRules, clearRule, mentionedAt } from '../lib/memory-asks.js';
 import { setSharing } from '../lib/team.js';
-import { modeOf as sharingModeOf, concernsAPerson, decide as sharingDecide, fileTeamFact, factKey as sharingFactKey } from '../lib/memory-sharing.js';
+import { modeOf as sharingModeOf, concernsAPerson } from '../lib/memory-sharing.js';
 import { readRoutines, writeRoutines } from '../lib/routines-store.js';
 import { routinesOwner } from '../lib/memory-v4-writes.js';
 import * as routinesCatalog from '../lib/routines-catalog.js';
@@ -40,7 +40,8 @@ import { goingOnCard, settingsCard, routinesCard } from '../lib/claude.js';
 import * as facts from '../lib/memory-facts.js';
 import * as sources from '../lib/memory-sources.js';
 import * as integrationsCatalog from '../lib/integrations/catalog.js';
-import { unsupportedDetails, splitNote, route as routeWords } from '../lib/memory-router.js';
+import { unsupportedDetails, splitNote } from '../lib/memory-router.js';
+import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
 
 function loopbackOnly(req, res, next) {
@@ -954,11 +955,23 @@ export default function memoryV4Router() {
       if (known.length) await facts.apply(scope, plan, { standing: 'note', by: 'note' });
       return res.json({ ok: true, already: true, repeats: known.map(k => k.title || k.text), leftOut: leftOut.length });
     }
+    // A note in a person's own memory goes through the same gate as a filed
+    // conversation (lib/memory-sharing.js): the router reads the person's
+    // words, then each new fact goes to the team, to a question, or stays —
+    // by their mode, their rules and earlier answers. A fact the bot noted
+    // during the turn once never crossed, because only the night's pass asked.
+    // The router is asked before the record is written: when it does not
+    // answer, the record is tagged `ungated` and the night's pass judges it
+    // (lib/memory-regate.js) — it used to stay private with nobody told.
+    const fresh = plan.filter(d => d.fact && ['add', 'replace', 'update'].includes(d.op)).map(d => d.fact);
+    const gated = fresh.length > 0 && getTeamMode() && !who.group && who.actor && scope === `user:${who.actor}`;
+    const routed = gated ? await routeSaid({ name: speaker, said }) : null;
+    const tags = { ...(split?.entities?.length ? { entities: split.entities } : {}), ...(gated && !routed ? { ungated: true } : {}) };
     // The person's words are the record (source "note"); what memory takes
     // from them is written to the facts store against that record.
     const r = await ledger.append({
       scope, source: 'note', text: said === text ? text : `${text}\n\n(said: ${said})`,
-      ...(split?.entities?.length ? { tags: { entities: split.entities } } : {}),
+      ...(Object.keys(tags).length ? { tags } : {}),
       speaker: who.actor ? nameOf(who.actor) : null,
       origin: scope === 'shared' ? who.write : null,
     });
@@ -966,32 +979,8 @@ export default function memoryV4Router() {
     const got = await facts.apply(scope, plan, { record: r.id, standing: 'note', by: 'note', single: cands.length === 1 });
     ledger.logEvent({ op: 'note', scope, ids: [r.id], by: who.actor || null, ...(got.titles.length ? { titles: got.titles } : {}), ...(got.updated.length ? { updated: got.updated } : {}), ...(got.superseded.length ? { superseded: got.superseded } : {}) });
     const titles = plan.filter(d => d.fact && (d.op === 'add' || d.op === 'replace')).map(d => d.fact.title || d.fact.text);
-    // A note in a person's own memory goes through the same gate as a filed
-    // conversation (lib/memory-sharing.js): the router reads the person's
-    // words, then each new fact goes to the team, to a question, or stays —
-    // by their mode, their rules and earlier answers. A fact the bot noted
-    // during the turn once never crossed, because only the night's pass asked.
-    let shared = 0, asked = 0;
-    const fresh = plan.filter(d => d.fact && ['add', 'replace', 'update'].includes(d.op)).map(d => d.fact);
-    if (fresh.length && getTeamMode() && !who.group && who.actor && scope === `user:${who.actor}`) {
-      let routed = null;
-      try { routed = await routeWords({ name: speaker, channel: 'web', ts: new Date().toISOString(), text: `${speaker}: ${said}` }); } catch { routed = null; }
-      if (routed) {
-        const gate = { mode: sharingModeOf(who.actor), rules: listRules(who.actor), decided: askDecisions(who.actor) };
-        const ts = new Date().toISOString();
-        for (const f of fresh) {
-          const d = sharingDecide({ mode: gate.mode, fact: f, routed, rules: gate.rules, decided: gate.decided });
-          if (d.outcome === 'team') {
-            const out = await fileTeamFact(who.actor, f, { ts, conv: null, source: 'note', name: speaker, by: 'note' });
-            if (out.recordId) shared++;
-          } else if (d.outcome === 'ask') {
-            addAsk(who.actor, { text: f.text, question: routed.askQuestion || '', conv: null, ts, source: 'note', fact: f, reason: d.reason, key: sharingFactKey(f) });
-            asked++;
-          }
-        }
-      }
-    }
-    return res.json({ ok: true, id: got.ids[0] || r.id, scope: scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private', replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length, ...(shared ? { shared } : {}), ...(asked ? { asked } : {}) });
+    const { shared, asked } = gated ? await gateFacts(who.actor, fresh, { routed, said, name: speaker }) : { shared: 0, asked: 0 };
+    return res.json({ ok: true, id: got.ids[0] || r.id, scope: scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private', replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length, ...(shared ? { shared } : {}), ...(asked ? { asked } : {}), ...(gated && !routed ? { ungated: true } : {}) });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

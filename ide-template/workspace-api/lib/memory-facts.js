@@ -351,7 +351,7 @@ function byName(entities, cur) {
 }
 
 /** Write a plan. Returns `{ added, confirmed, replaced: [titles], superseded, updated, ids, titles }`. */
-export function apply(scope, decisions, { record = null, standing = 'said', by = null, ts = new Date().toISOString(), entities = [], conv = null, single = false } = {}) {
+export function apply(scope, decisions, { record = null, standing = 'said', by = null, ts = new Date().toISOString(), entities = [], conv = null, convSince = null, single = false } = {}) {
   return serial(() => {
     materialise(scope);
     const ev = [];
@@ -365,11 +365,18 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
     // is one fact with one source, and a fuller wording of it in a later part
     // is the fact written out, not a version to keep under it. Without this a
     // meeting showed "3 sources" and two "earlier versions" of the same minute.
-    let convOf = null;
+    // A conversation that never ends (a group chat, a Telegram DM) is filed in
+    // windows, each a conversation of its own: `convSince` is this window's
+    // start, and a fact from an earlier window is not the same piece — it is
+    // updated like any other fact, with history, a new source and today's
+    // date. Without it a group's every later note was folded into the first
+    // fact in place: nothing in Changes, nothing new on the Facts list.
+    let recOf = null;
     const samePiece = (t) => {
       if (!conv || !t?.record || pending(t)) return false;
-      if (!convOf) convOf = new Map(ledger.read({ scopes: [scope], includeHidden: true }).map(r => [r.id, r.conv]));
-      return convOf.get(t.record) === conv;
+      if (!recOf) recOf = new Map(ledger.read({ scopes: [scope], includeHidden: true }).map(r => [r.id, r]));
+      const r = recOf.get(t.record);
+      return !!r && r.conv === conv && (!convSince || String(r.ts || '') >= convSince);
     };
     let di = -1;   // the candidate's position: plan() answers one decision per candidate, in order
     for (let d of decisions) {
