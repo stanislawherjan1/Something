@@ -8,6 +8,7 @@
  * when a reminder becomes due.
  */
 
+import { roomTarget, roomNamedIn } from './room-target.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -305,10 +306,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           chat: {
             type: 'string',
             description:
-              'Deliver this reminder into a Telegram GROUP instead of to a person. Pass the group\'s chat id ' +
-              '(negative number) from the CHANNELS card. Use it when the reminder is for the whole group ' +
-              '("remind us in the team chat on Friday") or when you promised the group you would come back with ' +
-              'a result. The bot composes the message in the group when it fires, and may stay silent if there ' +
+              'Deliver this reminder into a ROOM instead of to a person: a Telegram group or a Slack channel. Pass the room\'s id ' +
+              'from the CHANNELS card (a Telegram group\'s negative number, a Slack channel\'s slack-C… id). Use it when the reminder is for the whole room ' +
+              '("remind us in the team chat on Friday", a routine that posts in a channel) or when you promised the room you would come back with ' +
+              'a result. The bot composes the message in the room when it fires, and may stay silent if there ' +
               'turns out to be nothing worth saying. Leave it out for anything addressed to a person.',
           },
           channel: {
@@ -578,7 +579,7 @@ async function prepareReminder(args) {
       // A group target rides alongside channel/recipient; the monitor routes on
       // it, and the group registry is what actually authorises the chat at fire
       // time (an id here is a request, not a permission).
-      ...(typeof args.chat === 'string' && /^-?\d{4,20}$/.test(args.chat.trim()) ? { chat: args.chat.trim() } : {}),
+      ...(roomTarget(args.chat) ? { chat: roomTarget(args.chat) } : {}),
       channel: (typeof args.channel === 'string' && ['telegram', 'slack', 'web', 'all'].includes(args.channel))
         ? args.channel
         : (process.env.REMINDER_DEFAULT_CHANNEL || 'all'),
@@ -603,7 +604,26 @@ async function prepareReminder(args) {
       ...(recipients ? { recipients } : {}),
     };
 
-    return { reminder, recipients, setter, recurrence };
+    // A reminder whose words name a registered room and carries no `chat` is
+    // aimed at that room — the planner once planned "post a joke to
+    // #all-hands" as a message to the person. Explicit `chat` always wins.
+    let room = null;
+    const rooms = await registeredRooms();
+    if (reminder.chat) room = rooms.find(r => r.chatId === reminder.chat) || null;
+    else {
+      const hit = roomNamedIn(`${reminder.title || ''} ${reminder.description || ''} ${reminder.routine || ''}`, rooms);
+      if (hit) { reminder.chat = hit.chatId; room = hit; }
+    }
+    return { reminder, recipients, setter, recurrence, room };
+}
+
+// The rooms the group registry holds — a Telegram group or a Slack channel
+// — by id and title, from the project's team config next to the reminders.
+async function registeredRooms() {
+  try {
+    const cfg = JSON.parse(await fs.readFile(path.join(path.dirname(REMINDERS_FILE), '.team-config.json'), 'utf8'));
+    return Object.entries(cfg?.groups || {}).map(([chatId, g]) => ({ chatId, title: String(g?.title || '') })).filter(r => r.title);
+  } catch { return []; }
 }
 
 async function handleTool(request) {
@@ -613,7 +633,7 @@ async function handleTool(request) {
   if (name === 'set_reminder') {
     const prep = await prepareReminder(args);
     if (prep.isError) return prep;
-    const { reminder, recipients, setter, recurrence } = prep;
+    const { reminder, recipients, setter, recurrence, room } = prep;
 
     await withRemindersLock(async () => {
       const list = await readReminders();   // fresh read inside the lock
@@ -633,6 +653,7 @@ async function handleTool(request) {
         text: `Reminder set.\nID: ${reminder.id}\nTitle: ${reminder.title}` +
               (reminder.description ? `\nDescription: ${reminder.description}` : '') +
               (forLabel ? `\nFor: ${forLabel}` : '') +
+              (room ? `\nRoom: ${room.title || room.chatId} (${room.chatId}) — composed there when it fires` : '') +
               `\nNext fire: ${dueStr}\nRepeat: ${recur.humanizeRecur(recurrence)}`,
       }],
     };

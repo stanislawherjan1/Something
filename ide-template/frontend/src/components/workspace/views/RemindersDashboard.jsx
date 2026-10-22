@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, PauseCircle } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, PauseCircle, Hash } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -444,6 +444,14 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
               <ChannelIcon channel={reminder.channel} />
             </span>
           </InfoTip>
+          {/* Aimed at a room: composed there when it fires, not sent to a person. */}
+          {reminder.room && (
+            <InfoTip label={`Composed in ${reminder.room.title || 'a room'} when it fires`}>
+              <span className="inline-flex max-w-[11rem] cursor-default items-center gap-1 truncate text-foreground/75">
+                <Hash className="size-3 shrink-0" strokeWidth={1.75} />{(reminder.room.title || reminder.room.id).replace(/^#/, '')}
+              </span>
+            </InfoTip>
+          )}
         </span>
 
         {onDelete && (

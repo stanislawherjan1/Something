@@ -109,7 +109,7 @@ Resolve names to slugs from the team roster in your context; ask only when genui
 ## Delivery — `channel`, `chat`, `urgency`, `origin`
 
 - **`channel`** — `telegram` / `web` / `all`. Defaults to the surface the request came in on. Override when the person says otherwise ("ping me on Telegram tomorrow" while on the web).
-- **`chat`** — a Telegram **group** chat id (negative number, from the `CHANNELS` card) to deliver into that group instead of to a person: "remind us in the team chat on Friday", or a result you promised the group. You compose the message in the group when it fires and may stay silent if there's nothing worth saying. Leave it out for anything addressed to a person.
+- **`chat`** — a **room's** id from the `CHANNELS` card — a Telegram group's chat id (negative number) or a Slack channel's `slack-C…` — to deliver into that room instead of to a person: "remind us in the team chat on Friday", a routine that posts in a channel, or a result you promised the room. You compose the message in the room when it fires and may stay silent if there's nothing worth saying. A reminder whose words name a registered room (`#all-hands`, a group's title) and carries no `chat` is aimed at that room by the tool and says so. Leave it out for anything addressed to a person.
 - **`urgency`** — `now` (default: delivered the moment it fires) or `ambient` (held and woven into the next natural opening). Set by the morning planner per item; omit for ordinary reminders. Never `ambient` for a check that has to run.
 - **`origin`** — `"planner"` ONLY on reminders the morning planner places, so its next run can replace its own set without touching the person's. Omit for anything a person asked for directly.
 

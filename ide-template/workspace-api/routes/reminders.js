@@ -20,7 +20,7 @@ import express, { Router } from 'express';
 import { readFileSync, writeFileSync, renameSync, openSync, closeSync, statSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { getTeamMode, getUser, list as teamList } from '../lib/team.js';
+import { getTeamMode, getUser, list as teamList, getGroup } from '../lib/team.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 
 const REMINDERS_FILE = join(process.env.PROJECT_DIR || '/home/coder/project', '.reminders.json');
@@ -127,9 +127,12 @@ export default function remindersRouter() {
       // a repeat can't double-fire and a failure stays inspectable in the file.
       // They are history, not reminders: listing them showed long-done items as
       // "2 days ago", as if they were still hanging.
+      // A reminder aimed at a room (`chat`) carries the room's title, so the
+      // list says where it goes, not only to whom.
       const reminders = readReminders()
         .filter(r => r.status !== 'sent' && r.status !== 'dead')
-        .filter(r => concernsMe(r, me, admin));
+        .filter(r => concernsMe(r, me, admin))
+        .map(r => (r.chat ? { ...r, room: { id: r.chat, title: getGroup(r.chat)?.title || null } } : r));
       // slug → { name, avatar } for the recipient avatars in the UI.
       const people = {};
       if (getTeamMode()) for (const m of teamList()) {

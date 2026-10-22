@@ -60,6 +60,11 @@ The person can also add it themselves: Routines → Marketplace → Add.
   Make it concrete like the catalog's: which source you read (tasks board, mailbox
   tools, calendar, web search), how often, and when it's worth telling them. Tag it
   with the integration's id when it uses one (`#shopify`), so it shows that logo.
+- **Say exactly where it goes.** A routine that writes somewhere names the place in
+  the routine itself, never "the channel" or "the group": a room by its exact name as
+  a tag — a Slack channel's `#name`, a Telegram group's title — or a person by name.
+  The planner aims each firing at that room (its id from the CHANNELS card). With
+  more than one room registered and none named, ask which before writing it.
 - **Change one** (theirs or a Marketplace one) — `memory_write` with
   `op: supersede`, `match:` its title, and the whole routine again in the same form.
 - **Stop one** — `memory_write` with `op: retire` and `match:` its title.

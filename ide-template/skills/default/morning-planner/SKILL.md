@@ -153,6 +153,11 @@ it and call again. Each item:
   follow. `routine`: the title of the routine it comes from (omit for your own additions).
 - `channel`: from MY_SETTINGS "Reaches them on" — never Telegram or Slack for someone it
   does not reach there. `recipient`: the person (`slug`); omit in a solo workspace.
+- `chat`: when the routine speaks in a ROOM — a Telegram group or a Slack channel — the
+  room's id from the CHANNELS card, matched by the name the routine gives (its `#channel`
+  tag, a group's title). Then `channel` is that room's surface and there is no `recipient`.
+  A routine that says only "the channel" with more than one registered: ask the person
+  which, once, and have the routine say it; never pick one.
 
 ## 6. Check before you stop
 

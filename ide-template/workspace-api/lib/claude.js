@@ -339,7 +339,10 @@ export function routinesCard(slug) {
   // of it, a single routine at the end was missed on an empty-looking morning
   // and the planner told the person they had none.
   return [`Their routines (${list.length}): ${list.map(r => r.title).join('; ')}. Each is planned on its cadence — they manage these on their Routines page.`,
-    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}`),
+    // The tags too: a routine that posts somewhere names the room as a tag
+    // ("#all-something"), and without it the planner had "post to the Slack
+    // channel" with no channel to put on the reminder.
+    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}${Array.isArray(r.tags) && r.tags.length ? ` (${r.tags.map(t => `#${t}`).join(' ')})` : ''}`),
     '',
     ROUTINE_RULES].join('\n');
 }

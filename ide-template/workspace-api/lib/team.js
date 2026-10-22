@@ -1110,7 +1110,7 @@ write_when: a group is registered/removed, or a new member is seen in a group. N
         const members = g.members && typeof g.members === 'object' ? Object.values(g.members) : [];
         const mlist = members.length ? members.join(', ') : '(no members seen yet)';
         const where = g.kind === 'slack' ? 'Slack channel' : 'Telegram group';
-        const how = g.kind === 'slack' ? 'use this with group_send_message to post here' : 'use this with the Telegram reply tool to post here';
+        const how = g.kind === 'slack' ? 'post here with group_send_message; a reminder or routine aimed here sets chat to this id' : 'post here with the Telegram reply tool; a reminder or routine aimed here sets chat to this id';
         const state = g.paused ? ' — PAUSED: someone not on the team is in it, so I stay silent there' : (g.requireMention ? ' — answers only when addressed' : '');
         return `## ${g.title || 'Untitled group'} (${where})\n- id: \`${g.chatId}\` (${how})${state}\n- members seen: ${mlist}\n`;
       }).join('\n');

@@ -12,6 +12,7 @@ merge to main and after a deploy.
 |---|---|
 | `cd ide-template/workspace-api && npm test` | The backend: memory engine, sharing, scope guard, team and turn slots, integrations store and broker, tasks, routes, migrations |
 | `node ide-template/apps/reminder-mcp/recur.test.mjs` | The reminder recurrence engine |
+| `node ide-template/apps/reminder-mcp/room-target.test.mjs` | A reminder's room target: a Telegram group or a Slack channel, and a room named in the reminder's words |
 | `cd ide-template/frontend && npm run build` | The workspace UI must build |
 
 `.github/workflows/ci.yml` runs all three, plus the docs gate
