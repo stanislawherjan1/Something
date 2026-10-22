@@ -77,7 +77,15 @@ export async function requestChannel(channel, { inviter = null } = {}) {
     tellAdmins('Slack: left a shared channel', `${titleOf(info, channel)} is shared with another organisation, so the assistant left it. Shared channels cannot be approved.`);
     return { did: 'left-shared' };
   }
-  const by = inviter ? (d.userBySlackId(inviter) || null) : null;
+  const by = inviter ? (d.userBySlackId(inviter) || await d.resolveMember(inviter) || null) : null;
+  // Added by one of this workspace's admins: that is the admin's yes. The
+  // request-and-approve round trip is for anyone else — a member or a
+  // stranger can add an app to any channel in Slack.
+  if (by && by.role === 'admin') {
+    const group = await approveChannel(chatId, { actor: by.email || by.slug, title: titleOf(info, channel) });
+    tellAdmins('Slack: joined a channel', `${by.displayName || by.slug} added the assistant to ${group.title || titleOf(info, channel)}; as an admin, that registered it — it joins in there from now on. Change its settings on the Slack page.`, { chatId });
+    return { did: 'approved-by-admin', group };
+  }
   const entry = {
     chatId, channel, title: titleOf(info, channel), inviter: inviter || null, inviterSlug: by?.slug || null,
     members: Number(info?.num_members) || null, private: !!info?.is_private, at: new Date(d.now()).toISOString(),

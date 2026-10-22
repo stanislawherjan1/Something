@@ -33,6 +33,7 @@ const channels = {
   C0GENERAL: { id: 'C0GENERAL', name: 'general', members: ['U0SELF', 'U0STAN001', 'U0ANN0001'] },
   C0SHARED1: { id: 'C0SHARED1', name: 'partner', is_ext_shared: true, members: ['U0SELF', 'U0STAN001', 'U0EXT0001'] },
   C0PRIVATE: { id: 'C0PRIVATE', name: 'ops', is_private: true, members: ['U0SELF', 'U0ANN0001'] },
+  C0BYADMIN: { id: 'C0BYADMIN', name: 'launch', members: ['U0SELF', 'U0STAN001'] },
 };
 const left = [], notices = [], routed = [];
 let clock = Date.parse('2026-10-20T10:00:00Z');
@@ -59,6 +60,13 @@ ok('the request names the channel and who invited', C.pendingChannels()[0].title
 ok('every admin hears about it', notices.length === 1 && notices[0].recipient === 'stan' && /approval/.test(notices[0].title));
 r = await C.onChannelMessage({ type: 'message', channel: 'C0GENERAL', user: 'U0ANN0001', text: 'hello', ts: '1.0' });
 ok('a message in a pending channel goes nowhere', r.did === 'ignored' && routed.length === 0);
+// added by an admin of this workspace: that is the approval
+notices.length = 0;
+r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0BYADMIN', user: 'U0SELF', inviter: 'U0STAN001' });
+ok('an admin adding the bot registers the channel at once, no request', r.did === 'approved-by-admin' && team.getGroup('slack-C0BYADMIN')?.title === '#launch' && !team.getGroup('slack-C0BYADMIN').paused && C.pendingChannels().every(p => p.chatId !== 'slack-C0BYADMIN'), r);
+ok('...and the admins hear it joined, not that it waits', notices.length === 1 && /joined/.test(notices[0].title) && /Stan added/.test(notices[0].body) && !/approval/.test(notices[0].title), notices);
+notices.length = 0;
+
 
 // a shared channel is left at once
 r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0SHARED1', user: 'U0SELF', inviter: 'U0STAN001' });
