@@ -33,7 +33,7 @@ const LOOKUP_TIMEOUT = Number(process.env.GROUP_LOOKUP_TIMEOUT_MS) || 120_000;
 export const ALLOWED_TOOLS = ['memory_search', 'memory_timeline'];
 export const DENIED_TOOLS = [
   'memory_write', 'memory_note', 'memory_forget', 'memory_import', 'memory_grep', 'memory_log', 'memory_now',
-  'recent_messages', 'fix_sent_message', 'set_my_settings', 'add_routine', 'use_integrations',
+  'recent_messages', 'room_recent', 'fix_sent_message', 'set_my_settings', 'add_routine', 'use_integrations',
   'tab_act', 'tab_screenshot', 'tab_snapshot',
 ].map(n => `mcp__workspace-api__${n}`);
 
