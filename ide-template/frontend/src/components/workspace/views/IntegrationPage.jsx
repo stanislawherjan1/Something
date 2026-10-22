@@ -295,7 +295,7 @@ function ConnectionCard({ integration, reach, solo = false, detail, canManage, o
                     {Array.isArray(st.downloads) && st.downloads.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {st.downloads.map((d, j) => (
-                          <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} />
+                          <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} render={d.render || null} />
                         ))}
                       </div>
                     )}

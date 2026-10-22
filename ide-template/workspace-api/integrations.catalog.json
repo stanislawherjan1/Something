@@ -285,7 +285,7 @@
           "downloads": [
             {
               "label": "Bot avatar",
-              "url": "{{botAvatarUrl}}",
+              "render": "botPicture",
               "filename": "{{botName}}-avatar.png"
             },
             {
@@ -382,7 +382,18 @@
         {
           "title": "Create the connection token",
           "body": "In the left menu open **Basic information** → scroll to **App-Level Tokens** → **Generate Token and Scopes**. Give it any name, **Add Scope** → `connections:write` → **Generate**. The next window shows the token (it starts with `xapp-`): **Copy** it into **App-level token** below, then **Save**. To see it again later, click its name under **App-Level Tokens**. It keeps the bot connected to Slack; your server needs no public address for it. Nothing else on that page is needed — leave **Client id** and **Client secret** empty."
-        }
+        },
+      {
+        "title": "Give it the bot's face (optional)",
+        "body": "Still on **Basic information**, scroll down to **Display information**. Click the dashed **+ Add App Icon** box, choose the picture from **Download the bot's picture** below (Slack wants a square of 512–2000 px), then **Save Changes** at the bottom of that box. The picture is the bot as this workspace draws it. The **App name** and **Short description** there came from the manifest — change them in the same box if you rename the bot later.",
+        "downloads": [
+          {
+            "label": "Download the bot's picture",
+            "render": "botPicture",
+            "filename": "{{botName}}.png"
+          }
+        ]
+      }
       ],
       "mcp": {
         "allowedHosts": [

@@ -1692,7 +1692,7 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                         {Array.isArray(step.downloads) && step.downloads.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {step.downloads.map((d, j) => (
-                              <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} />
+                              <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} render={d.render || null} />
                             ))}
                           </div>
                         )}

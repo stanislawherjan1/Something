@@ -65,6 +65,15 @@ ok('...but only to an admin', !r.json.integrations.find(i => i.id === 'slack')?.
 // manifest carries this workspace's callback
 r = await req('GET', '/api/integrations/slack/manifest');
 ok('the manifest names this workspace as the redirect', r.json?.oauth_config?.redirect_urls?.[0] === 'https://bot.example.test/api/integrations/slack/oauth/callback' && r.json.settings.socket_mode_enabled === true, r.json?.oauth_config);
+// The line Slack shows under the app's name: the organisation by name, no em dash.
+{
+  const { slackManifest } = await import('../routes/integrations.js');
+  const named = slackManifest({ botDisplayName: 'Aria', title: 'Saltmarsh Ceramics' }).display_information.description;
+  ok('the app\'s description names the organisation', /Saltmarsh Ceramics's AI coworker/.test(named) && /^Aria /.test(named), named);
+  ok('...with no em dash', !/\u2014/.test(named), named);
+  ok('...and fits Slack\'s 140 characters', named.length < 140, named.length);
+  ok('a workspace with the default title is "your team"', /your team's AI coworker/.test(slackManifest({ botDisplayName: 'Aria', title: 'Workspace' }).display_information.description));
+}
 // Behind Caddy and the frontend's nginx the last hop is http: the redirect is
 // still the public https origin (the canary's manifest once said http://).
 {

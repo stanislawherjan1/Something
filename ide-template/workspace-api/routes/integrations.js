@@ -167,8 +167,12 @@ async function afterChange(key, { files = true, skill = true, forceRestart = fal
  */
 export function slackManifest(branding = {}, { redirectUri = null } = {}) {
   const name = String(branding.botDisplayName || branding.botName || 'Assistant').slice(0, 35);
+  // The organisation by name when the workspace has one ("Workspace" is the
+  // default title, not a name); Slack shows this line under the app's name.
+  const org = String(branding.title || '').trim();
+  const whose = org && !/^workspace$/i.test(org) && org.toLowerCase() !== name.toLowerCase() ? `${org}'s` : "your team's";
   return {
-    display_information: { name, description: `${name} — your team's coworker, reachable in Slack.` },
+    display_information: { name, description: `${name} is ${whose} AI coworker. Write to it here as you would to a colleague.`.slice(0, 139) },
     features: {
       bot_user: { display_name: name, always_online: true },
       app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false, home_tab_enabled: false },
