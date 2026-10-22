@@ -43,6 +43,7 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (/\/note$/.test(req.url)) return res.end(JSON.stringify(parsed?.said ? { ok: true, id: 'f1', scope: 'private', replaced: [], saved: 'A title' } : { ok: false, error: 'said required' }));
     if (/\/forget$/.test(req.url)) return res.end(JSON.stringify({ ok: true, hidden: parsed?.ids || [], refused: [] }));
+    if (/\/mine$/.test(req.url)) return res.end(JSON.stringify(parsed?.question ? { ok: true, nothing: false, answer: 'Harbor Glaze supplies the celadon at 14 GBP a kilo.' } : { ok: false, error: 'question required' }));
     if (/\/import$/.test(req.url)) return res.end(JSON.stringify(parsed?.item ? { ok: true, records: 2, titles: ['Pilot starts 4 November'], updated: [], superseded: [] } : { ok: false, error: 'item required' }));
     return res.end(JSON.stringify({ ok: true, text: 'fine' }));
   });
@@ -108,6 +109,40 @@ try {
   r = await rpc('tools/call', { name: 'memory_forget', arguments: { ids: ['a1', 'b2'] } });
   const fg = seen.find(s => /\/forget$/.test(s.url));
   ok('memory_forget sends its ids', JSON.stringify(fg?.body?.ids) === '["a1","b2"]', fg?.body);
+
+  // ask_my_memory: offered only in a group turn run as a known person, and
+  // what it sends and says.
+  ok('ask_my_memory is not offered outside a group turn', !tools.has('ask_my_memory'), [...tools.keys()]);
+  r = await rpc('tools/call', { name: 'ask_my_memory', arguments: { question: 'the glaze?' } });
+  ok('...and refused if called anyway', r.result?.isError === true && /team room/.test(r.result?.content?.[0]?.text || ''), r.result);
+  const gproc = spawn(process.execPath, [MCP], { env: { ...process.env, WORKSPACE_API_URL: url, IDE_TURN_ID: 'group-turn-for-tests', MEMORY_V4: 'on', IDE_GROUP_CONTEXT: '1', IDE_ACTOR_SLUG: 'nora' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  let gbuf = ''; const gwaiting = new Map();
+  gproc.stdout.on('data', (d) => { gbuf += d; let i; while ((i = gbuf.indexOf('\n')) >= 0) { const line = gbuf.slice(0, i); gbuf = gbuf.slice(i + 1); try { const m = JSON.parse(line); if (m.id != null && gwaiting.has(m.id)) { gwaiting.get(m.id)(m); gwaiting.delete(m.id); } } catch { /* log */ } } });
+  const grpc = (method, params) => new Promise((resolve, reject) => { const id = nextId++; gwaiting.set(id, resolve); gproc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); setTimeout(() => { if (gwaiting.has(id)) { gwaiting.delete(id); reject(new Error(`${method}: no answer`)); } }, 15000); });
+  try {
+    await grpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    gproc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const glist = await grpc('tools/list', {});
+    const gtools = new Map((glist.result?.tools || []).map(t => [t.name, t]));
+    ok('in a group turn as a known person, ask_my_memory is offered', gtools.has('ask_my_memory'), [...gtools.keys()]);
+    ok('...described as their own matters only, said in the room', /THEIR OWN matters/.test(gtools.get('ask_my_memory')?.description || '') && /never for anyone else/.test(gtools.get('ask_my_memory')?.description || ''));
+    seen.length = 0;
+    r = await grpc('tools/call', { name: 'ask_my_memory', arguments: { question: 'what did we agree with Harbor Glaze?' } });
+    const mine = seen.find(s => /\/mine$/.test(s.url));
+    ok('it asks workspace-api with the question and this turn\'s token', mine?.body?.question === 'what did we agree with Harbor Glaze?' && mine?.headers?.['x-ide-turn'] === 'group-turn-for-tests' && mine?.headers?.['x-ide-group'] === '1', mine && { body: mine.body, turn: mine.headers['x-ide-turn'] });
+    ok('...and tells the brain the answer comes from their conversations', !r.result?.isError && /From your conversations with them/.test(r.result?.content?.[0]?.text || '') && /Harbor Glaze/.test(r.result?.content?.[0]?.text || ''), r.result);
+  } finally { gproc.kill(); }
+  // The same server with a group turn as an UNKNOWN sender offers nothing.
+  const tproc = spawn(process.execPath, [MCP], { env: { ...process.env, WORKSPACE_API_URL: url, IDE_TURN_ID: 't', MEMORY_V4: 'on', IDE_GROUP_CONTEXT: '1', IDE_ACTOR_SLUG: 'team' }, stdio: ['pipe', 'pipe', 'pipe'] });
+  let tbuf = ''; const twaiting = new Map();
+  tproc.stdout.on('data', (d) => { tbuf += d; let i; while ((i = tbuf.indexOf('\n')) >= 0) { const line = tbuf.slice(0, i); tbuf = tbuf.slice(i + 1); try { const m = JSON.parse(line); if (m.id != null && twaiting.has(m.id)) { twaiting.get(m.id)(m); twaiting.delete(m.id); } } catch { /* log */ } } });
+  const trpc = (method, params) => new Promise((resolve, reject) => { const id = nextId++; twaiting.set(id, resolve); tproc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); setTimeout(() => { if (twaiting.has(id)) { twaiting.delete(id); reject(new Error(`${method}: no answer`)); } }, 15000); });
+  try {
+    await trpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+    tproc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+    const tlist = await trpc('tools/list', {});
+    ok('a group turn for an unknown sender is not offered it', !(tlist.result?.tools || []).some(t => t.name === 'ask_my_memory'));
+  } finally { tproc.kill(); }
 } catch (e) {
   ok('the MCP server answered', false, String(e.message));
 } finally {

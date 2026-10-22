@@ -45,9 +45,12 @@ instructions are an admin's to set.
 Each person links their own Telegram, so a message from you is from you. Only
 an admin is asked to set the coworker up on Telegram, and it is the whole
 team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
-the group's own conversation and never anyone's private memory. Come back to a
-group after a day and it re-reads where the conversation stopped before it
-answers. In a group it knows what the team knows: what was said in that group,
+the group's own conversation and never anyone's private memory. Ask it there about
+your own matters — a supplier you chose, a meeting you booked — and it answers
+from what you told it in your own chat, for the room to hear, saying so; never
+from anyone else's, never while someone outside the team is in the room. Come
+back to a group after a day and it re-reads where the conversation stopped
+before it answers. In a group it knows what the team knows: what was said in that group,
 and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
 tasks go to the person they are for.
 
@@ -560,6 +563,26 @@ whole group, so the brain offers a DM for anything that needs private/personal
 data. Security rests on **admission** (registration), not on filtering message
 content: once a group is registered, messages from anyone in it are treated as the
 team's.
+
+**The asker's own memory, said in the room** (`ask_my_memory`,
+`lib/integrations/private-lookup.js`). A roster member who asks about their own
+matters in the room — their suppliers, meetings, decisions — and gets nothing from
+the shared memory wants the fact they told the bot in their own chat, said here, to
+the team. The group brain has one tool for that, and it does not read anything
+itself: workspace-api (`POST /api/internal/memory/v4/mine`) checks in code that the
+turn is a group turn whose token names a roster person (the watcher resolved the
+sender from their Slack or Telegram identity), that team mode is on, and that the
+room is the team's — then runs a **one-shot private turn as that person** (their own
+scopes, no group context, no session, `memory_search`/`memory_timeline` and nothing
+else) that answers in at most three sentences. Only that answer enters the room's
+session; the excerpts never do. The one-shot leaves out anything about a person in
+the room unless the question names them, silently (a "that's about X, ask me
+privately" would itself tell X); when nothing is left it says nothing and the bot
+answers what is true of the team's notes, with no hint. Never anyone else's memory:
+the scope is the asker's own. Off while an outsider is in the room (the bot offers a
+DM instead), two lookups a turn, and the owner sees each one in Changes. The room's
+switch (**Answers from the asker's own memory**, on by default) turns it off for a
+room. The same path for a Slack channel and a Telegram group.
 
 ### Tuning
 

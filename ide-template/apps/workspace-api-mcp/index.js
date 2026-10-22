@@ -254,6 +254,19 @@ const HANDOFF_TOOL = {
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
 };
 const PAGE_TURN = process.env.IDE_PAGE_TURN === '1';
+// A group turn run as a known person (the room's sender, resolved to the
+// roster): the one place the asker's own memory may be read — through the
+// route, in a one-shot as them, never here.
+const GROUP_MEMBER_TURN = process.env.IDE_GROUP_CONTEXT === '1' && !!process.env.IDE_ACTOR_SLUG && process.env.IDE_ACTOR_SLUG !== 'team';
+const MINE_TOOL = {
+  name: 'ask_my_memory',
+  description:
+    'In a team room only: what the PERSON YOU ARE ANSWERING told you in their own conversations, for this room to hear. ' +
+    'Use it when they ask about THEIR OWN matters (their suppliers, meetings, decisions, plans) and the shared memory has nothing — never for anyone else\'s matters or memory. ' +
+    'It runs in their own memory, outside this room, and returns at most three sentences already fit for the room (anything about a person present is left out unless they named them). ' +
+    'Say what it returns and that it comes from your conversations with them. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
+  inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words.' } }, required: ['question'] },
+};
 
 // The tab tools work only in a turn started from the browser panel (it carries
 // the one-turn token). Anywhere else — Telegram, the workspace chat, the
@@ -316,6 +329,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     ...(PAGE_TURN ? [HANDOFF_TOOL] : []),
     ...TAB_TOOLS,
     ...(MEMORY_V4_TOOLS && !PAGE_TURN ? V4_TOOLS : []),
+    ...(MEMORY_V4_TOOLS && !PAGE_TURN && GROUP_MEMBER_TURN ? [MINE_TOOL] : []),
     {
       name: 'memory_write',
       description:
@@ -669,7 +683,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // ── Memory v4 ──────────────────────────────────────────────────────────────
-  if (['memory_search', 'memory_timeline', 'memory_note', 'memory_forget', 'memory_import'].includes(name)) {
+  if (['memory_search', 'memory_timeline', 'memory_note', 'memory_forget', 'memory_import', 'ask_my_memory'].includes(name)) {
     if (!MEMORY_V4_TOOLS || PAGE_TURN) return { content: [{ type: 'text', text: 'Not available here.' }], isError: true };
     try {
       let r;
@@ -686,6 +700,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // all it had was "Saved".
         if (r.ok && r.already) r.text = `Already in memory${r.repeats?.length ? ` ("${r.repeats.join('", "')}")` : ''} — nothing new saved.`;
         else if (r.ok) r.text = `Saved as ${r.titles?.length > 1 ? `${r.titles.length} ${r.scope} notes ("${r.titles.join('", "')}")` : `a ${r.scope} note`}${r.replaced?.length ? `; replacing the earlier note${r.replaced.length > 1 ? 's' : ''} "${r.replaced.join('", "')}", which no longer show${r.replaced.length > 1 ? '' : 's'}` : ''}${r.updated?.length ? `; a dated remark was added to "${r.updated.join('", "')}"` : ''}${r.superseded?.length ? `; "${r.superseded.join('", "')}" ${r.superseded.length > 1 ? 'are' : 'is'} now marked no longer true` : ''}${r.leftOut ? `; ${r.leftOut} part${r.leftOut > 1 ? 's' : ''} not in the person's words left out (filed from the conversation itself when it ends)` : ''}${r.shared ? `; ${r.shared > 1 ? `${r.shared} facts` : 'the fact'} reached the team's shared memory by the person's sharing mode` : ''}${r.asked ? `; ${r.asked > 1 ? `${r.asked} facts wait` : 'one fact waits'} for the person's OK on the Memory screen's Sharing tab` : ''}${r.ungated ? '; whether any of it should reach the team could not be judged right now — memory looks at it again tonight' : ''}.`;
+      } else if (name === 'ask_my_memory') {
+        if (!GROUP_MEMBER_TURN) return { content: [{ type: 'text', text: 'Only in a team room, for the person asking.' }], isError: true };
+        r = await v4Call('POST', 'mine', { question: String(args?.question || '') });
+        if (r.ok) {
+          r.text = r.failed ? 'Could not check their memory right now. Say so; do not guess.'
+            : r.nothing ? `Nothing in their own memory answers this${r.note ? ` (${r.note})` : ''}. Say the team's notes have nothing; do not hint at their memory.`
+            : `From your conversations with them (say so in the room): ${r.answer}`;
+        }
       } else if (name === 'memory_import') {
         r = await v4Call('POST', 'import', {
           integration: String(args?.integration || ''), item: String(args?.item || ''), title: String(args?.title || ''), at: args?.at ? String(args.at) : null,

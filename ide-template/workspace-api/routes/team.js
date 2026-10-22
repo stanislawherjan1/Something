@@ -249,16 +249,17 @@ export default function teamRouter() {
 
   // Approve a room (a Slack channel the bot was added to), or change one.
   router.post('/team/channels', requireAdmin, rateLimit, express.json({ limit: '2kb' }), async (req, res) => {
-    const { chatId, title, beat, requireMention, language, openAudience } = req.body || {};
+    const { chatId, title, beat, requireMention, language, openAudience, privateAnswers } = req.body || {};
     try {
       const id = String(chatId || '').trim();
       if (id.startsWith('slack-')) {
-        const group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language, openAudience });
+        let group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language, openAudience });
+        if (privateAnswers != null && team.touchGroupMeta(id, { privateAnswers })) group = team.getGroup(id);
         // A room reopened to outsiders, or closed to them again, is rechecked at once.
         if (openAudience != null) await slackChannels.checkAudience(id, { quiet: true });
         return res.status(201).json({ ok: true, group });
       }
-      const group = team.addGroup({ chatId: id, title, beat, requireMention, language, actor: req.actor });
+      const group = team.addGroup({ chatId: id, title, beat, requireMention, language, privateAnswers, actor: req.actor });
       syncTelegramGroups().catch(() => {});
       res.status(201).json({ ok: true, group });
     } catch (err) {
@@ -305,9 +306,9 @@ export default function teamRouter() {
   });
 
   router.post('/team/telegram-groups', requireAdmin, rateLimit, express.json({ limit: '2kb' }), (req, res) => {
-    const { chatId, title, beat, requireMention, language } = req.body || {};
+    const { chatId, title, beat, requireMention, language, privateAnswers } = req.body || {};
     try {
-      const group = team.addGroup({ chatId, title, beat, requireMention, language, actor: req.actor });
+      const group = team.addGroup({ chatId, title, beat, requireMention, language, privateAnswers, actor: req.actor });
       syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it
       res.status(201).json({ ok: true, group });
     } catch (err) {

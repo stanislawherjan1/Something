@@ -36,7 +36,7 @@ R "docker exec -u root $C sh -c 'rm -rf /home/coder/project/E2E-locks /home/code
 R "docker exec -u 1001 -e PROJECT_DIR=/home/coder/project -e WSAPI_STORE_DIR=/var/wsapi-store -e MEMORY_V4=on -w /opt/ide/workspace-api $C node --input-type=module -e \"
 const L=await import('/opt/ide/workspace-api/lib/memory-ledger.js'); const F=await import('/opt/ide/workspace-api/lib/memory-facts.js'); const A=await import('/opt/ide/workspace-api/lib/memory-asks.js');
 const T=await import('/opt/ide/workspace-api/lib/team.js');
-const TEST=/(Orbis|Nowak|Kowalski|E2E)-[0-9]{6}|E2E-probe-[0-9]+|PROBE-[0-9]+|Quarry-[0-9]{6}|Vellmark|Quarry launch|Two things to remember, no need to do anything|job offer from a recruiter|head of operations role elsewhere|PAPRYKA-|LOCKTEST-|E2E test reminder|import:otter:m-|Board sync|Supplier call|Ann 1:1 with Bob|(MANGO|KIWI|PLUM|HACKED|LOCKER|ADMINFILE|SHAREDFILE)-[0-9]{6}|(THERAPY|LOAN|PARTNER|ROTA)-(ask|auto|never)-[0-9]{6}|(SALARY|PINHINT|TEAMCODE|GROUPSKILL|ORW)-[0-9]{6}|e2e-(member|team|admin)-[0-9]{6}/i;
+const TEST=/(Orbis|Nowak|Kowalski|E2E)-[0-9]{6}|E2E-probe-[0-9]+|PROBE-[0-9]+|Quarry-[0-9]{6}|Vellmark|Quarry launch|Two things to remember, no need to do anything|job offer from a recruiter|head of operations role elsewhere|PAPRYKA-|LOCKTEST-|E2E test reminder|import:otter:m-|Board sync|Supplier call|Ann 1:1 with Bob|(MANGO|KIWI|PLUM|HACKED|LOCKER|ADMINFILE|SHAREDFILE)-[0-9]{6}|(THERAPY|LOAN|PARTNER|ROTA)-(ask|auto|never)-[0-9]{6}|(SALARY|PINHINT|TEAMCODE|GROUPSKILL|ORW|GLAZE)-[0-9]{6}|e2e-(member|team|admin)-[0-9]{6}/i;
 const groups=Object.keys((JSON.parse((await import('node:fs')).readFileSync('/home/coder/project/.team-config.json','utf8')).groups)||{});
 const scopes=['shared', ...T.list().map(m=>'user:'+m.slug), ...groups.map(g=>'group:'+g)];
 for (const scope of scopes) {
@@ -54,7 +54,7 @@ for (const scope of scopes) {
 # the group's stored transcript: the test lines out (the Telegram chat itself keeps them)
 R "docker exec -u 1001 $C python3 -c \"
 import glob,re
-pat=re.compile(r'(SALARY|PINHINT|TEAMCODE|GROUPSKILL|ORW)-[0-9]{6}|e2e-group-[0-9]{6}|message_id\\\":\\\"9[0-9]{7,8}\\\"')
+pat=re.compile(r'(SALARY|PINHINT|TEAMCODE|GROUPSKILL|ORW|GLAZE)-[0-9]{6}|e2e-group-[0-9]{6}|message_id\\\":\\\"9[0-9]{7,8}\\\"')
 for f in glob.glob('/home/coder/project/.group-watcher/*-history.jsonl'):
   rows=open(f).read().splitlines(); keep=[r for r in rows if not pat.search(r)]
   if len(keep)!=len(rows): open(f,'w').write('\\n'.join(keep)+'\\n'); print('group transcript:', f.split('/')[-1], len(rows)-len(keep), 'test lines removed')

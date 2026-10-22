@@ -952,7 +952,7 @@ export function isAllowedGroup(chatId) {
  * (ambient — the whole point of group mode); `beat` is an optional operator
  * override that steers what the relevance watcher treats as on-beat.
  */
-export function addGroup({ chatId, title, requireMention, beat, language, openAudience, actor } = {}) {
+export function addGroup({ chatId, title, requireMention, beat, language, openAudience, privateAnswers, actor } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) throw new Error('invalid group id (a Telegram chat id is a negative integer; a Slack channel is slack-C…)');
   const cfg = readConfig();
@@ -972,6 +972,10 @@ export function addGroup({ chatId, title, requireMention, beat, language, openAu
     // Open audience: people outside the team may be in the room; the assistant
     // speaks there from the room's own memory only, never the team's.
     ...((openAudience != null ? !!openAudience : (prev.openAudience ?? slack)) ? { openAudience: true } : {}),
+    // Answers from the asker's own memory, said in the room (routes/memory-v4.js
+    // `/internal/memory/v4/mine`): on unless an admin switched it off. 'team'
+    // = while everyone in the room is on the team; 'off' = never.
+    ...((privateAnswers != null ? privateAnswers : prev.privateAnswers) === 'off' ? { privateAnswers: 'off' } : {}),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
@@ -997,7 +1001,7 @@ export function addGroup({ chatId, title, requireMention, beat, language, openAu
  * from the gate's language verdicts). Writes only on a REAL change and emits no
  * audit event: this is drift-sync, not an operator action. Returns true if it wrote.
  */
-export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention, openAudience } = {}) {
+export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention, openAudience, privateAnswers } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) return false;
   const cfg = readConfig();
@@ -1026,6 +1030,10 @@ export function touchGroupMeta(chatId, { title, language, paused, audience, requ
   }
   if (language != null && String(language).slice(0, 40) !== (g.language || '')) {
     g.language = String(language).slice(0, 40);
+    changed = true;
+  }
+  if (privateAnswers != null && (privateAnswers === 'off') !== (g.privateAnswers === 'off')) {
+    if (privateAnswers === 'off') g.privateAnswers = 'off'; else delete g.privateAnswers;
     changed = true;
   }
   if (!changed) return false;

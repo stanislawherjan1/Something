@@ -43,6 +43,8 @@ import * as integrationsCatalog from '../lib/integrations/catalog.js';
 import { unsupportedDetails, splitNote } from '../lib/memory-router.js';
 import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
+import { getGroup } from '../lib/team.js';
+import { lookupMine, outsidersOf, memberBySlug } from '../lib/integrations/private-lookup.js';
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -609,6 +611,7 @@ export default function memoryV4Router() {
         case 'redact': return own(e) || (e.by === 'purge' && readable.has(e.scope));
         case 'share': return true;
         case 'note': return e.scope === 'shared' ? true : readable.has(e.scope);
+        case 'private_lookup': return e.scope === v.own;
         default: return readable.has(e.scope || 'shared');
       }
     };
@@ -621,6 +624,7 @@ export default function memoryV4Router() {
         // A share is addressed to the team: shown as shared, undone only by its sharer.
         case 'share': return { ...base, scope: 'shared', label: 'Shared with the team', preview, recordId: e.ids?.[0] || null, undo: own(e) && rec && !rec.hidden ? 'hide' : null };
         case 'keep_private': return { ...base, label: 'Kept private' };
+        case 'private_lookup': return { ...base, label: e.answered ? 'Answered from your memory in a team room' : 'Looked in your memory for a team room, found nothing', detail: e.room ? `in ${e.room}` : undefined };
         case 'note': return { ...base, label: e.updated?.length && !e.titles?.length ? 'Corrected on request' : 'Saved on request', detail: [e.updated?.length ? `remark added to ${e.updated.join(' · ')}` : null, e.superseded?.length ? `no longer true: ${e.superseded.join(' · ')}` : null].filter(Boolean).join('; ') || undefined, preview, recordId: e.ids?.[0] || null };
         case 'alias': return { ...base, label: e.same === false ? 'Kept two names apart' : 'Merged two spellings', detail: `${e.from} ${e.same === false ? '≠' : '→'} ${e.into}${e.why ? ` — ${e.why}` : ''}` };
         // Taking back one's own share makes it private again; an admin hiding
@@ -981,6 +985,41 @@ export default function memoryV4Router() {
     const titles = plan.filter(d => d.fact && (d.op === 'add' || d.op === 'replace')).map(d => d.fact.title || d.fact.text);
     const { shared, asked } = gated ? await gateFacts(who.actor, fresh, { routed, said, name: speaker }) : { shared: 0, asked: 0 };
     return res.json({ ok: true, id: got.ids[0] || r.id, scope: scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private', replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length, ...(shared ? { shared } : {}), ...(asked ? { asked } : {}), ...(gated && !routed ? { ungated: true } : {}) });
+  });
+
+  // A verified member's own memory, asked from a team room — the one bridge
+  // across the group fence, and it runs OUTSIDE the room: a one-shot turn as
+  // the member (lib/integrations/private-lookup.js) answers in a few
+  // sentences, and only those enter the room's session. Who may ask is
+  // decided here, in code: the turn's token names the sender (resolved by the
+  // watcher from their Slack or Telegram identity), the roster vouches for
+  // them, the room must be the team's. The asker's own scope, never another's.
+  const lookupsPerTurn = new Map();   // turn token → count (two a turn)
+  router.post('/internal/memory/v4/mine', loopbackOnly, async (req, res) => {
+    const who = whoIsAsking(req);
+    if (!who) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    if (!who.group || !who.actor || who.actor === 'team') return res.status(403).json({ ok: false, error: 'only a known person in a team room can ask their own memory here' });
+    const member = memberBySlug(who.actor);
+    if (!member) return res.status(403).json({ ok: false, error: 'not on the team' });
+    if (!getTeamMode()) return res.json({ ok: true, nothing: true, note: 'nothing is private here: the whole memory is already the team\'s' });
+    const room = getGroup(who.groupId);
+    if (!room) return res.status(403).json({ ok: false, error: 'not a registered room' });
+    const question = String(req.body?.question || '').trim().slice(0, 500);
+    if (!question) return res.status(400).json({ ok: false, error: 'question required' });
+    if (room.privateAnswers === 'off') return res.json({ ok: true, nothing: true, off: true, note: 'answers from a person\'s own memory are switched off in this room' });
+    const outsiders = outsidersOf(room);
+    if (outsiders.length) return res.json({ ok: true, nothing: true, outsiders: outsiders.length, note: 'someone outside the team is in the room; offer to answer in a direct message instead' });
+    const token = String(req.get('x-ide-turn') || '');
+    const n = (lookupsPerTurn.get(token) || 0) + 1;
+    lookupsPerTurn.set(token, n);
+    if (lookupsPerTurn.size > 500) lookupsPerTurn.delete(lookupsPerTurn.keys().next().value);
+    if (n > 2) return res.json({ ok: true, nothing: true, note: 'already looked twice this turn' });
+    let r;
+    try { r = await lookupMine({ member, question, room }); } catch (e) { r = { failed: true, error: e.message }; }
+    const answered = !!(r && r.answer);
+    ledger.logEvent({ op: 'private_lookup', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered });
+    if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
+    return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

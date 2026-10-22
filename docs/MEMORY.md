@@ -428,7 +428,11 @@ fields came back — names and lengths only, never what was said.
 
 Scopes a turn may read come from its identity, never from the model: a person
 reads their own scope, shared, and the groups they are in; a group turn reads
-shared + that group; there is no admin bypass.
+shared + that group; there is no admin bypass. The one bridge is the group
+brain's `ask_my_memory`: a roster member asking about their own matters in a
+room gets, from a one-shot turn run as them (their scopes, memory reads only),
+at most three sentences fit for the room — only those enter the room's session
+(`lib/integrations/private-lookup.js`, `docs/TEAM_MODE.md`).
 
 ### Search and the embedder
 

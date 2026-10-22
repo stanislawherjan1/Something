@@ -208,6 +208,40 @@ r = await call('POST', '/note', { token: groupTurn, body: { text: 'The pilot sta
 ok('a group note is the group\'s: no gate, nothing crosses', r.status === 200 && !r.body.shared && !r.body.asked, r.body);
 T.setSharing('kasia@example.test', 'ask');
 
+// ─── (z) a member's own memory asked from a team room ────────────────────────
+const PL = await import('./integrations/private-lookup.js');
+const asked = [];
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return /glaze/.test(question) ? { answer: 'Harbor Glaze supplies the celadon at 14 GBP a kilo.' } : { nothing: true }; });
+r = await call('POST', '/mine', { token: kasiaTurn, body: { question: 'the glaze?' } });
+ok('(z) a person\'s own turn is refused: this is for a room', r.status === 403, r.body);
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) a group turn for an unknown sender is refused', r.status === 403 && /known person/.test(r.body.error), r.body);
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'nobody', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) a group turn for someone not on the roster is refused', r.status === 403, r.body);
+r = await call('POST', '/mine', { token: groupTurn, body: {} });
+ok('(z) a question is required', r.status === 400, r.body);
+const kasiaRoom = ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' });
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'what did we agree on the glaze?' } });
+ok('(z) a roster member in the team\'s room gets their own memory\'s answer', r.status === 200 && r.body.ok && !r.body.nothing && /Harbor Glaze/.test(r.body.answer), r.body);
+ok('(z) ...looked up as them, told who is in the room', asked.at(-1)?.slug === 'kasia' && Array.isArray(asked.at(-1)?.people), asked.at(-1));
+ok('(z) ...and it is on their Changes as theirs', L.readEvents().some(e => e.op === 'private_lookup' && e.scope === 'user:kasia' && e.answered === true && e.group === '-100777'));
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'the kiln schedule?' } });
+ok('(z) nothing in their memory is "nothing", never a guess', r.body.ok && r.body.nothing === true && !r.body.answer, r.body);
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'the glaze?' } });
+ok('(z) a third lookup in one turn is not made', r.body.nothing === true && /twice/.test(r.body.note || ''), r.body);
+PL.configureLookup(async () => { throw new Error('model down'); });
+const lastKasia = ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' });
+r = await call('POST', '/mine', { token: lastKasia, body: { question: 'the glaze?' } });
+ok('(z) a failed lookup says so, not an answer', r.body.failed === true && !r.body.answer && /do not guess/.test(r.body.note || ''), r.body);
+T.recordGroupMember('-100777', '9999999', 'Olek');
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) with someone not on the roster in the room, nothing is said and a DM is suggested', r.body.nothing === true && r.body.outsiders === 1 && /direct message/.test(r.body.note || ''), r.body);
+T.touchGroupMeta('-100777', { privateAnswers: 'off' });
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) the room\'s switch off: nothing', r.body.nothing === true && r.body.off === true, r.body);
+T.touchGroupMeta('-100777', { privateAnswers: 'team' });
+PL.configureLookup(null);
+
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

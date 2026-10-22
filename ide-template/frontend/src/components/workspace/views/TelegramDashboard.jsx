@@ -11,7 +11,7 @@ import StatusTag from './StatusTag.jsx';
 import useOpenSetupOnce from './useOpenSetupOnce.js';
 import { TEAM_URL, call, formatWhen, barBtn, barDanger, primaryBtn } from './surface-screen-helpers.js';
 import {
-  StatePill, BottomBar, AccessDenied, NotConnected, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, SettingsModal, LinkIdButton,
+  StatePill, BottomBar, AccessDenied, NotConnected, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, SettingsModal, LinkIdButton, Switch,
 } from './surface-screen.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -143,18 +143,22 @@ function PendingLine({ entry, onChanged }) {
 
 function GroupModal({ group, avatars, onClose, onSaved }) {
   const [lang, setLang] = useState(group.language || '');
+  const [mine, setMine] = useState(group.privateAnswers !== 'off');
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
   const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
   const run = async (what, fn) => { setBusy(what); setErr(''); try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); } };
   return (
     <SettingsModal avatar={<RoomAvatar icon={Users} />} title={group.title || 'Untitled group'} sub={group.chatId} onClose={onClose}
-      onSave={() => run('save', () => call(GROUPS_URL, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim() }) }))}
+      onSave={() => run('save', () => call(GROUPS_URL, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, language: lang.trim(), privateAnswers: mine ? 'team' : 'off' }) }))}
       saving={busy === 'save'} busy={busy} err={err}
       danger dangerLabel="Remove group" dangerBusyLabel="Removing…" onDanger={() => run('danger', () => call(`${GROUPS_URL}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }))}>
       <ModalRow label="Reply language" tip="The language the assistant writes in this group, whatever language a message is in. Blank: the language of each message.">
         <input value={lang} onChange={e => setLang(e.target.value)} placeholder="auto" spellCheck={false} autoComplete="off"
           className="w-[150px] rounded-[6px] border border-border/60 bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors focus:border-foreground/35" />
+      </ModalRow>
+      <ModalRow label="Answers from the asker's own memory" tip="Whether a teammate who asks about their own matters here gets an answer from what they told the assistant in their own conversations, said in this group. Only while everyone in the group is on the team; never anyone else's memory.">
+        <Switch on={mine} onToggle={() => setMine(v => !v)} />
       </ModalRow>
       <ModalRow label="In the group" tip="People the assistant has seen write in this group. Teammates show their face; anyone else is a grey one.">
         <RoomPile members={members} avatars={avatars} />

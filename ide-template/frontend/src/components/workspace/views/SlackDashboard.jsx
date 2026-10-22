@@ -57,7 +57,9 @@ export default function SlackDashboard({ sidebarOpen }) {
 
   const entries = roster.data?.entries || [];
   const avatars = {};
-  for (const e of entries) if (e.slackUserId) avatars[String(e.slackUserId)] = e.avatarUrl;
+  // A teammate in a room is named as the roster names them, whatever the room recorded.
+  const names = {};
+  for (const e of entries) if (e.slackUserId) { avatars[String(e.slackUserId)] = e.avatarUrl; names[String(e.slackUserId)] = e.displayName || e.slug || e.email; }
   const onPeopleChanged = () => { refresh(); invalidate(TEAM_URL); roster.reload(); };
   const up = connected && !needsInstall && !!listener?.connected;
   const pillText = !connected ? 'Not connected' : needsInstall ? 'Not installed' : listener?.connected ? 'Listening' : listener?.error ? 'Not connected' : 'Connecting';
@@ -78,7 +80,7 @@ export default function SlackDashboard({ sidebarOpen }) {
             loading && !data ? <><Skeleton className="h-10 rounded-[6px]" /><Skeleton className="h-10 rounded-[6px]" /></> : (
               <GridList>
                 {pending.map(p => <PendingLine key={p.chatId} entry={p} onChanged={refresh} />)}
-                {groups.map(g => <ChannelLine key={g.chatId} group={g} canEdit={canEdit} avatars={avatars} onChanged={refresh} />)}
+                {groups.map(g => <ChannelLine key={g.chatId} group={g} canEdit={canEdit} avatars={avatars} names={names} onChanged={refresh} />)}
               </GridList>
             )
           ) : (
@@ -129,9 +131,9 @@ function stateLine(g) {
   return g.openAudience ? `${how} · open to outsiders` : how;
 }
 
-function ChannelLine({ group, canEdit, avatars, onChanged }) {
+function ChannelLine({ group, canEdit, avatars, names, onChanged }) {
   const [open, setOpen] = useState(false);
-  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members).map(([id, n]) => [id, names?.[String(id)] || n]) : [];
   return (
     <Line
       who={<><RoomAvatar icon={Hash} /><Name>{group.title || group.chatId}</Name></>}
@@ -140,7 +142,7 @@ function ChannelLine({ group, canEdit, avatars, onChanged }) {
       pile={members.length > 0 && <MemberPile members={members} avatars={avatars} />}
       actions={<>
         {canEdit && <EditButton onClick={() => setOpen(true)} />}
-        {open && <ChannelModal group={group} avatars={avatars} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
+        {open && <ChannelModal group={group} avatars={avatars} names={names} onClose={() => setOpen(false)} onSaved={() => { setOpen(false); onChanged(); }} />}
       </>}
     />
   );
@@ -169,16 +171,17 @@ function PendingLine({ entry, onChanged }) {
   );
 }
 
-function ChannelModal({ group, avatars, onClose, onSaved }) {
+function ChannelModal({ group, avatars, names, onClose, onSaved }) {
   const [ambient, setAmbient] = useState(!group.requireMention);
   const [openAudience, setOpenAudience] = useState(!!group.openAudience);
+  const [mine, setMine] = useState(group.privateAnswers !== 'off');
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
-  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members) : [];
+  const members = group.members && typeof group.members === 'object' ? Object.entries(group.members).map(([id, n]) => [id, names?.[String(id)] || n]) : [];
   const run = async (what, fn) => { setBusy(what); setErr(''); try { await fn(); onSaved(); } catch (e) { setErr(e.message); setBusy(null); } };
   return (
     <SettingsModal avatar={<RoomAvatar icon={Hash} />} title={group.title || group.chatId} sub={group.chatId} onClose={onClose}
-      onSave={() => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, requireMention: !ambient, openAudience }) }))}
+      onSave={() => run('save', () => call(CHANNELS_API, { method: 'POST', body: JSON.stringify({ chatId: group.chatId, requireMention: !ambient, openAudience, privateAnswers: mine ? 'team' : 'off' }) }))}
       saving={busy === 'save'} busy={busy} err={err}
       danger dangerLabel="Leave channel" dangerBusyLabel="Leaving…" onDanger={() => run('danger', () => call(`${CHANNELS_API}/${encodeURIComponent(group.chatId)}`, { method: 'DELETE' }))}>
       <ModalRow label="Joins in on its own" tip="Whether the assistant follows the conversation and chimes in when it can help, or only answers when someone mentions it.">
@@ -186,6 +189,9 @@ function ChannelModal({ group, avatars, onClose, onSaved }) {
       </ModalRow>
       <ModalRow label="Open to outsiders" tip="Whether the assistant keeps working when someone outside the team is in the room. It then uses this channel's own memory only, never the team's.">
         <Switch on={openAudience} onToggle={() => setOpenAudience(v => !v)} />
+      </ModalRow>
+      <ModalRow label="Answers from the asker's own memory" tip="Whether a teammate who asks about their own matters here gets an answer from what they told the assistant in their own conversations, said in this channel. Only while everyone in the room is on the team; never anyone else's memory.">
+        <Switch on={mine} onToggle={() => setMine(v => !v)} />
       </ModalRow>
       <ModalRow label="In the room" tip="Who is in the room. Someone outside the team pauses the assistant here, unless the channel is open to outsiders.">
         <RoomPile members={members} outsiders={group.audience?.outsiders || []} avatars={avatars} />
