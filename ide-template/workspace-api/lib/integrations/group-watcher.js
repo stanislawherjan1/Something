@@ -324,6 +324,24 @@ function renderContext(ctxMsgs, newIds, clamp = TEXT_CLAMP) {
 const RECAP_LINES      = num('GROUP_RECAP_LINES', 10);
 const RECAP_LINES_GAP  = num('GROUP_RECAP_LINES_AFTER_GAP', 30);
 const RECAP_GAP_MS     = num('GROUP_RECAP_GAP_MS', 3 * 3600_000);
+/**
+ * The last `n` lines a room's transcript holds — what the room said, read by
+ * workspace-api for a caller that has already proven it is in the room
+ * (routes/internal.js `/internal/room-recent`). Turns cannot open the file.
+ */
+export function roomRecent(chatId, n = 50) {
+  const gid = String(chatId || '');
+  if (!isGroupId(gid)) return [];
+  let raw = '';
+  try { raw = readFileSync(join(AUDIT_DIR, `${fileStem(gid)}-history.jsonl`), 'utf8'); } catch { return []; }
+  const rows = [];
+  for (const l of raw.split('\n').slice(-Math.max(1, Math.min(200, Number(n) || 50)) - 1)) {
+    if (!l.trim()) continue;
+    try { const r = JSON.parse(l); rows.push({ ts: r.ts || null, who: r.role === 'assistant' ? 'assistant' : (r.who || r.from_name || 'someone'), text: String(r.text || '').slice(0, 2000) }); } catch { /* a torn line */ }
+  }
+  return rows;
+}
+
 export function recapFor(hist, session, now = Date.now()) {
   if (!session || !session.lastTs || !Array.isArray(hist)) return [];
   const seen = hist.filter(h => h.ts && h.ts <= session.lastTs);

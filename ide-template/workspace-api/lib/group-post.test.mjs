@@ -113,6 +113,36 @@ gw.configurePostSender(async () => ({ ok: false, error: 'telegram 403: bot was k
 r = await post({ group: 'Team Room', text: 'Still there?' }, ann);
 ok('a failed send says so, nothing recorded as sent', r.status === 422 && /kicked/.test(r.body.error), r);
 
+// ─── what a room said lately: for its members only (/internal/room-recent) ──
+{
+  const { writeFileSync: wf, mkdirSync: md } = await import('node:fs');
+  md(join(ROOT, '.group-watcher'), { recursive: true });
+  wf(join(ROOT, '.group-watcher', '-1009876543210-history.jsonl'), [
+    { ts: '2026-10-22T10:00:00Z', role: 'user', who: 'Ann', text: 'Supplier call moved to 3pm.' },
+    { ts: '2026-10-22T10:01:00Z', role: 'assistant', text: 'Noted.' },
+  ].map(r => JSON.stringify(r)).join('\n') + '\n');
+  wf(join(ROOT, '.group-watcher', 'slack-C0ROOM0001-history.jsonl'), JSON.stringify({ ts: '2026-10-22T11:00:00Z', role: 'user', who: 'Ann', text: 'Kiln at 1200.' }) + '\n');
+  const get = async (q, token) => {
+    const headers = token ? { 'X-IDE-Turn': token } : {};
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/api/internal/room-recent?${new URLSearchParams(q)}`, { headers });
+    return { status: r.status, body: await r.json() };
+  };
+  let g = await get({ room: 'Suppliers' }, ann);
+  ok('(room) a member reads the room\'s latest lines', g.status === 200 && g.body.lines.length === 2 && g.body.lines[0].text === 'Supplier call moved to 3pm.' && g.body.lines[1].who === 'assistant', g.body);
+  g = await get({ room: 'C0ROOM0001' }, ann);
+  ok('(room) ...a Slack channel too, by its id', g.status === 200 && g.body.lines[0].text === 'Kiln at 1200.', g.body);
+  g = await get({ room: 'Suppliers' }, bob);
+  ok('(room) someone not in the room is refused, shown only their own rooms', g.status === 403 && !g.body.lines && g.body.rooms.every(r => r.title !== 'Suppliers'), g.body);
+  g = await get({ room: 'Suppliers' });
+  ok('(room) no turn: refused', g.status === 403 && !g.body.lines);
+  g = await get({ room: 'Suppliers' }, ti.issueTurnToken({ actor: 'ann', group: true, groupId: '-1001234567890' }));
+  ok('(room) a room\'s own turn cannot read another room', g.status === 403 && !g.body.lines, g.body);
+  g = await get({}, ti.issueTurnToken({ actor: 'ann', group: true, groupId: '-1009876543210' }));
+  ok('(room) ...and reads its own with no name given', g.status === 200 && g.body.lines.length === 2, g.body);
+  g = await get({ room: 'Suppliers', n: '1' }, ann);
+  ok('(room) n bounds the lines', g.body.lines.length === 1 && g.body.lines[0].who === 'assistant', g.body);
+}
 server.close();
+
 console.log(`group-post: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

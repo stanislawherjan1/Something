@@ -20,7 +20,7 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
-import { routeGroupMessage, sayInGroup, postToGroup } from '../lib/integrations/group-watcher.js';
+import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
 import { idleMs, consolidateIdle } from '../lib/memory-consolidator.js';
@@ -855,6 +855,30 @@ export default function internalRouter() {
   // comes from the turn's own token, never the body, and only into a registered
   // group that person is a member of. A group turn already speaks in its own
   // group and may not reach another. loopback only.
+  // What a room said lately, for a person who is in it. The transcript file is
+  // the room's own (no person's turn can open it); this is the one way a
+  // member's turn reads the room's recent lines — "what did Cass just say in
+  // the group?" — before they reach the room's memory. The member comes from
+  // the turn's token, the room from the registry; a room's own turn reads its
+  // own room only. loopback only.
+  router.get('/internal/room-recent', loopbackOnly, (req, res) => {
+    const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
+    if (!turn) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/^#/, '');
+    const idOf = (v) => String(v || '').trim().replace(/^slack-/i, '').toLowerCase();
+    let mine;
+    if (turn.group) mine = turn.groupId ? [getGroup(turn.groupId)].filter(Boolean) : [];
+    else if (turn.actor) mine = memberGroupsOf(turn.actor).map((id) => getGroup(id)).filter(Boolean);
+    else mine = [];
+    const rooms = mine.map((g) => ({ chatId: g.chatId, title: g.title || null }));
+    const want = norm(req.query.room), wantId = idOf(req.query.room);
+    let hit = want ? mine.filter((g) => idOf(g.chatId) === wantId || norm(g.title) === want) : (mine.length === 1 ? mine : []);
+    if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
+    if (hit.length !== 1) return res.status(hit.length ? 422 : 403).json({ ok: false, error: hit.length ? 'more than one room matches: say which' : want ? 'not a room this person is in' : 'say which room', rooms });
+    const lines = roomRecent(hit[0].chatId, Number(req.query.n) || 50);
+    return res.json({ ok: true, room: { chatId: hit[0].chatId, title: hit[0].title || null }, lines });
+  });
+
   router.post('/internal/group-post', loopbackOnly, async (req, res) => {
     const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
     if (!turn || turn.group || !turn.actor) {
