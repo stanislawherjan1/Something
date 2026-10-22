@@ -589,6 +589,8 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Group-context flag for the scope-guard hook: hard-blocks ALL private trees
   // (including the sender's own and an admin's) — see hooks/scope-guard.mjs.
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
+  // ...and which room, so the hook lets it read its own transcript and no other's.
+  if (groupContext && groupId) childEnv.IDE_GROUP_ID = String(groupId);
   // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
   // they take the actor and group flag from this token, never from a header.
   const turnId = issueTurnToken({ actor, group: !!groupContext, groupId, groupOnly });   // what this turn is handed from memory is noted on it below

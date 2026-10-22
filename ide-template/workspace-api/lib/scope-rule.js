@@ -105,3 +105,34 @@ export function pathInGroupScope(relPosix) {
   if (parts[0] === 'memory' && parts[1] === 'groups') return false;    // any group's memory (tools check membership)
   return true;
 }
+
+// ─── a room's transcript ─────────────────────────────────────────────────────
+// `.group-watcher/<room>-history.jsonl` (and the room's session, audit and
+// marker files beside it) is what the room said: readable by the room's own
+// turn and by a person who is in that room, nobody else. The bot once agreed,
+// asked, that a non-member's turn could read it — the file sat in the shared
+// tree and only its manners stood in the way. Which room a path belongs to:
+const TRANSCRIPT_RE = /^\.group-watcher(?:\/(-?\d{4,20}|slack-[A-Z][A-Z0-9]{5,20})(?:[-.]|$))?/;
+/** The room id a transcript path names, '' for the directory itself, null when the path is not under it. */
+export function transcriptRoomOf(relPosix) {
+  const parts = String(relPosix || '').split('/').filter(p => p && p !== '.');
+  const rel = parts.join('/');
+  const m = rel.match(TRANSCRIPT_RE);
+  if (!m) return null;
+  // A traversal that starts in the directory is nobody's, like the directory.
+  if (parts.some(p => p === '..')) return '';
+  return m[1] || '';
+}
+/**
+ * May this turn read a transcript path? A room's turn reads its own room; a
+ * person reads the rooms they are in (`isMember(roomId)` — the registry's
+ * answer); the directory itself, or a file whose room cannot be told, is
+ * nobody's. Paths outside `.group-watcher/` are not this rule's business (true).
+ */
+export function transcriptAllowed(relPosix, { groupCtx = false, groupId = null, isMember = () => false } = {}) {
+  const room = transcriptRoomOf(relPosix);
+  if (room == null) return true;
+  if (room === '') return false;
+  if (groupCtx) return !!groupId && String(groupId) === room;
+  try { return !!isMember(room); } catch { return false; }
+}

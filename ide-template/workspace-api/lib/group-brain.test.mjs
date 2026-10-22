@@ -84,8 +84,8 @@ const delegatePrompt = gwTest.delegatePrompt({
 ok('delegate is given the group conversation, with attribution',
   /Marek/.test(delegatePrompt) && /budget lands at 40k/.test(delegatePrompt));
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
-ok('delegate is pointed at the durable transcript for older history',
-  /-history\.jsonl/.test(delegatePrompt));
+ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
+  !/-history\.jsonl/.test(delegatePrompt) && /does not open it/.test(delegatePrompt) && /room's memory/.test(delegatePrompt));
 ok('delegate is told to attribute what a named person said',
   /SAY WHOSE it was/.test(delegatePrompt));
 ok('delegate still carries the task itself', /summarise the budget discussion/.test(delegatePrompt));
@@ -264,8 +264,8 @@ ok('the durable group transcript records the message id', /message_id: entry\.me
 const fireSrc = gwSrc.split('const fireDelegate')[1].slice(0, 900);
 ok('the delegate is handed the full history, not the session window',
   /runPrivateDelegate\([^)]*, hist\)/.test(fireSrc), fireSrc.slice(0, 200));
-ok('the delegate is told to READ the transcript rather than explain it cannot',
-  /READ THAT FILE before replying/.test(gwSrc));
+ok('the delegate is told never to say it has no access to the room',
+  /never say you have no access to the room/.test(gwSrc));
 
 // The delegate has the full toolset, so it CAN send Telegram messages itself —
 // and then its closing text is a report about that send, which the system

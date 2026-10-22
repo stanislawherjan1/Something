@@ -558,7 +558,11 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
 The group brain runs as `actor='team'` — **shared scope only**. Scope-guard fences
 it out of every member's private `memory/users/<slug>/` tree, so a group reply can
 never surface one person's private memory. Its own working notes live under
-`memory/groups/<id>/` (admin-only via the file API). Replies are public to the
+`memory/groups/<id>/` (admin-only via the file API). The room's transcript
+(`.group-watcher/<room>-history.jsonl`) is the room's own: readable by the room's
+turn and by a person who is in that room, by nobody else — on disk (the directory
+is the room turn's group) and in the scope-guard hook (by membership from the
+registry). Replies are public to the
 whole group, so the brain offers a DM for anything that needs private/personal
 data. Security rests on **admission** (registration), not on filtering message
 content: once a group is registered, messages from anyone in it are treated as the
@@ -604,9 +608,11 @@ its id in the registry is `slack-<channel id>` and its files are named after
 it. What differs is how it gets in and who may be in it
 (`lib/integrations/slack-channels.js`):
 
-- **Admission is an admin's yes, never automatic.** Anyone in a workspace can
-  add an app to a channel, so being added only makes a request (the Slack page
-  under AI Settings lists it; admins are notified). Approved → registered;
+- **Admission is an admin's yes.** Anyone in a workspace can add an app to a
+  channel, so being added only makes a request (the Slack page under AI Settings
+  lists it; admins are notified) — unless the one who added it is an admin of
+  this workspace (on the roster, matched by their Slack account): that is the
+  admin's yes, and the channel is registered at once. Approved → registered;
   an approved channel gets the whole of it by default — the assistant joins
   in on its own and the room is **open to outsiders** (below) — and an admin
   can turn either off. Not approved within 24 h, or declined → the bot leaves

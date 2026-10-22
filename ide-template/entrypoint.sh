@@ -106,6 +106,21 @@ if [ "$(id -u)" = "0" ]; then
     chmod  -R g+rwX    /home/coder/project 2>/dev/null || true
     find /home/coder/project -type d -exec chmod g+s {} \; 2>/dev/null || true
 
+    # The rooms' transcripts (.group-watcher/) are the rooms' own: written by
+    # workspace-api, read by a room's turn (turn-group) — and by no person's
+    # turn, the bot's, or the editor's (a non-member's turn once could, and the
+    # hook was the only thing in the way). wsapi is in turn-group, so it still
+    # writes; the setgid bit keeps new files in the group. A member asking
+    # about a room is answered from the room's memory, which the memory tools
+    # scope by membership.
+    if getent group turn-group >/dev/null 2>&1; then
+        mkdir -p /home/coder/project/.group-watcher
+        chown wsapi:turn-group /home/coder/project/.group-watcher 2>/dev/null || true
+        chmod 2770 /home/coder/project/.group-watcher 2>/dev/null || true
+        chgrp -R turn-group /home/coder/project/.group-watcher 2>/dev/null || true
+        chmod -R u+rwX,g+rwX,o-rwx /home/coder/project/.group-watcher 2>/dev/null || true
+    fi
+
     # /home/coder itself is mode 0700 owner=coder. wsapi + mcp need to
     # TRAVERSE it to reach PROJECT_DIR — Linux requires +x on every path
     # component. `o+x` grants traversal to everyone without granting
