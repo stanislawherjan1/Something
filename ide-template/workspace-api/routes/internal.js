@@ -865,9 +865,14 @@ export default function internalRouter() {
     if (!mine.length) {
       return res.status(403).json({ ok: false, error: 'not a member of any group the assistant is in (or Telegram is not linked for this person)', groups });
     }
-    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const want = norm(req.body?.group);
-    let hit = want ? mine.filter((g) => g.chatId === want || norm(g.title) === want) : (mine.length === 1 ? mine : []);
+    // A room by its id or its name, however the model spells it: a Slack
+    // channel's id in any case, with or without the `slack-` prefix (the
+    // registry keeps `slack-C…`, Slack shows `C…`), a title with or without
+    // its `#`. A lowercased id once matched nothing and the post was refused.
+    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/^#/, '');
+    const idOf = (s) => String(s || '').trim().replace(/^slack-/i, '').toLowerCase();
+    const want = norm(req.body?.group), wantId = idOf(req.body?.group);
+    let hit = want ? mine.filter((g) => idOf(g.chatId) === wantId || norm(g.title) === want) : (mine.length === 1 ? mine : []);
     if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
     if (hit.length !== 1) {
       const error = hit.length ? 'more than one group matches: say which' : want ? 'none of this person\'s groups matches' : 'say which group';
