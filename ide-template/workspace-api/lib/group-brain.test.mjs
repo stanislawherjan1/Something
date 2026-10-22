@@ -195,8 +195,8 @@ ok('the reload still seeds the ring from the durable transcript',
 // limitation instead of reading them.
 const { buildCachedPrefix } = await import('./memory-loader.js');
 const prefixBlock = buildCachedPrefix({ memoryDir: '/nonexistent-for-test' }).block;
-ok('the prefix points at the group transcripts',
-  /\.group-watcher\/<chatId>-history\.jsonl/.test(prefixBlock));
+ok('the prefix points at room_recent for a room\'s recent talk, not at the fenced files',
+  /room_recent/.test(prefixBlock) && !/\.group-watcher\/<chatId>-history\.jsonl/.test(prefixBlock) && /not opened as files/.test(prefixBlock));
 ok('the prefix names the false excuse it is there to kill',
   /cannot see group history/i.test(prefixBlock));
 ok('the prefix explains the in-flight marker', /\.pending-delegate\.json/.test(prefixBlock));
