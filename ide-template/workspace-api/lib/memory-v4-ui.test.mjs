@@ -390,6 +390,14 @@ ok('(co) ...to the shared card, never a private one', /Poland and Germany/.test(
 r = await stan('POST', '/prefs', { card: 'MISSION', op: 'remove', text: 'Orion sells to private clinics in Poland and Germany.' });
 ok('(co) ...and removes it', r.status === 200 && !(await stan('GET', '/prefs')).body.company.lines.some(l => /Poland/.test(l)), r);
 
+// ─── where a fact was said: the glyph beside it ──────────────────────────────
+r = await stan('GET', '/facts?history=1&limit=500');
+const viaOf = (re) => r.body.items.find(x => re.test(x.text || '') || re.test(x.title || ''))?.via;
+ok('(via) a fact from a Telegram chat says so', viaOf(/Orion kickoff/) === 'telegram', r.body.items.filter(x => /Orion kickoff/.test(x.text)).map(x => [x.source, x.via]));
+ok('(via) ...from the web chat too', viaOf(/did not get the job/) === 'web');
+const kr = await as('kasia@example.test')('GET', '/facts?history=1&limit=500');
+ok('(via) a Telegram group\'s fact wears Telegram, for someone in the group', kr.body.items.find(x => /Group demo on Friday/.test(x.text || ''))?.via === 'telegram', kr.body.items.filter(x => /Group demo/.test(x.text)).map(x => [x.source, x.via]));
+
 server.close();
 console.log(`memory-v4-ui: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

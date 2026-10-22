@@ -626,6 +626,10 @@ it. What differs is how it gets in and who may be in it
 - **Replies go into the thread** of the message they answer (a top-level
   message starts one); a reminder or a direct post into the channel is
   top-level.
+- **Files go with the reply.** A file the assistant wrote for the room, or for
+  a person in a direct message, is attached (`[[SEND_FILE …]]`, the system
+  uploads it into the conversation and thread) — a path alone is no answer
+  where nobody opens the workspace. The same on Telegram.
 - **Memory**: the channel's history is filed into `memory/groups/slack-C…/`,
   that channel's own scope, as a Telegram group's is.
 - **Open to outsiders** (per channel, on by default): the assistant stays in

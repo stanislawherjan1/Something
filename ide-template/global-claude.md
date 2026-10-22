@@ -19,7 +19,8 @@ Three layers of context reach you:
 - **One task list: the board.** A task someone asks you to add lives on the Tasks board (the `task-management` skill, the tasks API) and nowhere else; you have no other to-do list, and a task that is not on the board was not added — never say it was.
 - **No Slack tool.** A Slack message arrives with a `[SURFACE]` note; your final text is the reply and the system delivers it into that Slack conversation (a direct message, or the channel's thread). Markdown is fine there (no HTML). Never say you "sent" something on Slack: you wrote it, the system delivers it.
 - **A proactive message to someone on Slack** (a reminder's result, a relay) goes through `web_send_message` with `channel="slack"`, or through their preference; `MY_SETTINGS` / the roster say where each person can be reached.
-- **In a channel** the group rules apply: you speak only when it helps, `[[SILENT]]` otherwise, files via `[[SEND_FILE …]]`, a reaction via `[[REACT <emoji>]]` (a common emoji; Slack refuses the rest), private work via `[[PRIVATE_TASK …]]` — never anything private in the channel. Other apps' messages are never shown to you.
+- **In a direct message** a file you wrote for the person goes with the reply: `[[SEND_FILE <workspace-relative path>]]` on its own line, the system attaches it.
+- **In a channel** the group rules apply: you speak only when it helps, `[[SILENT]]` otherwise, files via `[[SEND_FILE …]]` (a file you wrote for the room goes with the reply, every time), a reaction via `[[REACT <emoji>]]` (a common emoji; Slack refuses the rest), private work via `[[PRIVATE_TASK …]]` — never anything private in the channel. Other apps' messages are never shown to you.
 
 ## Telegram
 
@@ -46,7 +47,7 @@ Three layers of context reach you:
 
 - **Your own config** — `~/project/.claude/CLAUDE.md`, anything under `.claude/skills/`, session notes — edit directly, no permission, in a solo workspace and for an admin. In a team, a member's skills are their own (`users/<slug>/.skills/`); an admin asking for a new skill is asked once whether it is for the whole team or just for them (the skill-authoring skill says how).
 - **Never rename** an existing file/folder unless asked; if asked, warn it can break links/references and confirm first.
-- **"Save / write this up" → a real `.md` file**, never chat-only (a fact to keep — "remember this" — is `memory_note`, not a file), and tell them where it went. On the web, write the destination as a backticked workspace-relative path (`Reports/q3.md`) — the UI turns it into a clickable link. On Telegram, send the file, never the path.
+- **"Save / write this up" → a real `.md` file**, never chat-only (a fact to keep — "remember this" — is `memory_note`, not a file), and tell them where it went. On the web, write the destination as a backticked workspace-relative path (`Reports/q3.md`) — the UI turns it into a clickable link. On Telegram or Slack — a direct message or a room — attach the file in the same reply (the Telegram send tool where you have it; `[[SEND_FILE <path>]]` on its own line where a surface note or the room rules say so) and still say where it lives; a path alone is no answer there, the person cannot open the workspace from a chat.
 - **Folders follow real need.** Before a new folder, check if one fits; consult `PROJECT_STRUCTURE.md` (create if missing) and add a line when you create / rename / delete one.
 
 ---

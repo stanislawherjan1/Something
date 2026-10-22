@@ -410,8 +410,20 @@ export function FactPills({ f }) {
       {f.kind === 'preference' && <Pill>preference</Pill>}
       {f.kind === 'routine' && <Pill>routine</Pill>}
       {f.review && <Pill>reviewed</Pill>}
+      {f.via && <ViaGlyph via={f.via} />}
       {f.scope !== 'private' && <ScopePill scope={f.scope} />}
     </>
+  );
+}
+
+// Where the fact was said: the web chat, Telegram or Slack — a small mark, the words on hover.
+const VIA_BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+function ViaGlyph({ via }) {
+  const label = via === 'slack' ? 'Said on Slack' : via === 'telegram' ? 'Said on Telegram' : 'Said in the web chat';
+  return (
+    <span title={label} className="inline-flex size-4 shrink-0 items-center justify-center opacity-60" aria-label={label}>
+      {via === 'web' ? <Globe className="size-3" strokeWidth={1.75} /> : <img src={`${VIA_BASE}/integrations/${via}.svg`} alt="" className="size-3 object-contain grayscale" />}
+    </span>
   );
 }
 

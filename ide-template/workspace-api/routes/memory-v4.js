@@ -44,6 +44,7 @@ import { unsupportedDetails, splitNote } from '../lib/memory-router.js';
 import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
 import { getGroup } from '../lib/team.js';
+import { groupIdKind } from '../lib/group-id.js';
 import { lookupMine, outsidersOf, memberBySlug } from '../lib/integrations/private-lookup.js';
 
 function loopbackOnly(req, res, next) {
@@ -304,6 +305,9 @@ export default function memoryV4Router() {
         ended: !expired && !sup && past ? ended : null, evidence: f.evidence || null,
         undated: !!f.undated,   // a card line without a date: `ts` is when the card last changed — known by then
         scope: where, source: r.source, review: r.source === 'review',
+        // Where it was said — web, Telegram or Slack — for the glyph beside the fact; a
+        // room's by the room's kind; a note saved mid-turn or an import carries none.
+        via: ['web', 'telegram', 'slack'].includes(r.source) ? r.source : r.source === 'group' ? (groupIdKind(String(r.conv || '').replace(/^group:/, '')) === 'slack' ? 'slack' : 'telegram') : null,
         // A fact an integration stands behind — its own record, or one of its
         // sources (a chat-made "call with X" confirmed by the meeting's import)
         // — wears the service's icon after its title.

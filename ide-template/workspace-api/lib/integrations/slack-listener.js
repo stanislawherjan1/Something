@@ -192,7 +192,9 @@ export function createHandler(deps = {}) {
       d.api.addReaction(ev.channel, ev.ts, 'eyes').catch(() => {});
     }
     const send = (channel, reply) => d.api.postMessage({ channel, text: reply, ...(thread ? { thread_ts: thread } : {}) }).then(ts => ({ ok: ts.length > 0 }));
-    const done = d.memberDm(member, body, { surface: 'slack', target: ev.channel, send });
+    // A file the reply hands over goes into the same conversation (and thread).
+    const sendFile = (channel, f) => d.api.uploadFile({ channel, filename: f.name, bytes: readFileSync(f.abs), ...(thread ? { thread_ts: thread } : {}) }).then(() => ({ ok: true }));
+    const done = d.memberDm(member, body, { surface: 'slack', target: ev.channel, send, sendFile });
     done.then((r) => {
       if (pane) { if (d.api.setAssistantStatus) d.api.setAssistantStatus(ev.channel, ev.thread_ts, '').catch?.(() => {}); return; }
       d.api.removeReaction(ev.channel, ev.ts, 'eyes').catch(() => {});

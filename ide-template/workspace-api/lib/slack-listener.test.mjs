@@ -44,6 +44,8 @@ const fakeApi = {
 };
 let revoked = null;
 const self = () => ({ user_id: 'U0SELF', bot_id: 'B1', team_id: 'T1', team: 'Example' });
+const uploads = [];
+fakeApi.uploadFile = async ({ channel, filename, bytes, thread_ts }) => { uploads.push({ channel, filename, size: bytes.length, thread_ts }); return 'F1'; };
 const memberDm = (member, body, deps) => { turns.push({ member, body, deps }); return deps.send(deps.target, `echo: ${body}`).then(() => ({ delivered: true, reason: 'slack' })); };
 const handle = L.createHandler({ api: fakeApi, self, memberDm, onRevoked: async (why) => { revoked = why; } });
 
@@ -105,6 +107,11 @@ r = await handle({ type: 'app_mention', channel: 'D1', channel_type: 'im', user:
 await r.done;
 const again = await handle(dm({ ts: '6.0', text: 'x' }));
 ok('the same message (channel+ts) is handled once', r.did === 'member-dm' && again.did === 'ignored' && again.why === 'seen');
+
+// a file the reply hands over goes into the conversation through Slack's upload
+writeFileSync(join(ROOT, 'audit.md'), '# audit\n');
+await turns.at(-1).deps.sendFile('D1', { abs: join(ROOT, 'audit.md'), name: 'audit.md' });
+ok('the DM turn can attach a file into its conversation', uploads.length === 1 && uploads[0].channel === 'D1' && uploads[0].filename === 'audit.md' && uploads[0].size > 0, uploads);
 
 // threads and files
 r = await handle(dm({ ts: '7.1', thread_ts: '7.0', text: 'in a thread', files: [{ id: 'F1', name: 'notes.txt', url_private: 'https://files.slack.com/f/notes.txt' }] }));

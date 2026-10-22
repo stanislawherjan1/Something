@@ -23,6 +23,7 @@ import { PROJECT_DIR } from '../config.js';
 import { runClaudeTurn } from '../claude.js';
 import { createSession, listSessions } from '../sessions.js';
 import { appendToSession } from '../chatHistory.js';
+import { confinedFile } from './channel-adapter.js';
 
 const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
 const RESUME_LOST_RE = /no conversation found|not found|exited with code 1\b/i;
@@ -35,16 +36,22 @@ const SURFACES = {
     note: '[SURFACE] This message came in over Telegram, from the person you are talking to. ' +
       'Your final reply is delivered to them on Telegram by the system — write it as a plain Telegram message ' +
       '(short, no Markdown tables, no headings), and do not call web_send_message to reach THIS person; ' +
-      'that tool is for OTHER teammates only. If there is nothing to say, reply [[SILENT]].',
+      'that tool is for OTHER teammates only. If there is nothing to say, reply [[SILENT]].' +
+      ' To hand them a file — one you wrote for them, or one they asked for — put `[[SEND_FILE <workspace-relative path>]]` on its own line; the system attaches it and strips the marker. When you write a file for them, attach it in the same reply and still say where it lives: they cannot open the workspace from here.',
   },
   slack: {
     title: 'Slack',
     note: '[SURFACE] This message came in over Slack, as a direct message from the person you are talking to. ' +
       'Your final reply is delivered to them in that Slack conversation by the system — write it as a Slack message ' +
       '(short; plain Markdown is fine, no HTML), and do not call web_send_message to reach THIS person; ' +
-      'that tool is for OTHER teammates only. If there is nothing to say, reply [[SILENT]].',
+      'that tool is for OTHER teammates only. If there is nothing to say, reply [[SILENT]].' +
+      ' To hand them a file — one you wrote for them, or one they asked for — put `[[SEND_FILE <workspace-relative path>]]` on its own line; the system attaches it and strips the marker. When you write a file for them, attach it in the same reply and still say where it lives: they cannot open the workspace from here.',
   },
 };
+
+// A file the reply hands over: the marker is stripped, the file goes first.
+const FILE_RE = /`{0,3}\[\[\s*SEND_FILE(?:_DM)?\s+([^\]\n]+?)\s*\]\]`{0,3}/gi;
+const MAX_FILES = 3;
 export function surfaceOf(name) {
   return SURFACES[name] ? name : 'telegram';
 }
@@ -92,6 +99,8 @@ export async function answerMemberDm(member, body, deps = {}) {
   const surface = surfaceOf(deps.surface);
   const runTurn = deps.runTurn || defaultRunTurn;
   const send = deps.send || (async (chatId, text) => (await import('./telegram-sync.js')).sendTelegramMessage(chatId, text));
+  // A file: Telegram's document send by default; Slack passes its upload.
+  const sendFile = deps.sendFile || (async (chatId, f) => (await import('./telegram-sync.js')).sendGroupDocument(chatId, f.abs, { logKind: 'dm' }));
   const target = deps.target ?? member.telegramChatId;
   const slug = member.slug;
   const webId = webSessionFor(slug, surface);
@@ -108,13 +117,25 @@ export async function answerMemberDm(member, body, deps = {}) {
   }
   if (r.sessionId && r.sessionId !== sessionId) saveSession(slug, surface, r.sessionId);
 
-  const text = String(r.text || '').trim();
-  if (r.error && !text) {
+  // Files the reply hands over ([[SEND_FILE …]]): a path the person cannot
+  // open from Slack or Telegram is no answer, so the file itself goes, first.
+  const files = [];
+  let text = String(r.text || '').replace(FILE_RE, (_, p) => { if (files.length < MAX_FILES) files.push(String(p).trim()); return ''; }).trim();
+  if (r.error && !text && !files.length) {
     process.stderr.write(`[member-dm] ${slug}: turn failed: ${String(r.error).slice(0, 200)}\n`);
     return { delivered: false, reason: 'error' };
   }
   if (r.sentItself) return { delivered: true, reason: 'sent by the model' };
-  if (!text || SILENT_RE.test(text)) return { delivered: false, reason: 'silent' };
+  if ((!text && !files.length) || SILENT_RE.test(text)) return { delivered: false, reason: 'silent' };
+
+  let sentFiles = 0;
+  for (const p of files) {
+    const f = confinedFile(p);
+    const out = f.ok ? await sendFile(target, f).catch((e) => ({ ok: false, error: e.message })) : f;
+    if (out?.ok) sentFiles++;
+    else text = `${text}\n(couldn't attach ${p}: ${out?.error || 'send failed'})`.trim();
+  }
+  if (!text) return { delivered: sentFiles > 0, reason: sentFiles > 0 ? surface : 'silent' };
 
   let ok = false;
   try { ok = !!(await send(target, text))?.ok; }
