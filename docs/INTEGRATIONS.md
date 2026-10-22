@@ -673,8 +673,10 @@ detail | error }`; never a secret.
 
 The Slack app manifest for this workspace's bot (its name, the scopes and
 events the surface uses, Socket Mode on, distribution off, this workspace's
-callback as the redirect), as a download the admin pastes at api.slack.com to
-create the app. Holds no secret. `GET /api/integrations/slack/install`
+callback as the redirect — always `https://` on `FRONTEND_DOMAIN`, never the
+last hop's protocol, which behind Caddy and nginx is http), which the setup's
+**Copy manifest** puts on the clipboard (a step download with `copy: true`)
+for the admin to paste at api.slack.com. Holds no secret. `GET /api/integrations/slack/install`
 (admin) sends the admin to Slack's consent page for the app's own client id;
 `GET /api/integrations/slack/oauth/callback` stores the bot token Slack
 returns and starts the socket. `GET

@@ -306,9 +306,10 @@ server). When it finishes you'll see your workspace URL and the next steps.
    on Telegram" bar at the top of the workspace), paste a bot token
    from [@BotFather](https://t.me/BotFather) to chat with your assistant there
    too — same memory, same context.
-8. **Slack (optional).** In **AI Settings → Slack**, follow the steps: create
-   your workspace's own Slack app from the manifest the page gives you, install
-   it, paste its two tokens. Direct messages work at once; a channel joins in
+8. **Slack (optional).** Open **AI Settings → Slack**; the setup opens by
+   itself. Copy the manifest it gives you, create your own Slack app from it,
+   install it and paste its two tokens — each step names the exact buttons on
+   Slack's site. Direct messages work at once; a channel joins in
    after you invite the assistant and approve the channel on that page.
 
 That's it. Your assistant is live.

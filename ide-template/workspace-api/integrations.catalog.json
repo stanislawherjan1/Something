@@ -365,23 +365,23 @@
       ],
       "steps": [
         {
-          "title": "Create the Slack app from our manifest",
-          "body": "Open [api.slack.com/apps](https://api.slack.com/apps?new_app=1) → **Create New App** → **From a manifest**, pick your workspace and paste the manifest from **Download manifest** below (it carries the bot's name, its permissions and Socket Mode). Review it and click **Create**.",
+          "title": "Create the app in Slack",
+          "body": "Press **Copy manifest** below. Open [api.slack.com/apps](https://api.slack.com/apps?new_app=1) → **Create New App** → **From a manifest** → pick your workspace → **Next**. Replace what is in the box with the copied manifest (it names the bot and sets its permissions) → **Next** → **Create**.",
           "downloads": [
             {
-              "label": "Download manifest",
+              "label": "Copy manifest",
               "url": "/api/integrations/slack/manifest",
-              "filename": "{{botName}}-slack-manifest.json"
+              "copy": true
             }
           ]
         },
         {
-          "title": "Install it to your workspace",
-          "body": "Either: on the app's page **Install to Workspace** → **Allow**, then **OAuth & Permissions** → copy the **Bot User OAuth Token** (`xoxb-…`) as the **Bot token**. Or: copy the **Client id** and **Client secret** from **Basic Information → App Credentials**, save, and press **Install to your workspace** on the Slack page — the token then arrives on its own. On some paid plans a Slack admin must approve the install first."
+          "title": "Install it and copy the bot token",
+          "body": "In the app's left menu open **OAuth & permissions** → **Install to** *your workspace* → **Allow**. Back on the same page, under **OAuth Tokens**, **Copy** the **Bot User OAuth Token** (it starts with `xoxb-`) into **Bot token** below. On some paid Slack plans an admin has to approve the install first."
         },
         {
-          "title": "Generate the app-level token",
-          "body": "**Basic Information** → **App-Level Tokens** → **Generate Token and Scopes** → add `connections:write` → **Generate**. Copy it (`xapp-…`) as the **App-level token**. This is what keeps the bot's connection to Slack open — no public address is needed."
+          "title": "Create the connection token",
+          "body": "In the left menu open **Basic information** → scroll to **App-Level Tokens** → **Generate Token and Scopes**. Give it any name, **Add Scope** → `connections:write` → **Generate**. The next window shows the token (it starts with `xapp-`): **Copy** it into **App-level token** below, then **Save**. To see it again later, click its name under **App-Level Tokens**. It keeps the bot connected to Slack; your server needs no public address for it. Nothing else on that page is needed — leave **Client id** and **Client secret** empty."
         }
       ],
       "mcp": {

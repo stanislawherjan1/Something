@@ -65,6 +65,13 @@ ok('...but only to an admin', !r.json.integrations.find(i => i.id === 'slack')?.
 // manifest carries this workspace's callback
 r = await req('GET', '/api/integrations/slack/manifest');
 ok('the manifest names this workspace as the redirect', r.json?.oauth_config?.redirect_urls?.[0] === 'https://bot.example.test/api/integrations/slack/oauth/callback' && r.json.settings.socket_mode_enabled === true, r.json?.oauth_config);
+// Behind Caddy and the frontend's nginx the last hop is http: the redirect is
+// still the public https origin (the canary's manifest once said http://).
+{
+  const h = await fetch(base + '/api/integrations/slack/manifest', { headers: { 'x-test-actor': 'stan@example.test', 'x-forwarded-host': 'bot.example.test', 'x-forwarded-proto': 'http' } });
+  const m = await h.json().catch(() => null);
+  ok('the redirect is https even when the last hop was http', m?.oauth_config?.redirect_urls?.[0] === 'https://bot.example.test/api/integrations/slack/oauth/callback', { status: h.status, m });
+}
 
 // install → Slack's consent page
 r = await req('GET', '/api/integrations/slack/install');

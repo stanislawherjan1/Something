@@ -202,10 +202,13 @@ export function slackManifest(branding = {}, { redirectUri = null } = {}) {
 }
 
 // The address Slack sends the install back to: this workspace's own domain.
+// The client's own public origin, as the other OAuth path builds it: always
+// https on FRONTEND_DOMAIN. The request's protocol is not it — behind Caddy
+// and the frontend's nginx the hop reached this process as http, and the
+// manifest carried an http:// redirect Slack refuses.
 function slackRedirectUri(req) {
-  const proto = String(req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
-  const host = String(req.get('x-forwarded-host') || req.get('host') || 'localhost').split(',')[0].trim();
-  return `${proto}://${host}/api/integrations/slack/oauth/callback`;
+  const host = String(process.env.FRONTEND_DOMAIN || req.get('x-forwarded-host') || req.get('host') || 'localhost').split(',')[0].trim();
+  return `https://${host}/api/integrations/slack/oauth/callback`;
 }
 // One-shot states for the install round trip, ten minutes each.
 const slackState = (() => {
