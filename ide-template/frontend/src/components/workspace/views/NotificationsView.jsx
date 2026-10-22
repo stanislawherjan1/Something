@@ -41,8 +41,12 @@ export default function NotificationsView({ sidebarOpen }) {
   const onOpen = (n) => {
     // A memory-write notification opens the memory page; a session notification
     // opens that chat. Either way it's then marked read (loses its red dot).
+    // A Slack or Telegram notice (a channel waiting, a room paused) opens that
+    // surface's page in AI Settings, where it is acted on.
     if (n.kind === 'memory') {
       navigate('/memory');
+    } else if (n.meta?.surface === 'slack' || n.meta?.surface === 'telegram') {
+      navigate(`/${n.meta.surface}`);
     } else if (n.meta?.session_id) {
       window.dispatchEvent(
         new CustomEvent('ide:chat-select-session', {

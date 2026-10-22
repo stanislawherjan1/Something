@@ -19,6 +19,13 @@ process.env.SLACK_PROXY_URL = '';   // no proxy in the test rig
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log(`  FAIL: ${name}${extra !== undefined ? `\n        ${JSON.stringify(extra)}` : ''}`); } };
+// What Slack received: the form's fields, a JSON-valued field (blocks, files) parsed back.
+const sent = (c) => {
+  const f = new URLSearchParams(String(c.init.body || ''));
+  const out = {};
+  for (const [k, v] of f) { try { out[k] = /^[[{]/.test(v) ? JSON.parse(v) : v; } catch { out[k] = v; } }
+  return out;
+};
 
 const api = await import('./integrations/slack-api.js');
 
@@ -37,7 +44,8 @@ script = [reply(200, { ok: true, user: { id: 'U1' } })];
 let r = await api.call('users.info', { user: 'U1' }, { token: 'xoxb-test' });
 ok('a call is one POST to slack.com/api/<method> as JSON with a Bearer token',
   calls[0].url === 'https://slack.com/api/users.info' && calls[0].init.method === 'POST'
-  && calls[0].init.headers.Authorization === 'Bearer xoxb-test' && JSON.parse(calls[0].init.body).user === 'U1' && r.user.id === 'U1', calls[0]);
+  && calls[0].init.headers.Authorization === 'Bearer xoxb-test' && sent(calls[0]).user === 'U1' && r.user.id === 'U1', calls[0]);
+ok('a method\'s arguments go as a form (Slack\'s read methods ignore a JSON body)', /application\/x-www-form-urlencoded/.test(calls[0].init.headers['Content-Type']) && /(^|&)user=U1(&|$)/.test(calls[0].init.body), calls[0].init);
 
 script = [reply(200, { ok: false, error: 'channel_not_found' })];
 let threw = null; try { await api.call('chat.postMessage', {}, { token: 't' }); } catch (e) { threw = e; }
@@ -76,16 +84,16 @@ if (isReady()) {
   calls.length = 0;
   script = [reply(200, { ok: true, ts: '1.1' }), reply(200, { ok: true, ts: '1.2' })];
   const ts = await api.postMessage({ channel: 'C1', text: 'a\n\nb', thread_ts: '0.9' });
-  ok('a post carries the thread and the markdown block, and returns the ts', ts.length === 1 && ts[0] === '1.1' && JSON.parse(calls[0].init.body).thread_ts === '0.9' && JSON.parse(calls[0].init.body).blocks[0].type === 'markdown');
+  ok('a post carries the thread and the markdown block, and returns the ts', ts.length === 1 && ts[0] === '1.1' && sent(calls[0]).thread_ts === '0.9' && sent(calls[0]).blocks[0].type === 'markdown');
   calls.length = 0;
   script = [reply(200, { ok: false, error: 'invalid_blocks' }), reply(200, { ok: true, ts: '2.1' })];
   const ts2 = await api.postMessage({ channel: 'C1', text: 'plain' });
-  ok('a workspace that refuses the markdown block gets plain text', ts2[0] === '2.1' && !('blocks' in JSON.parse(calls[1].init.body)) && JSON.parse(calls[1].init.body).text === 'plain');
+  ok('a workspace that refuses the markdown block gets plain text', ts2[0] === '2.1' && !('blocks' in sent(calls[1])) && sent(calls[1]).text === 'plain');
   calls.length = 0;
   script = [reply(200, { ok: true, ts: '3.1' }), reply(200, { ok: true, ts: '3.2' })];
   const t1 = Date.now();
   await Promise.all([api.postMessage({ channel: 'C2', text: 'one' }), api.postMessage({ channel: 'C2', text: 'two' })]);
-  ok('two posts in one channel go out a second apart, in order', Date.now() - t1 >= 1000 && JSON.parse(calls[0].init.body).text === 'one' && JSON.parse(calls[1].init.body).text === 'two');
+  ok('two posts in one channel go out a second apart, in order', Date.now() - t1 >= 1000 && sent(calls[0]).text === 'one' && sent(calls[1]).text === 'two');
   calls.length = 0;
   script = [reply(200, { ok: false, error: 'already_reacted' })];
   const rr = await api.addReaction('C1', '1.1', 'eyes');
@@ -93,7 +101,7 @@ if (isReady()) {
   calls.length = 0;
   script = [reply(200, { ok: true, upload_url: 'https://files.slack.com/upload/x', file_id: 'F1' }), reply(200, {}), reply(200, { ok: true, files: [{ id: 'F1' }] })];
   const fid = await api.uploadFile({ channel: 'C1', filename: 'a.txt', bytes: Buffer.from('hello'), thread_ts: '1.1' });
-  ok('an upload is the three-step external upload, into the channel and thread', fid === 'F1' && calls[0].url.endsWith('files.getUploadURLExternal') && calls[1].url === 'https://files.slack.com/upload/x' && calls[2].url.endsWith('files.completeUploadExternal') && JSON.parse(calls[2].init.body).channel_id === 'C1' && JSON.parse(calls[2].init.body).thread_ts === '1.1');
+  ok('an upload is the three-step external upload, into the channel and thread', fid === 'F1' && calls[0].url.endsWith('files.getUploadURLExternal') && calls[1].url === 'https://files.slack.com/upload/x' && calls[2].url.endsWith('files.completeUploadExternal') && sent(calls[2]).channel_id === 'C1' && sent(calls[2]).thread_ts === '1.1');
   threw = null; try { await api.downloadFile('https://evil.example.com/x'); } catch (e) { threw = e; }
   ok('a download from a host that is not Slack is refused before any request', threw?.code === 'not_a_slack_url');
   calls.length = 0;

@@ -67,10 +67,20 @@ async function post(url, init, { allowFallback = true } = {}) {
 export async function call(method, params = {}, { token = null, retried = false } = {}) {
   const tok = token ?? tokens().bot;
   if (!tok) throw new SlackError(method, 'no_token');
+  // A form, never JSON: Slack's read methods (users.info, conversations.info,
+  // .members, .history) ignore a JSON body — users.info answered
+  // user_not_found for a person the workspace had, and every DM was met as a
+  // stranger. Every method takes a form; a value that is not text (blocks, a
+  // file list) goes as its JSON, as Slack documents.
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v === undefined || v === null) continue;
+    body.set(k, typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v));
+  }
   const resp = await post(API + method, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8', Authorization: `Bearer ${tok}` },
-    body: JSON.stringify(params),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=utf-8', Authorization: `Bearer ${tok}` },
+    body: body.toString(),
   });
   if (resp.status === 429 && !retried) {
     const wait = Math.min(Number(resp.headers?.get?.('retry-after')) || 1, 30);
