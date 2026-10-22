@@ -166,17 +166,21 @@ export function RoomPile({ members, outsiders = [], avatars }) {
 /* ─── modal pieces ──────────────────────────────────────────────────────── */
 
 // The portal tooltip the Responsibilities screen uses: it is not clipped by a modal.
+// Self-contained: it brings its own provider, so it works in a list row as well
+// as in the modal (a tip in a row without one crashed the whole screen).
 export function Tip({ text, children }) {
   return (
-    <TooltipPrimitive.Root>
-      <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
-      <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Content side="top" sideOffset={6} collisionPadding={10}
-          className="z-[60] max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] font-normal leading-snug text-popover-foreground shadow-md">
-          {text}<TooltipPrimitive.Arrow className="fill-popover" />
-        </TooltipPrimitive.Content>
-      </TooltipPrimitive.Portal>
-    </TooltipPrimitive.Root>
+    <TooltipPrimitive.Provider delayDuration={200} skipDelayDuration={400}>
+      <TooltipPrimitive.Root>
+        <TooltipPrimitive.Trigger asChild>{children}</TooltipPrimitive.Trigger>
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content side="top" sideOffset={6} collisionPadding={10}
+            className="z-[60] max-w-[18rem] rounded-[6px] border border-border/60 bg-popover px-2.5 py-1.5 text-[11.5px] font-normal leading-snug text-popover-foreground shadow-md">
+            {text}<TooltipPrimitive.Arrow className="fill-popover" />
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      </TooltipPrimitive.Root>
+    </TooltipPrimitive.Provider>
   );
 }
 export function Switch({ on, onToggle }) {
