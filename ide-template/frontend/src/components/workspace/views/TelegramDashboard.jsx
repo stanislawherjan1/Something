@@ -8,9 +8,10 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ActivateModal, RemoveDialog } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
 import StatusTag from './StatusTag.jsx';
+import useOpenSetupOnce from './useOpenSetupOnce.js';
 import { TEAM_URL, call, formatWhen, barBtn, barDanger, primaryBtn } from './surface-screen-helpers.js';
 import {
-  StatePill, BottomBar, AccessDenied, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, SettingsModal, LinkIdButton,
+  StatePill, BottomBar, AccessDenied, NotConnected, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, SettingsModal, LinkIdButton,
 } from './surface-screen.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -40,6 +41,7 @@ export default function TelegramDashboard({ sidebarOpen }) {
   const [tab, setTab] = useState('groups');
   const [setup, setSetup] = useState(false);
   const [disconnect, setDisconnect] = useState(false);
+  useOpenSetupOnce({ ready: isAdmin && !!integ.data && !!tg, connected, open: () => setSetup(true) });
 
   if (!isAdmin) {
     return (
@@ -61,6 +63,10 @@ export default function TelegramDashboard({ sidebarOpen }) {
         meta={<StatePill ok={connected} icon={connected ? CheckCircle2 : Plug} title={connected && tg?.activatedAt ? `Connected since ${formatWhen(tg.activatedAt)}` : undefined}>{connected ? 'Active' : 'Not connected'}</StatePill>} />
 
       <div className="flex-1 overflow-auto">
+        {tg && !connected ? (
+          <NotConnected mark={`${BASE}/integrations/telegram.svg`} name="Telegram" onSetUp={() => setSetup(true)}
+            text="Add your Telegram bot's token: the team can then write to the assistant there, and team groups get it too." />
+        ) : (
         <div className="flex max-w-2xl flex-col gap-5 px-6 pb-12 pt-2">
           <TabBar value={tab} onChange={setTab} tabs={[['groups', 'Groups', pending.length], ['people', 'People', entries.filter(p => !p.telegramChatId).length]]} />
           {tab === 'groups' ? (
@@ -76,6 +82,7 @@ export default function TelegramDashboard({ sidebarOpen }) {
             </GridList>
           )}
         </div>
+        )}
       </div>
 
       <BottomBar label="Bot token">

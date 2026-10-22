@@ -9,9 +9,10 @@ import { ActivateModal, RemoveDialog } from './IntegrationsDashboard.jsx';
 import { TabBar } from './MemoryV4View.jsx';
 import { AddMemberModal } from './TeamDashboard.jsx';
 import StatusTag from './StatusTag.jsx';
+import useOpenSetupOnce from './useOpenSetupOnce.js';
 import { TEAM_URL, call, formatWhen, barBtn, barDanger, primaryBtn, quietBtn, outlineBtn } from './surface-screen-helpers.js';
 import {
-  StatePill, BottomBar, AccessDenied, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, Switch, SettingsModal, LinkIdButton,
+  StatePill, BottomBar, AccessDenied, NotConnected, GridList, Line, Name, EditButton, RoomAvatar, PersonAvatar, MemberPile, RoomPile, ModalRow, Switch, SettingsModal, LinkIdButton,
 } from './surface-screen.jsx';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -43,6 +44,7 @@ export default function SlackDashboard({ sidebarOpen }) {
   const [tab, setTab] = useState('channels');
   const [setup, setSetup] = useState(false);
   const [disconnect, setDisconnect] = useState(false);
+  useOpenSetupOnce({ ready: isAdmin && !!integ.data && !!sl, connected, open: () => setSetup(true) });
 
   if (!isAdmin) {
     return (
@@ -66,6 +68,10 @@ export default function SlackDashboard({ sidebarOpen }) {
         meta={<StatePill ok={up} icon={up ? CheckCircle2 : Plug} title={pillTitle(listener)}>{pillText}</StatePill>} />
 
       <div className="flex-1 overflow-auto">
+        {sl && !connected ? (
+          <NotConnected mark={`${BASE}/integrations/slack.svg`} name="Slack" onSetUp={() => setSetup(true)}
+            text="Connect your own Slack app: people can then write to the assistant there, and channels you approve get it too. It takes a few minutes." />
+        ) : (
         <div className="flex max-w-2xl flex-col gap-5 px-6 pb-12 pt-2">
           <TabBar value={tab} onChange={setTab} tabs={[['channels', 'Channels', pending.length], ['people', 'People', pendingPeople.length]]} />
           {tab === 'channels' ? (
@@ -82,6 +88,7 @@ export default function SlackDashboard({ sidebarOpen }) {
             </GridList>
           )}
         </div>
+        )}
       </div>
 
       <BottomBar label={!connected ? 'Slack app' : needsInstall ? (sl?.install?.possible ? 'Not installed in your workspace yet' : 'No bot token yet') : listener?.error && !listener.connected ? `Not connected: ${listener.error}` : 'Slack app'}>

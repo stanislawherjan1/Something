@@ -11,7 +11,7 @@ import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { Check, Loader2, User, Lock, X, Trash2, Plus, Info, AlertTriangle, Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ModalShell } from './IntegrationsDashboard.jsx';
-import { TEAM_URL, labelCls, call, gcell } from './surface-screen-helpers.js';
+import { TEAM_URL, labelCls, call, gcell, primaryBtn } from './surface-screen-helpers.js';
 
 /* ─── header, bottom bar, access ────────────────────────────────────────── */
 
@@ -41,6 +41,22 @@ export function AccessDenied({ text }) {
         <div className="flex size-12 items-center justify-center rounded-full bg-muted/50"><Lock className="size-5 text-muted-foreground/70" /></div>
         <div className="text-[15px] font-semibold text-foreground/90">Admins only</div>
         <p className="text-[12.5px] leading-relaxed text-muted-foreground/70">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+// A surface that is not connected yet: one plain line and the one thing to do,
+// in the middle of the page — not empty tabs over a "Set up" in the footer,
+// which people missed.
+export function NotConnected({ mark, name, text, onSetUp }) {
+  return (
+    <div className="flex h-full items-center justify-center px-6 py-16">
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        {mark && <div className="flex size-12 items-center justify-center rounded-full bg-muted/50"><img src={mark} alt="" className="size-6 object-contain" /></div>}
+        <div className="text-[15px] font-semibold text-foreground/90">{name} isn't connected yet</div>
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground/70">{text}</p>
+        <button type="button" onClick={onSetUp} className={cn(primaryBtn, 'mt-1 px-4 py-1.5 text-[13px]')}>Set up {name}</button>
       </div>
     </div>
   );
