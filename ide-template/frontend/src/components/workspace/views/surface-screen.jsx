@@ -116,15 +116,18 @@ export function PersonAvatar({ name, avatar }) {
     </span>
   );
 }
+// The name on hover is the portal tooltip, like every other tip here: the
+// browser's own title took a second to show and was easy to miss.
 export function MemberAvatar({ name, avatar }) {
   const [errored, setErrored] = useState(false);
-  return (
-    <span title={name || undefined} className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ring-2 ring-card">
+  const face = (
+    <span className="flex size-6 shrink-0 cursor-default items-center justify-center overflow-hidden rounded-full bg-muted ring-2 ring-card">
       {avatar && !errored
         ? <img src={avatar} alt="" className="size-full object-cover" onError={() => setErrored(true)} />
         : <User className="size-3 text-muted-foreground/40" strokeWidth={2} />}
     </span>
   );
+  return name ? <Tip text={name}>{face}</Tip> : face;
 }
 export function MemberPile({ members, avatars }) {
   const shown = members.slice(0, 5);
@@ -138,21 +141,24 @@ export function MemberPile({ members, avatars }) {
 }
 // Everyone in the room: teammates with their faces, anyone not on the team
 // with an outline — the words on hover.
+// `outsiders`: ids, or { id, name } as the audience check records them.
 export function RoomPile({ members, outsiders = [], avatars }) {
-  const ours = members.filter(([id]) => !outsiders.includes(id));
+  const out = outsiders.map(o => (typeof o === 'string' ? { id: o, name: null } : o)).filter(o => o && o.id);
+  const outIds = new Set(out.map(o => String(o.id)));
+  const ours = members.filter(([id]) => !outIds.has(String(id)));
   return (
     <span className="flex items-center gap-2">
       <span className="flex items-center -space-x-1.5">
         {ours.slice(0, 6).map(([id, name]) => <MemberAvatar key={id} name={name} avatar={avatars?.[String(id)]} />)}
-        {outsiders.slice(0, 4).map(id => (
-          <Tip key={id} text="Not on the team">
+        {out.slice(0, 4).map(({ id, name }) => (
+          <Tip key={id} text={name && name !== id ? `${name} · not on the team` : 'Not on the team'}>
             <span className="flex size-6 shrink-0 cursor-help items-center justify-center rounded-full bg-muted ring-2 ring-card">
               <span className="flex size-full items-center justify-center rounded-full ring-1 ring-inset ring-amber-500/80"><User className="size-3 text-muted-foreground/60" strokeWidth={2} /></span>
             </span>
           </Tip>
         ))}
       </span>
-      {!ours.length && !outsiders.length && <span className="text-[12px] text-muted-foreground/55">Nobody seen yet</span>}
+      {!ours.length && !out.length && <span className="text-[12px] text-muted-foreground/55">Nobody seen yet</span>}
     </span>
   );
 }

@@ -400,7 +400,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // show it, so the call fails and the chat shows an error chip instead of the
   // question. The product asks in plain words anyway — no pickers in a
   // conversation — so the tool is never offered here.
-  const blocked = ['AskUserQuestion', ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
+  // The CLI's own to-do tools are not the product's task board: a group turn
+  // once "added" a task to the session's list, told the person it was on their
+  // board, and it was nowhere. The board (the task-management skill, the
+  // tasks API) is the only task list a turn has.
+  const CLI_TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
+  const blocked = ['AskUserQuestion', ...CLI_TODO_TOOLS, ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
   // A page turn — started from the browser panel with the page shared, Look
   // or Act — reads a web page, and a page can carry injected instructions. So
   // it holds nothing a page could turn against the user: no built-in tools at

@@ -84,7 +84,7 @@ ok('an image becomes a photo reference the adapter understands', routed[1].photo
 channels.C0GENERAL.members.push('U0GUEST01');
 notices.length = 0;
 r = await C.onChannelEvent({ type: 'member_joined_channel', channel: 'C0GENERAL', user: 'U0GUEST01' });
-ok('someone not on the team joining pauses the channel', r.did === 'audience' && team.getGroup('slack-C0GENERAL').paused === true && r.audience.outsiders.includes('U0GUEST01'), r);
+ok('someone not on the team joining pauses the channel', r.did === 'audience' && team.getGroup('slack-C0GENERAL').paused === true && r.audience.outsiders.some(o => o.id === 'U0GUEST01' && o.name), r);
 ok('...and the admins hear who is in the way', notices.some(n => /paused/.test(n.title) && /1 person not on the team/.test(n.body)));
 r = await C.onChannelMessage({ type: 'message', channel: 'C0GENERAL', user: 'U0ANN0001', text: 'hello?', ts: '3.0' });
 ok('a message in a paused channel goes nowhere', r.did === 'ignored' && r.why === 'paused' && routed.length === 2);

@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as api from './slack-api.js';
 import { resolveMember, plainText, status as listenerStatus } from './slack-listener.js';
-import { addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, list as teamList, listGroups } from '../team.js';
+import { addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, list as teamList, listGroups, recordGroupMember } from '../team.js';
 import { publish as publishNotification } from '../notify.js';
 import { routeGroupMessage } from './group-watcher.js';
 
@@ -36,7 +36,7 @@ export const groupIdOf = (channel) => `slack-${String(channel || '').trim()}`;
 
 // ─── dependencies (tests swap them) ──────────────────────────────────────────
 let d = {
-  api, resolveMember, self: () => listenerStatus(), addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, teamList, listGroups,
+  api, resolveMember, self: () => listenerStatus(), addGroup, removeGroup, getGroup, touchGroupMeta, userBySlackId, teamList, listGroups, recordGroupMember,
   notify: publishNotification, route: routeGroupMessage, now: () => Date.now(), log: (s) => process.stderr.write(`[slack-channels] ${s}\n`),
 };
 export function __setDeps(over) { d = { ...d, ...over }; }
@@ -132,10 +132,16 @@ export async function checkAudience(chatId, { quiet = false } = {}) {
   let members = [];
   try { members = await d.api.conversationsMembers(channel); } catch (err) { d.log(`conversations.members ${channel}: ${err.message}`); return null; }
   const outsiders = [];
+  // Everyone in the room, named: a teammate as the roster names them (and
+  // recorded as in the room, whether or not they have written), anyone else
+  // by the name Slack shows — the room's pile says who, not an id.
   for (const id of members) {
     if (id === self) continue;
     const m = d.userBySlackId(id) || await d.resolveMember(id);
-    if (!m) outsiders.push(id);
+    if (m) { try { d.recordGroupMember(chatId, id, m.displayName || m.slug); } catch { /* best effort */ } continue; }
+    let name = null;
+    try { const u = await d.api.usersInfo(id); name = u?.real_name || u?.profile?.real_name || u?.name || null; } catch { /* the id then */ }
+    outsiders.push({ id, name: name || id });
   }
   const shared = isShared(info);
   const audience = { ok: !shared && outsiders.length === 0, outsiders: outsiders.slice(0, 20), shared, members: members.length, checkedAt: new Date(d.now()).toISOString() };
