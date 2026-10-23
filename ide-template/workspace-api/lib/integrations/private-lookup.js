@@ -88,7 +88,7 @@ export function lookupPrompt({ member, question, room, people = [], outsiders = 
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person. Never say that something was left out and never hint at it.`,
     `- Leave out anything ${name} asked to keep quiet or private, whoever it concerns.`,
     '- When the question needs something you cannot do here (the weather, a web search, a calculation), answer with what you know of them that it needs (where they are or live, their time zone, the preference it turns on); the room does the rest. Never pass on an earlier result of such a check (a forecast, a price, a status) from the conversations: it is out of date.',
-    ...(out.size ? ['- Someone not on the team is in the room: if the answer is a secret that opens something (a password, a PIN, a door or lock code, a key, a login), reply with exactly: SECRET'] : []),
+    '- If the answer is a secret that opens something (a password, a PIN, a door or lock code, a key, a login), reply with exactly: SECRET — it is never said in a room, it goes to their DM.',
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
     '- If the memory tools fail or return an error, reply with exactly: FAILED (never explain the failure; the room is told you could not check).',
     '- Your whole output is the answer. No preamble, no mention of memory, tools or this task.',

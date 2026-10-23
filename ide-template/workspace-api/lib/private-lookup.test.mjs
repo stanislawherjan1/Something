@@ -51,7 +51,7 @@ ok('the one-shot answers about the person too (profile, preferences), only what 
 ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
 ok('the one-shot answers exactly what was asked, no related facts beside it', /answer EXACTLY what was asked and nothing beside it/.test(prompt) && /Never add a related fact the question did not ask for/.test(prompt));
 ok('...never an earlier forecast or price from the conversations', /Never pass on an earlier result of such a check/.test(prompt));
-ok('with someone from outside in the room, the one-shot holds back secrets (SECRET), not otherwise', /reply with exactly: SECRET/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Olek the glazer'], outsiders: ['Olek the glazer'] })) && !/SECRET/.test(prompt));
+ok('the one-shot holds back secrets (SECRET) in every room', /reply with exactly: SECRET/.test(prompt) && /reply with exactly: SECRET/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Olek the glazer'], outsiders: ['Olek the glazer'] })));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 
 // ─── what its answer means ───────────────────────────────────────────────────
@@ -94,8 +94,7 @@ ok('a question about themselves is answered in the room, not sent to a DM: the D
 ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(asMember.message));
 {
   const guestRoom = groupTurnParams(getGroup('-100888'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what is my door code?' });
-  ok('with someone from outside in the room, a member is told secrets are the one exception, even when they insist', /ONE EXCEPTION, while someone from outside the team is here \(Olek the glazer\)/.test(guestRoom.message) && /even when its owner insists/.test(guestRoom.message));
-  ok('...and in a room of only the team, no such exception: their own codes are said when they ask', !/ONE EXCEPTION/.test(asMember.message) && /that includes codes and passwords/.test(asMember.message));
+  ok('secrets are the one exception in every room, even when their owner insists: they go to the DM', /ONE EXCEPTION, in every room/.test(guestRoom.message) && /ONE EXCEPTION, in every room/.test(asMember.message) && /even when its owner insists/.test(asMember.message) && /send it to their DM/.test(asMember.message));
 }
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 

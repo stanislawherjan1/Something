@@ -50,8 +50,8 @@ yourself or your own matters — where you are, what you prefer, a supplier you
 chose, a meeting you booked — and it looks it up in what you told it in your own
 chat and answers for the room to hear, because you asked. Nobody else gets it: when
 someone asks about you, your memory stays closed, whoever they are. Codes and
-passwords are the exception while someone from outside the team is in the room:
-those it offers to send you directly instead. Come
+passwords are the exception: those never go into a group, they come to you
+directly instead. Come
 back to a group after a day and it re-reads where the conversation stopped
 before it answers. In a group it knows what the team knows: what was said in that group,
 and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
@@ -652,11 +652,12 @@ it. What differs is how it gets in and who may be in it
   for it in the room, the assistant says it, and if it thinks the room is the
   wrong place it says so once and gives way when asked again. That is
   ownership, not rank: it never covers another person's things, an admin's
-  request included. One exception while someone from outside is there: a
-  secret that opens something (a password, a PIN, a door or lock code, a key,
-  a login) is not said in the room even when its owner insists — the
-  assistant offers their DM, and the lookup returns `SECRET` instead of the
-  value. With only the team in the room, it is said when they ask. With everyone on the team it is an ordinary room.
+  request included. One exception, in every room whoever is in it: a secret
+  that opens something (a password, a PIN, a door or lock code, a key, a
+  login) is never said there, even when its owner insists — it goes to their
+  DM, and the lookup returns `SECRET` instead of the value. (Told it could say
+  a code in a team-only room, the model would not, so the rule says what it
+  does.) With everyone on the team it is an ordinary room.
   Nothing of the sender's own is put into the room's session, not even their
   time zone: "the weather for me" goes through their own lookup, which knows
   their settings. Turned off, the room is paused while an outsider is

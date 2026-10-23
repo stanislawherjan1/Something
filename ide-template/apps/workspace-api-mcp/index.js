@@ -719,7 +719,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         r = await v4Call('POST', 'mine', { question: String(args?.question || '') });
         if (r.ok) {
           r.text = r.failed ? 'Could not check their memory right now. Say so; do not guess.'
-            : r.secret ? 'The answer is a secret (a code, a password, a key) and someone from outside the team is here: do not say it in this room; offer to send it to their DM ([[PRIVATE_TASK]]).'
+            : r.secret ? 'The answer is a secret (a code, a password, a key): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
             : r.nothing ? `Nothing in their own memory answers this${r.note ? ` (${r.note})` : ''}. Say the team's notes have nothing; do not hint at their memory.`
             : `From your conversations with them — say only what answers their question: ${r.answer}`;
         }

@@ -31,7 +31,6 @@ import { tmpdir } from 'node:os';
 
 import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
-import { outsidersOf } from './private-lookup.js';
 import { isAllowedGroup, isGroupActive, getGroup, recordGroupMember, addGroup, touchGroupMeta, getDefaultTimezone } from '../team.js';
 import { adapterFor } from './channel-adapter.js';
 import { isGroupId, normalizeGroupId } from '../group-id.js';
@@ -1126,11 +1125,9 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   // Per-group reply language (operator-set on the group). Empty → infer per message.
   const lang = group && group.language ? String(group.language).trim() : '';
   const replyLang = lang || `${senderName}'s language`;
-  let outside = [];
-  try { outside = outsidersOf(group); } catch { outside = []; }
-  const secretRule = outside.length
-    ? ` ONE EXCEPTION, while someone from outside the team is here (${outside.slice(0, 5).join(', ')}): a secret that opens something — a password, a PIN, a door or lock code, a key, a login — is not said here even when its owner insists; say so in a few words and offer their DM (emit [[PRIVATE_TASK]] when they want it). With only the team here, say it when they ask.`
-    : ' With only the team in this room, that includes codes and passwords: their own, asked for by them, are said here — an earlier refusal in this room does not carry over.';
+  // Secrets go to the person's DM in every room, whoever is there: the model
+  // would not paste a code into a group even when told it may (measured live).
+  const secretRule = ' ONE EXCEPTION, in every room: a secret that opens something — a password, a PIN, a door or lock code, a key, a login — is never said here, even when its owner insists; say so in a few words and send it to their DM (emit [[PRIVATE_TASK]] when they ask for it).';
   const message = [
     opts.resumed
       ? `You are replying in a ${a.roomNoun} for your team (not a 1:1 DM). You have an ongoing session memory of this group's earlier conversation, but it may have been summarised and lost detail.`
