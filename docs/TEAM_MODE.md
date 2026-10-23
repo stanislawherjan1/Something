@@ -637,8 +637,12 @@ it. What differs is how it gets in and who may be in it
   is actually in it, every turn there is **group-only** — it reads and writes
   that channel's own memory and nothing of the team's shared memory
   (`readableScopes({ groupOnly })`, carried on the turn token); the prompt
-  tells the assistant it is among outside parties. With everyone on the team
-  it is an ordinary room. Turned off, the room is paused while an outsider is
+  tells the assistant it is among outside parties. What belongs to the person
+  asking (a task they own, their own plans) stays theirs to disclose: asked
+  for it in the room, the assistant says it, and if it thinks the room is the
+  wrong place it says so once and gives way when asked again. That is
+  ownership, not rank: it never covers another person's things, an admin's
+  request included. With everyone on the team it is an ordinary room. Turned off, the room is paused while an outsider is
   in it. A shared (Slack Connect) channel is paused whatever the setting.
 - **Threads**: a message in the channel is answered in the channel, and the
   channel is one resumed session; a message inside a thread is answered in

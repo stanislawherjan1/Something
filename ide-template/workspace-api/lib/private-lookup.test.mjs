@@ -75,6 +75,8 @@ const asMember = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', fr
 ok('a roster member\'s turn is told about ask_my_memory, for their own matters only', asMember.actor === 'nora' && /THEIR OWN MEMORY, SAID HERE/.test(asMember.message) && /ask_my_memory/.test(asMember.message) && /never for anyone else's memory/.test(asMember.message));
 const asStranger = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', from_id: '9999999', who: 'Someone', text: 'what did we agree?' });
 ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/ask_my_memory/.test(asStranger.message));
+ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(asMember.message) && /when they ask again, say it here, in full/.test(asMember.message) && /never covers anything about another person/.test(asMember.message));
+ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);
