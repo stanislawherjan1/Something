@@ -94,7 +94,7 @@ ok('delegate is given the group conversation, with attribution',
 {
   const { groupTurnParams: gtp } = await import('./integrations/group-watcher.js');
   const pr2 = gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
-  ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT state of something/.test(pr2) && /only make after checking/.test(pr2));
+  ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT STATE IS LOOKED UP, NEVER REMEMBERED/.test(pr2) && /Your earlier reply is not a source/.test(pr2) && /only be said after that fresh look/.test(pr2));
 }
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
 ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
