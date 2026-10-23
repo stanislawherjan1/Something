@@ -1024,6 +1024,7 @@ export default function memoryV4Router() {
     const answered = !!(r && r.answer);
     ledger.logEvent({ op: 'private_lookup', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered });
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
+    if (r.secret) return res.json({ ok: true, nothing: true, secret: true, note: 'the answer is a secret (a code, a password) and someone from outside the team is in the room: do not say it here, offer their DM' });
     return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null, ...(outsiders.length ? { outsiders: outsiders.length } : {}) });
   });
 

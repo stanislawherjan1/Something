@@ -51,12 +51,14 @@ ok('the one-shot answers about the person too (profile, preferences), only what 
 ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
 ok('the one-shot answers exactly what was asked, no related facts beside it', /answer EXACTLY what was asked and nothing beside it/.test(prompt) && /Never add a related fact the question did not ask for/.test(prompt));
 ok('...never an earlier forecast or price from the conversations', /Never pass on an earlier result of such a check/.test(prompt));
+ok('with someone from outside in the room, the one-shot holds back secrets (SECRET), not otherwise', /reply with exactly: SECRET/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Olek the glazer'], outsiders: ['Olek the glazer'] })) && !/SECRET/.test(prompt));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 
 // ─── what its answer means ───────────────────────────────────────────────────
 ok('NOTHING is nothing', PL.parseAnswer('NOTHING').nothing === true && PL.parseAnswer('**NOTHING**').nothing === true && PL.parseAnswer('NOTHING — no notes on that.').nothing === true);
 ok('an answer is the answer', PL.parseAnswer('Harbor Glaze supplies the celadon at 14 GBP a kilo.').answer === 'Harbor Glaze supplies the celadon at 14 GBP a kilo.');
 ok('an explanation that ends in the verdict is the verdict, never posted', PL.parseAnswer('The memory lookup tools are not responding right now, so I cannot verify this.\n\nNOTHING').nothing === true && PL.parseAnswer('I could not reach the records.\nFAILED').failed === true);
+ok('SECRET is a secret held back, never the value', PL.parseAnswer('SECRET').secret === true && PL.parseAnswer('It is a door code.\nSECRET').secret === true && !PL.parseAnswer('SECRET').answer);
 ok('FAILED is a failure', PL.parseAnswer('FAILED').failed === true);
 ok('...and an answer that merely mentions the word is still an answer', PL.parseAnswer('NOTHING was decided about the kiln; Mara will call Harbor Glaze on Friday.').nothing === true && PL.parseAnswer('Mara said nothing was decided; she calls Friday.').answer !== undefined);
 ok('the one-shot is told to say FAILED when its tools fail', /reply with exactly: FAILED/.test(prompt));
@@ -90,6 +92,11 @@ ok('nothing of the sender\'s own (not even their time zone) is put into the room
 ok('the member is told to reach their own memory for questions about themselves, before asking back, never for another person', /asks about THEMSELVES or THEIR OWN matters/.test(asMember.message) && /before answering or asking them back/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
 ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(asMember.message) && /even when it touches private things: answer it here/.test(asMember.message) && !/their personal data\), emit/.test(asMember.message));
 ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(asMember.message));
+{
+  const guestRoom = groupTurnParams(getGroup('-100888'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what is my door code?' });
+  ok('with someone from outside in the room, a member is told secrets are the one exception, even when they insist', /ONE EXCEPTION, while someone from outside the team is here \(Olek the glazer\)/.test(guestRoom.message) && /even when its owner insists/.test(guestRoom.message));
+  ok('...and in a room of only the team, no such exception', !/ONE EXCEPTION/.test(asMember.message));
+}
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);

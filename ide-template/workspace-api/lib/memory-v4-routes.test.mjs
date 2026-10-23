@@ -238,6 +238,10 @@ T.recordGroupMember('-100777', '9999999', 'Olek');
 r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'how do I like my replies?' } });
 ok('(z) with someone from outside in the room, the asker still gets their own answer (theirs to have said)', r.body.ok && r.body.answer === 'You prefer short replies in Polish.' && r.body.outsiders === 1, r.body);
 ok('(z) ...and the one-shot is told who is there', asked.at(-1)?.people?.includes('Olek'), asked.at(-1));
+PL.configureLookup(async () => ({ secret: true }));
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'what is my door code?' } });
+ok('(z) a secret with someone from outside present: not said, a DM offered, never the value', r.body.ok && r.body.secret === true && !r.body.answer && /DM/.test(r.body.note || ''), r.body);
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return { answer: 'You prefer short replies in Polish.' }; });
 {
   const fs = await import('node:fs');
   const f = join(ROOT, '.team-config.json');
