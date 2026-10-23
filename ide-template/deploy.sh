@@ -457,6 +457,7 @@ ship apps/nano-banana-mcp/index.js    "$HETZNER_HOST:$REMOTE_PATH/apps/nano-bana
 ship apps/nano-banana-mcp/package.json "$HETZNER_HOST:$REMOTE_PATH/apps/nano-banana-mcp/" || exit 1
 ship apps/reminder-mcp/index.js       "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 ship apps/reminder-mcp/recur.cjs      "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
+ship apps/reminder-mcp/room-target.js "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 ship apps/reminder-mcp/package.json   "$HETZNER_HOST:$REMOTE_PATH/apps/reminder-mcp/"     || exit 1
 # pdf-mcp — markdown→PDF (weasyprint). index.js speaks MCP + shells to render.py;
 # house.css is the shared stylesheet. All four files are needed on the remote

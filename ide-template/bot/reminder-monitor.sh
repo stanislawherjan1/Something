@@ -417,6 +417,15 @@ while true; do
     # Each due message is printed as a single line (newlines replaced with space)
     MESSAGES=$(node - "$REMINDERS_FILE" "$CHAT_ID" << 'NODEEOF'
 const fs = require('fs');
+// Team mode, as workspace-api decides it (lib/team.js getTeamMode): the
+// explicit switch, else more than one person on the roster.
+const SOLO = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync((process.env.PROJECT_DIR || '/home/coder/project') + '/.team-config.json', 'utf8'));
+    if (typeof cfg.teamMode === 'boolean') return !cfg.teamMode;
+  } catch { /* no config: the roster decides */ }
+  try { const r = JSON.parse(fs.readFileSync((process.env.PROJECT_DIR || '/home/coder/project') + '/.allowed-emails.json', 'utf8')); return !(Array.isArray(r) && r.length > 1); } catch { return true; }
+})();
 
 const [,, file, chatId] = process.argv;
 const now = Date.now();
@@ -627,7 +636,9 @@ reminders = reminders.map(r => {
     // Channel hint travels with the wire message via a tab separator —
     // bash splits on it below. Default 'all' covers legacy reminders that
     // pre-date the field.
-    const channel = (typeof r.channel === 'string' && ['telegram','web','all'].includes(r.channel))
+    // 'slack' too: fire_operator runs a Slack-bound one headlessly. Left out of
+    // this list, a Slack reminder silently became 'all' and never reached Slack.
+    const channel = (typeof r.channel === 'string' && ['telegram','web','slack','all'].includes(r.channel))
         ? r.channel : 'all';
     // Team mode: recipients ride as the 2nd column (CSV of slugs, or the
     // '*everyone*' sentinel). EMPTY = solo / operator-only → the bash side
@@ -635,7 +646,12 @@ reminders = reminders.map(r => {
     // columns so a teammate's clean notification keeps the heading/detail
     // split; `wire` stays the operator's brain-frame message (unchanged).
     // Flatten newlines AND tabs so the 5-column structure can't be broken.
-    const recipientsCsv = Array.isArray(r.recipients) ? r.recipients.join(',') : '';
+    // Solo: one person, one brain. A solo turn that carried the operator's slug
+    // wrote recipients: [<operator>], and the teammate path then asked wsapi
+    // for a second turn that solo always refuses — a planner duty retried four
+    // times and went dead. In solo the recipients column is empty: the
+    // operator's own path, as it always was.
+    const recipientsCsv = !SOLO && Array.isArray(r.recipients) ? r.recipients.join(',') : '';
     // \x1f (unit separator) between columns — a NON-whitespace delimiter so bash
     // `read` PRESERVES empty fields (an empty recipients column = solo; a
     // whitespace IFS like \t would collapse it). Flatten it (+ newlines/tabs)
