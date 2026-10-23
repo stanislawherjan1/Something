@@ -129,6 +129,8 @@ ok('a failed send says so, nothing recorded as sent', r.status === 422 && /kicke
   };
   let g = await get({ room: 'Suppliers' }, ann);
   ok('(room) a member reads the room\'s latest lines', g.status === 200 && g.body.lines.length === 2 && g.body.lines[0].text === 'Supplier call moved to 3pm.' && g.body.lines[1].who === 'assistant', g.body);
+  const local = g.body.tz && new Intl.DateTimeFormat('sv-SE', { timeZone: g.body.tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date('2026-10-22T10:00:00Z'));
+  ok('(room) ...with each line\'s time in the reader\'s own zone, and the zone named', !!g.body.tz && g.body.lines[0].at === local && /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(local), g.body);
   g = await get({ room: 'C0ROOM0001' }, ann);
   ok('(room) ...a Slack channel too, by its id', g.status === 200 && g.body.lines[0].text === 'Kiln at 1200.', g.body);
   g = await get({ room: 'Suppliers' }, bob);

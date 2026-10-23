@@ -824,8 +824,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: `${data.error || `HTTP ${res.status}`}${list ? ` (their rooms: ${list})` : ''}` }], isError: true };
       }
       const strip = (t) => String(t || '').replace(/<<<|>>>/g, '');
-      const body = data.lines.map((l) => `[${l.ts ? String(l.ts).slice(0, 16).replace('T', ' ') : '?'}] ${strip(l.who)}: ${strip(l.text)}`).join('\n');
-      return { content: [{ type: 'text', text: `${data.room.title || data.room.chatId} — the latest ${data.lines.length} lines:\n<<<UNTRUSTED room transcript\n${body || '(nothing yet)'}\n>>>` }] };
+      const body = data.lines.map((l) => `[${l.at || (l.ts ? `${String(l.ts).slice(0, 16).replace('T', ' ')} UTC` : '?')}] ${strip(l.who)}: ${strip(l.text)}`).join('\n');
+      return { content: [{ type: 'text', text: `${data.room.title || data.room.chatId} — the latest ${data.lines.length} lines${data.tz ? ` (times in ${data.tz})` : ''}:\n<<<UNTRUSTED room transcript\n${body || '(nothing yet)'}\n>>>` }] };
     } catch (err) {
       return { content: [{ type: 'text', text: `Could not read the room right now: ${err.message}` }], isError: true };
     }

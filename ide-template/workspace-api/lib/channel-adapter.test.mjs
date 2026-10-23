@@ -29,8 +29,8 @@ ok('something that is no group id falls back to Telegram (legacy callers)', A.ad
 const slack = A.adapterFor('slack-C0123ABCD');
 const tg = A.adapterFor('-1001234567890');
 ok('each platform names its room and its limits', slack.roomNoun === 'Slack CHANNEL' && tg.roomNoun === 'Telegram GROUP CHAT' && slack.replyMax > tg.replyMax);
-ok('a Slack reply goes into the thread of the message it answers', JSON.stringify(slack.replyRef({ message_id: '1700.1' })) === '{"thread_ts":"1700.1"}');
-ok('...or into the thread the message already sits in', JSON.stringify(slack.replyRef({ message_id: '1700.5', thread_id: '1700.1' })) === '{"thread_ts":"1700.1"}');
+ok('a Slack reply to a channel message goes into the channel, not a new thread', JSON.stringify(slack.replyRef({ message_id: '1700.1' })) === '{}');
+ok('...and a reply to a message in a thread goes into that thread', JSON.stringify(slack.replyRef({ message_id: '1700.5', thread_id: '1700.1' })) === '{"thread_ts":"1700.1"}');
 ok('a scheduled frame (no real message) posts top-level', JSON.stringify(slack.replyRef({ message_id: 'sys-123' })) === '{}' && JSON.stringify(slack.replyRef(null)) === '{}');
 ok('a Telegram group is one stream', JSON.stringify(tg.replyRef({ message_id: '42' })) === '{}');
 ok('the sender is resolved on each platform\'s roster field', slack.memberOf('U0ANN0001')?.slug === 'ann' && tg.memberOf('2220002')?.slug === 'ann' && slack.memberOf('2220002') === null && tg.memberOf('U0ANN0001') === null);

@@ -117,6 +117,8 @@ ok('the DM turn can attach a file into its conversation', uploads.length === 1 &
 r = await handle(dm({ ts: '7.1', thread_ts: '7.0', text: 'in a thread', files: [{ id: 'F1', name: 'notes.txt', url_private: 'https://files.slack.com/f/notes.txt' }] }));
 await r.done;
 ok('a reply in a thread stays in that thread', posted.at(-1).thread_ts === '7.0');
+ok('a message for that person later goes into the conversation they last wrote in', JSON.stringify(L.dmPlace('U0ANN0001')) === '{"channel":"D1","thread_ts":"7.0"}', L.dmPlace('U0ANN0001'));
+ok('...not once it is stale, and nowhere for someone who never wrote in one', L.dmPlace('U0ANN0001', Date.now() + 13 * 3600_000) === null && L.dmPlace('U0NOBODY1') === null);
 ok('a file the person sent is saved and named to the turn', /\[Attachments — read these files to answer\]\n- \.attachments\/slack-ann\/\d+\/notes\.txt/.test(turns.at(-1).body), turns.at(-1).body);
 const saved = readFileSync(join(ROOT, turns.at(-1).body.match(/- (\.attachments\/[^\n]+)/)[1]), 'utf8');
 ok('...with the bytes Slack served', saved === 'file from https://files.slack.com/f/notes.txt');

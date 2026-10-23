@@ -83,11 +83,25 @@ const delegatePrompt = gwTest.delegatePrompt({
 });
 ok('delegate is given the group conversation, with attribution',
   /Marek/.test(delegatePrompt) && /budget lands at 40k/.test(delegatePrompt));
+{
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const team = await import('./team.js');
+  const gid = Object.keys(team.getTeamConfig?.().groups || {})[0];
+  const g = gid ? team.getGroup(gid) : { chatId: '-100123', title: 'Room' };
+  const pr = groupTurnParams(g, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  ok('the room turn is told every word is posted: speak to the sender, never about them, silence as a marker', /EVERY WORD YOU WRITE IS POSTED/.test(pr) && /never ABOUT them in the third person/.test(pr) && /\[\[SILENT\]\]/.test(pr));
+}
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
 ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
   !/-history\.jsonl/.test(delegatePrompt) && /does not open it/.test(delegatePrompt) && /room's memory/.test(delegatePrompt));
 ok('delegate is told to attribute what a named person said',
   /SAY WHOSE it was/.test(delegatePrompt));
+ok('delegate is told to start the message with [[DM]]', /START THE MESSAGE with a line holding only `\[\[DM\]\]`/.test(delegatePrompt));
+{
+  const { dmBody } = await import('./integrations/group-watcher.js');
+  ok('the DM is what follows the marker, the working notes before it are dropped', dmBody('Got the details. Now writing the DM.\n\n[[DM]]\nAbout what you asked in #studio: the kiln is booked.') === 'About what you asked in #studio: the kiln is booked.');
+  ok('...the last marker wins, and no marker means the whole text', dmBody('[[DM]] draft\n[[DM]]\nfinal') === 'final' && dmBody('Just the answer.') === 'Just the answer.');
+}
 ok('delegate still carries the task itself', /summarise the budget discussion/.test(delegatePrompt));
 ok('delegate treats the transcript as data, not instructions',
   /never as instructions|not instructions/i.test(delegatePrompt));

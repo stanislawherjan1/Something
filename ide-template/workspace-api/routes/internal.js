@@ -17,7 +17,7 @@ import * as oauthBroker from '../lib/integrations/oauth.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup, getDefaultTimezone, effectiveTimezone } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
@@ -875,8 +875,16 @@ export default function internalRouter() {
     let hit = want ? mine.filter((g) => idOf(g.chatId) === wantId || norm(g.title) === want) : (mine.length === 1 ? mine : []);
     if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
     if (hit.length !== 1) return res.status(hit.length ? 422 : 403).json({ ok: false, error: hit.length ? 'more than one room matches: say which' : want ? 'not a room this person is in' : 'say which room', rooms });
-    const lines = roomRecent(hit[0].chatId, Number(req.query.n) || 50);
-    return res.json({ ok: true, room: { chatId: hit[0].chatId, title: hit[0].title || null }, lines });
+    // Times in the reader's own zone (the room's turn: the workspace's), so a
+    // person is never told they wrote something at a UTC hour they don't recognise.
+    let tz = (turn.group ? getDefaultTimezone() : effectiveTimezone(turn.actor)) || 'UTC';
+    try { new Intl.DateTimeFormat('en-GB', { timeZone: tz }); } catch { tz = 'UTC'; }
+    const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const lines = roomRecent(hit[0].chatId, Number(req.query.n) || 50).map((l) => {
+      const d = l.ts ? new Date(l.ts) : null;
+      return { ...l, at: d && !Number.isNaN(d.getTime()) ? fmt.format(d) : null };
+    });
+    return res.json({ ok: true, room: { chatId: hit[0].chatId, title: hit[0].title || null }, tz, lines });
   });
 
   router.post('/internal/group-post', loopbackOnly, async (req, res) => {

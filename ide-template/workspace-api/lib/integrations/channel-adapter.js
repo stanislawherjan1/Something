@@ -111,6 +111,19 @@ export function slackChannelOf(chatId) {
 function slackAdapter() {
   const api = () => import('./slack-api.js');
   const listener = () => import('./slack-listener.js');
+  /**
+   * A channel id → that channel (and the thread asked for). A person's id →
+   * the conversation they have open with the assistant when there is a recent
+   * one, else their DM: a message to a person is never posted where Slack
+   * files it under Activity only.
+   */
+  async function placeFor(target, opts = {}) {
+    const t = String(target || '');
+    if (!/^[UW][A-Z0-9]+$/.test(t)) return { channel: slackChannelOf(t), thread_ts: opts.thread_ts || null };
+    const pane = (await listener()).dmPlace?.(t);
+    if (pane) return pane;
+    return { channel: await (await api()).openDm(t), thread_ts: null };
+  }
   return {
     kind: 'slack',
     label: 'Slack',
@@ -122,7 +135,9 @@ function slackAdapter() {
     },
     async send(chatId, text, opts = {}) {
       try {
-        const ts = await (await api()).postMessage({ channel: slackChannelOf(chatId), text, ...(opts.thread_ts ? { thread_ts: opts.thread_ts } : {}) });
+        const place = await placeFor(chatId, opts);
+        if (!place.channel) return { ok: false, error: 'no DM channel' };
+        const ts = await (await api()).postMessage({ channel: place.channel, text, ...(place.thread_ts ? { thread_ts: place.thread_ts } : {}) });
         return { ok: ts.length > 0, messageId: ts[ts.length - 1] || null };
       } catch (err) { return { ok: false, error: err.message }; }
     },
@@ -131,10 +146,9 @@ function slackAdapter() {
       if (!f.ok) return f;
       try {
         const a = await api();
-        // A person's id → their DM; a channel id → the channel.
-        const channel = /^[UW][A-Z0-9]+$/.test(String(target)) ? await a.openDm(String(target)) : slackChannelOf(target);
-        if (!channel) return { ok: false, error: 'no DM channel' };
-        await a.uploadFile({ channel, filename: f.name, bytes: readFileSync(f.abs), ...(opts.thread_ts ? { thread_ts: opts.thread_ts } : {}) });
+        const place = await placeFor(target, opts);
+        if (!place.channel) return { ok: false, error: 'no DM channel' };
+        await a.uploadFile({ channel: place.channel, filename: f.name, bytes: readFileSync(f.abs), ...(place.thread_ts ? { thread_ts: place.thread_ts } : {}) });
         return { ok: true };
       } catch (err) { return { ok: false, error: err.message }; }
     },
@@ -159,10 +173,13 @@ function slackAdapter() {
     isSelf(fromId) { const s = this.selfId(); return !!s && String(fromId) === s; },
     ensureSelf() { /* the listener learns it at connect time */ },
     sendingReady() { return !!this.selfId(); },
-    /** A reply in Slack goes into the thread of the message it answers. */
+    /**
+     * A message in the channel is answered in the channel, like a person
+     * would; a message inside a thread is answered in that thread.
+     */
     replyRef(target) {
-      const t = target && (target.thread_id || target.message_id);
-      return t && !String(t).startsWith('sys-') && !String(t).startsWith('n') ? { thread_ts: String(t) } : {};
+      const t = target && target.thread_id;
+      return t && /^\d+\.\d+$/.test(String(t)) ? { thread_ts: String(t) } : {};
     },
     async creatorOf() { return null; },   // a Slack channel is approved by an admin, never by its creator
     async afterRegister() { /* nothing to re-seed */ },

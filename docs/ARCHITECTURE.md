@@ -527,7 +527,7 @@ What an event becomes:
 |---|---|---|
 | a DM from a roster person (matched once by the email Slack holds, kept as `slackUserId`) | `member-dm.js` with `surface: 'slack'` — a turn AS that person, own resumed session, mirrored into a "Slack" chat in their web history | their turn slot |
 | a DM from anyone else in the workspace | one fixed line, once; listed as pending for an admin | — |
-| a channel message | the group watcher (`group-watcher.js`) through the Slack channel adapter (`channel-adapter.js`), only in a channel an admin approved and only while everyone in it is on the roster (`slack-channels.js`: the audience check); replies go into the message's thread | `turn-group`, this channel's scope + shared, nothing private |
+| a channel message | the group watcher (`group-watcher.js`) through the Slack channel adapter (`channel-adapter.js`), only in a channel an admin approved and only while everyone in it is on the roster (`slack-channels.js`: the audience check); a channel message is answered in the channel, a thread message in its thread | `turn-group`, this channel's scope + shared, nothing private |
 | the bot invited to a channel | a request for an admin (`.team/slack-pending-channels.json`, the Slack page); not approved in 24 h → the bot leaves; a Slack Connect channel is left at once | — |
 | `tokens_revoked`, `app_uninstalled` | the keys leave the store, the socket closes | — |
 

@@ -55,6 +55,18 @@ const st = {
 };
 const seen = new Map();        // `channel:ts` → first seen (ms)
 const told = new Set();        // Slack user ids already given the stranger line
+const paneThreads = new Map(); // person's Slack id → { channel, thread_ts, at } of the assistant-pane conversation they last wrote in
+const PANE_THREAD_MAX_AGE_MS = 12 * 3600_000;
+/**
+ * Where a message for one person goes in Slack: the assistant-pane
+ * conversation they last wrote in (that is the Chat they have open; a message
+ * posted outside any thread lands in History and the Activity feed instead),
+ * when it is recent. Null otherwise: then their DM, at the top level.
+ */
+export function dmPlace(user, now = Date.now()) {
+  const p = paneThreads.get(String(user || ''));
+  return p && now - p.at < PANE_THREAD_MAX_AGE_MS ? { channel: p.channel, thread_ts: p.thread_ts } : null;
+}
 const recentDms = new Map();   // DM channel → when a message was last seen (ms; for the catch-up after a lost window)
 const titled = new Set();      // assistant-pane threads already given a title
 const CATCH_UP_WINDOW_MS = 6 * 3600_000;
@@ -185,6 +197,7 @@ export function createHandler(deps = {}) {
     // there says the assistant is on it, and the thread gets the person's
     // first words as its title. Elsewhere a reaction does the same job.
     const pane = !!ev.thread_ts;
+    if (pane) paneThreads.set(String(ev.user), { channel: ev.channel, thread_ts: String(ev.thread_ts), at: Date.now() });
     if (pane) {
       if (d.api.setAssistantStatus) d.api.setAssistantStatus(ev.channel, ev.thread_ts, 'is thinking…').catch?.(() => {});
       if (d.api.setAssistantTitle && !titled.has(`${ev.channel}:${ev.thread_ts}`)) { titled.add(`${ev.channel}:${ev.thread_ts}`); d.api.setAssistantTitle(ev.channel, ev.thread_ts, text.slice(0, 60)).catch?.(() => {}); }

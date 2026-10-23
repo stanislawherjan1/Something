@@ -41,12 +41,18 @@ A.__setAdapter('slack', {
   download: async () => ({ ok: false, error: 'no' }),
   memberOf: (id) => (id === 'U0ANN0001' ? { slug: 'ann', displayName: 'Ann', role: 'member' } : id === 'U0STAN001' ? { slug: 'stan', displayName: 'Stan', role: 'admin' } : null),
   selfId: () => 'U0SELF', isSelf: (id) => id === 'U0SELF', ensureSelf: () => {}, sendingReady: () => true,
-  replyRef: (t) => (t && t.message_id && !/^(sys-|n)/.test(String(t.message_id)) ? { thread_ts: String(t.thread_id || t.message_id) } : {}),
+  replyRef: (t) => (t && t.thread_id ? { thread_ts: String(t.thread_id) } : {}),
   creatorOf: async () => null, afterRegister: async () => {},
 });
 
 const gw = await import('./integrations/group-watcher.js');
 const team = await import('./team.js');
+
+// A mention is for the bot however short: Slack strips the bot's own mention,
+// so "@bot?" arrives as "?" — it once fell under the minimum length and was dropped.
+ok('a bare mention ("?" once the mention is stripped) is a candidate', gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: '?', is_mention: true }) === true);
+ok('...so is an empty one, and a one-character reply to the bot', gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: '', is_mention: true }) && gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: 'k', is_reply_to_bot: true }));
+ok('an unaddressed "?" still is not', gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: '?' }) === false);
 
 // routing
 let r = gw.routeGroupMessage({ chat_id: 'slack-C0GENERAL', chat_title: '#general', message_id: '10.0', text: 'hello everyone', from_id: 'U0ANN0001', from_name: 'Ann', is_mention: true });

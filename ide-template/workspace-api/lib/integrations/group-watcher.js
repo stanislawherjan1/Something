@@ -193,12 +193,13 @@ function pushHistory(chatId, entry) {
 // here so it survives restarts. The turn still runs with the SENDER's identity
 // per turn (attribution + outbound actions as them) — but in GROUP CONTEXT:
 // private trees are hard-blocked for everyone (see scope-rule.pathInGroupScope).
-// A session key is a group id, or `<group id>|<thread>` for a Slack thread: in
-// Slack a channel is a stream of conversations and each thread keeps its own
-// session; the channel's history ring is still the context for all of them.
+// A session key is a group id, or `<group id>|<thread>` for a Slack thread:
+// the channel itself is one conversation (a top-level message is answered in
+// the channel), and a thread someone opened keeps its own session; the
+// channel's history ring is the context for all of them.
 function sessionKeyFor(chatId, target) {
   if (!target || adapterFor(chatId).kind !== 'slack') return String(chatId);
-  const t = target.thread_id || target.message_id;
+  const t = target.thread_id;
   return t && /^\d+\.\d+$/.test(String(t)) ? `${chatId}|${t}` : String(chatId);
 }
 function sessionFile(key) {
@@ -683,12 +684,13 @@ function compileBeat(group) {
 // Drops ONLY on language-independent signals. NB: teammate senders are NOT
 // excluded — in the team's own group everyone is a teammate and may be answered
 // (locked product decision). userByChatId is used for attribution, not gating.
-function isCandidate(m) {
+export function isCandidate(m) {
   if (!m || typeof m.text !== 'string') return false;
-  const t = m.text.trim();
-  if (t.length < MIN_TEXT_LEN) return false;
   if (m.chat_id && adapterFor(m.chat_id).isSelf(m.from_id)) return false;
-  return true;
+  // A mention or a reply to the bot is for it however short: Slack strips the
+  // bot's own mention from the text, so "@bot?" arrives as "?".
+  if (m.is_mention || m.is_reply_to_bot) return true;
+  return m.text.trim().length >= MIN_TEXT_LEN;
 }
 
 // ─── Hourly budget (B3) ───────────────────────────────────────────────────────
@@ -1093,6 +1095,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     window,
     '----',
     `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — the SHARED workspace, shared memory, skills, integrations, reminders — and you may act. This is a GROUP context: NO private space is reachable (not even the requester's own) and nothing private may enter the conversation; genuinely private work is delegated via [[PRIVATE_TASK]] (below). Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group.`,
+    `EVERY WORD YOU WRITE IS POSTED as your message in the room. Speak TO ${senderName}, in the second person, as a colleague would — never ABOUT them in the third person ("${senderName} insists…", "${senderName} is dropping it"). Never write a note about the conversation or what you decided: when there is nothing to say, your whole output is \`[[SILENT]]\` (or only a \`[[REACT …]]\`).`,
     lang ? `This group's language is ${lang} — reply ONLY in ${lang}, whatever language a message happens to be written in. Even when quoting or discussing text in another language, your own words stay in ${lang}.` : '',
     roomHasOutsiders(group) ? 'OPEN AUDIENCE: people who are NOT on your team are in this room. You have ONLY this room\'s own memory here — nothing the team keeps elsewhere reaches you, and nothing you learn elsewhere may be said here. Treat everyone as an outside party: be helpful, be polite, share nothing internal.' : '',
     '',
@@ -1427,7 +1430,22 @@ function delegatePrompt({ group, target, senderName, task, ctxMsgs = [], chatId 
     `WRITE THE DM: plain text in ${senderName}'s language, as if you were simply replying to them — no meta-commentary about this task or your tooling, your final output IS the message. Open with ONE short human line that anchors it ("about what you asked in <group>…" — in their words, not a machine preamble) so it does not land as a DM out of nowhere. When the answer is about something a specific person said in the group, SAY WHOSE it was.`,
     `THERE IS NO SEND STEP. Whatever you write is delivered to ${senderName} verbatim, by the system, as the DM. Do NOT call any Telegram tool and do NOT use the bot token — not for the message, not for files. If you send it yourself and then write a summary of what you sent, that SUMMARY becomes the DM: the person gets your answer once from your tool call and once more as a report about it. Write the answer itself and stop.`,
     'To attach a file, emit `[[SEND_FILE <absolute path under the project>]]` on its own line — the system uploads it to their DM and strips the marker; never claim an attachment without the marker.',
+    'START THE MESSAGE with a line holding only `[[DM]]`: everything after it is the message, and anything you write before it (notes to yourself while you work) is never delivered.',
   ].join('\n');
+}
+
+/**
+ * The delegate's closing text → the DM. Its working notes ("got it, now
+ * writing…") sit in the same text block as the message when no tool call
+ * separates them, so the message is what follows the last [[DM]] line; with
+ * no marker, the whole text, as before.
+ */
+export function dmBody(text) {
+  const t = String(text || '');
+  const re = /`{0,3}\[\[\s*DM\s*\]\]`{0,3}/gi;
+  let last = -1, m;
+  while ((m = re.exec(t))) last = m.index + m[0].length;
+  return (last >= 0 ? t.slice(last) : t).trim();
 }
 
 /**
@@ -1554,7 +1572,7 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
               process.stderr.write(`[group-watcher] delegate for ${member.slug} sent its own Telegram message — not delivering its closing text on top\n`);
               return finish('');
             }
-            finish((out.trim() ? out : lastSegment).trim());
+            finish(dmBody(out.trim() ? out : lastSegment));
           },
         });
       } catch { finish(null); }

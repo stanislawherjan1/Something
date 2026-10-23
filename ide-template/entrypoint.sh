@@ -1105,6 +1105,10 @@ if [ -d /opt/ide/skills/default ]; then
     #    pre-existing user content — first-deploy safe default)
     for d in "$SKILLS_DIR"/*/; do
         [ -d "$d" ] || continue
+        # An empty SKILL.md is nobody's work (a torn copy): it would be kept as
+        # "unstamped", and the default then copied INSIDE it — a skill the CLI
+        # sees as empty, with the real one a level down where it never looks.
+        if [ -f "$d/SKILL.md" ] && [ ! -s "$d/SKILL.md" ]; then rm -rf "$d"; continue; fi
         if [ -f "$d/SKILL.md" ]; then
             src=$(awk -F': *' '/^source:/{print $2; exit}' "$d/SKILL.md" 2>/dev/null | tr -d '[:space:]')
             case "$src" in
@@ -1118,6 +1122,12 @@ if [ -d /opt/ide/skills/default ]; then
     for skill_src in /opt/ide/skills/default/*/; do
         [ -d "$skill_src" ] || continue
         name=$(basename "$skill_src")
+        # A person's own skill of the same name was kept above and wins; `cp -r`
+        # into an existing directory would nest the default inside it.
+        if [ -e "$SKILLS_DIR/$name" ]; then
+            echo "[entrypoint] skill '$name': a project skill of that name is kept, the default is not installed"
+            continue
+        fi
         cp -r "$skill_src" "$SKILLS_DIR/$name"
     done
 

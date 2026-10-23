@@ -640,8 +640,10 @@ it. What differs is how it gets in and who may be in it
   tells the assistant it is among outside parties. With everyone on the team
   it is an ordinary room. Turned off, the room is paused while an outsider is
   in it. A shared (Slack Connect) channel is paused whatever the setting.
-- **Threads**: each Slack thread keeps its own resumed session
-  (`.group-watcher/<id>-thread-<ts>-session.json`); the channel's history
+- **Threads**: a message in the channel is answered in the channel, and the
+  channel is one resumed session; a message inside a thread is answered in
+  that thread, and each thread keeps its own session
+  (`.group-watcher/<id>-thread-<ts>-session.json`). The channel's history
   ring is the context for all of them.
 - **People**: a teammate is linked by the email their Slack account carries,
   the first time they write (`slackUserId`); someone who writes without being
