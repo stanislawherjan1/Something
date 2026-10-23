@@ -50,6 +50,7 @@ ok('someone from outside is marked as such in the room list', /besides Nora: Mar
 ok('the one-shot answers about the person too (profile, preferences), only what the question needs', /who they are, where they are, what they prefer/.test(prompt) && /their profile and preferences/.test(prompt) && /EXACTLY what was asked/.test(prompt));
 ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
 ok('the one-shot answers exactly what was asked, no related facts beside it', /answer EXACTLY what was asked and nothing beside it/.test(prompt) && /Never add a related fact the question did not ask for/.test(prompt));
+ok('...never an earlier forecast or price from the conversations', /Never pass on an earlier result of such a check/.test(prompt));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 
 // ─── what its answer means ───────────────────────────────────────────────────
