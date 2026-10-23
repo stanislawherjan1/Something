@@ -86,6 +86,7 @@ ok('a member is told their own things are theirs to share here, once-only pushba
 ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
 ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(asMember.message) && !/Time zone:/.test(asMember.message));
 ok('the member is told to reach their own memory for questions about themselves, before asking back, never for another person', /asks about THEMSELVES or THEIR OWN matters/.test(asMember.message) && /before answering or asking them back/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
+ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(asMember.message) && /even when it touches private things: answer it here/.test(asMember.message) && !/their personal data\), emit/.test(asMember.message));
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);
