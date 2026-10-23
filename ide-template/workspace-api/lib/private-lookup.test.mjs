@@ -51,6 +51,10 @@ ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupP
 // ─── what its answer means ───────────────────────────────────────────────────
 ok('NOTHING is nothing', PL.parseAnswer('NOTHING').nothing === true && PL.parseAnswer('**NOTHING**').nothing === true && PL.parseAnswer('NOTHING — no notes on that.').nothing === true);
 ok('an answer is the answer', PL.parseAnswer('Harbor Glaze supplies the celadon at 14 GBP a kilo.').answer === 'Harbor Glaze supplies the celadon at 14 GBP a kilo.');
+ok('an explanation that ends in the verdict is the verdict, never posted', PL.parseAnswer('The memory lookup tools are not responding right now, so I cannot verify this.\n\nNOTHING').nothing === true && PL.parseAnswer('I could not reach the records.\nFAILED').failed === true);
+ok('FAILED is a failure', PL.parseAnswer('FAILED').failed === true);
+ok('...and an answer that merely mentions the word is still an answer', PL.parseAnswer('NOTHING was decided about the kiln; Mara will call Harbor Glaze on Friday.').nothing === true && PL.parseAnswer('Mara said nothing was decided; she calls Friday.').answer !== undefined);
+ok('the one-shot is told to say FAILED when its tools fail', /reply with exactly: FAILED/.test(prompt));
 ok('no text is a failure, never a guess', PL.parseAnswer('').failed === true && PL.parseAnswer(null).failed === true);
 ok('a long answer is cut, not dropped', PL.parseAnswer('x'.repeat(5000)).answer.length === 1200);
 

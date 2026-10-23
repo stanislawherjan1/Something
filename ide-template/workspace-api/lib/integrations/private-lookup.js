@@ -80,17 +80,24 @@ export function lookupPrompt({ member, question, room, people = [] }) {
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person. Never say that something was left out and never hint at it.`,
     `- Leave out anything ${name} asked to keep quiet or private, whoever it concerns.`,
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
+    '- If the memory tools fail or return an error, reply with exactly: FAILED (never explain the failure; the room is told you could not check).',
     '- Your whole output is the answer. No preamble, no mention of memory, tools or this task.',
   ].join('\n');
 }
 
-/** The one-shot's text → what the room may hear. */
+/**
+ * The one-shot's text → what the room may hear. The verdict words count at the
+ * start or as the last line: a model that explains first ("the tools returned
+ * an error… NOTHING") must not have its explanation posted as the answer.
+ */
 export function parseAnswer(text) {
   const t = String(text || '').trim();
   if (!t) return { failed: true };
-  if (/^\**\s*NOTHING\s*\**\.?$/i.test(t)) return { nothing: true };
-  // A reply that starts with the word and goes on is still a nothing ("NOTHING — I have no …").
-  if (/^\**\s*NOTHING\b/i.test(t)) return { nothing: true };
+  const last = t.split('\n').map(l => l.trim()).filter(Boolean).pop() || '';
+  const verdict = (re) => re.test(t) || re.test(last);
+  if (verdict(/^\**\s*FAILED\b/i)) return { failed: true };
+  // A reply that starts (or ends) with the word is still a nothing ("NOTHING — I have no …").
+  if (verdict(/^\**\s*NOTHING\b/i) || /\bNOTHING\s*\**\.?$/.test(t)) return { nothing: true };
   return { answer: t.slice(0, 1200) };
 }
 
