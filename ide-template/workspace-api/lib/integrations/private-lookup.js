@@ -87,6 +87,7 @@ export function lookupPrompt({ member, question, room, people = [], outsiders = 
     `- Use what you know of them (their profile and preferences above, their settings) and search their memory (memory_search, memory_timeline); answer in at most three plain sentences, in the language of the question, with the names, numbers and dates you have. Answer only what the question needs, nothing beside it. Facts only: no advice, no questions back, no suggestions.`,
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person. Never say that something was left out and never hint at it.`,
     `- Leave out anything ${name} asked to keep quiet or private, whoever it concerns.`,
+    '- When the question needs something you cannot do here (the weather, a web search, a calculation), answer with what you know of them that it needs (where they are or live, their time zone, the preference it turns on); the room does the rest.',
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
     '- If the memory tools fail or return an error, reply with exactly: FAILED (never explain the failure; the room is told you could not check).',
     '- Your whole output is the answer. No preamble, no mention of memory, tools or this task.',

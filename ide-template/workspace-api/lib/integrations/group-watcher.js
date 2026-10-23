@@ -31,7 +31,7 @@ import { tmpdir } from 'node:os';
 
 import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
-import { isAllowedGroup, isGroupActive, getGroup, recordGroupMember, addGroup, touchGroupMeta, getDefaultTimezone, effectiveTimezone } from '../team.js';
+import { isAllowedGroup, isGroupActive, getGroup, recordGroupMember, addGroup, touchGroupMeta, getDefaultTimezone } from '../team.js';
 import { adapterFor } from './channel-adapter.js';
 import { isGroupId, normalizeGroupId } from '../group-id.js';
 import { activeIds } from './store.js';
@@ -1108,20 +1108,6 @@ function roomHasOutsiders(group) {
 // Build the runClaudeTurn params for a group turn (exported for the guard test).
 // opts.resumed — a persistent session is live: the context window below carries
 // only the messages SINCE the last turn; everything earlier is session memory.
-/**
- * The sender's own time zone and local time, from their settings. A room turn
- * reads none of their private memory, so "what's the weather?" or "is it late
- * for me?" got "where are you?" — while the answer sat in their settings.
- */
-export function senderZoneLine(member, name, now = new Date()) {
-  let tz = '';
-  try { tz = effectiveTimezone(member.slug) || ''; } catch { tz = ''; }
-  if (!tz) return '';
-  let local = '';
-  try { local = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(now); } catch { return ''; }
-  return `${name}'s own time zone (their setting): ${tz}, local time now ${local}. Use it when they ask about themselves ("my weather", "what time is it for me", "tomorrow morning"): a time zone names a region, so for the weather take its main city unless they say where they are. Do not bring it up unprompted, and it is theirs: never tell it to anyone else who asks about them.`;
-}
-
 export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   const window = renderContext(ctxMsgs, new Set([String(target.message_id)]), BRAIN_CONTEXT_CLAMP);
   // Resolve the SENDER by their Telegram user-id against the team roster, so the
@@ -1139,7 +1125,6 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   // Per-group reply language (operator-set on the group). Empty → infer per message.
   const lang = group && group.language ? String(group.language).trim() : '';
   const replyLang = lang || `${senderName}'s language`;
-  const zoneLine = member ? senderZoneLine(member, senderName) : '';
   const message = [
     opts.resumed
       ? `You are replying in a ${a.roomNoun} for your team (not a 1:1 DM). You have an ongoing session memory of this group's earlier conversation, but it may have been summarised and lost detail.`
@@ -1153,7 +1138,6 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     window,
     '----',
     `Reply to the message marked "← NEW" (from ${senderName}). You are talking to ${senderName}${member ? '' : ' (not recognised in the team roster)'}. You have your full toolset here — the SHARED workspace, shared memory, skills, integrations, reminders — and you may act. This is a GROUP context: NO private space is reachable (not even the requester's own) and nothing private may enter the conversation; genuinely private work is delegated via [[PRIVATE_TASK]] (below). Keep it short and useful for a group chat: no preamble, no sign-off, plain text. The reply is visible to the WHOLE group.`,
-    zoneLine,
     `EVERY WORD YOU WRITE IS POSTED as your message in the room. Speak TO ${senderName}, in the second person, as a colleague would — never ABOUT them in the third person ("${senderName} insists…", "${senderName} is dropping it"). Never write a note about the conversation or what you decided: when there is nothing to say, your whole output is \`[[SILENT]]\` (or only a \`[[REACT …]]\`).`,
     lang ? `This group's language is ${lang} — reply ONLY in ${lang}, whatever language a message happens to be written in. Even when quoting or discussing text in another language, your own words stay in ${lang}.` : '',
     roomHasOutsiders(group) ? 'OPEN AUDIENCE: people who are NOT on your team are in this room. You have ONLY this room\'s own memory here — nothing the team keeps elsewhere reaches you, and nothing you learn elsewhere may be said here. Treat everyone as an outside party: be helpful, be polite, share nothing internal' + (member ? ` — except what belongs to ${senderName} when they ask for it (THEIR OWN THINGS, below).` : '.') : '',

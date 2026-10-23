@@ -48,6 +48,7 @@ ok('...tells it to leave out what is about them unless named, silently', /Leave 
 ok('...and to say NOTHING when there is nothing', /reply with exactly: NOTHING/.test(prompt));
 ok('someone from outside is marked as such in the room list', /besides Nora: Mara, Olek the glazer \(not on the team\)/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Mara', 'Olek the glazer'], outsiders: ['Olek the glazer'] })));
 ok('the one-shot answers about the person too (profile, preferences), only what the question needs', /who they are, where they are, what they prefer/.test(prompt) && /their profile and preferences/.test(prompt) && /Answer only what the question needs/.test(prompt));
+ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 
 // ─── what its answer means ───────────────────────────────────────────────────
@@ -83,10 +84,8 @@ const asStranger = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', 
 ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/ask_my_memory/.test(asStranger.message));
 ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(asMember.message) && /when they ask again, say it here, in full/.test(asMember.message) && /never covers anything about another person/.test(asMember.message));
 ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
-ok('a member\'s turn carries their own time zone and local time, for questions about themselves', /Nora's own time zone \(their setting\): \S+, local time now/.test(asMember.message) && /for the weather take its main city/.test(asMember.message), asMember.message.match(/own time zone[^\n]*/)?.[0]);
-ok('...an unknown sender\'s does not', !/own time zone/.test(asStranger.message));
+ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(asMember.message) && !/Time zone:/.test(asMember.message));
 ok('the member is told to reach their own memory for questions about themselves, before asking back, never for another person', /asks about THEMSELVES or THEIR OWN matters/.test(asMember.message) && /before answering or asking them back/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
-ok('...and their time zone is theirs: never told to someone asking about them', /never tell it to anyone else who asks about them/.test(asMember.message));
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);

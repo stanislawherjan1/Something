@@ -651,9 +651,9 @@ it. What differs is how it gets in and who may be in it
   wrong place it says so once and gives way when asked again. That is
   ownership, not rank: it never covers another person's things, an admin's
   request included. With everyone on the team it is an ordinary room.
-  A room turn also knows the sender's own time zone and local time (their
-  setting, nothing from their memory), for "my weather" or "tomorrow
-  morning"; it does not bring it up unprompted. Turned off, the room is paused while an outsider is
+  Nothing of the sender's own is put into the room's session, not even their
+  time zone: "the weather for me" goes through their own lookup, which knows
+  their settings. Turned off, the room is paused while an outsider is
   in it. A shared (Slack Connect) channel is paused whatever the setting.
 - **Threads**: a message inside a thread is answered in that thread, which
   keeps its own session (`.group-watcher/<id>-thread-<ts>-session.json`). A
