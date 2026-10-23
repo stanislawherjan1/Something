@@ -47,8 +47,9 @@ ok('...names the others in the room, not the asker', /besides Nora: Mara/.test(p
 ok('...tells it to leave out what is about them unless named, silently', /Leave out anything ABOUT a person in the room/.test(prompt) && /unless the question names that person/.test(prompt) && /never hint/.test(prompt));
 ok('...and to say NOTHING when there is nothing', /reply with exactly: NOTHING/.test(prompt));
 ok('someone from outside is marked as such in the room list', /besides Nora: Mara, Olek the glazer \(not on the team\)/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Mara', 'Olek the glazer'], outsiders: ['Olek the glazer'] })));
-ok('the one-shot answers about the person too (profile, preferences), only what the question needs', /who they are, where they are, what they prefer/.test(prompt) && /their profile and preferences/.test(prompt) && /Answer only what the question needs/.test(prompt));
+ok('the one-shot answers about the person too (profile, preferences), only what the question needs', /who they are, where they are, what they prefer/.test(prompt) && /their profile and preferences/.test(prompt) && /EXACTLY what was asked/.test(prompt));
 ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
+ok('the one-shot answers exactly what was asked, no related facts beside it', /answer EXACTLY what was asked and nothing beside it/.test(prompt) && /Never add a related fact the question did not ask for/.test(prompt));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 
 // ─── what its answer means ───────────────────────────────────────────────────
@@ -87,6 +88,7 @@ ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
 ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(asMember.message) && !/Time zone:/.test(asMember.message));
 ok('the member is told to reach their own memory for questions about themselves, before asking back, never for another person', /asks about THEMSELVES or THEIR OWN matters/.test(asMember.message) && /before answering or asking them back/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
 ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(asMember.message) && /even when it touches private things: answer it here/.test(asMember.message) && !/their personal data\), emit/.test(asMember.message));
+ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(asMember.message));
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);

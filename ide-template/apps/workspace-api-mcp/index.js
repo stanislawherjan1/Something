@@ -264,7 +264,7 @@ const MINE_TOOL = {
     'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences and what they told you in their own conversations — for this room to hear. ' +
     'Use it when they ask about THEMSELVES or THEIR OWN matters (where they are, what they prefer, their plans, meetings, suppliers, decisions), or when the answer depends on who they are — never for anyone else\'s matters or memory. ' +
     'It runs as them, outside this room, and returns at most three sentences already fit for the room (anything about another person present is left out unless they named them). ' +
-    'Use what it returns. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
+    'Say only the part that answers what they asked; anything else it returned stays unsaid. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
   inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words.' } }, required: ['question'] },
 };
 
@@ -720,7 +720,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (r.ok) {
           r.text = r.failed ? 'Could not check their memory right now. Say so; do not guess.'
             : r.nothing ? `Nothing in their own memory answers this${r.note ? ` (${r.note})` : ''}. Say the team's notes have nothing; do not hint at their memory.`
-            : `From your conversations with them (say so in the room): ${r.answer}`;
+            : `From your conversations with them — say only what answers their question: ${r.answer}`;
         }
       } else if (name === 'memory_import') {
         r = await v4Call('POST', 'import', {
