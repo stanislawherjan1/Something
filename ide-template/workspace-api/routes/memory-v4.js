@@ -1005,14 +1005,15 @@ export default function memoryV4Router() {
     if (!who.group || !who.actor || who.actor === 'team') return res.status(403).json({ ok: false, error: 'only a known person in a team room can ask their own memory here' });
     const member = memberBySlug(who.actor);
     if (!member) return res.status(403).json({ ok: false, error: 'not on the team' });
-    if (!getTeamMode()) return res.json({ ok: true, nothing: true, note: 'nothing is private here: the whole memory is already the team\'s' });
     const room = getGroup(who.groupId);
     if (!room) return res.status(403).json({ ok: false, error: 'not a registered room' });
     const question = String(req.body?.question || '').trim().slice(0, 500);
     if (!question) return res.status(400).json({ ok: false, error: 'question required' });
     if (room.privateAnswers === 'off') return res.json({ ok: true, nothing: true, off: true, note: 'answers from a person\'s own memory are switched off in this room' });
+    // Someone from outside in the room does not stop it: what the asker asks
+    // about themselves is theirs to have said. The one-shot is told who is
+    // there and leaves out anything about them.
     const outsiders = outsidersOf(room);
-    if (outsiders.length) return res.json({ ok: true, nothing: true, outsiders: outsiders.length, note: 'someone outside the team is in the room; offer to answer in a direct message instead' });
     const token = String(req.get('x-ide-turn') || '');
     const n = (lookupsPerTurn.get(token) || 0) + 1;
     lookupsPerTurn.set(token, n);
@@ -1023,7 +1024,7 @@ export default function memoryV4Router() {
     const answered = !!(r && r.answer);
     ledger.logEvent({ op: 'private_lookup', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered });
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
-    return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null });
+    return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null, ...(outsiders.length ? { outsiders: outsiders.length } : {}) });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

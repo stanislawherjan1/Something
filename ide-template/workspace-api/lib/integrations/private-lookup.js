@@ -8,6 +8,13 @@
  * still wants the fact they told the bot in their own chat — said here, to
  * the team, now.
  *
+ * The same holds for who they are: the room's session holds no profile and no
+ * preferences of anyone (whatever it is handed, any later sender can have it
+ * recited), so "what's the weather for me?" or "what do I prefer?" needs the
+ * asker's own memory too. Only the asker reaches it, and only for what they
+ * asked: in a solo workspace too, and with someone from outside in the room
+ * (their own things are theirs to have said).
+ *
  * So the group brain gets a tool (`ask_my_memory`, apps/workspace-api-mcp),
  * and the tool runs a ONE-SHOT private turn AS that member (their own scopes,
  * no group context, no session, memory reads only) that answers the question
@@ -66,17 +73,18 @@ export function peopleInRoom(group) {
   return [...names].filter(Boolean);
 }
 
-export function lookupPrompt({ member, question, room, people = [] }) {
+export function lookupPrompt({ member, question, room, people = [], outsiders = [] }) {
   const name = member.displayName || member.slug;
   const others = people.filter(p => p !== name);
+  const out = new Set(outsiders);
   return [
-    `[PRIVATE LOOKUP — asked in the team room "${String(room?.title || room?.chatId || 'the room').slice(0, 60)}"] ${name} asked there, in front of the team, about something that may be in THEIR OWN memory — the conversations you have had with them. Answer from their memory, for the room to read.`,
+    `[PRIVATE LOOKUP — asked in the room "${String(room?.title || room?.chatId || 'the room').slice(0, 60)}"] ${name} asked there, in front of the others, about themselves or something that may be in THEIR OWN memory — who they are, where they are, what they prefer, the conversations you have had with them. Answer from what you know of them, for the room to read.`,
     '',
     `THE QUESTION, as ${name} asked it: ${String(question).slice(0, 500)}`,
-    `PEOPLE IN THE ROOM besides ${name}: ${others.length ? others.join(', ') : 'nobody else recorded'}`,
+    `PEOPLE IN THE ROOM besides ${name}: ${others.length ? others.map(p => (out.has(p) ? `${p} (not on the team)` : p)).join(', ') : 'nobody else recorded'}`,
     '',
     'RULES:',
-    `- Search their memory (memory_search, memory_timeline) and answer in at most three plain sentences, in the language of the question, with the names, numbers and dates the memory holds. Facts only: no advice, no questions back, no suggestions.`,
+    `- Use what you know of them (their profile and preferences above, their settings) and search their memory (memory_search, memory_timeline); answer in at most three plain sentences, in the language of the question, with the names, numbers and dates you have. Answer only what the question needs, nothing beside it. Facts only: no advice, no questions back, no suggestions.`,
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person. Never say that something was left out and never hint at it.`,
     `- Leave out anything ${name} asked to keep quiet or private, whoever it concerns.`,
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
@@ -107,7 +115,7 @@ export function parseAnswer(text) {
  */
 export async function lookupMine({ member, question, room }) {
   const people = peopleInRoom(room);
-  const prompt = lookupPrompt({ member, question, room, people });
+  const prompt = lookupPrompt({ member, question, room, people, outsiders: outsidersOf(room) });
   if (runner) return runner({ member, question, room, people, prompt });
   const text = await new Promise((resolve) => {
     let out = '', lastSegment = '', done = false, proc = null;

@@ -261,10 +261,10 @@ const GROUP_MEMBER_TURN = process.env.IDE_GROUP_CONTEXT === '1' && !!process.env
 const MINE_TOOL = {
   name: 'ask_my_memory',
   description:
-    'In a team room only: what the PERSON YOU ARE ANSWERING told you in their own conversations, for this room to hear. ' +
-    'Use it when they ask about THEIR OWN matters (their suppliers, meetings, decisions, plans) and the shared memory has nothing — never for anyone else\'s matters or memory. ' +
-    'It runs in their own memory, outside this room, and returns at most three sentences already fit for the room (anything about a person present is left out unless they named them). ' +
-    'Say what it returns and that it comes from your conversations with them. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
+    'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences and what they told you in their own conversations — for this room to hear. ' +
+    'Use it when they ask about THEMSELVES or THEIR OWN matters (where they are, what they prefer, their plans, meetings, suppliers, decisions), or when the answer depends on who they are — never for anyone else\'s matters or memory. ' +
+    'It runs as them, outside this room, and returns at most three sentences already fit for the room (anything about another person present is left out unless they named them). ' +
+    'Use what it returns. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
   inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words.' } }, required: ['question'] },
 };
 

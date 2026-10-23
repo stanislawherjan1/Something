@@ -233,9 +233,22 @@ PL.configureLookup(async () => { throw new Error('model down'); });
 const lastKasia = ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' });
 r = await call('POST', '/mine', { token: lastKasia, body: { question: 'the glaze?' } });
 ok('(z) a failed lookup says so, not an answer', r.body.failed === true && !r.body.answer && /do not guess/.test(r.body.note || ''), r.body);
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return { answer: 'You prefer short replies in Polish.' }; });
 T.recordGroupMember('-100777', '9999999', 'Olek');
-r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
-ok('(z) with someone not on the roster in the room, nothing is said and a DM is suggested', r.body.nothing === true && r.body.outsiders === 1 && /direct message/.test(r.body.note || ''), r.body);
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'how do I like my replies?' } });
+ok('(z) with someone from outside in the room, the asker still gets their own answer (theirs to have said)', r.body.ok && r.body.answer === 'You prefer short replies in Polish.' && r.body.outsiders === 1, r.body);
+ok('(z) ...and the one-shot is told who is there', asked.at(-1)?.people?.includes('Olek'), asked.at(-1));
+{
+  const fs = await import('node:fs');
+  const f = join(ROOT, '.team-config.json');
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  c.teamMode = false; fs.writeFileSync(f, JSON.stringify(c));
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'stan', group: true, groupId: '-100777' }), body: { question: 'where am I this week?' } });
+  ok('(z) a solo workspace: its one person reaches their own memory from a room too', r.body.ok && !!r.body.answer && asked.at(-1)?.slug === 'stan', r.body);
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'where is Stan this week?' } });
+  ok('(z) ...and nobody else does, solo or not', r.status === 403, r.body);
+  c.teamMode = true; fs.writeFileSync(f, JSON.stringify(c));
+}
 T.touchGroupMeta('-100777', { privateAnswers: 'off' });
 r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
 ok('(z) the room\'s switch off: nothing', r.body.nothing === true && r.body.off === true, r.body);
