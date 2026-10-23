@@ -81,6 +81,8 @@ const asStranger = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', 
 ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/ask_my_memory/.test(asStranger.message));
 ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(asMember.message) && /when they ask again, say it here, in full/.test(asMember.message) && /never covers anything about another person/.test(asMember.message));
 ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
+ok('a member\'s turn carries their own time zone and local time, for questions about themselves', /Nora's own time zone \(their setting\): \S+, local time now/.test(asMember.message) && /for the weather take its main city/.test(asMember.message), asMember.message.match(/own time zone[^\n]*/)?.[0]);
+ok('...an unknown sender\'s does not', !/own time zone/.test(asStranger.message));
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);
