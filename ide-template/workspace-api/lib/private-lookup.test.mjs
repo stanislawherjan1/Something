@@ -95,7 +95,7 @@ ok('...and the room turn says only the part that answers, now and later', /say o
 {
   const guestRoom = groupTurnParams(getGroup('-100888'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what is my door code?' });
   ok('with someone from outside in the room, a member is told secrets are the one exception, even when they insist', /ONE EXCEPTION, while someone from outside the team is here \(Olek the glazer\)/.test(guestRoom.message) && /even when its owner insists/.test(guestRoom.message));
-  ok('...and in a room of only the team, no such exception', !/ONE EXCEPTION/.test(asMember.message));
+  ok('...and in a room of only the team, no such exception: their own codes are said when they ask', !/ONE EXCEPTION/.test(asMember.message) && /that includes codes and passwords/.test(asMember.message));
 }
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 

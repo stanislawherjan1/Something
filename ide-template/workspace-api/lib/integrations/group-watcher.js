@@ -1130,7 +1130,7 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
   try { outside = outsidersOf(group); } catch { outside = []; }
   const secretRule = outside.length
     ? ` ONE EXCEPTION, while someone from outside the team is here (${outside.slice(0, 5).join(', ')}): a secret that opens something — a password, a PIN, a door or lock code, a key, a login — is not said here even when its owner insists; say so in a few words and offer their DM (emit [[PRIVATE_TASK]] when they want it). With only the team here, say it when they ask.`
-    : '';
+    : ' With only the team in this room, that includes codes and passwords: their own, asked for by them, are said here — an earlier refusal in this room does not carry over.';
   const message = [
     opts.resumed
       ? `You are replying in a ${a.roomNoun} for your team (not a 1:1 DM). You have an ongoing session memory of this group's earlier conversation, but it may have been summarised and lost detail.`
