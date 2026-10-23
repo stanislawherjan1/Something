@@ -200,7 +200,50 @@ function pushHistory(chatId, entry) {
 function sessionKeyFor(chatId, target) {
   if (!target || adapterFor(chatId).kind !== 'slack') return String(chatId);
   const t = target.thread_id;
+  if (t && botThreads.has(`${chatId}|${t}`)) return String(chatId);   // a thread the bot opened is the channel's conversation
   return t && /^\d+\.\d+$/.test(String(t)) ? `${chatId}|${t}` : String(chatId);
+}
+
+// ─── Where a Slack reply goes ─────────────────────────────────────────────────
+// Like a colleague would: a message inside a thread is answered in that thread;
+// a channel message is answered in the channel when it is a quiet back-and-forth,
+// and in a thread under it when the channel is busy (someone else posted since,
+// or several people are talking) or the answer is long (a list, a report) —
+// so a small team's chat reads as a chat and a big channel is not flooded.
+const BUSY_WINDOW_MS = 10 * 60_000;
+const LONG_REPLY_CHARS = 700, LONG_REPLY_LINES = 10;
+const botThreads = new Map();   // `${chatId}|${ts}` → when the bot opened that thread from the channel
+
+/** Is the channel busy around this message? `hist` is the room's history ring. */
+export function channelBusy(hist, target) {
+  const top = (hist || []).filter(h => h.role === 'user' && !h.thread_id);
+  const i = top.findIndex(h => String(h.message_id) === String(target?.message_id));
+  if (i < 0) return false;
+  const me = String(target.from_id || '');
+  if (top.slice(i + 1).some(h => String(h.from_id || '') !== me)) return true;
+  const at = Date.parse(top[i].ts || '') || Date.now();
+  const others = new Set(top.slice(0, i)
+    .filter(h => String(h.from_id || '') !== me && at - (Date.parse(h.ts || '') || 0) < BUSY_WINDOW_MS)
+    .map(h => String(h.from_id || '')));
+  return others.size >= 2;
+}
+
+export function isLongReply(text) {
+  const t = String(text || '').trim();
+  return t.length > LONG_REPLY_CHARS || t.split('\n').length > LONG_REPLY_LINES;
+}
+
+/** Where the reply to `target` goes: `{}` (the channel, or Telegram's chat) or `{ thread_ts }`. */
+export function placeReply(chatId, target, { text = '', hist = null } = {}) {
+  const a = adapterFor(chatId);
+  const base = a.replyRef(target);
+  if (a.kind !== 'slack' || base.thread_ts) return base;
+  const ts = String(target?.message_id || '');
+  if (!/^\d+\.\d+$/.test(ts)) return base;
+  if (!channelBusy(hist || history.get(String(chatId)) || [], target) && !isLongReply(text)) return base;
+  if (botThreads.size > 500) botThreads.delete(botThreads.keys().next().value);
+  botThreads.set(`${chatId}|${ts}`, Date.now());
+  return { thread_ts: ts };
 }
 function sessionFile(key) {
   const [chatId, thread] = String(key).split('|');
@@ -1221,7 +1264,11 @@ function isSilentPrefix(s) {
 
 function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
   const a = adapterFor(group.chatId);
-  const ref = a.replyRef(target);   // Slack: the thread the message sits in; Telegram: nothing
+  // Where this turn's messages go, decided once at the first thing posted
+  // (Slack: channel or thread, see placeReply; Telegram: nothing) and kept,
+  // so a heads-up and the answer after it land in the same place.
+  let ref = null;
+  const refFor = (chunk = '') => (ref ??= placeReply(group.chatId, target, { text: chunk }));
   return new Promise((resolve) => {
     let text = '', done = false, proc = null, parts = 0, typing = null, files = 0;
     let filesDm = 0;   // subset of `files` that went to the requester's DM (observability)
@@ -1320,7 +1367,7 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
           process.stderr.write('[group-watcher] dropping streamed chunk: unparsed marker survived scrubbing\n');
           continue;
         }
-        if (chunk) { parts += 1; startTyping(); a.send(group.chatId, chunk, { logKind: 'group', ...ref }).catch(() => {}); }
+        if (chunk) { parts += 1; startTyping(); a.send(group.chatId, chunk, { logKind: 'group', ...refFor(chunk) }).catch(() => {}); }
       }
     };
     // Upload any completed [[SEND_FILE <path>]] markers as they stream in, and
@@ -1338,7 +1385,7 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
         startTyping();
         a.sendFile(target.from_id, filePath, { logKind: 'group' })
           .then((r) => {
-            if (!r.ok) a.send(group.chatId, `(couldn't deliver that file to the DM — ${r.error})`, { logKind: 'group', ...ref }).catch(() => {});
+            if (!r.ok) a.send(group.chatId, `(couldn't deliver that file to the DM — ${r.error})`, { logKind: 'group', ...refFor() }).catch(() => {});
           })
           .catch(() => {});
       }
@@ -1348,9 +1395,9 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
         files += 1;
         startTyping();
         a.typing(group.chatId, 'upload_document').catch(() => {});
-        a.sendFile(group.chatId, filePath, { logKind: 'group', ...ref })
+        a.sendFile(group.chatId, filePath, { logKind: 'group', ...refFor() })
           .then((r) => {
-            if (!r.ok) a.send(group.chatId, `(couldn't attach that file — ${r.error})`, { logKind: 'group', ...ref }).catch(() => {});
+            if (!r.ok) a.send(group.chatId, `(couldn't attach that file — ${r.error})`, { logKind: 'group', ...refFor() }).catch(() => {});
           })
           .catch(() => {});
       }
@@ -1382,7 +1429,7 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
           }
           clearUsageLimitHold();   // a turn completed → whatever limit we were holding for is over
           extractReaction();
-          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, reaction, sessionId: capturedSessionId });
+          finish({ ok: true, text: finalizeReply(stripScaffolding(text, group.language)), parts, files, filesDm, privateTask, reaction, sessionId: capturedSessionId, ref });
         },
       }, { resumed: !!(session && session.sessionId), recap: session && session.sessionId ? recap : [] }));
       startTyping();   // typing from turn start — the gate already decided this message is for the bot
@@ -1853,7 +1900,7 @@ async function flush(chatId) {
     fireDelegate();
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${summary}, no trailing)` });
   }
-  const sent = await adapterFor(chatId).send(chatId, reply.text, { logKind: 'group', ...adapterFor(chatId).replyRef(target) });
+  const sent = await adapterFor(chatId).send(chatId, reply.text, { logKind: 'group', ...(reply.ref || placeReply(chatId, target, { text: reply.text })) });
   if (sent.ok) {
     // Remember the bot's OWN reply so the NEXT message is judged in context (a
     // follow-up to what it just said is recognised as addressed to it).
@@ -2017,7 +2064,7 @@ export function routeGroupMessage(payload = {}) {
     // profile called "s" filed the operator's own words under "s".
     let member = null;
     try { member = adapterFor(chatId).memberOf(msg.from_id); } catch { member = null; }
-    pushHistory(chatId, { role: 'user', message_id: msg.message_id, from_id: msg.from_id, who: clip(member?.displayName || msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
+    pushHistory(chatId, { role: 'user', message_id: msg.message_id, ...(msg.thread_id ? { thread_id: msg.thread_id } : {}), from_id: msg.from_id, who: clip(member?.displayName || msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
 
     let buf = buffers.get(chatId);
     if (!buf) { buf = { msgs: [], firstAt: Date.now(), timer: null }; buffers.set(chatId, buf); }
@@ -2031,4 +2078,4 @@ export function routeGroupMessage(payload = {}) {
 }
 
 // Pure helpers exposed for unit smoke tests (no side effects).
-export const __test = { isCandidate, deframe, compileBeat, parseDecision, stripScaffolding, failureNoticeText, delegatePrompt, pendingDelegatePath };
+export const __test = { isCandidate, sessionKeyFor, deframe, compileBeat, parseDecision, stripScaffolding, failureNoticeText, delegatePrompt, pendingDelegatePath };

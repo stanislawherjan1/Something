@@ -644,11 +644,14 @@ it. What differs is how it gets in and who may be in it
   ownership, not rank: it never covers another person's things, an admin's
   request included. With everyone on the team it is an ordinary room. Turned off, the room is paused while an outsider is
   in it. A shared (Slack Connect) channel is paused whatever the setting.
-- **Threads**: a message in the channel is answered in the channel, and the
-  channel is one resumed session; a message inside a thread is answered in
-  that thread, and each thread keeps its own session
-  (`.group-watcher/<id>-thread-<ts>-session.json`). The channel's history
-  ring is the context for all of them.
+- **Threads**: a message inside a thread is answered in that thread, which
+  keeps its own session (`.group-watcher/<id>-thread-<ts>-session.json`). A
+  channel message is answered in the channel when it is a quiet
+  back-and-forth, and in a thread under it when the channel is busy (someone
+  else posted since, or two or more others spoke in the last ten minutes) or
+  the answer is long (`placeReply` in `group-watcher.js`); a thread the bot
+  opened that way stays the channel's session. The channel's history ring is
+  the context for all of them.
 - **People**: a teammate is linked by the email their Slack account carries,
   the first time they write (`slackUserId`); someone who writes without being
   on the team appears as pending on the Slack page, to add with one click

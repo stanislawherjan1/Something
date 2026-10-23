@@ -54,6 +54,28 @@ ok('a bare mention ("?" once the mention is stripped) is a candidate', gw.isCand
 ok('...so is an empty one, and a one-character reply to the bot', gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: '', is_mention: true }) && gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: 'k', is_reply_to_bot: true }));
 ok('an unaddressed "?" still is not', gw.isCandidate({ chat_id: 'slack-C0GENERAL', from_id: 'U0ANN0001', text: '?' }) === false);
 
+// where a channel reply goes: the channel for a quiet back-and-forth, a thread when busy or long
+{
+  const now = Date.now(), iso = (ago) => new Date(now - ago).toISOString();
+  const target = { message_id: '500.1', from_id: 'U0ANN0001' };
+  const row = (id, from, ago, extra = {}) => ({ role: 'user', message_id: id, from_id: from, ts: iso(ago), text: 'x', ...extra });
+  const quiet = [row('499.0', 'U0ANN0001', 60_000), { role: 'assistant', message_id: '499.5', text: 'ok', ts: iso(50_000) }, row('500.1', 'U0ANN0001', 1_000)];
+  ok('a quiet back-and-forth is answered in the channel', JSON.stringify(gw.placeReply('slack-C0GENERAL', target, { text: 'Sure, done.', hist: quiet })) === '{}');
+  ok('...a long answer goes into a thread under the message', gw.placeReply('slack-C0GENERAL', target, { text: 'line\n'.repeat(12), hist: quiet }).thread_ts === '500.1');
+  ok('...and that thread stays the channel\'s conversation (one session)', gw.__test.sessionKeyFor('slack-C0GENERAL', { message_id: '501.0', thread_id: '500.1' }) === 'slack-C0GENERAL');
+  ok('...while a thread a person opened keeps its own', gw.__test.sessionKeyFor('slack-C0GENERAL', { message_id: '601.0', thread_id: '600.0' }) === 'slack-C0GENERAL|600.0');
+  const t2 = { message_id: '700.1', from_id: 'U0ANN0001' };
+  const after = [row('700.1', 'U0ANN0001', 5_000), row('700.2', 'U0STAN001', 2_000)];
+  ok('someone else posted since: busy, a thread', gw.channelBusy(after, t2) === true && gw.placeReply('slack-C0GENERAL', t2, { text: 'short', hist: after }).thread_ts === '700.1');
+  const crowd = [row('800.0', 'U0STAN001', 120_000), row('800.1', 'U0BOB0001', 90_000), row('800.2', 'U0ANN0001', 1_000)];
+  ok('two other people talking in the last minutes: busy', gw.channelBusy(crowd, { message_id: '800.2', from_id: 'U0ANN0001' }) === true);
+  ok('...one other person, or others long ago, or replies inside threads: not busy',
+    gw.channelBusy([row('800.0', 'U0STAN001', 60_000), row('800.2', 'U0ANN0001', 1_000)], { message_id: '800.2', from_id: 'U0ANN0001' }) === false
+    && gw.channelBusy([row('800.0', 'U0STAN001', 3_600_000), row('800.1', 'U0BOB0001', 3_500_000), row('800.2', 'U0ANN0001', 1_000)], { message_id: '800.2', from_id: 'U0ANN0001' }) === false
+    && gw.channelBusy([row('800.2', 'U0ANN0001', 5_000), row('800.3', 'U0STAN001', 1_000, { thread_id: '790.0' })], { message_id: '800.2', from_id: 'U0ANN0001' }) === false);
+  ok('a message inside a thread is answered in that thread, busy or not', gw.placeReply('slack-C0GENERAL', { message_id: '900.2', thread_id: '900.0', from_id: 'U0ANN0001' }, { text: 'x', hist: [] }).thread_ts === '900.0');
+}
+
 // routing
 let r = gw.routeGroupMessage({ chat_id: 'slack-C0GENERAL', chat_title: '#general', message_id: '10.0', text: 'hello everyone', from_id: 'U0ANN0001', from_name: 'Ann', is_mention: true });
 ok('a message in an approved Slack channel is buffered', r.decision === 'buffered', r);
