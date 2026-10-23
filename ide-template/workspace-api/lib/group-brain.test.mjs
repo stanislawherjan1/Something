@@ -96,6 +96,11 @@ ok('delegate is given the group conversation, with attribution',
   const pr2 = gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
   ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT STATE IS LOOKED UP, NEVER REMEMBERED/.test(pr2) && /Your earlier reply is not a source/.test(pr2) && /only be said after that fresh look/.test(pr2) && /the weather, prices, news/.test(pr2) && /neither is a past check that memory or a lookup hands you/.test(pr2));
 }
+{
+  const { groupTurnParams: gtp3 } = await import('./integrations/group-watcher.js');
+  const pr3 = gtp3({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  ok('notes about search results and sources are background work, never part of the message', /search results and which source you picked/.test(pr3) && /any note to yourself between steps: it is never part of the message/.test(pr3));
+}
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
 ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
   !/-history\.jsonl/.test(delegatePrompt) && /does not open it/.test(delegatePrompt) && /room's memory/.test(delegatePrompt));
