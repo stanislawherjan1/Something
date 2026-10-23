@@ -1332,7 +1332,7 @@ function friendlyError({ errorKind, errorStatus, errorDetail }) {
   // when it does — inside a parenthesis. The backend sends the sentence whole
   // (workspace-api/lib/usage-limit.js); it is the message, not a detail.
   if (/usage limit reached/i.test(errorDetail || '')) {
-    const [, rest] = String(errorDetail).split(/usage limit reached\.?\s*/i);
+    const [, rest] = String(errorDetail).replace(/\s*\[resets=\d+\]/, '').split(/usage limit reached\.?\s*/i);
     return {
       icon: Clock,
       tone: 'waiting',

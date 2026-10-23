@@ -1589,12 +1589,25 @@ fi
 #     token's plan limit is exhausted. Default option ("Stop and wait for
 #     limit to reset") is what we want anyway, so Enter dismisses it and the
 #     bot resumes processing the next message after reset.
+LAST_LIMIT_LINE=""
 while tmux -L "$SESSION" has-session -t "$SESSION" 2>/dev/null; do
     sleep 30
     PANE=$(tmux -L "$SESSION" capture-pane -t "$SESSION" -p 2>/dev/null || echo "")
     if echo "$PANE" | grep -q "rate-limit-options"; then
         tmux -L "$SESSION" send-keys -t "$SESSION" Enter
         log "Auto-dismissed rate-limit menu"
+    fi
+    # A spent plan, said once to the operator on Telegram — the same sentence
+    # the web chat, the rooms and the teammates' DMs get, in the operator's
+    # clock (workspace-api/bin/limit-notice.mjs). The screen keeps showing the
+    # line after it is said, so a line already told is not told again.
+    LIMIT_LINE=$(printf '%s\n' "$PANE" | grep -E "hit your [A-Za-z0-9 -]*limit|usage limit reached" | tail -1 | sed -E 's/^[^A-Za-z]*//')
+    if [ -n "$LIMIT_LINE" ] && [ "$LIMIT_LINE" != "$LAST_LIMIT_LINE" ]; then
+        LAST_LIMIT_LINE="$LIMIT_LINE"
+        NOTICE=$(LINE="$LIMIT_LINE" PROJECT_DIR="$PROJECT_DIR" node /opt/ide/workspace-api/bin/limit-notice.mjs 2>/dev/null || true)
+        if [ -n "$NOTICE" ] && [ -x "$NOTIFY_SCRIPT" ]; then
+            "$NOTIFY_SCRIPT" "$NOTICE" >/dev/null 2>&1 && log "Told the operator about the usage limit" || log "Usage-limit notice not sent"
+        fi
     fi
 done
 

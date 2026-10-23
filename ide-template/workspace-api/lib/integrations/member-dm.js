@@ -24,6 +24,9 @@ import { runClaudeTurn } from '../claude.js';
 import { createSession, listSessions } from '../sessions.js';
 import { appendToSession } from '../chatHistory.js';
 import { confinedFile } from './channel-adapter.js';
+import { isUsageLimit, limitNotice, noticeLang, noticeResetsAt, resetInstant } from '../usage-limit.js';
+import { effectiveTimezone } from '../team.js';
+import { resolve as resolveBranding } from '../branding.js';
 
 const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
 const RESUME_LOST_RE = /no conversation found|not found|exited with code 1\b/i;
@@ -85,6 +88,9 @@ function webSessionFor(slug, surface) {
   return createSession(slug, { title }).id;
 }
 
+// The reset each person was last told about, per surface — said once, not on every message.
+const limitTold = new Map();
+
 // One turn per member at a time, in the order the messages arrived.
 const chains = new Map();
 
@@ -122,6 +128,21 @@ export async function answerMemberDm(member, body, deps = {}) {
   const files = [];
   let text = String(r.text || '').replace(FILE_RE, (_, p) => { if (files.length < MAX_FILES) files.push(String(p).trim()); return ''; }).trim();
   if (r.error && !text && !files.length) {
+    // A spent plan is said, as on the web: the person's language and clock,
+    // once per reset (every message after it would otherwise get the same line).
+    if (isUsageLimit(r.error)) {
+      const secs = noticeResetsAt(r.error) || resetInstant(r.error);
+      const key = `${slug}:${surface}`;
+      if (limitTold.get(key) === (secs || 'unknown')) return { delivered: false, reason: 'limit (told)' };
+      limitTold.set(key, secs || 'unknown');
+      let who = '';
+      try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed */ }
+      let tz = null; try { tz = effectiveTimezone(slug); } catch { tz = null; }
+      const notice = (deps.limitNotice || limitNotice)(secs, who, { tz, lang: noticeLang(member.preferredLanguage) });
+      let sent = false;
+      try { sent = !!(await send(target, notice))?.ok; } catch { sent = false; }
+      return { delivered: sent, reason: 'limit' };
+    }
     process.stderr.write(`[member-dm] ${slug}: turn failed: ${String(r.error).slice(0, 200)}\n`);
     return { delivered: false, reason: 'error' };
   }

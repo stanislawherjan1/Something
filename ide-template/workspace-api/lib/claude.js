@@ -27,7 +27,7 @@ import { routinesOwner } from './memory-v4-writes.js';
 import { syncMcpServers, personalServers } from './integrations/runtime.js';
 import * as integrationsStore from './integrations/store.js';
 import * as integrationsCatalog from './integrations/catalog.js';
-import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, slotOf } from './team.js';
+import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, effectiveTimezone, slotOf } from './team.js';
 import * as asks from './memory-asks.js';
 import { buildRecallBlock, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
@@ -864,7 +864,15 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     if (limitRejectedAt) {
       let who = '';
       try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
-      return onError(limitNotice(limitRejectedAt === true ? null : limitRejectedAt, who));
+      // The reader's clock: the person's own zone (their Settings), else the
+      // workspace's — never the server's UTC. A room's turn names the zone,
+      // since the room is read across zones. The instant rides along in a tag
+      // so a surface that re-says it in another language keeps the hour
+      // (member-dm, group-watcher); the web chat strips the tag.
+      const secs = limitRejectedAt === true ? null : limitRejectedAt;
+      let tz = null;
+      try { tz = actor && actor !== 'default' && actor !== 'team' ? effectiveTimezone(actor) : getDefaultTimezone(); } catch { tz = null; }
+      return onError(limitNotice(secs, who, { tz, zoneLabel: !!groupContext }) + (secs ? ` [resets=${secs}]` : ''));
     }
 
     onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`

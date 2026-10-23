@@ -31,12 +31,13 @@ import { tmpdir } from 'node:os';
 
 import { PROJECT_DIR, CLAUDE_BIN } from '../config.js';
 import { hasClaudeToken, readClaudeToken } from '../setup.js';
-import { isAllowedGroup, isGroupActive, getGroup, recordGroupMember, addGroup, touchGroupMeta } from '../team.js';
+import { isAllowedGroup, isGroupActive, getGroup, recordGroupMember, addGroup, touchGroupMeta, getDefaultTimezone } from '../team.js';
 import { adapterFor } from './channel-adapter.js';
 import { isGroupId, normalizeGroupId } from '../group-id.js';
 import { activeIds } from './store.js';
 import { runClaudeTurn } from '../claude.js';
-import { isUsageLimit, parseResetAt, resetDelayMs } from '../usage-limit.js';
+import { isUsageLimit, parseResetAt, resetDelayMs, limitNotice, noticeLang, noticeResetsAt, resetInstant } from '../usage-limit.js';
+import { resolve as resolveBranding } from '../branding.js';
 import { injectBotFrame } from '../bot-inject.js';
 
 // ─── Tunables (all env-overridable; defaults are the Phase-1 starting point) ──
@@ -408,6 +409,15 @@ function clearUsageLimitHold() { limitedUntil = 0; }
 const gateFailures = new Map();   // chatId → recent failure timestamps (10-min window)
 
 function failureNoticeText(group, kind, detail = '') {
+  // A spent plan is said the way every surface says it (lib/usage-limit.js):
+  // the room's language, the hour in the workspace's zone with the zone named.
+  if (kind === 'limit') {
+    let who = '';
+    try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed */ }
+    let tz = null; try { tz = getDefaultTimezone(); } catch { tz = null; }
+    const secs = noticeResetsAt(detail) || resetInstant(detail);
+    return limitNotice(secs, who, { tz, lang: noticeLang(group && group.language), zoneLabel: true });
+  }
   // English is the DEFAULT — most workspaces are not Polish and these lines are
   // what the bot says when the model, the thing that would otherwise speak the
   // group's language, is the part that is unavailable. But a group with a PINNED
