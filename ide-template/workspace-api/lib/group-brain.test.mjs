@@ -91,6 +91,11 @@ ok('delegate is given the group conversation, with attribution',
   const pr = groupTurnParams(g, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
   ok('the room turn is told every word is posted: speak to the sender, never about them, silence as a marker', /EVERY WORD YOU WRITE IS POSTED/.test(pr) && /never ABOUT them in the third person/.test(pr) && /\[\[SILENT\]\]/.test(pr));
 }
+{
+  const { groupTurnParams: gtp } = await import('./integrations/group-watcher.js');
+  const pr2 = gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT state of something/.test(pr2) && /only make after checking/.test(pr2));
+}
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
 ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
   !/-history\.jsonl/.test(delegatePrompt) && /does not open it/.test(delegatePrompt) && /room's memory/.test(delegatePrompt));
