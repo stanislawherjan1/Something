@@ -3,12 +3,23 @@
 // plays a conversation the way the real panel shows it (ChatPanel.jsx /
 // ToolChip.jsx): "Thinking", one live tool line that rolls over to the next
 // tool, a "Used N tools" summary, then the reply streaming in.
+//
+// A switch above the window shows the same conversations where else the team
+// talks to them: in Slack each role is a channel in the sidebar and the
+// coworker answers as the app; in Telegram it's a chat with them, bubbles and
+// "typing…" while they work. Same coworker, same work, only the place changes.
 
 // Tool steps: [logo file | glyph name, label]. Logos are integration marks,
 // glyphs stand for the built-in tools (same labels as TOOL_DISPLAY).
+// `files` + `chat`: in Slack and Telegram a file the coworker wrote arrives as
+// an attachment and the message no longer names it (as the bot does there);
+// `chat` is the reply worded for that, `reply` the web panel's.
+// `showcase`: the web tab plays this conversation in the real app — the demo
+// build at /demo, ?showcase=<id> (frontend/src/demo/showcase.js) — not a copy.
 const scenarios = [
   {
     role: 'Founder',
+    showcase: 'founder',
     ask: 'What needs me today?',
     steps: [
       [
@@ -23,9 +34,16 @@ const scenarios = [
       '<ol><li><b>10:00 investor call.</b> I put the numbers and last call’s open questions in <span class="file">investor-prep.md</span>.</li><li><b>A supplier invoice is 6 days overdue.</b> The reply is drafted, waiting for your yes.</li><li><b>Mara’s review is blocked</b> on your sign-off on the pricing page.</li></ol>',
       'Everything else is handled or scheduled.',
     ],
+    files: [['investor-prep.md', '3 KB']],
+    chat: [
+      'Three things need you today:',
+      '<ol><li><b>10:00 investor call.</b> The numbers and last call’s open questions are ready for it.</li><li><b>A supplier invoice is 6 days overdue.</b> The reply is drafted, waiting for your yes.</li><li><b>Mara’s review is blocked</b> on your sign-off on the pricing page.</li></ol>',
+      'Everything else is handled or scheduled.',
+    ],
   },
   {
     role: 'Store owner',
+    showcase: 'shop',
     ask: 'Why did sales drop yesterday?',
     steps: [
       [
@@ -43,24 +61,8 @@ const scenarios = [
     ],
   },
   {
-    role: 'Marketing',
-    ask: 'Draft this week’s newsletter from what we shipped.',
-    steps: [
-      [
-        ['@book', 'Using a skill'],
-        ['@search', 'Searching files'],
-        ['@file', 'Reading a file'],
-        ['@edit', 'Writing a file'],
-      ],
-    ],
-    reply: [
-      'Draft saved to <span class="file">newsletter-w41.md</span>, in our usual voice. Three stories: the new bundle, the restock and a customer photo from Thursday.',
-      'Subject line options:<ul><li>“Back in stock, and a new way to save”</li><li>“The mug set is back”</li></ul>',
-      'I’ll schedule it once you approve.',
-    ],
-  },
-  {
     role: 'Sales',
+    showcase: 'sales',
     ask: 'Follow up with everyone from Tuesday’s demo.',
     steps: [
       [
@@ -78,7 +80,32 @@ const scenarios = [
     ],
   },
   {
+    role: 'Marketing',
+    showcase: 'marketing',
+    ask: 'Draft this week’s newsletter from what we shipped.',
+    steps: [
+      [
+        ['@book', 'Using a skill'],
+        ['@search', 'Searching files'],
+        ['@file', 'Reading a file'],
+        ['@edit', 'Writing a file'],
+      ],
+    ],
+    reply: [
+      'Draft saved to <span class="file">newsletter-w41.md</span>, in our usual voice. Three stories: the new bundle, the restock and a customer photo from Thursday.',
+      'Subject line options:<ul><li>“Back in stock, and a new way to save”</li><li>“The mug set is back”</li></ul>',
+      'I’ll schedule it once you approve.',
+    ],
+    files: [['newsletter-w41.md', '4 KB']],
+    chat: [
+      'The draft is ready, in our usual voice. Three stories: the new bundle, the restock and a customer photo from Thursday.',
+      'Subject line options:<ul><li>“Back in stock, and a new way to save”</li><li>“The mug set is back”</li></ul>',
+      'I’ll schedule it once you approve.',
+    ],
+  },
+  {
     role: 'Team',
+    showcase: 'team',
     ask: 'Remind the team about Friday’s inventory count.',
     steps: [
       [['@users', 'Checking the team']],
@@ -93,15 +120,51 @@ const scenarios = [
       'Done. Everyone gets a ping on Friday at 9:00: <b>Mara and Tom on Telegram</b>, <b>Lena in the workspace</b>, since that’s where each of them answers.',
       'I’ll collect the counts in <span class="file">Inventory.md</span> as they come in.',
     ],
+    chat: [
+      'Done. Everyone gets a ping on Friday at 9:00: <b>Mara and Tom on Telegram</b>, <b>Lena in the workspace</b>, since that’s where each of them answers.',
+      'I’ll collect the counts as they come in.',
+    ],
   },
 ];
+// Slack: the company's own channels, one conversation each — not the roles.
+const CHANNELS: Record<string, string> = { 'Founder': 'leadership', 'Store owner': 'shop', 'Marketing': 'marketing', 'Sales': 'wholesale', 'Team': 'studio' };
+const channel = (role: string) => CHANNELS[role] || role.toLowerCase().replace(/\s+/g, '-');
+// Telegram: a DM with the coworker and the company's groups, one conversation each.
+const TG: Record<string, { name: string; color?: string; members?: number }> = {
+  'Founder': { name: 'Aria' },
+  'Store owner': { name: 'Shop', color: '#e17076', members: 4 },
+  'Marketing': { name: 'Marketing', color: '#7bc862', members: 3 },
+  'Sales': { name: 'Wholesale', color: '#65aadd', members: 5 },
+  'Team': { name: 'Studio', color: '#ee7aae', members: 7 },
+};
+const tg = (role: string) => TG[role] || { name: role };
+const SLACK_LOGO = '<svg viewBox="0 0 122.8 122.8"><path d="M25.8 77.6c0 7.1-5.8 12.9-12.9 12.9S0 84.7 0 77.6s5.8-12.9 12.9-12.9h12.9v12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V77.6z" fill="#e01e5a"/><path d="M45.2 25.8c-7.1 0-12.9-5.8-12.9-12.9S38.1 0 45.2 0s12.9 5.8 12.9 12.9v12.9H45.2zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H12.9C5.8 58.1 0 52.3 0 45.2s5.8-12.9 12.9-12.9h32.3z" fill="#36c5f0"/><path d="M97 45.2c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97V45.2zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V12.9C64.7 5.8 70.5 0 77.6 0s12.9 5.8 12.9 12.9v32.3z" fill="#2eb67d"/><path d="M77.6 97c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97h12.9zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H77.6z" fill="#ecb22e"/></svg>';
+// The place switch wears each place's own mark: ours for the web app, Slack's and Telegram's in colour.
+const surfaces = [
+  { id: 'web', label: 'Web', logo: '<img src="/favicon.svg" alt="" />' },
+  { id: 'slack', label: 'Slack', logo: SLACK_LOGO },
+  { id: 'telegram', label: 'Telegram', logo: '<img src="/integrations/telegram.svg" alt="" />' },
+];
+const HASH = '<svg class="hash" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>';
+const ARIA_PIC = { 'data-halftone': '', 'data-image': '/avatars/1.png', 'data-mode': 'dark', 'data-center': '', 'data-plain': '', 'data-paper': '', 'data-step': '1.7', 'data-scale': '1', 'data-seed': 'bot' };
+import { svg } from '../lib/icons';
+import '../styles/mocks.css';
 ---
-<div class="demo" data-scenarios={JSON.stringify(scenarios)}>
+<div class="demo" data-surface="web" data-scenarios={JSON.stringify(scenarios.map(s => ({ ...s, channel: channel(s.role), tg: tg(s.role) })))}>
+  <div class="stage" data-halftone data-abstract="wave" data-seed="sign-in" data-soft data-amp="0.22">
+    <div class="surfaces" role="tablist" aria-label="Where you talk to them">
+      {surfaces.map((x, i) => (
+        <button role="tab" class={`surf ${i === 0 ? 'on' : ''}`} aria-selected={i === 0 ? 'true' : 'false'} data-s={x.id}><span class="surf-logo" set:html={x.logo} />{x.label}</button>
+      ))}
+    </div>
   <div class="window">
     <div class="bar">
+      <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="ws"><img src="/favicon.svg" alt="" /><b>Saltmarsh Ceramics</b></div>
+      <div class="sec">Channels</div>
       <div class="tabs" role="tablist">
         {scenarios.map((s, i) => (
-          <button role="tab" class={`tab ${i === 0 ? 'on' : ''}`} aria-selected={i === 0 ? 'true' : 'false'} data-i={i}>{s.role}</button>
+          <button role="tab" class={`tab ${i === 0 ? 'on' : ''}`} aria-selected={i === 0 ? 'true' : 'false'} data-i={i}><img class="t-fav" src="/favicon.svg" alt="" /><span class="t-role">{s.role}</span><span class="t-ch"><span set:html={HASH} />{channel(s.role)}</span></button>
         ))}
       </div>
       <div class="pick" aria-hidden="true">
@@ -109,6 +172,15 @@ const scenarios = [
         <b class="pick-label">{scenarios[0].role}</b>
         <button class="pick-btn next" aria-label="Next role"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
       </div>
+    </div>
+    <!-- Web: the app's own screens (captured from the demo build, public/mockups/app), under a browser's address bar. -->
+    <div class="addr" aria-hidden="true"><span class="addr-field"><svg viewBox="0 0 24 24"><rect width="14" height="10" x="5" y="11" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>saltmarsh.something.md<b class="addr-path">/tasks</b></span></span></div>
+    <div class="webapp">
+      {scenarios.map((s, i) => <iframe class={`webapp-frame ${i === 0 ? 'on' : ''}`} data-id={s.showcase} src={`/mockups/app/${s.showcase}.html`} title="Something, the web app" tabindex="-1" aria-hidden="true" scrolling="no" inert></iframe>)}
+    </div>
+    <div class="main">
+    <div class="chead" aria-hidden="true">
+      <span class="ch-slack"><b><span set:html={HASH} /><span class="ch-name">{channel(scenarios[0].role)}</span></b><span class="here"><i></i>Aria is here</span></span>
     </div>
     <div class="list" aria-live="polite"><div class="list-inner"></div></div>
     <div class="composer" aria-hidden="true">
@@ -118,30 +190,67 @@ const scenarios = [
         <span class="send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
       </div>
     </div>
+    </div>
+  </div>
+
+  <!-- Telegram: two phones, the same phone as in "Wherever you already talk" (mocks.css):
+       the chat list on the left, the open chat on the right. -->
+  <div class="phones">
+    <div class="mk"><div class="phone">
+      <div class="tg-status"><b>9:41</b><span class="island"></span><span class="tg-batt"></span></div>
+      <div class="tgl-head"><span>Edit</span><b>Chats</b><span class="tgl-new" set:html={svg('plus')} /></div>
+      <div class="tgl-search"><span set:html={svg('search')} />Search</div>
+      <div class="tgl-list">
+        {scenarios.map((s, i) => (
+          <button class={`tgl-item ${i === 0 ? 'on' : ''}`} data-i={i}>
+            {tg(s.role).color ? <span class="tgl-av" style={`--c:${tg(s.role).color}`}>{tg(s.role).name[0]}</span> : <span class="tgl-av bot" {...ARIA_PIC}></span>}
+            <span class="tgl-text"><b>{tg(s.role).name}</b><span>{s.ask}</span></span>
+            <time>9:41</time>
+          </button>
+        ))}
+      </div>
+    </div></div>
+    <div class="mk"><div class="phone">
+      <div class="tg-status"><b>9:41</b><span class="island"></span><span class="tg-batt"></span></div>
+      <div class="tg-head">
+        <span class="tg-back" set:html={svg('back') + '<i>Chats</i>'} />
+        <span class="tg-who"><b class="tgc-name">Aria</b><span class="tgc-sub">bot</span></span>
+        <span class="tg-av"><span class="tgc-bot bot" {...ARIA_PIC}></span><span class="tgc-grp"></span></span>
+      </div>
+      <div class="tg-wall tgc-wall"></div>
+      <div class="tg-input">
+        <span set:html={svg('tgclip', 'tg-i')} />
+        <span class="tg-field">Message<span set:html={svg('smile', 'tg-i sm')} /></span>
+        <span set:html={svg('mic', 'tg-i')} />
+      </div>
+    </div></div>
+  </div>
   </div>
 </div>
 
 <script>
   type Step = [string, string];
-  type Scenario = { role: string; ask: string; steps: Step[][]; between?: string[]; reply: string[] };
+  type Scenario = { role: string; channel: string; tg: { name: string; color?: string; members?: number }; ask: string; steps: Step[][]; between?: string[]; reply: string[]; chat?: string[]; files?: [string, string][]; showcase: string };
+  type Surface = 'web' | 'slack' | 'telegram';
+  import { mountHalftones } from '../scripts/halftone.js';
 
-  // lucide glyphs for the built-in tools (Bell, ListChecks, BookOpen, Search, FileText, FilePen, Users).
-  const GLYPHS: Record<string, string> = {
-    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
-    list: '<path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
-    book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
-    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-    file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 13h4M10 17h4"/>',
-    edit: '<path d="M12 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9l5 5v3"/><path d="M21.4 13.6a2 2 0 0 0-2.8-2.8L14 15.4V18h2.6z"/>',
-    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  const DOC = '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  // "You" in Slack wears Slack's default picture: a person on a coloured tile.
+  const YOU = '<svg viewBox="0 0 36 36"><circle cx="18" cy="14" r="6.5" fill="#fff"/><path d="M5 36c1.5-8 7-12 13-12s11.5 4 13 12z" fill="#fff"/></svg>';
+  const ARIA = 'data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"';
+
+
+  // A chat app has no tables: Telegram gets the table as plain lines.
+  const asLines = (block: string) => {
+    if (!block.startsWith('<table')) return block;
+    const t = document.createElement('div');
+    t.innerHTML = block;
+    const head = [...t.querySelectorAll('th')].map((x) => x.textContent || '');
+    return [...t.querySelectorAll('tr')].slice(1).map((tr) => {
+      const c = [...tr.querySelectorAll('td')].map((x) => x.textContent || '');
+      return `<b>${c[0]}</b>: ${c[1]} (${(head[2] || '').toLowerCase()} ${c[2]})`;
+    }).join('<br>');
   };
-  const CHECK = '<svg class="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
-  const CHEVRON = '<svg class="chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>';
-
-  const lead = (icon: string) =>
-    icon.startsWith('@')
-      ? `<svg class="glyph" viewBox="0 0 24 24">${GLYPHS[icon.slice(1)] || ''}</svg>`
-      : `<span class="logo"><img src="/integrations/${icon}.svg" alt="" /></span>`;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -155,43 +264,162 @@ const scenarios = [
     const pickLabel = demo.querySelector<HTMLElement>('.pick-label')!;
     const typed = demo.querySelector<HTMLElement>('.typed')!;
     const send = demo.querySelector<HTMLElement>('.send')!;
+    const surfs = [...demo.querySelectorAll<HTMLButtonElement>('.surf')];
+    const ph = demo.querySelector<HTMLElement>('.ph')!;
+    const chName = demo.querySelector<HTMLElement>('.ch-name')!;
+    // Telegram's phones.
+    const chats = [...demo.querySelectorAll<HTMLButtonElement>('.tgl-item')];
+    const wall = demo.querySelector<HTMLElement>('.tgc-wall')!;
+    const tgName = demo.querySelector<HTMLElement>('.tgc-name')!;
+    const tgSub = demo.querySelector<HTMLElement>('.tgc-sub')!;
+    const tgAv = demo.querySelector<HTMLElement>('.phones .tg-av')!;
+    const tgGrp = demo.querySelector<HTMLElement>('.tgc-grp')!;
+    // Web: one captured screen of the app per conversation, all loaded with the
+    // page, so switching only shows another; each plays its chat on 'showcase:play'.
+    const frames = [...demo.querySelectorAll<HTMLIFrameElement>('.webapp-frame')];
+    const addrPath = demo.querySelector<HTMLElement>('.addr-path')!;
+    const OPENS_AT_END = new Set(['marketing']);
+    const ROUTES: Record<string, string> = { founder: '/tasks', shop: '/', marketing: '/files/Marketing/newsletter-this-week.md', sales: '/files/Wholesale/cafe-demo-plan.md', team: '/team' };
+    // On a phone the desktop app would be too small to read: it is laid out at
+    // desktop width and only its chat panel (the right 460px) is shown, fitted.
+    const webBox = demo.querySelector<HTMLElement>('.webapp')!;
+    const DESK = 1000, CHAT = 460;
+    new ResizeObserver(() => {
+      const w = webBox.clientWidth, h = webBox.clientHeight;
+      if (!w) return;   // hidden (another surface): keep the last size
+      const k = w < 720 ? w / CHAT : 1;
+      for (const f of frames) {
+        f.style.width = k === 1 ? '100%' : `${DESK}px`;
+        f.style.height = `${h / k}px`;
+        f.style.transform = k === 1 ? '' : `scale(${k}) translateX(${CHAT - DESK}px)`;
+      }
+    }).observe(webBox);
+    // A screen is ready once loaded (it may finish before this script runs).
+    const frameReady = new Map(frames.map((f) => [f, new Promise<void>((r) => {
+      const ok = () => { f.classList.add('ready'); r(); };
+      if (f.contentDocument?.readyState === 'complete' && f.contentDocument.body?.dataset.ask !== undefined) ok();
+      else f.addEventListener('load', ok, { once: true });
+    })]));
+    let frameDone: (() => void) | null = null;
+    window.addEventListener('message', (e) => {
+      const f = frames.find((x) => x.contentWindow === e.source);
+      if (!f?.classList.contains('on')) return;
+      if (e.data?.type === 'showcase:opened') addrPath.textContent = ROUTES[f.dataset.id!] || '';
+      if (e.data?.type === 'showcase:done') frameDone?.();
+    });
     let run = 0;          // bumped on every switch, so a stale replay stops
     let current = 0;
     let userPicked = false;
+    let surface: Surface = 'web';
 
-    const add = (html: string, cls: string) => {
+    const add = (html: string, cls: string, into: HTMLElement = inner) => {
       const el = document.createElement('div');
       el.className = cls;
       el.innerHTML = html;
-      inner.appendChild(el);
-      list.scrollTop = list.scrollHeight;
+      into.appendChild(el);
+      if (into === inner) list.scrollTop = list.scrollHeight;
       return el;
     };
 
-    // Stream one block into the reply, word by word; lists and tables land whole.
-    async function stream(bot: HTMLElement, block: string, alive: () => boolean) {
-      const el = document.createElement('div');
-      el.className = 'para';
-      bot.appendChild(el);
-      if (block.startsWith('<')) {
-        el.innerHTML = block;
-        el.classList.add('land');
-        list.scrollTop = list.scrollHeight;
-        await sleep(reduced ? 0 : 420);
-        return alive();
-      }
-      let html = '';
-      for (const w of block.split(/(\s+)/)) {
-        html += w;
-        // Never paint half a tag.
-        if ((html.match(/</g) || []).length === (html.match(/>/g) || []).length) el.innerHTML = html;
-        list.scrollTop = list.scrollHeight;
-        if (!reduced && w.trim()) await sleep(28);
+    // How long the coworker takes before a message lands where it just arrives whole.
+    const work = (s: Scenario, g: number) => (reduced ? 0 : 900 + 650 * (s.steps[g]?.length || 1));
+
+    async function typeAsk(ask: string, alive: () => boolean) {
+      await sleep(reduced ? 0 : 500); if (!alive()) return false;
+      composer.classList.add('typing');
+      for (let k = 1; k <= ask.length; k++) {
+        typed.textContent = ask.slice(0, k);
+        if (!reduced) await sleep(ask[k - 1] === ' ' ? 55 : 32);
         if (!alive()) return false;
       }
-      el.innerHTML = block;
-      await sleep(reduced ? 0 : 160);
+      send.classList.add('on');
+      await sleep(reduced ? 0 : 420); if (!alive()) return false;
+      send.classList.add('press');
+      await sleep(140); if (!alive()) return false;
+      send.classList.remove('on', 'press');
+      composer.classList.remove('typing');
+      typed.textContent = '';
+      return true;
+    }
+
+    // ── Web: the real app plays it, from the composer to the reply.
+    async function playWeb(s: Scenario, alive: () => boolean) {
+      const frame = frames.find((f) => f.dataset.id === s.showcase)!;
+      frames.forEach((f) => f.classList.toggle('on', f === frame));
+      // A file the reply writes is opened at its end (the 'showcase:opened' message).
+      addrPath.textContent = OPENS_AT_END.has(s.showcase) ? '' : (ROUTES[s.showcase] || '/').replace(/^\/$/, '');
+      await frameReady.get(frame); if (!alive()) return false;
+      const done = new Promise<void>((r) => { frameDone = r; setTimeout(r, 30_000); });
+      frame.contentWindow?.postMessage({ type: 'showcase:play' }, '*');
+      await done;
       return alive();
+    }
+
+    // ── Slack: no "thinking", no tools — the app's messages simply arrive, whole.
+    async function playSlack(s: Scenario, alive: () => boolean) {
+      if (!(await typeAsk(`@Aria ${s.ask}`, alive))) return false;
+      add(`<span class="s-av s-you">${YOU}</span><div class="s-body"><p class="s-who"><b>You</b><time>9:41 AM</time></p><p><span class="s-at">@Aria</span> ${s.ask}</p></div>`, 'row-user s-msg');
+      let body: HTMLElement | null = null;
+      const say = (html: string) => {
+        if (!body) {
+          const row = add(`<span class="s-av bot" ${ARIA}></span><div class="s-body"><p class="s-who"><b>Aria</b><em class="s-app">APP</em><time>9:42 AM</time></p></div>`, 'row-bot s-msg');
+          mountHalftones(row);
+          body = row.querySelector<HTMLElement>('.s-body')!;
+        }
+        const el = document.createElement('div');
+        el.className = 'para land';
+        el.innerHTML = html;
+        body.appendChild(el);
+        list.scrollTop = list.scrollHeight;
+      };
+      for (let g = 0; g < s.steps.length; g++) {
+        await sleep(work(s, g)); if (!alive()) return false;
+        const said = s.between?.[g];
+        if (said) say(said);
+      }
+      // The file it wrote is attached to the message, not named in it.
+      const reply = s.chat || s.reply;
+      for (const block of reply) say(block);   // each paragraph its own block, landing together
+      for (const [name, size] of s.files || []) say(`<div class="s-file"><span class="s-file-ic">${DOC}</span><span><b>${name}</b><span>Markdown · ${size}</span></span></div>`);
+      return true;
+    }
+
+    // ── Telegram: the phone shows "typing…" while they work; each message lands whole.
+    async function playTelegram(s: Scenario, alive: () => boolean) {
+      const group = !!s.tg.color;
+      const idle = group ? `${s.tg.members} members` : 'bot';
+      await sleep(reduced ? 0 : 700); if (!alive()) return false;
+      add(`<span class="tg-date">Today</span>`, 'tgc-day', wall);
+      add(`${s.ask}<span class="tg-meta">9:41 <i>✓✓</i></span>`, 'tg-msg out', wall);
+      tgSub.textContent = group ? 'Aria is typing…' : 'typing…';
+      tgSub.classList.add('busy');
+      // Back-to-back messages from the coworker, as Telegram groups them: the
+      // name only over the first, the picture only beside the last.
+      let prev: HTMLElement | null = null;
+      const say = (html: string) => {
+        const follows = !!prev && prev === wall.lastElementChild;
+        const msg = `<div class="tg-msg in">${group && !follows ? '<b class="tg-name aria">Aria</b>' : ''}${html}<span class="tg-meta">9:42</span></div>`;
+        const row = add(group ? `<span class="tg-pava bot" ${ARIA}></span>${msg}` : msg, group ? 'tg-row' : 'tg-solo', wall);
+        if (group) {
+          if (follows) prev!.querySelector<HTMLElement>('.tg-pava')!.style.visibility = 'hidden';
+          mountHalftones(row);
+        }
+        prev = row;
+      };
+      for (let g = 0; g < s.steps.length; g++) {
+        await sleep(work(s, g)); if (!alive()) return false;
+        const said = s.between?.[g];
+        if (said) say(said);
+      }
+      // The message, which doesn't name the file; the file it wrote follows it as a document.
+      say((s.chat || s.reply).map(asLines).map((b) => `<div class="para">${b}</div>`).join(''));
+      for (const [name, size] of s.files || []) {
+        await sleep(reduced ? 0 : 450); if (!alive()) return false;
+        say(`<div class="tg-doc"><span class="tg-doc-ic">${DOC}</span><span><b>${name}</b><span>${size}</span></span></div>`);
+      }
+      tgSub.textContent = idle;
+      tgSub.classList.remove('busy');
+      return true;
     }
 
     async function play(i: number) {
@@ -200,75 +428,43 @@ const scenarios = [
       const s = scenarios[i];
       current = i;
       tabs.forEach((t, k) => { t.classList.toggle('on', k === i); t.setAttribute('aria-selected', String(k === i)); });
-      pickLabel.textContent = s.role;
+      chats.forEach((c, k) => c.classList.toggle('on', k === i));
+      pickLabel.textContent = surface === 'slack' ? `#${s.channel}` : s.role;
+      chName.textContent = s.channel;
+      ph.textContent = surface === 'slack' ? `Message #${s.channel}` : 'Ask anything';
       inner.innerHTML = '';
+      wall.innerHTML = '';
       typed.textContent = '';
       composer.classList.remove('typing');
       send.classList.remove('on', 'press');
+      // The open chat's header: a DM wears the coworker's face, a group its initial.
+      const group = !!s.tg.color;
+      tgName.textContent = s.tg.name;
+      tgSub.textContent = group ? `${s.tg.members} members` : 'bot';
+      tgSub.classList.remove('busy');
+      tgAv.classList.toggle('group', group);
+      tgGrp.textContent = s.tg.name[0];
+      tgGrp.style.setProperty('--c', s.tg.color || '');
 
-      // Typed into the composer first, then sent: the bubble rises into the chat.
-      await sleep(reduced ? 0 : 500); if (!alive()) return;
-      composer.classList.add('typing');
-      for (let k = 1; k <= s.ask.length; k++) {
-        typed.textContent = s.ask.slice(0, k);
-        if (!reduced) await sleep(s.ask[k - 1] === ' ' ? 55 : 32);
-        if (!alive()) return;
-      }
-      send.classList.add('on');
-      await sleep(reduced ? 0 : 420); if (!alive()) return;
-      send.classList.add('press');
-      await sleep(140); if (!alive()) return;
-      send.classList.remove('on', 'press');
-      composer.classList.remove('typing');
-      typed.textContent = '';
-      // The day appears with the first message, as in the chat.
-      add('<span class="day">Today</span>', 'day-row');
-      add(`<div class="bubble">${s.ask}</div>`, 'row-user');
-      const bot = add('', 'row-bot');
-      const think = document.createElement('div');
-      think.className = 'thinking';
-      think.innerHTML = '<span class="shimmer">Thinking</span>';
-      bot.appendChild(think);
-      await sleep(reduced ? 0 : 900); if (!alive()) return;
-      think.remove();
+      const done = await (surface === 'slack' ? playSlack(s, alive) : surface === 'telegram' ? playTelegram(s, alive) : playWeb(s, alive));
+      if (!done) return;
 
-      for (let g = 0; g < s.steps.length; g++) {
-        const group = s.steps[g];
-        const box = document.createElement('div');
-        box.className = 'tools';
-        bot.appendChild(box);
-        // One live line, replaced in place for each tool.
-        for (const [icon, label] of group) {
-          box.innerHTML = `<div class="tool-line"><div class="tool roll">${lead(icon)}<span class="shimmer">${label}</span></div></div>`;
-          list.scrollTop = list.scrollHeight;
-          await sleep(reduced ? 0 : 1100); if (!alive()) return;
-          const t = box.querySelector('.tool')!;
-          t.querySelector('.shimmer')!.classList.remove('shimmer');
-          t.insertAdjacentHTML('beforeend', CHECK);
-          await sleep(reduced ? 0 : 380); if (!alive()) return;
-        }
-        // The group settles into "Used N tools", which opens on click.
-        const n = group.length;
-        box.innerHTML = `<button class="summary">${CHEVRON}<span>Used ${n} tool${n === 1 ? '' : 's'}</span></button>
-          <div class="sum-list"><div>${group.map(([icon, label]) => `<span class="sum-item">${lead(icon)}<span>${label}</span></span>`).join('')}</div></div>`;
-        box.classList.add('land');
-        box.querySelector('.summary')!.addEventListener('click', () => box.classList.toggle('open'));
-        await sleep(reduced ? 0 : 300); if (!alive()) return;
-        const said = s.between?.[g];
-        if (said && !(await stream(bot, said, alive))) return;
-      }
-
-      // The reply streams in, block by block.
-      for (const block of s.reply) if (!(await stream(bot, block, alive))) return;
-
-      // Then on to the next role, unless the visitor took over.
+      // Then on to the next conversation, unless the visitor took over.
       if (userPicked) return;
       await sleep(5200); if (!alive() || userPicked) return;
       play((current + 1) % scenarios.length);
     }
 
     tabs.forEach((t) => t.addEventListener('click', () => { userPicked = true; play(Number(t.dataset.i)); }));
-    // Phones: the same choice as the tabs, one role at a time with arrows.
+    chats.forEach((c) => c.addEventListener('click', () => { userPicked = true; play(Number(c.dataset.i)); }));
+    // The place switch replays the same conversation there.
+    surfs.forEach((b) => b.addEventListener('click', () => {
+      surface = b.dataset.s as Surface;
+      demo.dataset.surface = surface;
+      surfs.forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', String(x === b)); });
+      play(current);
+    }));
+    // Phones: the same choice as the tabs, one at a time with arrows.
     const step = (d: number) => { userPicked = true; play((current + d + scenarios.length) % scenarios.length); };
     demo.querySelector('.pick-btn.prev')!.addEventListener('click', () => step(-1));
     demo.querySelector('.pick-btn.next')!.addEventListener('click', () => step(1));
@@ -287,7 +483,7 @@ const scenarios = [
   /* Role tabs: a quiet segmented control, in the window's top bar. */
   .bar { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px; background: var(--background); border-bottom: 1px solid var(--hair); }
   .tabs {
-    display: flex; gap: 2px; padding: 3px; max-width: 100%; overflow-x: auto; scrollbar-width: none;
+    display: flex; gap: 2px; padding: 3px; max-width: 100%; overflow: hidden;
     border-radius: 8px; border: 1px solid var(--hair); background: var(--card);
   }
   .tabs::-webkit-scrollbar { display: none; }
@@ -300,12 +496,14 @@ const scenarios = [
 
   /* The chat column, as in ChatPane: list and composer on the sidebar tone (no header here). */
   .window {
-    display: flex; flex-direction: column; height: 620px; overflow: hidden;
+    display: flex; flex-direction: column; height: 680px; overflow: hidden;
     border-radius: 8px; border: 1px solid var(--hair); background: #f3f2ed;
     box-shadow: 0 24px 60px -28px rgba(0,0,0,.22);
   }
 
-  .list { flex: 1; overflow-y: auto; scrollbar-width: none; scroll-behavior: smooth; }
+  /* A picture of a conversation, not a page: nothing here scrolls by hand (the
+     newest message is kept in view from code). */
+  .list { flex: 1; overflow: hidden; scroll-behavior: smooth; }
   .list::-webkit-scrollbar { display: none; }
   .list-inner { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; min-height: 100%; justify-content: flex-end; }
   .list-inner :global(.day-row) { display: flex; justify-content: center; padding: 4px 0; }
@@ -389,8 +587,163 @@ const scenarios = [
   .send.press { transform: scale(.9); }
   .composer { transition: border-color .15s; }
 
+  /* The place switch, at the top of the stage, each with its own mark. */
+  .surfaces { display: flex; width: max-content; max-width: 100%; margin: 0 auto clamp(12px, 3vw, 32px);   /* the same space below as the stage gives above */ gap: 2px; padding: 4px; border-radius: 12px; border: 1px solid var(--hair); background: var(--card); }
+  .surf { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font: 500 14px var(--font); color: var(--muted-foreground); transition: background .15s, color .15s; }
+  .surf-logo { display: grid; place-items: center; width: 18px; height: 18px; }
+  .surf-logo :global(svg), .surf-logo :global(img) { width: 18px; height: 18px; }
+  .surf-logo :global(img[src="/favicon.svg"]) { border-radius: 5px; outline: 1px solid rgb(40 37 32 / .1); }
+  .surf:hover { color: var(--foreground); }
+  .surf.on { background: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+  .stage { border-radius: 8px; border: 1px solid var(--hair); padding: clamp(12px, 3vw, 32px); }
+
+  .ws, .sec, .chead, .t-ch, .t-tg, .tg-title { display: none; }
+  .main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .hash, .tabs :global(.hash), .chead :global(.hash) { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; flex-shrink: 0; }
+
+
+  /* ── Web: a browser — its tabs are the conversations, its address bar, the real app below. ── */
+  .dots, .addr, .t-fav { display: none; }
+  .demo[data-surface="web"] .window { background: #f7f6f2; }
+  .demo[data-surface="web"] .bar { justify-content: flex-start; align-items: flex-end; gap: 14px; padding: 8px 12px 0; background: #e9e7e1; border-bottom: 0; }
+  .demo[data-surface="web"] .dots { display: flex; gap: 7px; align-self: center; padding: 0 6px 6px 4px; }
+  .dots i { width: 11px; height: 11px; border-radius: 99px; background: rgb(28 27 24 / .16); }
+  .demo[data-surface="web"] .tabs { gap: 2px; padding: 0; border: 0; border-radius: 0; background: transparent; overflow: visible; }
+  .demo[data-surface="web"] .tab { display: flex; align-items: center; gap: 8px; height: 34px; min-width: 132px; padding: 0 14px; border-radius: 9px 9px 0 0; font-size: 12.5px; color: rgb(28 27 24 / .6); }
+  .demo[data-surface="web"] .tab:hover { background: rgb(255 255 255 / .35); }
+  .demo[data-surface="web"] .tab.on { background: #f7f6f2; color: #1c1b18; }
+  .demo[data-surface="web"] .t-fav { display: block; width: 14px; height: 14px; border-radius: 3px; outline: 1px solid rgb(40 37 32 / .1); }
+  .demo[data-surface="web"] .addr { display: flex; align-items: center; padding: 7px 14px; background: #f7f6f2; border-bottom: 1px solid var(--hair); }
+  .addr-field { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 560px; height: 28px; padding: 0 12px; border-radius: 99px; background: rgb(28 27 24 / .05); font-size: 12.5px; color: rgb(28 27 24 / .75); }
+  .addr-field svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; opacity: .6; }
+  .addr-path { font-weight: 400; color: rgb(28 27 24 / .45); }
+
+  /* ── Web: the app's captured screens, one frame per conversation, stacked. ── */
+  .webapp { display: none; }
+  .demo[data-surface="web"] .main { display: none; }
+  .demo[data-surface="web"] .webapp { display: block; position: relative; flex: 1; min-height: 0; overflow: hidden; background: #f7f6f2; }
+  .webapp-frame { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border: 0; pointer-events: none; visibility: hidden; transform-origin: 0 0; }
+  .webapp-frame.on.ready { visibility: visible; }
+
+  /* ── Slack: the roles are channels in the sidebar; the coworker answers as the app ── */
+  .demo[data-surface="slack"] .window { display: grid; grid-template-columns: 210px 1fr; background: #fff; }
+  .demo[data-surface="slack"] .bar { flex-direction: column; justify-content: flex-start; padding: 0; border-bottom: 0; border-right: 1px solid var(--hair); background: #fff; }
+  .demo[data-surface="slack"] .ws { display: flex; align-items: center; gap: 9px; height: 54px; padding: 0 16px; border-bottom: 1px solid var(--hair); }
+  .demo[data-surface="slack"] .ws img { width: 22px; height: 22px; border-radius: 6px; outline: 1px solid rgb(40 37 32 / .1); }
+  .demo[data-surface="slack"] .ws b { font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+  .demo[data-surface="slack"] .sec { display: block; padding: 14px 18px 4px; font-size: 12.5px; color: var(--muted-foreground); }
+  .demo[data-surface="slack"] .tabs { flex-direction: column; gap: 2px; padding: 0 8px; border: 0; background: transparent; overflow: visible; }
+  .demo[data-surface="slack"] .tab { display: flex; align-items: center; height: 32px; padding: 0 10px; text-align: left; font-size: 14px; line-height: 1; }
+  .demo[data-surface="slack"] .t-role { display: none; }
+  .demo[data-surface="slack"] .t-ch { display: flex; align-items: center; gap: 8px; }
+  .demo[data-surface="slack"] .t-ch :global(.hash) { color: var(--muted-foreground); translate: 0 1px; }
+  .demo[data-surface="slack"] .tab.on { font-weight: 600; }
+  .demo[data-surface="slack"] .chead { display: flex; align-items: center; height: 54px; padding: 0 24px; border-bottom: 1px solid var(--hair); }
+  .demo[data-surface="slack"] .ch-tg { display: none; }
+  .ch-slack { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+  .ch-slack b { display: flex; align-items: center; gap: 4px; font-size: 15.5px; font-weight: 600; line-height: 1; }
+  .ch-slack b :global(.hash) { color: var(--muted-foreground); translate: 0 1px; }
+  .here { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted-foreground); }
+  .here i { width: 7px; height: 7px; border-radius: 99px; background: #4f9a6b; }
+  .demo[data-surface="slack"] .list-inner :global(.day-row) { display: none; }
+  .list-inner :global(.s-msg) { display: flex; gap: 12px; max-width: none; animation: rise .32s cubic-bezier(.2,.8,.2,1) both; }
+  /* Slack keeps everyone on the left, avatar beside the name — not the chat's right-hand bubbles. */
+  .demo[data-surface="slack"] .list-inner :global(.row-user),
+  .demo[data-surface="slack"] .list-inner :global(.row-bot) { flex-direction: row; justify-content: flex-start; align-items: flex-start; max-width: none; transform-origin: bottom left; }
+  .list-inner :global(.s-av) { width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px; object-fit: cover; }
+  .list-inner :global(.s-you) { display: block; overflow: hidden; background: #4a8fd4; }
+  .list-inner :global(.s-you svg) { display: block; width: 100%; height: 100%; }
+  .list-inner :global(.s-av.bot) { display: inline-block; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+  .list-inner :global(.s-body) { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 14px; line-height: 1.6; color: var(--fg-85); }
+  .list-inner :global(.s-body p) { margin: 0; }
+  .list-inner :global(.s-who) { display: flex; align-items: center; gap: 7px; margin-bottom: -4px !important; }
+  .list-inner :global(.s-who b) { font-weight: 700; color: var(--foreground); }
+  .list-inner :global(.s-who time) { font-size: 11.5px; color: var(--muted-foreground); }
+  .list-inner :global(.s-app) { padding: 0 5px; border-radius: 4px; background: rgb(28 27 24 / .07); color: var(--muted-foreground); font: 600 9.5px var(--font); font-style: normal; letter-spacing: .03em; }
+  .list-inner :global(.s-at) { padding: 1px 4px; border-radius: 4px; background: rgb(18 100 163 / .09); color: #1264a3; }
+  .demo[data-surface="slack"] .composer { margin: 0 24px 20px; border-radius: 10px; }
+  /* A file attached to the app's message, as Slack shows an upload. */
+  .list-inner :global(.s-file) { display: flex; align-items: center; gap: 10px; width: max-content; max-width: 100%; margin-top: 8px; padding: 9px 14px 9px 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--hair); background: #fff; }
+  .list-inner :global(.s-file-ic) { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 6px; background: #1264a3; color: #fff; }
+  .list-inner :global(.s-file-ic svg) { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+  .list-inner :global(.s-file > span:last-child) { display: flex; flex-direction: column; line-height: 1.3; }
+  .list-inner :global(.s-file b) { font-size: 13.5px; font-weight: 700; color: var(--foreground); }
+  .list-inner :global(.s-file span span) { font-size: 12px; color: var(--muted-foreground); }
+  .demo[data-surface="slack"] .attach { visibility: hidden; }
+
+    /* ── Telegram: two phones, the same phone as in "Wherever you already talk"
+     (mocks.css), cropped at the bottom like it; the chat list on the left,
+     the open chat on the right. ── */
+  .phones { display: none; height: calc(680px + clamp(12px, 3vw, 32px)); overflow: hidden; justify-content: center; gap: 64px; }
+  .demo[data-surface="telegram"] .phones { display: flex; }
+  /* The phones run off the stage's bottom edge, as in "Wherever you already talk". */
+  .demo[data-surface="telegram"] .stage { padding-bottom: 0; }
+  .phones .mk { zoom: 1.15; }
+  .demo[data-surface="telegram"] .window { display: none; }
+  .phones .mk { flex: none; }
+  /* The chat list (Telegram's own iOS list). */
+  .tgl-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 4px 16px 8px; background: rgb(255 255 255 / .92); font-size: 17px; }
+  .tgl-head span { color: #2481cc; }
+  .tgl-head b { font-size: 17px; font-weight: 600; }
+  .tgl-new { justify-self: end; display: flex; }
+  .tgl-new :global(svg) { width: 22px; height: 22px; stroke-width: 2; }
+  .tgl-search { display: flex; align-items: center; gap: 6px; margin: 2px 14px 8px; height: 36px; padding: 0 10px; border-radius: 10px; background: #efeff0; color: #8e8e93; font-size: 16px; }
+  .tgl-search :global(svg) { width: 16px; height: 16px; stroke-width: 2; }
+  .tgl-list { display: flex; flex-direction: column; }
+  .tgl-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 0 0 14px; border: 0; background: #fff; text-align: left; cursor: pointer; font: inherit; }
+  .tgl-item.on { background: #f0f0f0; }
+  .tgl-av { display: grid; place-items: center; width: 58px; height: 58px; flex-shrink: 0; overflow: hidden; border-radius: 99px; background: var(--c, #9aa); color: #fff; font-size: 22px; font-weight: 600; }
+  .tgl-av.bot { background: #efede7; }
+  .tgl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px 0 11px; border-bottom: .5px solid rgb(0 0 0 / .14); }
+  .tgl-text b { font-size: 16px; font-weight: 600; color: #000; }
+  .tgl-text span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 15px; line-height: 1.3; color: #8e8e93; }
+  .tgl-item time { align-self: flex-start; margin: 12px 14px 0 0; font-size: 14px; color: #8e8e93; }
+  /* The open chat: the header's avatar is the coworker in a DM, the group's initial in a group. */
+  .tgc-sub.busy { color: #2481cc; }
+  .tgc-bot { position: absolute !important; inset: 0; border-radius: 99px; overflow: hidden; background: #efede7; }
+  .tgc-grp { display: none; position: absolute; inset: 0; place-items: center; border-radius: 99px; background: var(--c, #9aa); color: #fff; font-size: 16px; font-weight: 600; }
+  .tg-av.group .tgc-bot { display: none; }
+  .tg-av.group .tgc-grp { display: grid; }
+  /* The phones run past the stage's bottom edge (the phone ends 803px below the
+     stage's top, the stage shows 680px + the clamp): the chat keeps its last
+     message 14px above that edge. In the phone's own (zoomed) px. */
+  .tgc-wall { overflow: hidden; padding-bottom: calc((123px - clamp(12px, 3vw, 32px)) / 1.15 + 14px) !important; }
+  .tgc-wall :global(.tgc-day) { align-self: center; }
+  .tgc-wall :global(.tg-msg), .tgc-wall :global(.tg-row), .tgc-wall :global(.tgc-day) { animation: rise .32s cubic-bezier(.2,.8,.2,1) both; }
+  .tgc-wall :global(.tg-solo) { display: flex; }
+  .tgc-wall :global(.tg-solo .tg-msg) { animation: none; }
+  .tgc-wall :global(.para + .para) { margin-top: 8px; }
+  .tgc-wall :global(.para b) { font-weight: 600; }
+  .tgc-wall :global(.para ol), .tgc-wall :global(.para ul) { margin: 4px 0; padding-left: 20px; }
+  .tgc-wall :global(.file) { font-weight: 500; color: #2481cc; }
+  /* A document, as Telegram shows one: a round blue icon, its name and size. */
+  .tgc-wall :global(.tg-doc) { display: flex; align-items: center; gap: 11px; padding: 2px 34px 2px 0; }
+  .tgc-wall :global(.tg-doc-ic) { display: grid; place-items: center; width: 46px; height: 46px; flex-shrink: 0; border-radius: 99px; background: #2481cc; color: #fff; }
+  .tgc-wall :global(.tg-doc-ic svg) { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+  .tgc-wall :global(.tg-doc > span:last-child) { display: flex; flex-direction: column; line-height: 1.3; }
+  .tgc-wall :global(.tg-doc b) { font-size: 15.5px; font-weight: 600; }
+  .tgc-wall :global(.tg-doc span span) { font-size: 13px; color: #8e8e93; }
+  /* Group extras, as in TelegramMock. */
+  .tgc-wall :global(.tg-name) { display: block; margin-bottom: 1px; font-size: 13.5px; font-weight: 600; color: #6d28d9; }
+  .tgc-wall :global(.tg-row) { display: flex; align-items: flex-end; gap: 7px; }
+  .tgc-wall :global(.tg-row .tg-msg) { margin-left: 0; animation: none; }
+  .tgc-wall :global(.tg-pava) { display: inline-block; width: 30px; height: 30px; flex-shrink: 0; overflow: hidden; border-radius: 99px; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .07); }
+
   .pick { display: none; }
   @media (max-width: 620px) {
+    .stage { padding: 10px; }
+    .surfaces { margin-bottom: 10px; }
+    .demo[data-surface="web"] .bar { justify-content: center; align-items: center; padding: 10px 12px; background: var(--background); border-bottom: 1px solid var(--hair); }
+    .demo[data-surface="web"] .dots, .demo[data-surface="web"] .addr { display: none; }
+
+    .demo[data-surface="slack"] .window { display: flex; }
+    .demo[data-surface="slack"] .bar { flex-direction: row; justify-content: center; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--hair); }
+    .demo[data-surface="slack"] .ws, .demo[data-surface="slack"] .sec { display: none; }
+    /* Telegram on a phone: the open chat only, a little smaller. */
+    .phones { height: 530px; gap: 0; }
+    .phones .mk:first-child { display: none; }
+    .phones .mk { zoom: .84; }
+    .tgc-wall { padding-bottom: calc(57px / .84 + 14px) !important; }
     .window { height: 480px; }
     .tabs { display: none; }
     .pick { display: flex; align-items: center; justify-content: space-between; width: 100%; }

@@ -10,7 +10,7 @@ const faces = [10, 12, 7, 14, 2, 11, 4];   // the calmer, closed-mouth ones
 const heroLogos = [
   ['gworkspace', 'Google Workspace'], ['shopify', 'Shopify'], ['notion', 'Notion'], ['stripe', 'Stripe'],
   ['meta', 'Meta Ads'], ['google-ads', 'Google Ads'], ['ga4', 'Google Analytics'], ['linear', 'Linear'],
-  ['github', 'GitHub'], ['airtable', 'Airtable'], ['telegram', 'Telegram'],
+  ['github', 'GitHub'], ['airtable', 'Airtable'],
 ];
 ---
 <div class="hero-zone">
@@ -28,11 +28,6 @@ const heroLogos = [
   </div>
   <h1 class="fade-up">Build your own employee.</h1>
   <p class="lead fade-up">Something lets you build a self-hosted AI coworker that helps you with your everyday challenges.</p>
-  <div class="cta fade-up">
-    <a class="btn btn-primary" href="#start">Deploy your own</a>
-    <GithubStars big />
-  </div>
-  <p class="hero-meta fade-up">Runs on your own server · from ~€7/mo</p>
   <div class="works fade-up">
     <span class="works-label">Works with</span>
     <div class="works-logos">
@@ -40,6 +35,11 @@ const heroLogos = [
     </div>
     <span class="works-more"><span class="wm-long">+ 40 more</span><span class="wm-short">+40</span></span>
   </div>
+  <div class="cta fade-up">
+    <a class="btn btn-primary" href="#start">Deploy your own</a>
+    <GithubStars big />
+  </div>
+  <p class="hero-meta fade-up">Runs on your own server · from ~€7/mo</p>
 </header>
 </div>
 
@@ -55,7 +55,7 @@ const heroLogos = [
             mask-image: radial-gradient(ellipse 52% 60% at 50% 46%, #000 30%, transparent 100%);
   }
 
-  .faces { display: flex; justify-content: center; gap: 4px; margin-bottom: 28px; }
+  .faces { display: flex; justify-content: center; gap: 4px; margin-bottom: 36px; }
   .face { width: 56px; height: 56px; background: transparent !important; }
   @media (max-width: 620px) { .face { width: 44px; height: 44px; } .face:nth-child(n+6) { display: none; } }
   .hero { position: relative; padding-top: 112px; padding-bottom: 48px; text-align: center; display: flex; flex-direction: column; align-items: center; }
@@ -63,22 +63,24 @@ const heroLogos = [
     font-size: clamp(40px, 7vw, 76px); line-height: 1; font-weight: 600;
     letter-spacing: -0.05em; color: var(--fg-90); text-wrap: balance;
   }
-  .hero .lead { max-width: 480px; margin-top: 22px; font-size: 17px; }
-  .hero-meta { margin-top: 14px; font-size: 12.5px; color: var(--mf-80); }
+  .hero .lead { max-width: 620px; margin-top: 28px; font-size: 17px; text-wrap: balance; }
+  .hero-meta { margin-top: 18px; margin-bottom: 24px; font-size: 12.5px; color: var(--mf-80); }
   .works {
-    display: inline-flex; align-items: center; gap: 14px; margin-top: 40px;
-    padding: 9px 14px; border-radius: 6px; border: 1px solid var(--hair); background: var(--card);
+    display: inline-flex; align-items: center; gap: 11px; margin-top: 22px;
+    padding: 7px 12px; border-radius: 6px;
+    /* Quiet: a see-through strip, not a card competing with the hero. */
+    border: 1px solid color-mix(in oklab, var(--hair) 60%, transparent); background: color-mix(in oklab, var(--card) 35%, transparent);
   }
-  .works-label, .works-more { font-size: 12px; font-weight: 500; color: var(--muted-foreground); white-space: nowrap; }
-  .works-logos { display: flex; gap: 12px; align-items: center; }
-  .works-logos img { width: 20px; height: 20px; object-fit: contain; }
+  .works-label, .works-more { font-size: 11px; font-weight: 500; color: var(--muted-foreground); white-space: nowrap; }
+  .works-logos { display: flex; gap: 10px; align-items: center; }
+  .works-logos img { width: 16px; height: 16px; object-fit: contain; }
   .wm-short { display: none; }
   @media (max-width: 720px) { .works { flex-wrap: wrap; justify-content: center; } .works-logos { flex-wrap: wrap; justify-content: center; } }
-  .cta { display: flex; gap: 8px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
+  .cta { display: flex; gap: 8px; margin-top: 44px; flex-wrap: wrap; justify-content: center; }
   @media (max-width: 620px) {
     .hero { padding-top: 56px; padding-bottom: 32px; }
     .hero .lead { font-size: 16px; }
-    .works { margin-top: 28px; flex-wrap: nowrap; gap: 10px; padding: 8px 12px; max-width: 100%; }
+    .works { margin-top: 12px; flex-wrap: nowrap; gap: 10px; padding: 8px 12px; max-width: 100%; }
     .works-logos { flex-wrap: nowrap; gap: 9px; }
     .works-logos img { width: 18px; height: 18px; }
     .works-logos img:nth-child(n+7) { display: none; }

@@ -8,6 +8,7 @@ import Surfaces from '../components/Surfaces.astro';
 import Team from '../components/Team.astro';
 import Hero from '../components/Hero.astro';
 import Memory from '../components/Memory.astro';
+import Compare from '../components/Compare.astro';
 import { LINKEDIN } from '../lib/links';
 
 
@@ -25,11 +26,12 @@ const INSTALL = 'curl -fsSL https://raw.githubusercontent.com/stanislawherjan1/S
 
 
 const faq = [
-  ['What is Something?', 'An AI coworker you run on your own server. They have a name, a memory and access to your tools, and you talk to them in a web app, in your browser or on Telegram.'],
-  ['How is it different from ChatGPT or Claude?', 'They keep working between chats. They remember your business, check on their responsibilities every day and act in your tools. And the agent, its memory and your files live on your server.'],
+  ['What is Something?', 'An AI coworker you run on your own server. They have a name, a memory and access to your tools, and you talk to them in a web app, in your browser, on Slack or on Telegram.'],
+  ['How is it different from ChatGPT, Claude or popular AI coworkers?', 'ChatGPT and Claude answer when you ask. Something keeps working between chats: they remember your business, check on their responsibilities every day and act in your tools. Popular AI coworkers like Viktor or Sauna run in their cloud and bill by usage. Something runs on your own server, on the Claude plan you already have, with code you can read and change.'],
   ['Do I need to be technical?', 'No. Someone sets it up once, ideally with Claude Code, Codex or Cursor doing the work. After that everyone just chats.'],
   ['What does it cost?', 'The software is free and open source under AGPL-3.0. You pay for your server, from about €7 a month, and the Claude Pro or Max plan you already have.'],
   ['Which tools does it work with?', 'Around fifty, including Google Workspace, Shopify, Notion, Stripe, Meta and Google Ads, Linear and GitHub. Most connect with one sign-in, no keys to paste. In a team, you connect the shared tools once, and anyone can add their own calendar or notetaker just for themselves.'],
+  ['Can I change it or build my own features?', 'Yes. Fork the repo and change anything: screens, tools, skills, the way they work. Claude Code or Cursor can do most of it for you. It’s open source under AGPL-3.0, so if you offer your changed version to others over a network, you share its source too. Updating is one command, ./update.sh, and keeps your memory, files and settings.'],
   ['Will it do things without asking?', 'They draft, check and prepare on their own, then ask before anything goes out to a customer, a supplier or your ad accounts.'],
   ['Can my teammates see what I tell it?', 'No. Your space is yours: your chats, files and private memory, which even the admin can’t open. Work the team needs reaches them the way you choose, and before anything personal is shared, your coworker asks you first.'],
   ['Where does my data go?', 'Your files, memory and credentials stay on your server, with credentials encrypted. To answer, conversations go to Anthropic through your own Claude plan, the same as when you use Claude directly. Connected tools see what they always see. Nothing passes through our servers, and the code is public, so you can check.'],
@@ -40,10 +42,8 @@ const faq = [
 
   <Hero />
 
-  <div class="wrap">
-    <div class="stage fade-up" data-halftone data-abstract="wave" data-seed="sign-in" data-soft data-amp="0.22">
-      <DemoChat />
-    </div>
+  <div class="wrap fade-up">
+    <DemoChat />
   </div>
 
   <Memory />
@@ -98,6 +98,8 @@ const faq = [
     </div>
   </section>
 
+  <Compare />
+
   <section id="faq">
     <div class="wrap faq-wrap">
       <div class="faq-head fade-up">
@@ -138,7 +140,6 @@ const faq = [
 
 <style>
 
-  .stage { border-radius: 8px; border: 1px solid var(--hair); padding: clamp(12px, 3vw, 32px); }
 
 
   section { padding-top: 184px; }
@@ -150,7 +151,6 @@ const faq = [
   .band-hero {
     position: relative; margin-top: 184px; padding: 120px 0 128px;
     background: color-mix(in oklab, var(--foreground) 2.5%, var(--background));
-    border-top: 1px solid color-mix(in oklab, var(--foreground) 16%, transparent);
     border-bottom: 1px solid var(--hair);
   }
   .band-hero::before {
@@ -233,7 +233,6 @@ const faq = [
   @media (max-width: 620px) {
     section { padding-top: 88px; }
     .needs { flex-direction: column; align-items: flex-start; gap: 10px; max-width: 680px; }
-    .stage { padding: 10px; }
     .band-hero { margin-top: 88px; padding: 64px 0 72px; }
     .start-head, .start-head .h2 { text-align: left; }
     .start-head { margin-bottom: 28px; }
