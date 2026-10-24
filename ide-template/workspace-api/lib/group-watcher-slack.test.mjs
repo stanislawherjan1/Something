@@ -166,6 +166,34 @@ ok('a Telegram group posts through the Telegram adapter', r.ok && sends.at(-1).t
 const tgParams = gw.groupTurnParams(team.getGroup('-1001234567890'), [], { message_id: '1', from_id: '111', text: 'x' });
 ok('...and its prompt still says Telegram', /Telegram GROUP CHAT/.test(tgParams.message) && /OTHER BOTS: tg/.test(tgParams.message));
 
+// a room turn knows what the message continues, and what files the team has
+{
+  const now = Date.now(), iso = (ago) => new Date(now - ago).toISOString();
+  const ring = [
+    { role: 'user', message_id: '700.1', from_id: 'U0ANN0001', who: 'Ann', text: 'is the Supabase project still on the free plan?', ts: iso(60_000) },
+    { role: 'assistant', message_id: '700.2', text: 'Yes, the free plan.', reply_to: '700.1', ts: iso(55_000) },
+    { role: 'user', message_id: '700.3', from_id: 'U0STAN001', who: 'Stan', text: 'what is on the calendar this week?', ts: iso(50_000) },
+    { role: 'assistant', message_id: '700.4', text: 'Two posts and a review.', reply_to: '700.3', ts: iso(45_000) },
+    { role: 'user', message_id: '700.5', from_id: 'U0ANN0001', who: 'Ann', text: 'but check the integration', ts: iso(1_000) },
+  ];
+  const c = gw.continuesFor(ring, ring[4]);
+  ok('a follow-up continues the bot\'s reply to the same person, not its last reply to someone else', c.some(l => l.includes('Yes, the free plan.')) && !c.some(l => l.includes('Two posts')), c);
+  ok('...and the sender\'s own message before it', c.some(l => l.includes('free plan?')));
+  const { mkdirSync } = await import('node:fs');
+  for (const d of ['Sales', 'users/ann', 'memory']) mkdirSync(join(ROOT, d), { recursive: true });
+  writeFileSync(join(ROOT, 'Sales', 'pipeline.md'), '\n# Pipeline — Q4\n\nNorthbeam: proposal sent.');
+  writeFileSync(join(ROOT, 'users', 'ann', 'private.md'), '# Ann private');
+  writeFileSync(join(ROOT, 'memory', 'facts.md'), '# memory');
+  gw.__test.forgetSharedIndex();
+  const p = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, { continues: c }).message;
+  ok('the turn is told what the message continues', p.includes('continues') && p.includes('Yes, the free plan.'));
+  ok('the turn sees the team\'s files by path and first line, never a private tree or memory', p.includes('Sales/pipeline.md — Pipeline — Q4') && !p.includes('users/ann') && !p.includes('memory/facts.md'), p.split('\n').filter(l => l.startsWith('- ') && l.includes('.md')));
+  team.touchGroupMeta('slack-C0GENERAL', { openAudience: true, audience: { ok: false, outsiders: ['U0GUEST01'], shared: false, members: 3 } });
+  const pOpen = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, {}).message;
+  ok('...and a room with outsiders in it gets no list of the team\'s files', !pOpen.includes('Sales/pipeline.md'));
+  team.touchGroupMeta('slack-C0GENERAL', { openAudience: false, audience: { ok: true, outsiders: [], shared: false, members: 2 } });
+}
+
 // a turn the process died in is taken up once by the next process
 {
   const dir = join(ROOT, '.group-watcher');

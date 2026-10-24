@@ -548,6 +548,14 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    summarises a session that grows long (it lost the thread after a gap), the
    last lines it already saw: 10 always, 30 after more than three hours
    (`GROUP_RECAP_LINES`, `GROUP_RECAP_LINES_AFTER_GAP`, `GROUP_RECAP_GAP_MS`).
+   The turn is also told what the new message continues — the thread's opening
+   message, the bot's last reply *to this sender* (in a busy room its last reply
+   was often to someone else) and the sender's own previous message — so "but
+   check the integration" is read as the follow-up it is. And it gets the team's
+   files by path and first line (shared files only: no private tree, no memory;
+   at most 40, `GROUP_SHARED_FILES_MAX`), with the rule to open the one that
+   covers a date, plan or pipeline before saying it is unknown. A room with
+   outsiders in it gets no such list.
    Where those lines and the session's recollection differ, the lines win.
 
 ### Behaviour

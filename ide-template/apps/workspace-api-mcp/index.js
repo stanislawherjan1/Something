@@ -57,7 +57,7 @@ function v4MemoryWrite(tool) {
     description:
       'Correct the cards you are given in your prefix, or record a standing duty. This is the ONLY way to change a card — plain file writes into memory/ are blocked.\n\n' +
       'Facts and events need no call: every finished conversation is filed by the system, and "remember this" is memory_note. Use THIS tool only for:\n' +
-      '- a correction to the person\'s USER_PROFILE or USER_PREFERENCES card (op "supersede" when the fact CHANGED, "retire" when it was never true, "remember" for a new standing line)\n' +
+      '- a correction to the person\'s USER_PROFILE or USER_PREFERENCES card (op "supersede" when the fact CHANGED, "retire" when it was never true, "remember" for a new standing line). A card holds what stays true; anything dated or passing about them — a day off, a trip, an appointment — is a memory_note with its date, which ends when it is over, as a card line never does\n' +
       '- a hard rule for everyone (card "RULES"), a tool gotcha ("AGENT_TOOLS"), your voice ("AGENT_IDENTITY")\n' +
       '- what the company does, for whom, how it works (card "MISSION", shown as "About the company")\n' +
       '- a standing duty ("every Friday…", "keep an eye on…"): card "RESPONSIBILITIES", then run the morning-planner in the same turn\n' +
