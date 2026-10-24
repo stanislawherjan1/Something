@@ -55,8 +55,33 @@ const st = {
 };
 const seen = new Map();        // `channel:ts` → first seen (ms)
 const told = new Set();        // Slack user ids already given the stranger line
-const paneThreads = new Map(); // person's Slack id → { channel, thread_ts, at } of the assistant-pane conversation they last wrote in
-const PANE_THREAD_MAX_AGE_MS = 12 * 3600_000;
+const paneThreads = new Map(); // person's Slack id → { channel, thread_ts, at } of the assistant-pane conversation they last wrote in or opened
+// A week: a message for a person (a delegate's answer, a reminder) must find
+// their Chat even when they last wrote days ago. Kept on disk — a deploy
+// emptied the map and the next "sent to your DM" went to Activity.
+const PANE_THREAD_MAX_AGE_MS = 7 * 24 * 3600_000;
+function panePath() { return join(projectDir(), '.team', 'slack-pane-threads.json'); }
+let paneLoaded = false;
+function loadPanes() {
+  if (paneLoaded) return;
+  paneLoaded = true;
+  try {
+    const saved = JSON.parse(readFileSync(panePath(), 'utf8'));
+    for (const [user, p] of Object.entries(saved || {})) {
+      if (p && p.channel && p.thread_ts && Number.isFinite(p.at) && Date.now() - p.at < PANE_THREAD_MAX_AGE_MS) paneThreads.set(user, p);
+    }
+  } catch { /* none yet */ }
+}
+/** Remember the assistant thread a person has open (they wrote in it, or opened it). */
+export function notePane(user, channel, threadTs, now = Date.now()) {
+  if (!user || !channel || !threadTs) return;
+  loadPanes();
+  paneThreads.set(String(user), { channel: String(channel), thread_ts: String(threadTs), at: now });
+  try {
+    mkdirSync(join(projectDir(), '.team'), { recursive: true, mode: 0o770 });
+    writeFileSync(panePath(), JSON.stringify(Object.fromEntries(paneThreads)), { mode: 0o660 });
+  } catch { /* best effort: RAM still has it */ }
+}
 /**
  * Where a message for one person goes in Slack: the assistant-pane
  * conversation they last wrote in (that is the Chat they have open; a message
@@ -64,6 +89,7 @@ const PANE_THREAD_MAX_AGE_MS = 12 * 3600_000;
  * when it is recent. Null otherwise: then their DM, at the top level.
  */
 export function dmPlace(user, now = Date.now()) {
+  loadPanes();
   const p = paneThreads.get(String(user || ''));
   return p && now - p.at < PANE_THREAD_MAX_AGE_MS ? { channel: p.channel, thread_ts: p.thread_ts } : null;
 }
@@ -197,7 +223,7 @@ export function createHandler(deps = {}) {
     // there says the assistant is on it, and the thread gets the person's
     // first words as its title. Elsewhere a reaction does the same job.
     const pane = !!ev.thread_ts;
-    if (pane) paneThreads.set(String(ev.user), { channel: ev.channel, thread_ts: String(ev.thread_ts), at: Date.now() });
+    if (pane) notePane(ev.user, ev.channel, ev.thread_ts);
     if (pane) {
       if (d.api.setAssistantStatus) d.api.setAssistantStatus(ev.channel, ev.thread_ts, 'is thinking…').catch?.(() => {});
       if (d.api.setAssistantTitle && !titled.has(`${ev.channel}:${ev.thread_ts}`)) { titled.add(`${ev.channel}:${ev.thread_ts}`); d.api.setAssistantTitle(ev.channel, ev.thread_ts, text.slice(0, 60)).catch?.(() => {}); }
@@ -230,6 +256,13 @@ export function createHandler(deps = {}) {
       case 'channel_unshared': case 'channel_archive': case 'channel_deleted': case 'group_left': case 'group_archive':
         if (d.onChannelEvent) return d.onChannelEvent(ev);
         return { did: 'ignored', why: 'no channel handler' };
+      case 'assistant_thread_started': {
+        // The person opened the assistant pane: that thread is where a message
+        // for them shows in Chat, before they have written a word.
+        const t = ev.assistant_thread || {};
+        notePane(t.user_id, t.channel_id, t.thread_ts);
+        return { did: 'pane-opened', user: t.user_id || null };
+      }
       case 'message': case 'app_mention': break;
       default: return { did: 'ignored', why: `type ${ev.type}` };
     }

@@ -118,7 +118,12 @@ r = await handle(dm({ ts: '7.1', thread_ts: '7.0', text: 'in a thread', files: [
 await r.done;
 ok('a reply in a thread stays in that thread', posted.at(-1).thread_ts === '7.0');
 ok('a message for that person later goes into the conversation they last wrote in', JSON.stringify(L.dmPlace('U0ANN0001')) === '{"channel":"D1","thread_ts":"7.0"}', L.dmPlace('U0ANN0001'));
-ok('...not once it is stale, and nowhere for someone who never wrote in one', L.dmPlace('U0ANN0001', Date.now() + 13 * 3600_000) === null && L.dmPlace('U0NOBODY1') === null);
+ok('...still a day later (a week is kept), not once it is stale, and nowhere for someone who never wrote in one', !!L.dmPlace('U0ANN0001', Date.now() + 26 * 3600_000) && L.dmPlace('U0ANN0001', Date.now() + 8 * 24 * 3600_000) === null && L.dmPlace('U0NOBODY1') === null);
+ok('...and it is kept on disk, so a restart does not send it to Activity', JSON.parse(readFileSync(join(ROOT, '.team', 'slack-pane-threads.json'), 'utf8')).U0ANN0001?.thread_ts === '7.0');
+{
+  const opened = await handle({ type: 'assistant_thread_started', assistant_thread: { user_id: 'U0STAN001', channel_id: 'D2', thread_ts: '9.0' } });
+  ok('opening the assistant pane is enough to know where a message for that person goes', opened.did === 'pane-opened' && JSON.stringify(L.dmPlace('U0STAN001')) === '{"channel":"D2","thread_ts":"9.0"}', L.dmPlace('U0STAN001'));
+}
 ok('a file the person sent is saved and named to the turn', /\[Attachments — read these files to answer\]\n- \.attachments\/slack-ann\/\d+\/notes\.txt/.test(turns.at(-1).body), turns.at(-1).body);
 const saved = readFileSync(join(ROOT, turns.at(-1).body.match(/- (\.attachments\/[^\n]+)/)[1]), 'utf8');
 ok('...with the bytes Slack served', saved === 'file from https://files.slack.com/f/notes.txt');
