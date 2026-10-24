@@ -1032,7 +1032,8 @@ export default function memoryV4Router() {
   });
 
   // The same, for the asker's own connected accounts (their Supabase, their
-  // mailbox): a one-shot as them with those connections alone, read only.
+  // mailbox): a one-shot as them with those connections alone, which may
+  // change something there as in their own chat.
   // Same gate as their memory: the turn's token, the roster, a team room.
   const connectionCallsPerTurn = new Map();
   router.post('/internal/memory/v4/mine/connections', loopbackOnly, async (req, res) => {
@@ -1055,7 +1056,7 @@ export default function memoryV4Router() {
     try { r = await askMyConnections({ member, question, room }); } catch (e) { r = { failed: true, error: e.message }; }
     ledger.logEvent({ op: 'private_lookup', kind: 'connections', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered: !!r?.answer });
     if (!r || r.failed) return res.json({ ok: true, failed: true });
-    return res.json({ ok: true, ...(r.none ? { none: true } : r.action ? { action: true } : r.secret ? { secret: true } : r.nothing ? { nothing: true } : { answer: r.answer }) });
+    return res.json({ ok: true, ...(r.none ? { none: true } : r.secret ? { secret: true } : r.nothing ? { nothing: true } : { answer: r.answer }) });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

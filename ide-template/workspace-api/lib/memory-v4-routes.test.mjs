@@ -276,9 +276,9 @@ ok('(z2) ...asked as them, with their own servers alone', conn.at(-1)?.slug === 
 ok('(z2) ...and the ask is on their Changes', L.readEvents().some(e => e.op === 'private_lookup' && e.kind === 'connections' && e.scope === 'user:kasia' && e.answered === true));
 r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'stan', group: true, groupId: '-100777' }), body: { question: 'my meetings?' } });
 ok('(z2) someone with no account of their own is told so, and nothing runs as them', r.body.ok && r.body.none === true && !r.body.answer && conn.at(-1).slug === 'kasia', r.body);
-PL.configureConnections(async () => ({ action: true }));
-r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'delete my last meeting' } });
-ok('(z2) a change asked from a room is not made: their own chat is the place', r.body.action === true && !r.body.answer, r.body);
+PL.configureConnections(async ({ question }) => ({ answer: /rename/.test(question) ? 'Renamed it to "Kickoff".' : 'x' }));
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'rename my last meeting to Kickoff' } });
+ok('(z2) a change they ask for from the room is made as in their own chat, and said', r.body.ok && /Renamed/.test(r.body.answer || ''), r.body);
 PL.configureConnections(null);
 {
   const { groupTurnParams } = await import('./integrations/group-watcher.js');

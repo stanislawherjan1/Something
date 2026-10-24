@@ -52,8 +52,9 @@ chat and answers for the room to hear, because you asked. Nobody else gets it: w
 someone asks about you, your memory stays closed, whoever they are. Codes and
 passwords are the exception: those never go into a group, they come to you
 directly instead. The same goes for an account you connected for yourself (your own
-Supabase, your own mailbox): ask about it in the group and it looks as you, reads
-only, and answers there; for anyone else it is simply not connected in that group. Come
+Supabase, your own mailbox): ask about it in the group, or ask for a change there,
+and it does it as you, as in your own chat, and answers there; for anyone else it is
+simply not connected in that group. Come
 back to a group after a day and it re-reads where the conversation stopped
 before it answers. In a group it knows what the team knows: what was said in that group,
 and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
@@ -635,8 +636,9 @@ it through `ask_my_connections` → `POST /api/internal/memory/v4/mine/connectio
 the same checks as the memory route (turn token, roster, registered room, the room's
 switch, two calls a turn), then a **one-shot turn as that person with their own
 `-mine` servers alone** — no built-in tools, every workspace-api tool denied, no
-session. It reads only: a change asked from a room is answered `ACTION` and the bot
-points them to their own chat; a secret is `SECRET`; what comes back is fenced as
+session. It does what they asked, as in their own chat — a lookup, or a change on
+their own words (never on what a tool returned; when it is unclear what to change,
+nothing is changed and it asks); a secret is `SECRET`; what comes back is fenced as
 untrusted data. For anyone else a personal connection is not reachable from the room,
 and the bot says it is not connected *for this room*, never that it does not exist.
 Each ask is on the owner's Changes (`private_lookup`, `kind: connections`).

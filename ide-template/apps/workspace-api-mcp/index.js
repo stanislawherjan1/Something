@@ -272,10 +272,10 @@ const MINE_TOOL = {
 const MINE_CONNECTIONS_TOOL = {
   name: 'ask_my_connections',
   description:
-    'In a room only: look something up in an account the PERSON YOU ARE ANSWERING connected for themselves (the room prompt names them, e.g. their own Supabase or mailbox) — those are not loaded in a room. ' +
-    'It runs as them, outside this room, with their own connections alone, reads only, and returns at most three sentences fit for the room. ' +
-    'Only for their question about their own account; never for anyone else\'s. It changes nothing: a change is theirs to ask for in their own chat with you.',
-  inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words, with the service it is about.' } }, required: ['question'] },
+    'In a room only: use an account the PERSON YOU ARE ANSWERING connected for themselves (the room prompt names them, e.g. their own Supabase or mailbox) — those are not loaded in a room. ' +
+    'It runs as them, outside this room, with their own connections alone — it looks things up and makes a change they asked for, as in their own chat — and returns at most three sentences fit for the room. ' +
+    'Pass their request in their own words; only theirs, about their own account — never for anyone else\'s.',
+  inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked for, in their own words, with the service it is about.' } }, required: ['question'] },
 };
 
 // The tab tools work only in a turn started from the browser panel (it carries
@@ -716,7 +716,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const text = r.off ? 'Answers from a person\'s own accounts are switched off in this room. Say you cannot check it here; they can ask you in their own chat.'
         : r.none ? 'They have no account of their own connected. Answer from the team\'s integrations if one covers it; otherwise say it is not connected for this room.'
         : r.failed ? 'Could not check their account right now. Say so; do not guess.'
-        : r.action ? 'That is a change, not a question: from a room their own account is only read. Tell them in a few words to ask you in their own chat.'
         : r.secret ? 'The answer is a secret (a key, a token, a password): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
         : r.nothing ? `Their account holds nothing that answers this${r.note ? ` (${r.note})` : ''}. Say so plainly.`
         : `From their own account — say only what answers their question:\n${wrapUntrusted(String(r.answer || ''), { source: 'own-connections' })}`;
