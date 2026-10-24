@@ -652,23 +652,9 @@ body {
   hyphens: auto;
 }
 
-/* Markdown table wrapping */
-.chat-bubble table {
-  display: block;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  max-width: 100%;
-}
-
-.chat-bubble table thead,
-.chat-bubble table tbody {
-  display: block;
-}
-
-.chat-bubble table tr {
-  display: block;
-}
-
+/* Markdown tables: the chat's table component scrolls a wide one sideways in
+   its own wrapper (ChatPanel.jsx). The table itself stays a table — rows and
+   cells set to display:block broke the grid, each row lining up on its own. */
 .chat-bubble table td,
 .chat-bubble table th {
   word-break: break-word;
