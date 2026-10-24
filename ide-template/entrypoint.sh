@@ -414,10 +414,13 @@ PY
                 mkdir -p "$CACHE_DIR"
                 cp -a "$PLUGIN_SRC/." "$CACHE_DIR/"
             fi
-            if [ ! -d "$MARKET_DIR/.claude-plugin" ]; then
-                mkdir -p "$MARKET_DIR"
-                cp -a /opt/ide/plugins-src/. "$MARKET_DIR/"
-            fi
+            # The marketplace copy is refreshed from the image on every boot,
+            # not only when missing: the CLI reconciles the install with the
+            # version the marketplace advertises, and a copy left from months
+            # earlier (0.0.6 while the image carried 0.0.7) switched a bot back
+            # to an old, broken plugin copy on its next restart.
+            mkdir -p "$MARKET_DIR"
+            cp -a /opt/ide/plugins-src/. "$MARKET_DIR/"
             mkdir -p /home/bot/.claude/plugins
             cat > /home/bot/.claude/plugins/installed_plugins.json <<INSTALLED_EOF
 {
