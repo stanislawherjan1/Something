@@ -1303,8 +1303,12 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
     // typing showed for the last ~3s of a 25s turn — reads as no typing at all.
     // Cost: a brain-pass ([[SILENT]]) turn briefly shows typing that ends in
     // nothing — rare (8/294 in the live audit) and explicitly accepted.
+    // Where there is no typing indicator (Slack channels), the adapter marks
+    // the message being answered instead, for as long as the turn works.
+    const working = (on) => { if (a.working && target?.message_id) a.working(group.chatId, target.message_id, on).catch(() => {}); };
     const startTyping = () => {
       if (typing || done) return;
+      working(true);
       a.typing(group.chatId, 'typing').catch(() => {});
       typing = setInterval(() => { if (!done) a.typing(group.chatId, 'typing').catch(() => {}); }, TYPING_REFRESH_MS);
     };
@@ -1321,7 +1325,7 @@ function groupCompose(group, ctxMsgs, target, session = null, recap = []) {
     // idle timer, which is what the cap was actually meant to catch. An absolute
     // ceiling still backstops a pathological turn.
     let idleTimer = null;
-    const finish = (r) => { if (done) return; done = true; clearTimeout(idleTimer); clearTimeout(hardTimer); if (typing) clearInterval(typing); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
+    const finish = (r) => { if (done) return; done = true; clearTimeout(idleTimer); clearTimeout(hardTimer); if (typing) { clearInterval(typing); working(false); } try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };
     let spoke = false;   // has the turn produced ANY event yet?
     // TIME TO FIRST EVENT — the cost of spawning claude and its ~22 MCP servers,
     // separated from the model's own thinking time. tmux pays this once per

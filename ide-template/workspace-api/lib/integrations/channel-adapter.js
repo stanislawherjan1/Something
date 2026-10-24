@@ -153,6 +153,17 @@ function slackAdapter() {
       } catch (err) { return { ok: false, error: err.message }; }
     },
     async typing() { /* Slack has no typing indicator for apps in channels */ },
+    // What stands in for it: 👀 on the message being answered while the turn
+    // works, taken off when it ends (as the DM listener does).
+    async working(chatId, messageId, on) {
+      if (!messageId) return { ok: false };
+      try {
+        const a = await api();
+        if (on) await a.addReaction(slackChannelOf(chatId), String(messageId), 'eyes');
+        else await a.removeReaction(slackChannelOf(chatId), String(messageId), 'eyes');
+        return { ok: true };
+      } catch (err) { return { ok: false, error: err.message }; }
+    },
     async react(chatId, messageId, emoji) {
       const name = slackReactionName(emoji);
       if (!name) return { ok: false, error: 'not a Slack reaction' };
