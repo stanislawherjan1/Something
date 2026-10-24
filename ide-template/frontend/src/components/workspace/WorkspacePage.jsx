@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { SHOWCASE } from '@/demo/flags.js';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Loader2, Check } from 'lucide-react';
@@ -107,7 +108,8 @@ export default function WorkspacePage() {
   // once on mount, then drop the query param so it doesn't pile up.
   const selected = pathnameToSelected(location.pathname);
   const [showHidden,  setShowHidden]  = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The landing page's replay (demo build only) shows the app with the sidebar folded.
+  const [sidebarOpen, setSidebarOpen] = useState(!SHOWCASE);
   const [chatOpen,    setChatOpen]    = useState(true);
   // hasStarted is true whenever there's something in view OR the user has
   // sent a first message from the welcome screen. URL drives the file/view
