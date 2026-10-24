@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { SHOWCASE } from '@/demo/flags.js';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Loader2, Check } from 'lucide-react';
+import { X, Send, Loader2, Check, Orbit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import Sidebar from './Sidebar.jsx';
 import EditorPane from './EditorPane.jsx';
@@ -80,7 +80,15 @@ function selectedToPath(selected) {
   return '/';
 }
 
-const TELEGRAM_BANNER_DISMISSED_KEY = 'workspace.banner.telegram.dismissed';
+// The "keep them with you" bar: Telegram or Slack, whichever the team uses.
+// A new key, so people who closed the old Telegram-only bar see it once.
+const TELEGRAM_BANNER_DISMISSED_KEY = 'workspace.banner.reach.dismissed';
+const INTEGRATIONS_BASE = `${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations`;
+
+/** A place's own logo, in its colours. */
+function PlaceMark({ id, className }) {
+  return <img src={`${INTEGRATIONS_BASE}/${id}.svg`} alt="" aria-hidden className={cn('shrink-0 object-contain', className)} />;
+}
 // Separate sticky-dismiss for the per-user "link YOUR Telegram" bar (distinct
 // from the workspace-level "set up Telegram" promo above).
 const TELEGRAM_LINK_DISMISSED_KEY = 'workspace.banner.telegram-link.dismissed';
@@ -232,19 +240,22 @@ export default function WorkspacePage() {
 
   const { data: integrationsData, reload: reloadIntegrations } = useApi('/api/integrations');
   const telegramEntry = integrationsData?.integrations?.find(i => i.id === 'telegram') || null;
+  const slackEntry = integrationsData?.integrations?.find(i => i.id === 'slack') || null;
   const isTelegramActive = !!telegramEntry?.active;
-  // Set up opens Telegram's connect modal in place; the bar steps aside while
+  const isSlackActive = !!slackEntry?.active;
+  // Connect opens that place's connect modal in place; the bar steps aside while
   // it is open and comes back only if the modal closes without a connection.
-  const [telegramSetupOpen, setTelegramSetupOpen] = useState(false);
-  const [telegramJustConnected, setTelegramJustConnected] = useState(false);
+  const [setupFor, setSetupFor] = useState(null);   // the catalog entry being connected
+  const [placeJustConnected, setPlaceJustConnected] = useState(false);
   // Show the banner only when:
   //   - the API reply is in (so we don't flash it for users who *do* have it),
-  //   - telegram isn't already active,
+  //   - neither Telegram nor Slack is connected (one is enough),
   //   - the user hasn't dismissed it before.
   // Only an admin can switch Telegram on, so only an admin is asked to; a
   // member gets the link bar below once it is on.
   const { data: meForBanner } = useApi('/api/me');
-  const showBanner = !!integrationsData && (meForBanner?.isAdmin || meForBanner?.role === 'admin') && !isTelegramActive && !bannerDismissed && !telegramSetupOpen && !telegramJustConnected;
+  const showBanner = !!integrationsData && (meForBanner?.isAdmin || meForBanner?.role === 'admin') && !isTelegramActive && !isSlackActive && !bannerDismissed && !setupFor && !placeJustConnected;
+  const connectPlace = (entry, id) => entry ? setSetupFor(entry) : handleSelect({ path: `.claude/${id}`, type: id });
 
   const dismissBanner = () => {
     setBannerDismissed(true);
@@ -317,7 +328,7 @@ export default function WorkspacePage() {
       <NotificationToasts chatOpen={chatOpen} />
       <MigrationBanner onReview={() => setMigrationOpen(true)} />
       {migrationOpen && <MigrationModal onClose={() => setMigrationOpen(false)} onOpenMemory={() => navigate('/memory')} />}
-      {/* Top promo banner — Telegram CTA. Visible on desktop only; on mobile the
+      {/* Top promo banner — keep the coworker with you: Connect Telegram or Slack. Visible on desktop only; on mobile the
           chat already takes the full viewport so the banner has nowhere to live.
           The floating bot avatar (rendered below as `motion.button`) is offset
           downward when this banner is showing so it doesn't sit underneath. */}
@@ -332,24 +343,23 @@ export default function WorkspacePage() {
           >
             <div className="flex h-12 items-center justify-between gap-4 px-4">
               <div className="flex min-w-0 items-center gap-2.5">
-                {/* The Telegram mark in ink, not brand blue: one quiet line, not an ad. */}
-                <span
-                  aria-hidden
-                  className="size-[18px] shrink-0 bg-foreground/70"
-                  style={{ WebkitMask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat`, mask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/telegram.svg) center / contain no-repeat` }}
-                />
-                <p className="truncate text-[13px] text-foreground/80">
-                  Add <span className="font-semibold text-foreground">{botDisplayName}</span> on Telegram and take them everywhere with you.
+                <Orbit aria-hidden className="size-4 shrink-0 text-foreground/60" strokeWidth={1.75} />
+                <p className="min-w-0 truncate text-[13px] text-foreground/80">
+                  Keep <span className="font-semibold text-foreground">{botDisplayName}</span> with you, wherever you are.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => telegramEntry ? setTelegramSetupOpen(true) : handleSelect({ path: '.claude/telegram', type: 'telegram' })}
-                  className="rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]"
-                >
-                  Set up
-                </button>
+                {[['slack', 'Slack', slackEntry], ['telegram', 'Telegram', telegramEntry]].map(([id, label, entry]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => connectPlace(entry, id)}
+                    className="flex items-center gap-1.5 rounded-[6px] bg-foreground/[0.09] px-3 py-1.5 text-[12px] font-medium text-foreground/90 transition-colors hover:bg-foreground/[0.14]"
+                  >
+                    <PlaceMark id={id} className="size-3.5" />
+                    Connect {label}
+                  </button>
+                ))}
                 <button
                   type="button"
                   onClick={dismissBanner}
@@ -364,11 +374,11 @@ export default function WorkspacePage() {
         )}
       </AnimatePresence>
 
-      {telegramSetupOpen && telegramEntry && (
+      {setupFor && (
         <ActivateModal
-          integration={telegramEntry}
-          onClose={() => setTelegramSetupOpen(false)}
-          onSuccess={() => { setTelegramJustConnected(true); setTelegramSetupOpen(false); reloadIntegrations(); }}
+          integration={setupFor}
+          onClose={() => setSetupFor(null)}
+          onSuccess={() => { setPlaceJustConnected(true); setSetupFor(null); reloadIntegrations(); }}
         />
       )}
 
