@@ -523,7 +523,12 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    the last three minutes (kept per person: with several people talking, answering
    one no longer closes another's window). Where the bot spoke is kept in the
    durable history (`thread_id` on each line), so a restart does not forget its
-   threads. A gate that fails (a crash, a
+   threads. Nor does a restart lose a question: while a turn runs, the message it
+   answers is marked on disk (`.group-watcher/<room>-inflight-<id>.json`), and the
+   next process takes up a mark younger than 15 minutes once, without the gate
+   (`GROUP_INFLIGHT_REPLAY_MS`). Each reply records which message it answered
+   (`reply_to`), so a message read back after a restart — Slack's catch-up, below —
+   is answered only if it never was. A gate that fails (a crash, a
    timeout, an unreadable answer) hands the message to the brain rather than
    dropping it — the brain is the real judge and stays silent on its own; only a
    spent plan ("You've hit your weekly limit", which the brain would hit too)

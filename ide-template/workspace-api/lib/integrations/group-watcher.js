@@ -25,7 +25,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -292,6 +292,39 @@ function clearSession(chatId) {
   try { unlinkSync(sessionFile(chatId)); } catch { /* already gone */ }
 }
 
+// A turn the process died in (a deploy, a crash) took its message with it: the
+// person saw 👀 and then nothing. The message being answered is marked on disk
+// while its turn runs; the next process takes up a fresh mark once, at boot.
+const INFLIGHT_REPLAY_MS = num('GROUP_INFLIGHT_REPLAY_MS', 15 * 60_000);
+function markInflight(chatId, m) {
+  const path = join(AUDIT_DIR, `${fileStem(chatId)}-inflight-${String(m.message_id).replace(/[^\w.-]/g, '')}.json`);
+  try {
+    mkdirSync(AUDIT_DIR, { recursive: true, mode: 0o770 });
+    writeFileSync(path, JSON.stringify({ at: Date.now(), payload: {
+      chat_id: chatId, message_id: m.message_id, thread_id: m.thread_id, text: m.text,
+      from_id: m.from_id, from_name: m.from_name, from_username: m.from_username,
+    } }), { mode: 0o660 });
+    return path;
+  } catch { return null; }
+}
+/** At boot: the messages whose turn the last process did not finish, routed again (once, if recent). */
+export function resumeInterrupted(now = Date.now()) {
+  let names = [];
+  try { names = readdirSync(AUDIT_DIR).filter(n => /-inflight-.*\.json$/.test(n)); } catch { return 0; }
+  let resumed = 0;
+  for (const name of names) {
+    const path = join(AUDIT_DIR, name);
+    let rec = null;
+    try { rec = JSON.parse(readFileSync(path, 'utf8')); } catch { rec = null; }
+    try { unlinkSync(path); } catch { /* already gone */ }
+    if (!rec?.payload?.chat_id || !(now - rec.at < INFLIGHT_REPLAY_MS)) continue;
+    const r = routeGroupMessage({ ...rec.payload, resumed: true });
+    if (r.decision === 'buffered') resumed += 1;
+  }
+  if (resumed) process.stderr.write(`[group-watcher] resumed ${resumed} message(s) whose turn the last process did not finish\n`);
+  return resumed;
+}
+
 // Reflect v2: the in-memory ring above is lost on restart, so a group
 // conversation left NO durable trace and never fed the memory pipeline. Mirror
 // each turn to a per-group JSONL the brain can read back for older history. The
@@ -331,6 +364,7 @@ function persistHistory(chatId, entry) {
       // a restart, which threads the bot is part of.
       ...(entry.thread_id ? { thread_id: String(entry.thread_id) } : {}),
       ...(entry.role === 'assistant' && entry.opened ? { opened: true } : {}),
+      ...(entry.role === 'assistant' && entry.reply_to ? { reply_to: String(entry.reply_to) } : {}),
       text: String(entry.text || '').slice(0, 4000),
     }) + '\n', { mode: 0o660 });
     // Cheap bounded trim: when the file grows past the cap, keep the tail.
@@ -372,6 +406,7 @@ function ensureHistoryLoaded(chatId) {
           text: String(r.text || ''),
           teammate: false,
           ts: r.ts,
+          ...(r.reply_to ? { reply_to: String(r.reply_to) } : {}),
         });
         if (r.role === 'assistant' && r.thread_id) {
           noteSpoke(chatId, String(r.thread_id));
@@ -770,7 +805,7 @@ export function isCandidate(m) {
   if (m.chat_id && adapterFor(m.chat_id).isSelf(m.from_id)) return false;
   // A mention or a reply to the bot is for it however short: Slack strips the
   // bot's own mention from the text, so "@bot?" arrives as "?".
-  if (m.is_mention || m.is_reply_to_bot) return true;
+  if (m.is_mention || m.is_reply_to_bot || m.resumed) return true;
   return m.text.trim().length >= MIN_TEXT_LEN;
 }
 
@@ -1304,6 +1339,14 @@ function isSilentPrefix(s) {
   return c.length > 0 && '[[silent]]'.startsWith(c);
 }
 
+/** Did the bot answer the message at `i` in this history? By the reply's `reply_to`; for older lines without it, any reply after it. */
+export function answeredOnRecord(ring, i) {
+  const mid = String(ring[i]?.message_id || '');
+  const later = ring.slice(i + 1).filter(h => h.role === 'assistant');
+  if (later.some(h => h.reply_to)) return later.some(h => String(h.reply_to || '') === mid) || ring.some(h => h.role === 'assistant' && String(h.reply_to || '') === mid);
+  return later.length > 0;
+}
+
 /**
  * The person's message with what it follows, for their own-memory lookup: a
  * short follow-up ("tell what I think", "text me here") means nothing alone —
@@ -1719,6 +1762,11 @@ async function runPrivateDelegate(chatId, group, target, task, ctxMsgs = []) {
 
 // ─── Flush one chat's burst ───────────────────────────────────────────────────
 async function flush(chatId) {
+  const taken = [];
+  try { return await flushBurst(chatId, taken); }
+  finally { for (const p of taken) { try { unlinkSync(p); } catch { /* already gone */ } } }
+}
+async function flushBurst(chatId, taken) {
   const buf = buffers.get(chatId);
   if (!buf) return;
   buffers.delete(chatId);
@@ -1749,15 +1797,15 @@ async function flush(chatId) {
   //   3. everything else → the probabilistic Haiku gate ("should I join a
   //      conversation I'm not part of?" — a gate failure there means safe
   //      silence, not a lost request)
-  const addressed = burst.find(m => m.is_mention || m.is_reply_to_bot || inBotThread(chatId, m) || namesSelf(m.text));
+  const addressed = burst.find(m => m.resumed || m.is_mention || m.is_reply_to_bot || inBotThread(chatId, m) || namesSelf(m.text));
   const engagedFrom = !addressed
     ? [...candidates].reverse().find(m => Date.now() - engagedAt(chatId, m.from_id) < ENGAGED_WINDOW_MS)
     : null;
   let target, beat, confidence, reason_enum, speak;
   if (addressed) {
-    const byName = !(addressed.is_mention || addressed.is_reply_to_bot || inBotThread(chatId, addressed));
+    const byName = !(addressed.resumed || addressed.is_mention || addressed.is_reply_to_bot || inBotThread(chatId, addressed));
     target = addressed; beat = 'addressed'; confidence = 1;
-    reason_enum = byName ? 'name-bypass' : (addressed.is_mention || addressed.is_reply_to_bot ? 'mention-bypass' : 'thread-bypass'); speak = true;
+    reason_enum = addressed.resumed ? 'resumed' : byName ? 'name-bypass' : (addressed.is_mention || addressed.is_reply_to_bot ? 'mention-bypass' : 'thread-bypass'); speak = true;
   } else if (engagedFrom) {
     target = engagedFrom; beat = 'engaged-dialogue'; confidence = 0.9;
     reason_enum = 'engaged-thread'; speak = true;
@@ -1819,6 +1867,8 @@ async function flush(chatId) {
   if (!(await acquireSlot())) {
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'ignore', beat, confidence, reason_enum: 'flood-capped', preview: clip(target.text, 120) });
   }
+  const mark = markInflight(chatId, target);
+  if (mark) taken.push(mark);
   // Target carries a photo → fetch it NOW (only on a positive verdict, so gate-dropped
   // images cost nothing): sets target.imagePath, which groupTurnParams hands to Read.
   if (target.photo_file_id && !target.imagePath) {
@@ -1976,7 +2026,7 @@ async function flush(chatId) {
       reply.filesDm > 0 ? `${reply.filesDm} dm-file(s)` : null,
     ].filter(Boolean).join(' + ');
     const partsRef = reply.ref || {};
-    pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: `(replied: ${summary})`, ...(partsRef.thread_ts ? { thread_id: String(partsRef.thread_ts), opened: botThreads.has(`${chatId}|${partsRef.thread_ts}`) } : {}) });
+    pushHistory(chatId, { role: 'assistant', message_id: `bot-${target.message_id}`, text: `(replied: ${summary})`, reply_to: String(target.message_id), ...(partsRef.thread_ts ? { thread_id: String(partsRef.thread_ts), opened: botThreads.has(`${chatId}|${partsRef.thread_ts}`) } : {}) });
     engage(chatId, target.from_id);   // dialogue is live
     fireDelegate();
     return audit({ chat_id: chatId, msg_id: target.message_id, decision: 'sent', beat, confidence, reason_enum: null, preview: `(${summary}, no trailing)` });
@@ -1990,7 +2040,7 @@ async function flush(chatId) {
     // the message being answered. Without it the bot could not point at its own
     // post afterwards, which is why a reply that went out wrong (a leaked
     // marker, a mistake) could only be cleaned up by a human.
-    pushHistory(chatId, { role: 'assistant', message_id: sent.messageId ?? `bot-${target.message_id}`, text: reply.text, ...(place.thread_ts ? { thread_id: String(place.thread_ts), opened: botThreads.has(`${chatId}|${place.thread_ts}`) } : {}) });
+    pushHistory(chatId, { role: 'assistant', message_id: sent.messageId ?? `bot-${target.message_id}`, text: reply.text, reply_to: String(target.message_id), ...(place.thread_ts ? { thread_id: String(place.thread_ts), opened: botThreads.has(`${chatId}|${place.thread_ts}`) } : {}) });
     // Engaged-dialogue window: this person's follow-ups now skip the gate.
     engage(chatId, target.from_id);
     // Cross-surface awareness: inject what just happened in the group — INCLUDING
@@ -2104,6 +2154,14 @@ export function routeGroupMessage(payload = {}) {
     const key = `${chatId}:${mid}`;
     if (mid && seen.has(key)) return { ok: true, decision: 'ignore', reason_enum: 'duplicate' };
     if (mid) rememberSeen(key);
+    // After a restart the RAM dedup is empty, but the durable history knows. A
+    // message on record that the bot answered is a duplicate (a catch-up read it
+    // back); one it never answered — the turn died with the old process, as a
+    // question asked during a deploy did — is handled again, recorded once.
+    const ring = history.get(chatId) || [];
+    const onRecord = mid ? ring.findIndex(h => h.role !== 'assistant' && String(h.message_id) === mid) : -1;
+    if (onRecord >= 0 && answeredOnRecord(ring, onRecord)) return { ok: true, decision: 'ignore', reason_enum: 'duplicate' };
+    const alreadyRecorded = onRecord >= 0;
 
     // A Telegram photo is a file id; a Slack image is { file_id: url, name, mime } for the adapter.
     const photoFileId = payload.photo_file_id != null ? (typeof payload.photo_file_id === 'object' ? payload.photo_file_id : String(payload.photo_file_id)) : '';
@@ -2132,6 +2190,8 @@ export function routeGroupMessage(payload = {}) {
       teammate,
       is_mention: !!payload.is_mention,
       is_reply_to_bot: !!payload.is_reply_to_bot,
+      // Taken up again after a restart: it was being answered when the process died.
+      resumed: !!payload.resumed,
     };
 
     // Record the sender as a member of this group (→ CHANNELS card, throttled to
@@ -2146,7 +2206,7 @@ export function routeGroupMessage(payload = {}) {
     // profile called "s" filed the operator's own words under "s".
     let member = null;
     try { member = adapterFor(chatId).memberOf(msg.from_id); } catch { member = null; }
-    pushHistory(chatId, { role: 'user', message_id: msg.message_id, ...(msg.thread_id ? { thread_id: msg.thread_id } : {}), from_id: msg.from_id, who: clip(member?.displayName || msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
+    if (!alreadyRecorded) pushHistory(chatId, { role: 'user', message_id: msg.message_id, ...(msg.thread_id ? { thread_id: msg.thread_id } : {}), from_id: msg.from_id, who: clip(member?.displayName || msg.from_name || msg.from_username || msg.from_id, NAME_CLAMP), text, teammate });
 
     let buf = buffers.get(chatId);
     if (!buf) { buf = { msgs: [], firstAt: Date.now(), timer: null }; buffers.set(chatId, buf); }

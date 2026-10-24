@@ -8,7 +8,7 @@
  * channel's own scope. No model, no network: the adapter is a fake.
  * Run: node lib/group-watcher-slack.test.mjs
  */
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -93,6 +93,17 @@ ok('an unaddressed "?" still is not', gw.isCandidate({ chat_id: 'slack-C0GENERAL
   ok('answering a second person keeps the first one\'s follow-up window open', Date.now() - T.engagedAt(chat, 'U0STAN001') < 5000 && Date.now() - T.engagedAt(chat, 'U0ANN0001') < 5000);
   T.disengage(chat, 'U0ANN0001');
   ok('...and closing one person\'s window leaves the other', T.engagedAt(chat, 'U0ANN0001') === 0 && T.engagedAt(chat, 'U0STAN001') > 0);
+  {
+    const ring = [
+      { role: 'user', message_id: '960.0', text: 'q1' },
+      { role: 'assistant', message_id: '960.5', reply_to: '960.0', text: 'a1' },
+      { role: 'user', message_id: '961.0', text: 'q2 asked during a deploy' },
+      { role: 'assistant', message_id: '961.5', reply_to: '959.0', text: 'an answer to someone else' },
+    ];
+    ok('a message the bot answered is known as answered after a restart', gw.answeredOnRecord(ring, 0) === true);
+    ok('...one it never answered is not, though the bot spoke after it', gw.answeredOnRecord(ring, 2) === false);
+    ok('...and for old lines with no reply_to, any later reply counts', gw.answeredOnRecord([{ role: 'user', message_id: '1' }, { role: 'assistant', message_id: '2' }], 0) === true);
+  }
   T.audit({ chat_id: chat, msg_id: '1.0', decision: 'ignore' });
   ok('the decision log is named after the whole Slack id', existsSync(join(ROOT, '.group-watcher', 'slack-C0GENERAL.jsonl')));
 }
@@ -154,6 +165,22 @@ r = await gw.postToGroup({ chatId: '-1001234567890', text: 'tg post' });
 ok('a Telegram group posts through the Telegram adapter', r.ok && sends.at(-1).tg === true && sends.at(-1).chatId === '-1001234567890');
 const tgParams = gw.groupTurnParams(team.getGroup('-1001234567890'), [], { message_id: '1', from_id: '111', text: 'x' });
 ok('...and its prompt still says Telegram', /Telegram GROUP CHAT/.test(tgParams.message) && /OTHER BOTS: tg/.test(tgParams.message));
+
+// a turn the process died in is taken up once by the next process
+{
+  const dir = join(ROOT, '.group-watcher');
+  const mark = (mid, at, text) => writeFileSync(join(dir, `slack-C0GENERAL-inflight-${mid}.json`), JSON.stringify({ at, payload: { chat_id: 'slack-C0GENERAL', message_id: mid, text, from_id: 'U0ANN0001', from_name: 'Ann' } }));
+  mark('900.1', Date.now() - 60_000, 'where are we with the order?');
+  mark('900.2', Date.now() - 60 * 60_000, 'an hour-old question');
+  const n = gw.resumeInterrupted();
+  ok('after a restart the message whose turn died is taken up, an old one is not', n === 1, n);
+  ok('...and no mark is left to take it up twice', !readdirSync(dir).some(f => /-inflight-900\.[12]\.json$/.test(f)));
+  await new Promise(res => setTimeout(res, 150));
+  const lines = readFileSync(join(dir, 'slack-C0GENERAL.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  ok('the resumed message is answered without the gate', lines.some(l => l.msg_id === '900.1' && l.reason_enum !== 'gate-skip' && l.decision !== 'ignore'), lines.filter(l => l.msg_id === '900.1'));
+  ok('the turn clears its own mark when it ends, however it ends', !readdirSync(dir).some(f => /-inflight-/.test(f)), readdirSync(dir));
+  ok('the resumed message is on the record once', readFileSync(join(dir, 'slack-C0GENERAL-history.jsonl'), 'utf8').split('"900.1"').length - 1 === 1);
+}
 
 console.log(`group-watcher-slack: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -26,7 +26,7 @@ import { join } from 'node:path';
 import * as api from './slack-api.js';
 import * as store from './store.js';
 import { writeAllowedHostsFile } from './egress.js';
-import { userBySlackId, setSlack, find as memberByEmail } from '../team.js';
+import { userBySlackId, setSlack, find as memberByEmail, listGroups } from '../team.js';
 import { startMemberDm } from './member-dm.js';
 import { saveAttachments } from '../attachments.js';
 import { __setSlackStatus } from './channel-adapter.js';
@@ -218,6 +218,7 @@ export function createHandler(deps = {}) {
     const body = `${text}${await attachmentsBlock(ev, member)}`.trim();
     if (!body) return { did: 'ignored', why: 'empty' };
     recentDms.set(ev.channel, Date.now());
+    saveState(true);
     const thread = ev.thread_ts && ev.thread_ts !== ev.ts ? ev.thread_ts : null;
     // In the assistant pane every conversation is a thread: a status line
     // there says the assistant is on it, and the thread gets the person's
@@ -246,6 +247,7 @@ export function createHandler(deps = {}) {
   return async function handle(ev) {
     if (!ev || typeof ev !== 'object') return { did: 'ignored', why: 'no event' };
     st.lastEventAt = new Date().toISOString();
+    saveState();
     const self = d.self();
     switch (ev.type) {
       case 'tokens_revoked':
@@ -284,13 +286,46 @@ export function createHandler(deps = {}) {
   };
 }
 
+// What a restart must not lose: when the socket last heard anything, and the DMs
+// that were live. A lost window used to be noticed only by the running process;
+// a deploy is a new process, so nothing was caught up — not even a DM.
+const CATCH_UP_AFTER_RESTART_MS = 30 * 60_000;
+let bootCaughtUp = false;
+/** The approved, unpaused Slack channels: where a missed mention is looked for. */
+function roomsToCatchUp() {
+  try { return listGroups().filter(g => g.kind === 'slack' && !g.paused).map(g => String(g.chatId).replace(/^slack-/, '')); }
+  catch { return []; }
+}
+function statePath() { return join(projectDir(), '.team', 'slack-listener-state.json'); }
+let stateSavedAt = 0;
+function saveState(force = false) {
+  const now = Date.now();
+  if (!force && now - stateSavedAt < 15_000) return;
+  stateSavedAt = now;
+  try {
+    mkdirSync(join(projectDir(), '.team'), { recursive: true, mode: 0o770 });
+    writeFileSync(statePath(), JSON.stringify({ lastEventAt: st.lastEventAt, dms: Object.fromEntries(recentDms) }), { mode: 0o660 });
+  } catch { /* best effort */ }
+}
+/** Where the last process left off: its last event, and its live DMs back into the map. */
+export function restoreState(now = Date.now()) {
+  try {
+    const s = JSON.parse(readFileSync(statePath(), 'utf8'));
+    for (const [ch, at] of Object.entries(s?.dms || {})) if (Number.isFinite(at) && now - at < CATCH_UP_WINDOW_MS && !recentDms.has(ch)) recentDms.set(ch, at);
+    const last = Date.parse(s?.lastEventAt || '') || 0;
+    return last && now - last < CATCH_UP_AFTER_RESTART_MS ? new Date(last).toISOString() : null;
+  } catch { return null; }
+}
+
 /**
- * After a lost window, the DMs that were live shortly before it are read back
- * from Slack (bounded: a few channels, a few messages each) and handled as if
- * they had arrived — the dedup keeps anything already seen out. Channels are
- * not caught up: a channel's history belongs to the room, and a missed mention
- * is a message the person can repeat. Best-effort; a history read that fails
- * (the rate limit, a closed DM) is logged and skipped.
+ * After a lost window — a dropped socket, or a restart (the last process's
+ * state on disk) — the DMs that were live shortly before it are read back from
+ * Slack and handled as if they had arrived, and so are the messages in approved
+ * channels that mention the bot (a question asked during a deploy went
+ * unanswered). Bounded: a few conversations, a few messages each; the dedup
+ * (and the room's durable history, for what was already answered) keeps
+ * anything already handled out. Best-effort; a history read that fails (the
+ * rate limit, a closed DM) is logged and skipped.
  */
 export async function catchUp(sinceIso, deps = {}) {
   const a = deps.api || api;
@@ -310,8 +345,26 @@ export async function catchUp(sinceIso, deps = {}) {
       catch (err) { process.stderr.write(`[slack] catch-up message ${channel}/${m.ts}: ${err.message}\n`); }
     }
   }
-  if (messages) process.stderr.write(`[slack] caught up ${messages} message(s) in ${live.length} DM(s) after the lost window from ${sinceIso}\n`);
-  return { channels: live.length, messages };
+  // Approved channels: only messages that mention the bot (top-level history;
+  // a thread reply is a message the person can repeat).
+  const self = st.self?.user_id || (deps.selfId ? deps.selfId() : null);
+  const rooms = (deps.rooms ? deps.rooms() : roomsToCatchUp()).slice(0, CATCH_UP_CHANNELS);
+  let mentions = 0;
+  if (self) {
+    const mention = new RegExp(`<@${self}(?:\\|[^>]*)?>`);
+    for (const channel of rooms) {
+      let rows = [];
+      try { rows = await a.conversationsHistory(channel, { oldest: String(Math.floor(since / 1000) - 60), limit: 15 }); }
+      catch (err) { process.stderr.write(`[slack] catch-up ${channel}: ${err.message}\n`); continue; }
+      for (const m of [...rows].reverse()) {
+        if (!m || !m.user || m.user === self || m.bot_id || m.subtype || !mention.test(String(m.text || ''))) continue;
+        try { const r = await h({ ...m, type: 'message', channel, channel_type: 'channel' }); if (r?.did === 'routed') mentions += 1; }
+        catch (err) { process.stderr.write(`[slack] catch-up message ${channel}/${m.ts}: ${err.message}\n`); }
+      }
+    }
+  }
+  if (messages || mentions) process.stderr.write(`[slack] caught up ${messages} DM message(s) and ${mentions} channel mention(s) after the lost window from ${sinceIso}\n`);
+  return { channels: live.length, messages, rooms: rooms.length, mentions };
 }
 
 let handler = null;
@@ -364,6 +417,13 @@ async function connectOnce(generation) {
         st.connected = true; st.since = new Date().toISOString(); st.error = null;
         const last = st.lost[st.lost.length - 1];
         if (last && !last.to) { last.to = st.since; catchUp(last.from).catch(() => {}); }
+        else if (!bootCaughtUp) {
+          // The first connection of this process: read back what arrived while
+          // the last one was going down and this one was coming up.
+          bootCaughtUp = true;
+          const since = restoreState();
+          if (since) catchUp(since).catch(() => {});
+        }
         return;
       }
       if (env.type === 'disconnect') { try { ws.close(1000, env.reason || 'disconnect'); } catch { /* */ } return finish(env.reason || 'disconnect'); }

@@ -153,6 +153,26 @@ const nTurns = turns.length;
 const cu = await L.catchUp(new Date(Date.now() - 60_000).toISOString(), { api: fakeApi, handle });
 ok('the catch-up handles only the messages not seen before, from people', cu.messages === 1 && turns.length === nTurns + 1 && turns.at(-1).body === 'missed while down', cu);
 ok('a catch-up with no window does nothing', (await L.catchUp(null, { api: fakeApi, handle })).messages === 0);
+{
+  // channels: only the messages that mention the bot, in approved channels
+  const routed = [];
+  const h2 = async (ev) => { if (ev.channel_type === 'channel') { routed.push(ev.text); return { did: 'routed' }; } return { did: 'ignored' }; };
+  const api2 = { conversationsHistory: async (channel) => (channel === 'C9' ? [
+    { ts: '9.2', user: 'U0ANN0001', text: 'just chatting' },
+    { ts: '9.1', user: 'U0ANN0001', text: '<@U0SELF> where are we with Northbeam?' },
+    { ts: '9.3', user: 'U0SELF', text: '<@U0SELF> own' },
+  ] : []) };
+  const c2 = await L.catchUp(new Date(Date.now() - 60_000).toISOString(), { api: api2, handle: h2, rooms: () => ['C9'], selfId: () => 'U0SELF' });
+  ok('after a restart a mention in an approved channel is read back and handled, other chatter is not', c2.mentions === 1 && routed.length === 1 && /Northbeam/.test(routed[0]), { c2, routed });
+}
+{
+  // a restart: where the last process left off is on disk
+  writeFileSync(join(ROOT, '.team', 'slack-listener-state.json'), JSON.stringify({ lastEventAt: new Date(Date.now() - 120_000).toISOString(), dms: { D7: Date.now() - 60_000 } }));
+  const since = L.restoreState();
+  ok('the last process\'s last event is where the catch-up starts', !!since && Date.now() - Date.parse(since) < 200_000, since);
+  writeFileSync(join(ROOT, '.team', 'slack-listener-state.json'), JSON.stringify({ lastEventAt: new Date(Date.now() - 3 * 3600_000).toISOString() }));
+  ok('...not when it is hours old (that is not a restart, it is a pause)', L.restoreState() === null);
+}
 
 // a channel message with no channel handler yet
 r = await handle({ type: 'message', channel: 'C1', channel_type: 'channel', user: 'U0ANN0001', text: 'hello all', ts: '8.0' });
