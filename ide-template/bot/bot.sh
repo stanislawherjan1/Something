@@ -313,6 +313,28 @@ PLUGIN_PATHS=$(
         ls -t "$BOT_HOME/.claude/plugins/cache/claude-plugins-official/telegram"/*/server.ts 2>/dev/null
     } | awk '!seen[$0]++'
 )
+# Every start patches a CLEAN copy: the image's plugin source is written over
+# each copy the bot holds before the patches below run, so a copy an older
+# patcher left broken cannot outlive a restart. A production bot was found with
+# a 0.0.6 copy whose /start handler older strips had commented out 11 times
+# ("// // … bot.command('start'"), its body left behind — a syntax error, so the
+# plugin never started and Telegram was silent for three days. That copy sat in
+# the persistent /home/bot for months, harmless until the CLI switched the
+# install back to 0.0.6 (an old marketplace copy still advertised it).
+# The patches are strip-and-reapply, so a clean copy patches the same way.
+PLUGIN_SRC_DIR=/opt/ide/plugins-src/external_plugins/telegram
+if [ -f "$PLUGIN_SRC_DIR/server.ts" ] && [ -n "$PLUGIN_PATHS" ]; then
+    restored=0
+    for P in $PLUGIN_PATHS; do
+        if cp "$PLUGIN_SRC_DIR/server.ts" "$P" 2>/dev/null; then
+            cp "$PLUGIN_SRC_DIR/package.json" "$(dirname "$P")/package.json" 2>/dev/null || true
+            restored=$((restored + 1))
+        else
+            log "WARN: could not restore the image's plugin source into $P — patching what is there"
+        fi
+    done
+    log "Telegram plugin: restored the image's source into $restored cop$( [ "$restored" = 1 ] && echo y || echo ies) before patching"
+fi
 if [ -n "$PLUGIN_PATHS" ]; then
     for PLUGIN_SERVER in $PLUGIN_PATHS; do
         log "Patching Telegram plugin at: $PLUGIN_SERVER"
@@ -1471,18 +1493,16 @@ tmux -L "$SESSION" new-session -d -s "$SESSION" \
         sleep 3
         PANE=$(tmux -L "$SESSION" capture-pane -t "$SESSION" -p 2>/dev/null || echo "")
 
-        # Readiness, two signals (either counts):
-        #  - the "Listening for channel messages" banner (claude-code ≤2.1.128;
-        #    2.1.207 no longer prints it — caught 2026-07-12 when the online
-        #    notification silently stopped firing after the CLI bump), or
-        #  - the plugin's OWN pid file with a live process behind it — the
-        #    poller writes it on startup, version-independent (the launch
-        #    section above clears any stale copy, so its existence here means
-        #    THIS session's plugin came up).
+        # Readiness is the plugin's OWN pid file with a live process behind it —
+        # the poller writes it on startup, version-independent (the launch
+        # section above clears any stale copy, so its existence here means THIS
+        # session's plugin came up). The "Listening for channel messages" banner
+        # is NOT enough: the CLI prints it before the plugin connects, and a
+        # plugin that failed to start (a syntax error in its source) was logged
+        # "up (pid=pane-banner)" while Telegram stayed silent for days.
         PLUGIN_PID=$(cat "$PLUGIN_PID_FILE" 2>/dev/null || echo "")
-        if echo "$PANE" | grep -q "Listening for channel messages" \
-           || { [ -n "$PLUGIN_PID" ] && kill -0 "$PLUGIN_PID" 2>/dev/null; }; then
-            log "Telegram plugin is up (pid=${PLUGIN_PID:-pane-banner})."
+        if [ -n "$PLUGIN_PID" ] && kill -0 "$PLUGIN_PID" 2>/dev/null; then
+            log "Telegram plugin is up (pid=$PLUGIN_PID)."
             READY=1
             break
         fi
@@ -1555,7 +1575,22 @@ if [ -n "$CHANNELS_ARG" ]; then
         if plugin_alive; then seen=1; break; fi
     done
     if [ "$seen" != "1" ]; then
-        log "plugin-watchdog: plugin never came up in ~200s — leaving recovery to the readiness path, not arming."
+        # Never give up silently: "leaving recovery to the readiness path" once
+        # meant three days of a dead channel, because nothing recovered it. One
+        # restart (bot.sh restores the plugin's clean source on the way up);
+        # if it still does not come up within 30 min of that, say so once and
+        # stop — a restart loop helps nobody.
+        RETRY_STAMP="$PER_BOT_DIR/.plugin-start-retry"
+        last=$(cat "$RETRY_STAMP" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        if [ $((now - last)) -gt 1800 ]; then
+            echo "$now" > "$RETRY_STAMP" 2>/dev/null || true
+            log "plugin-watchdog: Telegram plugin never came up in ~200s — restarting the session once to recover it."
+            tmux -L "$SESSION" kill-session -t "$SESSION" 2>/dev/null || true
+        else
+            log "plugin-watchdog: Telegram plugin never came up again after a restart — telling the admin, not restarting."
+            notify "My Telegram connection did not start, so messages here may not reach me. I already tried restarting; the workspace needs a look."
+        fi
         exit 0
     fi
     log "plugin-watchdog: Telegram plugin confirmed alive — monitoring channel health."
