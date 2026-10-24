@@ -60,7 +60,11 @@ connection is **read-only** or **read and write** — the admin chooses when
 connecting and can switch it on the service's page at any time: read-only
 means the coworker reads through it and never creates, sends or changes
 anything there, for anyone, until an admin allows it. Your own connection is
-always read and write — your account, your call. What a notetaker brings into memory is always its owner's: the admin
+always read and write — your account, your call. In a team group or channel the
+coworker uses the team's connections; ask it there about your own account ("how many
+signups in my Supabase today?") and it looks as you, reads only, and answers for the
+room, because you asked; a change to your own account you ask for in your own chat.
+Nobody else in the room reaches your own connections. What a notetaker brings into memory is always its owner's: the admin
 who connected the workspace's, or you for your own. An admin sees, on each
 card, who has their own account of a service, and can disconnect it; a person
 who leaves takes their own connections with them; a person whose own
@@ -208,7 +212,10 @@ answers a personal key only to a turn that is its owner's. The bot's own
 `.claude.json` holds the workspace set plus the operator's own connections
 (the brain is the operator's); every other turn gets its set written for it
 (`lib/claude.js` `turnMcpServers`, into the turn's own run directory) — a
-group's turn the workspace set alone. Connections from before owners existed
+group's turn the workspace set alone. A room's sender reaches their own
+connections from there only through `ask_my_connections` (see
+[TEAM_MODE.md](TEAM_MODE.md), "The asker's own accounts"): a one-shot turn as
+them with their `-mine` servers alone, read only. Connections from before owners existed
 are the workspace's, owned by the primary admin (filled in at boot). Legacy
 MCPs that take credentials in their environment stay workspace-only.
 

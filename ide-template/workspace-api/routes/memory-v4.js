@@ -45,7 +45,7 @@ import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
 import { getGroup } from '../lib/team.js';
 import { groupIdKind } from '../lib/group-id.js';
-import { lookupMine, outsidersOf, memberBySlug, takePrefetched } from '../lib/integrations/private-lookup.js';
+import { lookupMine, outsidersOf, memberBySlug, takePrefetched, askMyConnections } from '../lib/integrations/private-lookup.js';
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -1029,6 +1029,33 @@ export default function memoryV4Router() {
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
     if (r.secret) return res.json({ ok: true, nothing: true, secret: true, note: 'the answer is a secret (a code, a password): never said in a room; send it to their DM' });
     return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null, ...(outsiders.length ? { outsiders: outsiders.length } : {}) });
+  });
+
+  // The same, for the asker's own connected accounts (their Supabase, their
+  // mailbox): a one-shot as them with those connections alone, read only.
+  // Same gate as their memory: the turn's token, the roster, a team room.
+  const connectionCallsPerTurn = new Map();
+  router.post('/internal/memory/v4/mine/connections', loopbackOnly, async (req, res) => {
+    const who = whoIsAsking(req);
+    if (!who) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    if (!who.group || !who.actor || who.actor === 'team') return res.status(403).json({ ok: false, error: 'only a known person in a team room can ask their own connections here' });
+    const member = memberBySlug(who.actor);
+    if (!member) return res.status(403).json({ ok: false, error: 'not on the team' });
+    const room = getGroup(who.groupId);
+    if (!room) return res.status(403).json({ ok: false, error: 'not a registered room' });
+    const question = String(req.body?.question || '').trim().slice(0, 1500);
+    if (!question) return res.status(400).json({ ok: false, error: 'question required' });
+    if (room.privateAnswers === 'off') return res.json({ ok: true, off: true, note: 'answers from a person\'s own accounts are switched off in this room' });
+    const token = String(req.get('x-ide-turn') || '');
+    const n = (connectionCallsPerTurn.get(token) || 0) + 1;
+    connectionCallsPerTurn.set(token, n);
+    if (connectionCallsPerTurn.size > 500) connectionCallsPerTurn.delete(connectionCallsPerTurn.keys().next().value);
+    if (n > 2) return res.json({ ok: true, nothing: true, note: 'already asked twice this turn' });
+    let r;
+    try { r = await askMyConnections({ member, question, room }); } catch (e) { r = { failed: true, error: e.message }; }
+    ledger.logEvent({ op: 'private_lookup', kind: 'connections', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered: !!r?.answer });
+    if (!r || r.failed) return res.json({ ok: true, failed: true });
+    return res.json({ ok: true, ...(r.none ? { none: true } : r.action ? { action: true } : r.secret ? { secret: true } : r.nothing ? { nothing: true } : { answer: r.answer }) });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

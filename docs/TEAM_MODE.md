@@ -51,7 +51,9 @@ chose, a meeting you booked — and it looks it up in what you told it in your o
 chat and answers for the room to hear, because you asked. Nobody else gets it: when
 someone asks about you, your memory stays closed, whoever they are. Codes and
 passwords are the exception: those never go into a group, they come to you
-directly instead. Come
+directly instead. The same goes for an account you connected for yourself (your own
+Supabase, your own mailbox): ask about it in the group and it looks as you, reads
+only, and answers there; for anyone else it is simply not connected in that group. Come
 back to a group after a day and it re-reads where the conversation stopped
 before it answers. In a group it knows what the team knows: what was said in that group,
 and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
@@ -624,6 +626,20 @@ there and leaves them out); two lookups a turn, and the owner sees each one in
 Changes. The room's
 switch (**Answers from the asker's own memory**, on by default) turns it off for a
 room. The same path for a Slack channel and a Telegram group.
+
+**The asker's own accounts, said in the room** (`ask_my_connections`, same module).
+A room's turn loads the team's connections and nobody's own, for the same reason as
+memory. When the sender has connected a service for themselves, the room turn is
+told its name for that turn only ("Kasia connected Granola for themselves") and asks
+it through `ask_my_connections` → `POST /api/internal/memory/v4/mine/connections`:
+the same checks as the memory route (turn token, roster, registered room, the room's
+switch, two calls a turn), then a **one-shot turn as that person with their own
+`-mine` servers alone** — no built-in tools, every workspace-api tool denied, no
+session. It reads only: a change asked from a room is answered `ACTION` and the bot
+points them to their own chat; a secret is `SECRET`; what comes back is fenced as
+untrusted data. For anyone else a personal connection is not reachable from the room,
+and the bot says it is not connected *for this room*, never that it does not exist.
+Each ask is on the owner's Changes (`private_lookup`, `kind: connections`).
 
 ### Tuning
 

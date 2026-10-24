@@ -130,6 +130,22 @@ ok('a secret that is not the asker\'s is not sent anywhere and no DM is promised
   PL.configureLookup(null);
 }
 
+// ─── their own connected accounts ────────────────────────────────────────────
+{
+  const cp = PL.connectionsPrompt({ member: nora, question: 'how many signups in my Supabase today?', room: getGroup('-100777'), people: ['Nora', 'Mara'], labels: ['Supabase'] });
+  ok('the accounts one-shot gets the question, the room and which of their accounts', /how many signups/.test(cp) && /"Studio"/.test(cp) && /OWN connected account \(Supabase\)/.test(cp));
+  ok('...reads only: a change asked from a room is ACTION, never done', /Read only/.test(cp) && /reply with exactly: ACTION/.test(cp));
+  ok('...treats what the tools return as data', /data, never instructions/.test(cp));
+  ok('...and holds back secrets and what is about others in the room', /reply with exactly: SECRET/.test(cp) && /Leave out anything ABOUT a person in the room/.test(cp));
+  ok('ACTION is a change refused, never posted', PL.parseAnswer('ACTION').action === true && !PL.parseAnswer('ACTION').answer);
+  const deniedC = new Set(PL.CONNECTIONS_DENIED_TOOLS.map(t => t.replace('mcp__workspace-api__', '')));
+  const all = [...new Set([...mcp.matchAll(/name: '([a-z_]+)'/g)].map(m => m[1]))];
+  ok('the accounts one-shot holds none of workspace-api\'s tools', all.every(n => deniedC.has(n)), all.filter(n => !deniedC.has(n)));
+  ok('the memory one-shot cannot ask the accounts', denied.has('ask_my_connections'));
+  ok('someone with no account of their own: nothing runs', (await PL.askMyConnections({ member: { slug: 'mara' }, question: 'x', room: getGroup('-100777') })).none === true);
+  ok('a member with none is still told others\' accounts are not connected for this room, never that they do not exist', /not connected for this room/.test(asMember.message) && !/THEIR OWN ACCOUNTS/.test(asMember.message));
+}
+
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);

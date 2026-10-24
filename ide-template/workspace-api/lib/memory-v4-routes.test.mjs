@@ -259,6 +259,38 @@ ok('(z) the room\'s switch off: nothing', r.body.nothing === true && r.body.off 
 T.touchGroupMeta('-100777', { privateAnswers: 'team' });
 PL.configureLookup(null);
 
+// ─── (z2) a member's own connections asked from a team room ──────────────────
+r = await call('POST', '/mine/connections', { token: kasiaTurn, body: { question: 'how many rows in my users table?' } });
+ok('(z2) a person\'s own turn is refused: this is for a room', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) an unknown sender in a room is refused', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'nobody', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) someone not on the roster is refused', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: {} });
+ok('(z2) a question is required', r.status === 400, r.body);
+const conn = [];
+PL.configureConnections(async ({ member, servers, prompt }) => { conn.push({ slug: member.slug, servers, prompt }); return { answer: 'Your notetaker has 3 meetings from this week.' }; });
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'how many meetings did I have this week?' } });
+ok('(z2) a member asks their own account from the room and gets its answer', r.body.ok && /3 meetings/.test(r.body.answer || ''), r.body);
+ok('(z2) ...asked as them, with their own servers alone', conn.at(-1)?.slug === 'kasia' && conn.at(-1).servers.length > 0 && conn.at(-1).servers.every(n => n.endsWith('-mine')), conn.at(-1) && { servers: conn.at(-1).servers });
+ok('(z2) ...and the ask is on their Changes', L.readEvents().some(e => e.op === 'private_lookup' && e.kind === 'connections' && e.scope === 'user:kasia' && e.answered === true));
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'stan', group: true, groupId: '-100777' }), body: { question: 'my meetings?' } });
+ok('(z2) someone with no account of their own is told so, and nothing runs as them', r.body.ok && r.body.none === true && !r.body.answer && conn.at(-1).slug === 'kasia', r.body);
+PL.configureConnections(async () => ({ action: true }));
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'delete my last meeting' } });
+ok('(z2) a change asked from a room is not made: their own chat is the place', r.body.action === true && !r.body.answer, r.body);
+PL.configureConnections(null);
+{
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const asKasia = groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'my meetings?' }).message;
+  ok('(z2) the room turn names the sender\'s own accounts and the tool to ask them', /THEIR OWN ACCOUNTS: Kasia connected Granola/.test(asKasia) && /ask_my_connections/.test(asKasia), asKasia.split('\n').find(l => /ACCOUNTS/.test(l)));
+  ok('(z2) ...and says anyone else\'s are not connected for this room, never that they do not exist', /not connected for this room/.test(asKasia) && /never that it does not exist/.test(asKasia));
+}
+T.touchGroupMeta('-100777', { privateAnswers: 'off' });
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) the room\'s switch off covers their accounts too', r.body.off === true && !r.body.answer, r.body);
+T.touchGroupMeta('-100777', { privateAnswers: 'team' });
+
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

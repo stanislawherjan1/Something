@@ -267,6 +267,16 @@ const MINE_TOOL = {
     'Say only the part that answers what they asked; anything else it returned stays unsaid. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
   inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words.' } }, required: ['question'] },
 };
+// The person's own connected accounts, the same way: a room turn holds the
+// team's integrations only, and this asks theirs, as them, outside the room.
+const MINE_CONNECTIONS_TOOL = {
+  name: 'ask_my_connections',
+  description:
+    'In a room only: look something up in an account the PERSON YOU ARE ANSWERING connected for themselves (the room prompt names them, e.g. their own Supabase or mailbox) — those are not loaded in a room. ' +
+    'It runs as them, outside this room, with their own connections alone, reads only, and returns at most three sentences fit for the room. ' +
+    'Only for their question about their own account; never for anyone else\'s. It changes nothing: a change is theirs to ask for in their own chat with you.',
+  inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words, with the service it is about.' } }, required: ['question'] },
+};
 
 // The tab tools work only in a turn started from the browser panel (it carries
 // the one-turn token). Anywhere else — Telegram, the workspace chat, the
@@ -330,6 +340,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     ...TAB_TOOLS,
     ...(MEMORY_V4_TOOLS && !PAGE_TURN ? V4_TOOLS : []),
     ...(MEMORY_V4_TOOLS && !PAGE_TURN && GROUP_MEMBER_TURN ? [MINE_TOOL] : []),
+    ...(!PAGE_TURN && GROUP_MEMBER_TURN ? [MINE_CONNECTIONS_TOOL] : []),
     {
       name: 'memory_write',
       description:
@@ -697,6 +708,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 
   // ── Memory v4 ──────────────────────────────────────────────────────────────
+  if (name === 'ask_my_connections') {
+    if (!GROUP_MEMBER_TURN) return { content: [{ type: 'text', text: 'Only in a team room, for the person asking.' }], isError: true };
+    try {
+      const r = await v4Call('POST', 'mine/connections', { question: String(args?.question || '') });
+      if (!r.ok) return { content: [{ type: 'text', text: r.error || 'Their accounts did not answer.' }], isError: true };
+      const text = r.off ? 'Answers from a person\'s own accounts are switched off in this room. Say you cannot check it here; they can ask you in their own chat.'
+        : r.none ? 'They have no account of their own connected. Answer from the team\'s integrations if one covers it; otherwise say it is not connected for this room.'
+        : r.failed ? 'Could not check their account right now. Say so; do not guess.'
+        : r.action ? 'That is a change, not a question: from a room their own account is only read. Tell them in a few words to ask you in their own chat.'
+        : r.secret ? 'The answer is a secret (a key, a token, a password): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
+        : r.nothing ? `Their account holds nothing that answers this${r.note ? ` (${r.note})` : ''}. Say so plainly.`
+        : `From their own account — say only what answers their question:\n${wrapUntrusted(String(r.answer || ''), { source: 'own-connections' })}`;
+      return { content: [{ type: 'text', text }] };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Could not reach their account: ${err.message}. Say you could not check; do not guess.` }], isError: true };
+    }
+  }
   if (['memory_search', 'memory_timeline', 'memory_note', 'memory_forget', 'memory_import', 'ask_my_memory'].includes(name)) {
     if (!MEMORY_V4_TOOLS || PAGE_TURN) return { content: [{ type: 'text', text: 'Not available here.' }], isError: true };
     try {
