@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Copy, Check, Loader2 } from 'lucide-react';
 import TileBanner from './TileBanner.jsx';
@@ -13,8 +13,40 @@ const btn = 'inline-flex items-center gap-1.5 rounded-[6px] border border-border
  * uploaded: as a download it was one more file to open and copy from, and the
  * one-line JSON pasted unreadably. Copied, JSON is laid out to read.
  */
+// The text to copy, laid out to read when it is JSON.
+async function fetchCopyText(url) {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error(String(r.status));
+  const text = await r.text();
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; /* not JSON: as served */ }
+}
+
+// The old way, for a browser that refuses the Clipboard API: a selected
+// textarea and the copy command, inside the same click.
+function copyByCommand(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  if (!ok) throw new Error('copy refused');
+}
+
 export default function StepAction({ label, url, filename = '', copy = false, render = null }) {
   const [state, setState] = useState(null);   // null | 'busy' | 'done' | 'failed'
+  // Fetched as soon as the step shows: the clipboard is written in the click
+  // itself, since a browser (Safari first) refuses a write that comes after an
+  // awaited fetch — the click no longer counts as the person's.
+  const ready = useRef(null);
+  useEffect(() => {
+    if (!copy || !url) return;
+    let live = true;
+    fetchCopyText(url).then((t) => { if (live) ready.current = t; }).catch(() => {});
+    return () => { live = false; };
+  }, [copy, url]);
   if (render === 'botPicture') return <BotPictureDownload label={label} filename={filename} />;
   if (!copy) {
     return (
@@ -26,11 +58,15 @@ export default function StepAction({ label, url, filename = '', copy = false, re
   const onCopy = async () => {
     setState('busy');
     try {
-      const r = await fetch(url, { credentials: 'same-origin' });
-      if (!r.ok) throw new Error(String(r.status));
-      let text = await r.text();
-      try { text = JSON.stringify(JSON.parse(text), null, 2); } catch { /* not JSON: as served */ }
-      await navigator.clipboard.writeText(text);
+      if (ready.current != null) {
+        // Already here: written within the click.
+        try { await navigator.clipboard.writeText(ready.current); } catch { copyByCommand(ready.current); }
+      } else if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        // Not fetched yet: the browser is handed the fetch as part of the click.
+        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': fetchCopyText(url).then((t) => new Blob([t], { type: 'text/plain' })) })]);
+      } else {
+        await navigator.clipboard.writeText(await fetchCopyText(url));
+      }
       setState('done');
       setTimeout(() => setState(null), 2500);
     } catch {
