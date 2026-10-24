@@ -89,13 +89,47 @@ ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/ask_my_m
 ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(asMember.message) && /when they ask again, say it here, in full/.test(asMember.message) && /never covers anything about another person/.test(asMember.message));
 ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
 ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(asMember.message) && !/Time zone:/.test(asMember.message));
-ok('the member is told to reach their own memory for questions about themselves, before asking back, never for another person', /asks about THEMSELVES or THEIR OWN matters/.test(asMember.message) && /before answering or asking them back/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
+ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /Your FIRST step for this message/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
+ok('...and "not on record" is never said before it has returned', /before it has returned/.test(asMember.message));
 ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(asMember.message) && /even when it touches private things: answer it here/.test(asMember.message) && !/their personal data\), emit/.test(asMember.message));
 ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(asMember.message));
 {
   const guestRoom = groupTurnParams(getGroup('-100888'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what is my door code?' });
   ok('secrets are the one exception in every room, even when their owner insists: they go to the DM', /ONE EXCEPTION, in every room/.test(guestRoom.message) && /ONE EXCEPTION, in every room/.test(asMember.message) && /even when its owner insists/.test(asMember.message) && /send it to their DM/.test(asMember.message));
 }
+ok('a secret that is not the asker\'s is not sent anywhere and no DM is promised', /When it is not theirs/.test(asMember.message) && /promise no DM/.test(asMember.message));
+
+// the exchange a short follow-up belongs to
+{
+  const { exchangeFor } = await import('./integrations/group-watcher.js');
+  const hist = [
+    { role: 'user', message_id: '1.0', from_id: 'U1', text: "what does Stanislaw think of Marek's drafts?" },
+    { role: 'assistant', message_id: '1.5', text: "That's Stanislaw's call, ask him." },
+    { role: 'user', message_id: '2.0', from_id: 'U2', text: 'tell what i think' },
+  ];
+  const q = exchangeFor(hist, hist[2]);
+  ok('a bare follow-up carries the reply it follows', q.startsWith('tell what i think') && /Marek's drafts|Stanislaw's call/.test(q), q);
+  const th = [
+    { role: 'user', message_id: '5.0', from_id: 'U2', text: 'what do you know about me?' },
+    { role: 'assistant', message_id: '5.5', thread_id: '5.0', text: 'That is a lot for a channel; your DM?' },
+    { role: 'user', message_id: '6.0', thread_id: '5.0', from_id: 'U2', text: 'text me here' },
+  ];
+  const q2 = exchangeFor(th, th[2]);
+  ok('in a thread: the thread\'s opening message and the bot\'s reply in it', /what do you know about me/.test(q2) && /your DM/.test(q2), q2);
+}
+
+// the lookup started beside the turn is what the turn's first call gets, once
+{
+  let calls = 0;
+  PL.configureLookup(async () => { calls++; return { answer: 'You want to finish it on November 3.' }; });
+  PL.prefetchMine({ member: nora, question: 'when did I want to finish the draft?', room: getGroup('-100777') });
+  const early = PL.takePrefetched('-100777', 'nora');
+  ok('the prefetched lookup is handed over', !!early && (await early).answer === 'You want to finish it on November 3.' && calls === 1);
+  ok('...once: the next call in the turn asks afresh', PL.takePrefetched('-100777', 'nora') === null);
+  ok('...and it is per person: nobody else gets it', (PL.prefetchMine({ member: nora, question: 'x', room: getGroup('-100777') }), PL.takePrefetched('-100777', 'mara')) === null);
+  PL.configureLookup(null);
+}
+
 ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);

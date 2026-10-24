@@ -45,7 +45,7 @@ import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
 import { getGroup } from '../lib/team.js';
 import { groupIdKind } from '../lib/group-id.js';
-import { lookupMine, outsidersOf, memberBySlug } from '../lib/integrations/private-lookup.js';
+import { lookupMine, outsidersOf, memberBySlug, takePrefetched } from '../lib/integrations/private-lookup.js';
 
 function loopbackOnly(req, res, next) {
   const ip = req.socket?.remoteAddress || '';
@@ -1007,7 +1007,7 @@ export default function memoryV4Router() {
     if (!member) return res.status(403).json({ ok: false, error: 'not on the team' });
     const room = getGroup(who.groupId);
     if (!room) return res.status(403).json({ ok: false, error: 'not a registered room' });
-    const question = String(req.body?.question || '').trim().slice(0, 500);
+    const question = String(req.body?.question || '').trim().slice(0, 1500);
     if (!question) return res.status(400).json({ ok: false, error: 'question required' });
     if (room.privateAnswers === 'off') return res.json({ ok: true, nothing: true, off: true, note: 'answers from a person\'s own memory are switched off in this room' });
     // Someone from outside in the room does not stop it: what the asker asks
@@ -1019,8 +1019,11 @@ export default function memoryV4Router() {
     lookupsPerTurn.set(token, n);
     if (lookupsPerTurn.size > 500) lookupsPerTurn.delete(lookupsPerTurn.keys().next().value);
     if (n > 2) return res.json({ ok: true, nothing: true, note: 'already looked twice this turn' });
+    // The watcher started this person's lookup when it decided to answer them,
+    // with the exchange around their message; the turn's first call gets it.
+    const early = n === 1 ? takePrefetched(who.groupId, member.slug) : null;
     let r;
-    try { r = await lookupMine({ member, question, room }); } catch (e) { r = { failed: true, error: e.message }; }
+    try { r = await (early || lookupMine({ member, question, room })); } catch (e) { r = { failed: true, error: e.message }; }
     const answered = !!(r && r.answer);
     ledger.logEvent({ op: 'private_lookup', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered });
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });

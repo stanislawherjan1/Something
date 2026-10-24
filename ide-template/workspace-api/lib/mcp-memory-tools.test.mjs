@@ -125,7 +125,7 @@ try {
     const glist = await grpc('tools/list', {});
     const gtools = new Map((glist.result?.tools || []).map(t => [t.name, t]));
     ok('in a group turn as a known person, ask_my_memory is offered', gtools.has('ask_my_memory'), [...gtools.keys()]);
-    ok('...described as their own matters only, said in the room', /THEIR OWN matters/.test(gtools.get('ask_my_memory')?.description || '') && /never for anyone else/.test(gtools.get('ask_my_memory')?.description || ''));
+    ok('...described as the first step for every message from them, their own things only', /FIRST for every message/.test(gtools.get('ask_my_memory')?.description || '') && /never for anyone else/i.test(gtools.get('ask_my_memory')?.description || ''));
     seen.length = 0;
     r = await grpc('tools/call', { name: 'ask_my_memory', arguments: { question: 'what did we agree with Harbor Glaze?' } });
     const mine = seen.find(s => /\/mine$/.test(s.url));

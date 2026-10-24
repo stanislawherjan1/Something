@@ -76,6 +76,27 @@ ok('an unaddressed "?" still is not', gw.isCandidate({ chat_id: 'slack-C0GENERAL
   ok('a message inside a thread is answered in that thread, busy or not', gw.placeReply('slack-C0GENERAL', { message_id: '900.2', thread_id: '900.0', from_id: 'U0ANN0001' }, { text: 'x', hist: [] }).thread_ts === '900.0');
 }
 
+// a thread the bot spoke in, and who it is talking with
+{
+  const T = gw.__test, chat = 'slack-C0GENERAL';
+  ok('a thread the bot never posted in is not the bot\'s', !gw.inBotThread(chat, { thread_id: '950.0' }));
+  T.pushHistory(chat, { role: 'assistant', message_id: '950.5', text: 'Here is the answer.', thread_id: '950.0', opened: false });
+  ok('a reply in a thread the bot answered in (a person opened it) is for the bot, no @ needed', gw.inBotThread(chat, { thread_id: '950.0', text: 'text me here' }));
+  ok('...a top-level message is not made "in a thread" by it', !gw.inBotThread(chat, { text: 'text me here' }));
+  const disk = readFileSync(join(ROOT, '.group-watcher', 'slack-C0GENERAL-history.jsonl'), 'utf8');
+  ok('the durable history keeps where the bot spoke', /"thread_id":"950.0"/.test(disk));
+  T.forgetRam(chat);
+  ok('after a restart RAM knows nothing...', !gw.inBotThread(chat, { thread_id: '950.0' }));
+  T.ensureHistoryLoaded(chat);
+  ok('...and the history gives the bot\'s threads back', gw.inBotThread(chat, { thread_id: '950.0' }));
+  T.engage(chat, 'U0STAN001'); T.engage(chat, 'U0ANN0001');
+  ok('answering a second person keeps the first one\'s follow-up window open', Date.now() - T.engagedAt(chat, 'U0STAN001') < 5000 && Date.now() - T.engagedAt(chat, 'U0ANN0001') < 5000);
+  T.disengage(chat, 'U0ANN0001');
+  ok('...and closing one person\'s window leaves the other', T.engagedAt(chat, 'U0ANN0001') === 0 && T.engagedAt(chat, 'U0STAN001') > 0);
+  T.audit({ chat_id: chat, msg_id: '1.0', decision: 'ignore' });
+  ok('the decision log is named after the whole Slack id', existsSync(join(ROOT, '.group-watcher', 'slack-C0GENERAL.jsonl')));
+}
+
 // routing
 let r = gw.routeGroupMessage({ chat_id: 'slack-C0GENERAL', chat_title: '#general', message_id: '10.0', text: 'hello everyone', from_id: 'U0ANN0001', from_name: 'Ann', is_mention: true });
 ok('a message in an approved Slack channel is buffered', r.decision === 'buffered', r);

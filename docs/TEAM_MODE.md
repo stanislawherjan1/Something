@@ -517,8 +517,13 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    pre-filter that judges *in context* (the recent thread, including the bot's own
    prior replies), never the last line alone. It drops only obvious noise (a bare
    reaction, two people clearly talking to each other); when unsure, it passes. A
-   direct address — `@mention`, a reply to the bot, or the bot's **name** (incl.
-   inflected forms) — bypasses the gate outright. A gate that fails (a crash, a
+   direct address — `@mention`, a reply to the bot, a message in a Slack thread the
+   bot has posted in, or the bot's **name** (incl. inflected forms) — bypasses the
+   gate outright, and so does a follow-up from **any** person the bot answered in
+   the last three minutes (kept per person: with several people talking, answering
+   one no longer closes another's window). Where the bot spoke is kept in the
+   durable history (`thread_id` on each line), so a restart does not forget its
+   threads. A gate that fails (a crash, a
    timeout, an unreadable answer) hands the message to the brain rather than
    dropping it — the brain is the real judge and stays silent on its own; only a
    spent plan ("You've hit your weekly limit", which the brain would hit too)
@@ -576,10 +581,19 @@ team's.
 preferences or private memory: it is shared by everyone who writes there, and
 whatever it is handed a later sender could have recited. So a roster member who
 asks about themselves or their own matters in the room — where they are, what they
-prefer, their suppliers, meetings, decisions, or something whose answer depends on
-who they are ("the weather for me") — wants what they told the bot in their own
-chat, said here. The group brain has one tool for that, and it does not read anything
-itself: workspace-api (`POST /api/internal/memory/v4/mine`) checks in code that the
+prefer, their suppliers, meetings, decisions, their plans and numbers, or something
+whose answer depends on who they are ("the weather for me") — wants what they told
+the bot in their own chat, said here. Whether a question is "about their own
+matters" is not left to the brain (it seldom saw "is X staying?" or "what is the
+deal worth?" as the asker's own plans): for **every** message the bot answers from a
+roster member, the watcher starts the lookup alongside the turn's start, with the
+exchange around the message (what it follows: the thread's opening message, the
+bot's last reply to them, their previous message — a bare "tell what I think" found
+nothing alone), and the turn's first step is `ask_my_memory`, which receives that
+lookup. The bot says something is not on record only after it has returned. A
+bound (`GROUP_LOOKUP_PREFETCH_PER_HOUR`, default 120) keeps a chatty room from
+spending the plan; past it the turn asks itself. The group brain does not read
+anything itself: workspace-api (`POST /api/internal/memory/v4/mine`) checks in code that the
 turn is a group turn whose token names a roster person (the watcher resolved the
 sender from their Slack or Telegram identity) and that the room is registered — in
 a solo workspace too — then runs a **one-shot private turn as that person** (their
@@ -655,7 +669,9 @@ it. What differs is how it gets in and who may be in it
   request included. One exception, in every room whoever is in it: a secret
   that opens something (a password, a PIN, a door or lock code, a key, a
   login) is never said there, even when its owner insists — it goes to their
-  DM, and the lookup returns `SECRET` instead of the value. (Told it could say
+  DM, and the lookup returns `SECRET` instead of the value. Only the asker's
+  own: asked for another person's login or code, the bot says it does not have
+  it for them and promises no DM. (Told it could say
   a code in a team-only room, the model would not, so the rule says what it
   does.) With everyone on the team it is an ordinary room.
   Nothing of the sender's own is put into the room's session, not even their

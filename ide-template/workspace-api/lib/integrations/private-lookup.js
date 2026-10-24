@@ -44,6 +44,32 @@ export const DENIED_TOOLS = [
   'tab_act', 'tab_screenshot', 'tab_snapshot',
 ].map(n => `mcp__workspace-api__${n}`);
 
+// A lookup started by the watcher the moment it decides to answer a member,
+// alongside the room turn's start (the CLI boot is the long part of both), and
+// handed to the turn's first ask_my_memory. Keyed by room and person; used once.
+const PREFETCH_TTL_MS = 3 * 60_000;
+const prefetched = new Map();   // `${groupId}|${slug}` → { at, promise }
+// A bound like the gate's: a chatty room must not spend the plan on lookups.
+const PREFETCH_PER_HOUR = Number(process.env.GROUP_LOOKUP_PREFETCH_PER_HOUR) || 120;
+const prefetchTimes = [];
+export function prefetchMine({ member, question, room }) {
+  if (!member?.slug || !room?.chatId) return;
+  const now = Date.now();
+  while (prefetchTimes.length && now - prefetchTimes[0] > 3600_000) prefetchTimes.shift();
+  if (prefetchTimes.length >= PREFETCH_PER_HOUR) return;   // the turn's own ask_my_memory still works
+  prefetchTimes.push(now);
+  for (const [k, p] of prefetched) if (now - p.at > PREFETCH_TTL_MS) prefetched.delete(k);
+  const promise = lookupMine({ member, question, room }).catch(() => ({ failed: true }));
+  prefetched.set(`${room.chatId}|${member.slug}`, { at: now, promise });
+}
+/** The lookup the watcher started for this person in this room, once; null when there is none. */
+export function takePrefetched(groupId, slug) {
+  const k = `${groupId}|${slug}`;
+  const p = prefetched.get(k);
+  prefetched.delete(k);
+  return p && Date.now() - p.at <= PREFETCH_TTL_MS ? p.promise : null;
+}
+
 let runner = null;
 /** Replace the one-shot (tests): `fn({ member, question, room, people, prompt }) → { answer, nothing }`. */
 export function configureLookup(fn) { runner = fn; }
@@ -80,7 +106,7 @@ export function lookupPrompt({ member, question, room, people = [], outsiders = 
   return [
     `[PRIVATE LOOKUP — asked in the room "${String(room?.title || room?.chatId || 'the room').slice(0, 60)}"] ${name} asked there, in front of the others, about themselves or something that may be in THEIR OWN memory — who they are, where they are, what they prefer, the conversations you have had with them. Answer from what you know of them, for the room to read.`,
     '',
-    `THE QUESTION, as ${name} asked it: ${String(question).slice(0, 500)}`,
+    `THE QUESTION, as ${name} asked it (with what it follows in the room, when it is a follow-up): ${String(question).slice(0, 1500)}`,
     `PEOPLE IN THE ROOM besides ${name}: ${others.length ? others.map(p => (out.has(p) ? `${p} (not on the team)` : p)).join(', ') : 'nobody else recorded'}`,
     '',
     'RULES:',
