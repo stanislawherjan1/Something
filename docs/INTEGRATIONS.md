@@ -109,6 +109,7 @@ it works. `open` = no auth at all (keyless hosted server, instant-activate).
 | **Cloudflare** | Workers, KV, R2, D1 | OAuth |
 | **Crypto.com** | Crypto prices and charts | open |
 | **DeepL** | Translate, rewrite, glossaries | OAuth |
+| **ElevenLabs** | Voice agents, phone numbers, call transcripts, speech generation | OAuth (client ID metadata document) |
 | **Fathom** | Meeting recordings, transcripts and summaries (read-only) | OAuth |
 | **Fireflies** | Meeting transcripts, summaries and action items | OAuth |
 | **Firecrawl** | Scrape, crawl, and search the web | OAuth |
@@ -304,6 +305,18 @@ differ and still works, because broker fetches use the open listener).
   catalog rather than shipped broken; the routes forward are the provider's own
   developer app with a registered redirect (a bring-your-own-credentials
   integration, like Shopify/Meta) or the provider allow-listing the domain.
+- **No DCR at all, but client ID metadata documents** (MCP SEP-991): some
+  authorization servers (ElevenLabs) take a URL as the `client_id` and fetch the
+  client's metadata from it instead of offering registration. An entry opts in with
+  `mcp.clientIdMetadata: true`; the broker then offers
+  `https://<this domain>/api/public/oauth/client-metadata.json` as its client id, and
+  the SDK uses it only when the server's metadata advertises
+  `client_id_metadata_document_supported` — otherwise that entry registers
+  dynamically like every other. The document (served by workspace-api, the one exact
+  path nginx exposes for it, GET only) holds the client name, this domain's callback
+  as the single redirect URI, and the public-client grant shape; nothing else.
+  Entries without the flag are untouched. Behaviour test:
+  `node lib/oauth-client-metadata.test.mjs`.
 - A cached DCR registration is reused **only if its `redirect_uris` contain the
   redirect this flow will send**; otherwise the broker re-registers and logs
   why (`cached client_id was registered for …, not … — re-registering`). This
@@ -392,6 +405,11 @@ can't slip a `custom` provider through without a host.
   ]
 }
 ```
+
+**Remote MCPs** (`mcp.type: "http"`) take `url`, `name`, `allowedHosts`, and
+optionally `clientIdMetadata: true` for an authorization server without dynamic
+registration that accepts a client ID metadata document (see
+[Remote-MCP one-click OAuth](#remote-mcp-one-click-oauth)).
 
 **Bundle MCPs** — `mcp.services: [{ name, command, args }, ...]` on a
 catalog entry tells the runtime to spawn **multiple** MCP processes from

@@ -204,9 +204,9 @@ A new workspace starts on this memory directly. One that started on the older ca
 
 <br/>
 
-**One-click — sign in, no keys to paste.** Two dozen provider-hosted MCP servers connect with a single popup: sign in, approve, done. No API keys, and nothing for whoever deploys the product to register — the workspace-api OAuth broker registers itself on the fly (Dynamic Client Registration) and completes the flow on the client's own domain.
+**One-click — sign in, no keys to paste.** Two dozen provider-hosted MCP servers connect with a single popup: sign in, approve, done. No API keys, and nothing for whoever deploys the product to register — the workspace-api OAuth broker registers itself on the fly (Dynamic Client Registration, or a client ID metadata document where the provider takes one) and completes the flow on the client's own domain.
 
-> Notion · Stripe · Linear · Airtable · Miro · monday.com · Todoist · Cal.com · Calendly · PayPal · Klaviyo · Mailchimp · Cloudflare · Atlassian (Jira/Confluence) · Sentry · Netlify · Neon · Supabase · Webflow · Zapier · Amplitude · Wix · Firecrawl · Parallel Search · Crypto.com · ClickUp · WordPress.com · DeepL · Typeform · Tally · Granola · Fireflies · Fathom · Otter.ai · Read AI · Krisp
+> Notion · Stripe · Linear · Airtable · Miro · monday.com · Todoist · Cal.com · Calendly · PayPal · Klaviyo · Mailchimp · Cloudflare · Atlassian (Jira/Confluence) · Sentry · Netlify · Neon · Supabase · Webflow · Zapier · Amplitude · Wix · Firecrawl · Parallel Search · Crypto.com · ClickUp · WordPress.com · DeepL · ElevenLabs · Typeform · Tally · Granola · Fireflies · Fathom · Otter.ai · Read AI · Krisp
 
 **Bring your own credentials.** The rest paste a key, token, or file once — encrypted at rest:
 

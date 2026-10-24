@@ -126,22 +126,44 @@ async function authServerFor(serverUrl) {
   return entry;
 }
 
+// Where this deployment publishes its client metadata document (SEP-991
+// URL-based client ids), next to the callback on the same public origin.
+export const CLIENT_METADATA_PATH = '/api/public/oauth/client-metadata.json';
+
+function clientMetadataFor(redirectUrl) {
+  return {
+    client_name: brandedClientName(),
+    redirect_uris: [redirectUrl],
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',   // public client — PKCE carries the proof
+  };
+}
+
+/**
+ * The client metadata document served at CLIENT_METADATA_PATH. Its URL is the
+ * client_id, so a provider that fetches it learns nothing but the name and the
+ * one redirect URI on this deployment's own domain.
+ */
+export function clientMetadataDocument(baseUrl) {
+  const base = baseUrl.replace(/\/$/, '');
+  return { client_id: `${base}${CLIENT_METADATA_PATH}`, ...clientMetadataFor(`${base}/api/integrations/oauth/callback`) };
+}
+
 /**
  * Build an OAuthClientProvider bound to one integration + one redirect URL.
  * `flow` collects side effects (authorize URL, issued state) during auth().
+ * `metadataUrl` is offered only for an entry that opts in with
+ * `mcp.clientIdMetadata: true` (a provider with no dynamic registration, e.g.
+ * ElevenLabs); the SDK uses it only when the authorization server advertises
+ * `client_id_metadata_document_supported`, so every other entry keeps
+ * registering exactly as before.
  */
-function makeProvider(id, redirectUrl, flow) {
+function makeProvider(id, redirectUrl, flow, metadataUrl = null) {
   return {
     get redirectUrl() { return redirectUrl; },
-    get clientMetadata() {
-      return {
-        client_name: brandedClientName(),
-        redirect_uris: [redirectUrl],
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        token_endpoint_auth_method: 'none',   // public client — PKCE carries the proof
-      };
-    },
+    get clientMetadata() { return clientMetadataFor(redirectUrl); },
+    get clientMetadataUrl() { return metadataUrl || undefined; },
     state: () => flow.state,
     // A cached registration is only usable if it was issued FOR THIS redirect.
     // Two ways it drifts: the workspace moves to another domain, and a provider
@@ -154,6 +176,9 @@ function makeProvider(id, redirectUrl, flow) {
     clientInformation: () => {
       const info = readClients()[id];
       if (!info) return undefined;
+      // A URL-based client id is valid exactly while it is this deployment's document.
+      if (metadataUrl && info.client_id === metadataUrl) return info;
+      if (/^https:\/\//.test(info.client_id || '') && !info.redirect_uris) return undefined;
       const uris = Array.isArray(info.redirect_uris) ? info.redirect_uris : [];
       if (uris.includes(redirectUrl)) return info;
       process.stderr.write(
@@ -202,8 +227,9 @@ export async function startAuth(id, baseUrl, { owner = null, reach = 'workspace'
   sweepPending();
 
   const redirectUrl = `${baseUrl.replace(/\/$/, '')}/api/integrations/oauth/callback`;
+  const metadataUrl = cat.mcp.clientIdMetadata === true ? clientMetadataDocument(baseUrl).client_id : null;
   const flow = { state: randomBytes(24).toString('base64url') };
-  const provider = makeProvider(id, redirectUrl, flow);
+  const provider = makeProvider(id, redirectUrl, flow, metadataUrl);
 
   const result = await auth(provider, { serverUrl: cat.mcp.url, fetchFn: proxyFetch });
   if (result !== 'REDIRECT' || !flow.authorizeUrl) {
@@ -215,6 +241,7 @@ export async function startAuth(id, baseUrl, { owner = null, reach = 'workspace'
     owner, reach, access,
     serverUrl:  cat.mcp.url,
     redirectUrl,
+    metadataUrl,
     verifier:   flow.verifier,
     createdAt:  Date.now(),
   });
@@ -241,7 +268,7 @@ export async function handleCallback(state, code) {
   pending.delete(state);
 
   const flow = { state, verifier: flow0.verifier };
-  const provider = makeProvider(flow0.id, flow0.redirectUrl, flow);
+  const provider = makeProvider(flow0.id, flow0.redirectUrl, flow, flow0.metadataUrl);
   const result = await auth(provider, { serverUrl: flow0.serverUrl, authorizationCode: code, fetchFn: proxyFetch });
   if (result !== 'AUTHORIZED' || !flow.tokens) {
     throw new Error(`token exchange failed for ${flow0.id}: ${result}`);

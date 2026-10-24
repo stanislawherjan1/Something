@@ -412,6 +412,16 @@ export default function integrationsRouter() {
     }
   });
 
+  // Public: a provider without dynamic registration fetches this document by
+  // its URL (which is the client_id) while the person is on its consent page.
+  // It holds only the client name and this deployment's redirect URI; nginx
+  // exposes this one path without a session (frontend/nginx.conf).
+  router.get(oauth.CLIENT_METADATA_PATH.replace(/^\/api/, ''), (req, res) => {
+    const host = process.env.FRONTEND_DOMAIN || req.get('x-forwarded-host') || req.get('host');
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(oauth.clientMetadataDocument(`https://${host}`));
+  });
+
   // No requireAdmin: the provider's redirect carries no session guarantee we
   // control. The single-use `state` param — minted in startAuth, bound to one
   // pending flow, 10-min TTL — is what authenticates this request (plus PKCE
