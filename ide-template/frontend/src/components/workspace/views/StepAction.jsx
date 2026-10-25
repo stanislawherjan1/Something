@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Download, Copy, Check, Loader2 } from 'lucide-react';
 import TileBanner from './TileBanner.jsx';
 import { useBranding, BOT_FALLBACK } from '../identity';
+import { isStockAvatar } from '@/lib/avatar';
 
 const btn = 'inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99] disabled:opacity-60';
 
@@ -84,11 +85,12 @@ export default function StepAction({ label, url, filename = '', copy = false, re
   );
 }
 
-// The bot's face with the screens' dot-grid effect, as a picture to upload to
-// Slack or Telegram: the plain upload was offered before, and the bot looked
-// like someone else there. Drawn by the same component and settings as
-// BotPicture, off screen at 512 px, with the dot pitch scaled so it reads as
-// the small avatar does, on the same paper.
+// The bot's face as a picture to upload to Slack or Telegram, the way the
+// screens show it: a stock picture with the dot-grid effect (the plain stock
+// image looked like someone else there), drawn by the same component and
+// settings as BotPicture, off screen at 512 px, with the dot pitch scaled so
+// it reads as the small avatar does, on the same paper; an uploaded picture
+// as it is, a 512 px square from its middle.
 const EXPORT_PX = 512;
 const AVATAR_PX = 64;     // the in-app size whose look is kept
 const PAPER = '#efede7';
@@ -97,6 +99,20 @@ function BotPictureDownload({ label, filename }) {
   const [state, setState] = useState(null);
   const taken = useRef(false);   // one download per click: the banner may redraw (a resize)
   const finish = (s) => { setState(s); setTimeout(() => setState(null), s === 'done' ? 2500 : 3500); };
+  const src = botAvatarUrl || BOT_FALLBACK;
+  const stock = isStockAvatar(src);
+  const save = (out) => {
+    out.toBlob((blob) => {
+      if (!blob) return finish('failed');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename || 'bot.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      finish('done');
+    }, 'image/png');
+  };
+  // A stock picture: the halftone, as drawn on screen.
   const onDrawn = (canvas) => {
     if (taken.current) return;
     taken.current = true;
@@ -106,21 +122,30 @@ function BotPictureDownload({ label, filename }) {
       const c = out.getContext('2d');
       c.fillStyle = PAPER; c.fillRect(0, 0, out.width, out.height);
       c.drawImage(canvas, 0, 0);
-      out.toBlob((blob) => {
-        if (!blob) return finish('failed');
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename || 'bot.png';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-        finish('done');
-      }, 'image/png');
+      save(out);
     } catch { finish('failed'); }
+  };
+  // An uploaded picture goes out as it is: a square, cropped to its middle.
+  const drawUploaded = () => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const out = document.createElement('canvas');
+        out.width = EXPORT_PX; out.height = EXPORT_PX;
+        const c = out.getContext('2d');
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        c.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, EXPORT_PX, EXPORT_PX);
+        save(out);
+      } catch { finish('failed'); }
+    };
+    img.onerror = () => finish('failed');
+    img.src = src;
   };
   const start = () => {
     taken.current = false;
     setState('busy');
     setTimeout(() => setState((s) => (s === 'busy' ? 'failed' : s)), 10000);
+    if (!stock) drawUploaded();
   };
   return (
     <>
@@ -130,9 +155,9 @@ function BotPictureDownload({ label, filename }) {
           : <Download className="size-3.5" strokeWidth={1.75} />}
         {state === 'done' ? 'Downloaded' : state === 'failed' ? 'Could not draw it — try again' : label}
       </button>
-      {state === 'busy' && createPortal(
+      {state === 'busy' && stock && createPortal(
         <div aria-hidden="true" style={{ position: 'fixed', left: -100000, top: 0, width: EXPORT_PX, height: EXPORT_PX, pointerEvents: 'none' }}>
-          <TileBanner image={botAvatarUrl || BOT_FALLBACK} mode="dark" center plain step={1.7 * (EXPORT_PX / AVATAR_PX)} scale={1} seed="bot" paper onDrawn={onDrawn} className="!h-full" />
+          <TileBanner image={src} mode="dark" center plain step={1.7 * (EXPORT_PX / AVATAR_PX)} scale={1} seed="bot" paper onDrawn={onDrawn} className="!h-full" />
         </div>,
         document.body,
       )}
