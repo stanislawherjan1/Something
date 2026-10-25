@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Download, Copy, Check, Loader2 } from 'lucide-react';
 import TileBanner from './TileBanner.jsx';
 import { useBranding, BOT_FALLBACK } from '../identity';
-import { isStockAvatar } from '@/lib/avatar';
+import { wearsStockPicture } from '@/lib/avatar';
 
 const btn = 'inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99] disabled:opacity-60';
 
@@ -95,12 +95,13 @@ const EXPORT_PX = 512;
 const AVATAR_PX = 64;     // the in-app size whose look is kept
 const PAPER = '#efede7';
 function BotPictureDownload({ label, filename }) {
-  const { botAvatarUrl } = useBranding();
+  const branding = useBranding();
+  const { botAvatarUrl } = branding;
   const [state, setState] = useState(null);
   const taken = useRef(false);   // one download per click: the banner may redraw (a resize)
   const finish = (s) => { setState(s); setTimeout(() => setState(null), s === 'done' ? 2500 : 3500); };
   const src = botAvatarUrl || BOT_FALLBACK;
-  const stock = isStockAvatar(src);
+  const stock = wearsStockPicture(branding);
   const save = (out) => {
     out.toBlob((blob) => {
       if (!blob) return finish('failed');

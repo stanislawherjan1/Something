@@ -438,8 +438,11 @@ async function apiWrite(url, opts = {}) {
 
 function BotModal({ branding, onClose, canEdit = true }) {
   // Which preset the bot is wearing right now, or null when it wears something
-  // else (an uploaded image, or the neutral fallback).
+  // else (an uploaded image, or the neutral fallback). The server says which
+  // (a preset is copied into the uploaded picture's file, so the address alone
+  // never told); the demo serves presets by their own path.
   const currentPresetIdx = (() => {
+    if (Number.isInteger(branding?.botAvatarPreset)) return branding.botAvatarPreset - 1;
     const m = /\/avatars\/(\d+)\.png/.exec(branding?.botAvatarUrl || '');
     return m ? Number(m[1]) - 1 : null;
   })();
