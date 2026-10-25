@@ -80,6 +80,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "Optional teammate SLUG to RELAY to (cross-user). Omit to reply to " +
               "the current web user. Must be a real slug from the TEAM roster.",
           },
+          recipient_name: {
+            type: 'string',
+            description:
+              "With `recipient`: the person's name as the user said it (\"Stanislaw\"). " +
+              "A slug can look like someone else's name; when this name is plainly another " +
+              "teammate's, nothing is sent and the result gives the right slug.",
+          },
           channel: {
             type: 'string',
             enum: ['telegram', 'slack', 'web'],
@@ -129,6 +136,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // The SENDER is this turn's actor, set by claude.js as IDE_ACTOR_SLUG — wsapi
     // resolves it to a display name + uses it for attribution.
     const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
+    const recipientName = typeof args?.recipient_name === 'string' ? args.recipient_name.trim() : '';
     // Explicit delivery channel override ('telegram' | 'web'); '' = recipient's
     // own preference decides.
     const channel = (args?.channel === 'telegram' || args?.channel === 'slack' || args?.channel === 'web') ? args.channel : '';
@@ -155,9 +163,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           method: 'POST',
           // The turn's token is what proves `from`; wsapi ignores the claim without it.
           headers: { 'Content-Type': 'application/json', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
-          body: JSON.stringify({ title, body, recipient, from, fromSession, channel }),
+          body: JSON.stringify({ title, body, recipient, recipientName, from, fromSession, channel }),
         });
         const sJson = await sRes.json().catch(() => ({}));
+        // The slug is someone other than the person named: nothing is sent.
+        if (sRes.status === 409) return { content: [{ type: 'text', text: sJson.error || 'That slug is someone else; nothing was sent.' }], isError: true };
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
         if (sJson?.delivery) delivery = sJson.delivery;
         if (sJson?.recipientName) sJsonName = String(sJson.recipientName);

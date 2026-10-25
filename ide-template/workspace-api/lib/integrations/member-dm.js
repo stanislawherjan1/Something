@@ -206,10 +206,17 @@ function defaultRunTurn({ member, body, sessionId, surface }) {
         sessionId: sessionId || undefined,
         systemNote: SURFACES[surfaceOf(surface)].note,
         onText: (t) => { out += t; },
-        onToolStart: (info) => {
-          if (/web_send_message/.test(String(info?.name || ''))) sentItself = true;
+        onToolStart: () => {
           if (out.trim()) lastSegment = out;
           out = '';
+        },
+        // A message to the person asking ("send it to me on Slack") is the
+        // answer, sent by the model itself; a relay to someone else is not —
+        // its confirmation to the person asking was dropped with it.
+        onToolInput: ({ name, input }) => {
+          if (!/web_send_message/.test(String(name || ''))) return;
+          const to = String(input?.recipient || '').trim();
+          if (!to || to === member.slug) sentItself = true;
         },
         onToolEnd: () => {}, onImage: () => {},
         // A non-zero exit reports through onError only (no onDone follows).

@@ -91,6 +91,15 @@ ok('...and the web toast is not doubled when the named surface landed', r.body.d
 sent.length = 0;
 r = await post('/chat-session', { recipient: 'stan', body: 'and the budget?' }, { 'X-IDE-Turn': annTurn });
 ok('the relay says who it reached, by name (a slug can look like someone else\'s name)', typeof r.body.recipientName === 'string' && r.body.recipientName.length > 0 && r.body.recipient === 'stan', r.body);
+sent.length = 0;
+r = await post('/chat-session', { recipient: 'stan', recipientName: 'Bob', body: 'for Bob' }, { 'X-IDE-Turn': annTurn });
+ok('a slug that is plainly someone other than the person named is refused, unsent, with the right slug', r.status === 409 && /"stan" is Stan, not Bob/.test(r.body.error) && /slug bob/.test(r.body.error) && sent.length === 0, r.body);
+r = await post('/chat-session', { recipient: 'stan', recipientName: 'stan', body: 'hi' }, { 'X-IDE-Turn': annTurn });
+ok('...a name that fits goes through', r.status === 200 && r.body.ok, r.body);
+r = await post('/chat-session', { recipient: 'stan', recipientName: 'the boss', body: 'hi' }, { 'X-IDE-Turn': annTurn });
+ok('...and a name that fits nobody (a nickname) is not second-guessed', r.status === 200 && r.body.ok, r.body);
+sent.length = 0;
+r = await post('/chat-session', { recipient: 'stan', body: 'and the budget?' }, { 'X-IDE-Turn': annTurn });
 ok('a relay with no channel follows the recipient\'s preference (Stan prefers Slack)', r.body.delivery?.slack === true && r.body.delivery.slackRequested === false && r.body.delivery.webToast === true, r.body);
 sent.length = 0;
 r = await post('/chat-session', { recipient: 'bob', body: 'hi bob', channel: 'slack' }, { 'X-IDE-Turn': annTurn });

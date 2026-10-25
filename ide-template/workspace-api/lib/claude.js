@@ -127,6 +127,7 @@ export function turnEnv(env) {
  *   onText(delta)               — text_delta from the assistant
  *   onToolStart({id, name})     — assistant invoked a tool (chip should appear)
  *   onToolEnd({id, ok, error?}) — tool finished; ok=false when claude reported is_error
+ *   onToolInput({id, name, input}) — the call's arguments, once they have streamed in
  *   onImage({mediaType, data})  — image returned by a tool (e.g. Playwright
  *                                 screenshot); data is base64 without the
  *                                 `data:` prefix.
@@ -369,7 +370,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -507,7 +508,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const roster = mates.length
       ? ` Your teammates (DIFFERENT people): ${mates.map(fmtMate).join(', ')}. ` +
         `When the user names one of them, they mean that other person — not themselves. ` +
-        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list — find the person by their NAME, then take the slug written beside it: a slug can look like another person's name. ` +
+        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list — find the person by their NAME, then take the slug written beside it (a slug can look like another person's name), and pass recipient_name with the name the user said. ` +
         `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram" or "on Slack": there is NO separate Telegram or Slack tool on this surface. By default the recipient gets the message on whichever surfaces THEY prefer (their workspace always; Slack when they are on it, unless they chose otherwise; Telegram if that's their preference). But if the user EXPLICITLY names a surface ("on Telegram", "on Slack", "in their workspace"), pass channel="telegram", channel="slack" or channel="web" to web_send_message to honor it — that OVERRIDES the recipient's default. (The same applies to messaging the CURRENT user: "message me on Slack" → web_send_message with channel="slack" and no recipient.) ` +
         `NEVER tell ${me} you sent or passed something on unless you ACTUALLY called web_send_message and it returned success — do not narrate a send you didn't make. The tool result says WHERE it landed; relay that truthfully (if it says web only, tell ${me} it's in the teammate's workspace, don't claim Telegram). ` +
         `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer. ` +
@@ -667,6 +668,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // is looking at that tab already, the tool pill says the bot looked too.
   // Genuine tool images (Playwright screenshots) still show.
   const toolNamesById = new Map();
+  const toolInputs = new Map();   // block index → { id, name, json } while a call's arguments stream
   const shouldForwardImage = (toolUseId) => {
     const name = toolNamesById.get(toolUseId);
     return name !== 'Read' && name !== 'mcp__workspace-api__tab_screenshot';
@@ -807,9 +809,26 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
         continue;
       }
 
+      // A call's arguments stream in after its start; collected per block and
+      // handed over whole (a DM turn tells a relay to someone else from a
+      // message to the person asking by the recipient it names).
+      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'input_json_delta' && toolInputs.has(ev.index)) {
+        toolInputs.get(ev.index).json += String(ev.delta.partial_json || '');
+        continue;
+      }
+      if (ev?.type === 'content_block_stop' && toolInputs.has(ev.index)) {
+        const t = toolInputs.get(ev.index);
+        toolInputs.delete(ev.index);
+        let input = {};
+        try { input = t.json ? JSON.parse(t.json) : {}; } catch { input = {}; }
+        try { onToolInput?.({ id: t.id, name: t.name, input }); } catch { /* the caller's problem */ }
+        continue;
+      }
+
       // Tool invocation — surface as a chip in the UI.
       if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
         toolNamesById.set(ev.content_block.id, ev.content_block.name);
+        if (onToolInput) toolInputs.set(ev.index, { id: ev.content_block.id, name: ev.content_block.name, json: '' });
         onToolStart?.({
           id:   ev.content_block.id,
           name: ev.content_block.name,

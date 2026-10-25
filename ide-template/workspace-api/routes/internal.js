@@ -41,6 +41,13 @@ function resolveMember(slug) {
   if (typeof slug !== 'string' || !/^[a-z0-9-]+$/.test(slug)) return null;
   return teamList().find(m => m.slug === slug) || null;
 }
+// Does a name as the user said it ("Stanislaw", "tom") fit this person? Every
+// word of it is a word of their display name, accents aside.
+const nameWords = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+function nameFits(name, member) {
+  const said = nameWords(name), theirs = new Set(nameWords(member?.displayName));
+  return said.length > 0 && said.every(w => theirs.has(w));
+}
 
 // Cross-surface relay threading: the recipient's existing session paired with
 // the sender (relayPeers[senderSlug]), most-recently active. Lets a reply that
@@ -434,6 +441,16 @@ export default function internalRouter() {
       // admin's chat, preserving the legacy proactive-bot + cross-surface tunnel
       // (within one user). A valid recipient slug → that teammate's chat.
       const target = resolveMember(recipient);
+      // A slug can look like another person's name: the CEO's was "stanislaw",
+      // and "tell Stanislaw…" went to him. With the name the user said beside
+      // the slug, a slug that is plainly someone else is refused, unsent.
+      const saidName = typeof req.body?.recipientName === 'string' ? req.body.recipientName.trim() : '';
+      if (target && saidName && !nameFits(saidName, target)) {
+        const meant = teamList().filter(m => nameFits(saidName, m));
+        if (meant.length) {
+          return res.status(409).json({ ok: false, error: `"${recipient}" is ${target.displayName || target.slug}, not ${saidName}. ${saidName} is ${meant.map(m => `${m.displayName} (slug ${m.slug})`).join(' or ')}. Nothing was sent; call again with the right slug.` });
+        }
+      }
       // Same precedence as /notify: explicit recipient → originator (own
       // proactive/cross-surface message) → operator/admin (Telegram + reminders
       // act as the operator). Keeps a Telegram "send to my web UI" in the
