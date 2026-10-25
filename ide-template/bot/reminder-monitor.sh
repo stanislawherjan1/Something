@@ -334,7 +334,9 @@ let r = {};
 try { r = JSON.parse(process.env.RESP || '{}'); } catch { process.exit(2); }
 if (r.skipped) process.exit(0);
 const rows = Array.isArray(r.delivered) ? r.delivered : [];
-const dead = rows.filter(d => !d.web && !d.telegram).map(d => d.slug);
+// Slack counts: a Slack-only delivery once read as "reached nobody", so the
+// reminder was sent again, escalated to the operator and finally parked.
+const dead = rows.filter(d => !d.web && !d.telegram && !d.slack).map(d => d.slug);
 if (!rows.length) { process.stderr.write('no recipient resolved'); process.exit(3); }
 if (dead.length)  { process.stderr.write('reached nobody: ' + dead.join(',')); process.exit(3); }
 NODE

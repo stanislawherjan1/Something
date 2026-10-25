@@ -53,5 +53,15 @@ ok('team mode (two people): the recipients ride along', r.byId('r_tg')?.[2] === 
 r = run({ teamMode: true, roster: one });
 ok('team mode switched on: kept even for one person', r.byId('r_slack')?.[2] === 'stan', r.byId('r_slack'));
 
+// ─── the delivery verdict: what counts as having reached someone ────────────
+{
+  const v = sh.match(/RESP="\$payload" node - << 'NODE'\n([\s\S]*?)\nNODE/);
+  ok('the delivery verdict block is found in the monitor', !!v);
+  const verdict = (resp) => spawnSync(process.execPath, ['-'], { input: v ? v[1] : '', encoding: 'utf8', env: { ...process.env, RESP: JSON.stringify(resp) } }).status;
+  ok('a reminder that reached Slack alone is delivered, not retried and escalated', verdict({ ok: true, delivered: [{ slug: 'nik', web: false, telegram: false, slack: true }] }) === 0);
+  ok('...one that reached nobody is not', verdict({ ok: true, delivered: [{ slug: 'nik', web: false, telegram: false, slack: false }] }) === 3);
+  ok('...and web or Telegram still count', verdict({ ok: true, delivered: [{ slug: 'a', web: true }, { slug: 'b', telegram: true }] }) === 0);
+}
+
 console.log(`reminder-monitor-due: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

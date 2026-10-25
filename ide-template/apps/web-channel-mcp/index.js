@@ -149,6 +149,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // → open conversation wiring goes inert.
       let sessionId = null;
       let delivery = null;
+      let sJsonName = null;
       try {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
@@ -159,6 +160,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const sJson = await sRes.json().catch(() => ({}));
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
         if (sJson?.delivery) delivery = sJson.delivery;
+        if (sJson?.recipientName) sJsonName = String(sJson.recipientName);
       } catch (_) { /* swallow — fall through to notify */ }
 
       // Fire the web toast UNLESS this went to Telegram-only by explicit request
@@ -196,18 +198,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // instead of promising a channel that didn't happen. Covers relay + self.
       const d = delivery || {};
       const who = recipient ? 'their' : 'your';
+      // Slack is reported like Telegram: the bot once said "workspace" for a
+      // message that had also reached the person's Slack, and could not tell.
+      const also = d.slack ? ` AND ${who} Slack` : '';
       let where;
-      if (d.telegram && d.webToast === false) {
-        where = `Delivered to ${who} Telegram.`;
+      if ((d.telegram || d.slack) && d.webToast === false) {
+        where = `Delivered to ${who} ${[d.telegram ? 'Telegram' : null, d.slack ? 'Slack' : null].filter(Boolean).join(' and ')}.`;
       } else if (d.telegram) {
-        where = `Delivered to ${who} workspace AND ${who} Telegram.`;
+        where = `Delivered to ${who} workspace AND ${who} Telegram${also}.`;
       } else if (d.telegramRequested && d.recipientLinkedTelegram === false) {
         where = `Delivered to ${who} workspace. Telegram was requested but ${recipient ? 'they have' : 'you have'} NOT linked Telegram, so it did NOT reach Telegram; tell the user that plainly, don't claim it went to Telegram.`;
       } else if (d.telegramRequested) {
         where = `Delivered to ${who} workspace. Telegram was requested but the Telegram send did not go through; say it's in the workspace, not on Telegram.`;
+      } else if (d.slackRequested && d.recipientLinkedSlack === false) {
+        where = `Delivered to ${who} workspace. Slack was requested but ${recipient ? 'they are' : 'you are'} NOT linked to Slack, so it did NOT reach Slack; say so plainly.`;
+      } else if (d.slackRequested && !d.slack) {
+        where = `Delivered to ${who} workspace. Slack was requested but the Slack send did not go through; say it's in the workspace, not on Slack.`;
       } else {
-        where = `Delivered to ${who} workspace.`;
+        where = `Delivered to ${who} workspace${also}.`;
       }
+      // Who it reached, by name: check it is the person the user meant.
+      if (recipient && delivery && sJsonName) where = `To ${sJsonName} (${recipient}): ${where} If ${sJsonName} is not who the user meant, say so at once.`;
       return {
         content: [{
           type: 'text',

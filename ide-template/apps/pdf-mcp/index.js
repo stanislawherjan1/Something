@@ -275,7 +275,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       `Rendered PDF → ${out}\n` +
       `${pages != null ? `${pages} page${pages === 1 ? '' : 's'}, ` : ''}${kb} KB.\n` +
       `Next: call preview_pdf on this path to SEE it before you send it. ` +
-      `To deliver it to a Telegram group, emit a [[SEND_FILE ${out}]] marker; in a 1:1 DM, use the Telegram sendDocument tool. ` +
+      `To deliver it into a room (a Telegram group, a Slack channel) or a Slack direct message, emit a [[SEND_FILE ${out}]] marker; in a Telegram DM, attach it with the reply tool's files. ` +
       `Do NOT tell anyone you sent a file unless you actually invoked one of those.`,
     );
   }

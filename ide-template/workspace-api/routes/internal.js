@@ -603,6 +603,9 @@ export default function internalRouter() {
         ok: true,
         id: destId,
         recipient: actor,
+        // Named, so the sender's turn can see who it reached: a slug can look
+        // like another person's name ("stanislaw" was the CEO's, not Stanislaw's).
+        recipientName: deliverTo?.displayName || null,
         relay: isRelay,
         delivery: {
           web: true,

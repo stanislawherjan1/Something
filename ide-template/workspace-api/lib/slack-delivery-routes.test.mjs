@@ -90,6 +90,7 @@ ok('a relay with channel=slack lands in the recipient\'s Slack DM', r.status ===
 ok('...and the web toast is not doubled when the named surface landed', r.body.delivery.webToast === false);
 sent.length = 0;
 r = await post('/chat-session', { recipient: 'stan', body: 'and the budget?' }, { 'X-IDE-Turn': annTurn });
+ok('the relay says who it reached, by name (a slug can look like someone else\'s name)', typeof r.body.recipientName === 'string' && r.body.recipientName.length > 0 && r.body.recipient === 'stan', r.body);
 ok('a relay with no channel follows the recipient\'s preference (Stan prefers Slack)', r.body.delivery?.slack === true && r.body.delivery.slackRequested === false && r.body.delivery.webToast === true, r.body);
 sent.length = 0;
 r = await post('/chat-session', { recipient: 'bob', body: 'hi bob', channel: 'slack' }, { 'X-IDE-Turn': annTurn });
