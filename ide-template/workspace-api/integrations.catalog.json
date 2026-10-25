@@ -332,19 +332,19 @@
       "process": "slack-listener", "teamWide": true,
       "fields": [
         {
-          "name": "SLACK_APP_TOKEN",
-          "label": "App-level token",
-          "type": "secret",
-          "placeholder": "xapp-...",
-          "helper": "Starts with \"xapp-\". Basic Information → App-Level Tokens → Generate, with the connections:write scope."
-        },
-        {
           "name": "SLACK_BOT_TOKEN",
           "label": "Bot token",
           "type": "secret",
           "optional": true,
           "placeholder": "xoxb-...",
           "helper": "Starts with \"xoxb-\". OAuth & Permissions → Bot User OAuth Token, after installing the app. Leave it empty to install from here with the client id and secret instead."
+        },
+        {
+          "name": "SLACK_APP_TOKEN",
+          "label": "App-level token",
+          "type": "secret",
+          "placeholder": "xapp-...",
+          "helper": "Starts with \"xapp-\". Basic Information → App-Level Tokens → Generate, with the connections:write scope."
         },
         {
           "name": "SLACK_CLIENT_ID",
@@ -381,7 +381,7 @@
         },
         {
           "title": "Create the connection token",
-          "body": "In the left menu open **Basic information** → scroll to **App-Level Tokens** → **Generate Token and Scopes**. Give it any name, **Add Scope** → `connections:write` → **Generate**. The next window shows the token (it starts with `xapp-`): **Copy** it into **App-level token** below, then **Save**. To see it again later, click its name under **App-Level Tokens**. It keeps the bot connected to Slack; your server needs no public address for it. Nothing else on that page is needed — leave **Client id** and **Client secret** empty."
+          "body": "In the left menu open **Basic information** → scroll to **App-Level Tokens** → **Generate Token and Scopes**. Give it any name, **Add Scope** → `connections:write` → **Generate**. The next window shows the token (it starts with `xapp-`): **Copy** it into **App-level token** below, then **Save**. To see it again later, click its name under **App-Level Tokens**. It keeps the bot connected to Slack; your server needs no public address for it. On the same page, under **App Credentials**, copy the **Client ID** and **Client Secret** into **Client id** and **Client secret** below: with them a later reinstall is one button here."
         },
       {
         "title": "Give it the bot's face (optional)",
