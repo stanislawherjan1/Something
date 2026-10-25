@@ -15,6 +15,7 @@ const ROOT = mkdtempSync(join(tmpdir(), 'private-lookup-'));
 process.env.PROJECT_DIR = ROOT;
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log(`  FAIL: ${name}${extra !== undefined ? `\n        ${JSON.stringify(extra).slice(0, 500)}` : ''}`); } };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
   { email: 'nora@example.test', role: 'admin', slug: 'nora', displayName: 'Nora', telegramChatId: '1110001', slackUserId: 'U0NORA001', addedAt: '2026-09-01T00:00:00Z' },
@@ -83,21 +84,21 @@ ok('the memory reads are not denied', !PL.ALLOWED_TOOLS.some(n => denied.has(n))
 // ─── the group prompt offers the tool to a roster member only ────────────────
 const ctx = [{ role: 'user', message_id: '1', who: 'Nora', text: 'what did we agree with Harbor Glaze?' }];
 const asMember = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what did we agree with Harbor Glaze?' });
-ok('a roster member\'s turn is told about ask_my_memory, for their own matters only', asMember.actor === 'nora' && /THEIR OWN MEMORY, SAID HERE/.test(asMember.message) && /ask_my_memory/.test(asMember.message) && /that person's memory is never reachable from here, whoever asks/.test(asMember.message));
+ok('a roster member\'s turn is told about ask_my_memory, for their own matters only', asMember.actor === 'nora' && /THEIR OWN MEMORY, SAID HERE/.test(told(asMember)) && /ask_my_memory/.test(told(asMember)) && /that person\'s memory is never asked from here, whoever asks/.test(told(asMember)));
 const asStranger = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', from_id: '9999999', who: 'Someone', text: 'what did we agree?' });
-ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/ask_my_memory/.test(asStranger.message));
-ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(asMember.message) && /when they ask again, say it here, in full/.test(asMember.message) && /never covers anything about another person/.test(asMember.message));
-ok('...an unknown sender is not', !/THEIR OWN THINGS/.test(asStranger.message));
-ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(asMember.message) && !/Time zone:/.test(asMember.message));
-ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /Your FIRST step for this message/.test(asMember.message) && /never when anyone asks about ANOTHER person/.test(asMember.message));
-ok('...and "not on record" is never said before it has returned', /before it has returned/.test(asMember.message));
-ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(asMember.message) && /even when it touches private things: answer it here/.test(asMember.message) && !/their personal data\), emit/.test(asMember.message));
-ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(asMember.message));
+ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/your first step is ask_my_memory/.test(asStranger.message));
+ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(told(asMember)) && /when they ask again, say it here, in full/.test(told(asMember)) && /never covers anything about another person/.test(told(asMember)));
+ok('...an unknown sender is not', !/is on the team/.test(asStranger.message));
+ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(told(asMember)) && !/Time zone:/.test(told(asMember)));
+ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /your first step is ask_my_memory/.test(asMember.message) && /Your FIRST step for such a message/.test(told(asMember)) && /never when anyone asks about ANOTHER person/.test(told(asMember)));
+ok('...and "not on record" is never said before it has returned', /before it has returned/.test(told(asMember)));
+ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(told(asMember)) && /even when it touches private things: answer it here/.test(told(asMember)) && !/their personal data\), emit/.test(told(asMember)));
+ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(told(asMember)));
 {
   const guestRoom = groupTurnParams(getGroup('-100888'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what is my door code?' });
-  ok('secrets are the one exception in every room, even when their owner insists: they go to the DM', /ONE EXCEPTION, in every room/.test(guestRoom.message) && /ONE EXCEPTION, in every room/.test(asMember.message) && /even when its owner insists/.test(asMember.message) && /send it to their DM/.test(asMember.message));
+  ok('secrets are the one exception in every room, even when their owner insists: they go to the DM', /ONE EXCEPTION, in every room/.test(told(guestRoom)) && /ONE EXCEPTION, in every room/.test(told(asMember)) && /even when its owner insists/.test(told(asMember)) && /send it to their DM/.test(told(asMember)));
 }
-ok('a secret that is not the asker\'s is not sent anywhere and no DM is promised', /When it is not theirs/.test(asMember.message) && /promise no DM/.test(asMember.message));
+ok('a secret that is not the asker\'s is not sent anywhere and no DM is promised', /When it is not theirs/.test(told(asMember)) && /promise no DM/.test(told(asMember)));
 
 // the exchange a short follow-up belongs to
 {
@@ -143,10 +144,22 @@ ok('a secret that is not the asker\'s is not sent anywhere and no DM is promised
   ok('the accounts one-shot holds none of workspace-api\'s tools', all.every(n => deniedC.has(n)), all.filter(n => !deniedC.has(n)));
   ok('the memory one-shot cannot ask the accounts', denied.has('ask_my_connections'));
   ok('someone with no account of their own: nothing runs', (await PL.askMyConnections({ member: { slug: 'mara' }, question: 'x', room: getGroup('-100777') })).none === true);
-  ok('a member with none is still told others\' accounts are not connected for this room, never that they do not exist', /not connected for this room/.test(asMember.message) && !/THEIR OWN ACCOUNTS/.test(asMember.message));
+  ok('a member with none is still told others\' accounts are not connected for this room, never that they do not exist', /isn't connected in this room/.test(told(asMember)) && !/for themselves \(THEIR OWN ACCOUNTS\)/.test(asMember.message));
 }
 
-ok('the private fence is unchanged', /NO private space is reachable/.test(asMember.message) && asMember.groupContext === true);
+// ─── round 2: held back, not "nothing"; memory only; reasons ─────────────────
+ok('PRIVATE is held back for the room, never "nothing"', PL.parseAnswer('PRIVATE').private === true && !PL.parseAnswer('PRIVATE').nothing && !PL.parseAnswer('PRIVATE').answer);
+ok('the one-shot answers PRIVATE for what they asked to keep quiet, never NOTHING', /reply with exactly: PRIVATE/.test(prompt) && /Never answer NOTHING for something you hold back/.test(prompt));
+ok('...and never speaks about tools or whether something is connected', /Never say anything about tools, integrations or services/.test(prompt));
+ok('a failure may carry its reason, a bare one none', PL.parseAnswer('FAILED: the project is paused').reason === 'the project is paused' && PL.parseAnswer('FAILED').reason === undefined && PL.parseAnswer('FAILED').failed === true);
+ok('the accounts one-shot says what failed, never a key', /reply with FAILED: and what failed/.test(PL.connectionsPrompt({ member: nora, question: 'x', room: getGroup('-100777'), labels: ['Supabase'] })));
+ok('the room turn is told a private answer is offered in the DM, never "not on record"', /When it says the answer is private, never say it is not on record/.test(told(asMember)));
+ok('...and that what the memory one-shot says about tools does not count', /what it says about tools or integrations does not count/.test(told(asMember)));
+ok('declining is gentle: who to ask, never whose it is or how memory works', /DECLINING, GENTLY/.test(told(asMember)) && /never "not yours"/.test(told(asMember)));
+ok('the rules are the system prompt, not the room session: the message carries the conversation and the sender', /GROUP MANNERS/.test(asMember.systemNote) && !/GROUP MANNERS/.test(asMember.message) && asMember.message.length < 1500, asMember.message.length);
+ok('recall searches what was asked, not the rules', asMember.recallQuery === 'what did we agree with Harbor Glaze?');
+
+ok('the private fence is unchanged', /NO private space is reachable/.test(told(asMember)) && asMember.groupContext === true);
 
 console.log(`private-lookup: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

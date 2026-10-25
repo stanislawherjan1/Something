@@ -117,6 +117,20 @@ ok('the DM turn can attach a file into its conversation', uploads.length === 1 &
 r = await handle(dm({ ts: '7.1', thread_ts: '7.0', text: 'in a thread', files: [{ id: 'F1', name: 'notes.txt', url_private: 'https://files.slack.com/f/notes.txt' }] }));
 await r.done;
 ok('a reply in a thread stays in that thread', posted.at(-1).thread_ts === '7.0');
+{
+  const now = Date.now(), sec = (ago) => String((now - ago) / 1000);
+  const fake = { conversationsHistory: async () => [
+    { ts: sec(3 * 86400_000), text: 'top-level, no thread' },
+    { ts: sec(2 * 86400_000), thread_ts: sec(2 * 86400_000), reply_count: 3, latest_reply: sec(2 * 86400_000 - 60_000), text: 'older conversation' },
+    { ts: sec(5 * 3600_000), thread_ts: sec(5 * 3600_000), reply_count: 2, latest_reply: sec(4 * 3600_000), text: 'newest conversation' },
+  ] };
+  const got = await L.recoverPane('U0LATE001', 'D9', { api: fake }, now);
+  ok('with no pane on record, the newest conversation in their DM is found and kept', got?.thread_ts === sec(5 * 3600_000) && L.dmPlace('U0LATE001', now)?.thread_ts === sec(5 * 3600_000), got);
+  const none = await L.recoverPane('U0LATE002', 'D8', { api: { conversationsHistory: async () => [{ ts: sec(1000), text: 'only top-level' }] } }, now);
+  ok('...and nothing is made up when their DM has no conversation thread', none === null && L.dmPlace('U0LATE002', now) === null);
+  const stale = await L.recoverPane('U0LATE003', 'D7', { api: { conversationsHistory: async () => [{ ts: sec(9 * 86400_000), thread_ts: sec(9 * 86400_000), reply_count: 1, latest_reply: sec(9 * 86400_000) }] } }, now);
+  ok('...nor a conversation older than a week', stale === null);
+}
 ok('a message for that person later goes into the conversation they last wrote in', JSON.stringify(L.dmPlace('U0ANN0001')) === '{"channel":"D1","thread_ts":"7.0"}', L.dmPlace('U0ANN0001'));
 ok('...still a day later (a week is kept), not once it is stale, and nowhere for someone who never wrote in one', !!L.dmPlace('U0ANN0001', Date.now() + 26 * 3600_000) && L.dmPlace('U0ANN0001', Date.now() + 8 * 24 * 3600_000) === null && L.dmPlace('U0NOBODY1') === null);
 ok('...and it is kept on disk, so a restart does not send it to Activity', JSON.parse(readFileSync(join(ROOT, '.team', 'slack-pane-threads.json'), 'utf8')).U0ANN0001?.thread_ts === '7.0');

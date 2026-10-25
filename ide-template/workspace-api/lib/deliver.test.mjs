@@ -47,7 +47,7 @@ store.activate('telegram', { fields: { TELEGRAM_BOT_TOKEN: '1:a', TELEGRAM_ADMIN
 ok('both connected = both linked', JSON.stringify(D.linkedSurfaces(both)) === '["telegram","slack"]');
 ok("'both' (web + Telegram) prefers Telegram only", JSON.stringify(D.surfacesFor({ ...both, preferredSurface: 'both' }, 'all')) === '["telegram"]');
 ok('a set may name every surface', JSON.stringify(D.surfacesFor({ ...both, preferredSurface: ['telegram', 'slack'] }, 'all')) === '["telegram","slack"]');
-ok('no preference stated = no proactive leg beyond the web', JSON.stringify(D.surfacesFor({ ...both, preferredSurface: null }, 'all')) === '[]');
+ok('no preference stated = Slack for someone on it, never Telegram', JSON.stringify(D.surfacesFor({ ...both, preferredSurface: null }, 'all')) === '["slack"]');
 
 sent.length = 0;
 r = await D.deliver({ ...both, preferredSurface: ['telegram', 'slack'] }, 'ping', 'all');

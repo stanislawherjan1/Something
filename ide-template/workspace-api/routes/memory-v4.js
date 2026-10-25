@@ -1028,6 +1028,7 @@ export default function memoryV4Router() {
     ledger.logEvent({ op: 'private_lookup', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered });
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
     if (r.secret) return res.json({ ok: true, nothing: true, secret: true, note: 'the answer is a secret (a code, a password): never said in a room; send it to their DM' });
+    if (r.private) return res.json({ ok: true, private: true, note: 'theirs, but held back for this room: offer it in their DM' });
     return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null, ...(outsiders.length ? { outsiders: outsiders.length } : {}) });
   });
 
@@ -1055,8 +1056,8 @@ export default function memoryV4Router() {
     let r;
     try { r = await askMyConnections({ member, question, room }); } catch (e) { r = { failed: true, error: e.message }; }
     ledger.logEvent({ op: 'private_lookup', kind: 'connections', scope: `user:${member.slug}`, by: member.slug, group: who.groupId, room: room.title || who.groupId, answered: !!r?.answer });
-    if (!r || r.failed) return res.json({ ok: true, failed: true });
-    return res.json({ ok: true, ...(r.none ? { none: true } : r.secret ? { secret: true } : r.nothing ? { nothing: true } : { answer: r.answer }) });
+    if (!r || r.failed) return res.json({ ok: true, failed: true, ...(r?.reason ? { reason: r.reason } : {}) });
+    return res.json({ ok: true, ...(r.private ? { private: true } : {}), ...(r.none ? { none: true } : r.secret ? { secret: true } : r.nothing ? { nothing: true } : { answer: r.answer }) });
   });
 
   // One item of an integration (a meeting), passed verbatim by the night

@@ -27,7 +27,9 @@ threw = false; try { parseSurfaces(['web', 'fax']); } catch { threw = true; } ok
 ok("'both' prefers telegram", prefers({ preferredSurface: 'both' }, 'telegram'));
 ok("'telegram' prefers telegram", prefers({ preferredSurface: 'telegram' }, 'telegram'));
 ok("'web' does not prefer telegram", !prefers({ preferredSurface: 'web' }, 'telegram'));
-ok('unset prefers nothing', !prefers({ preferredSurface: null }, 'telegram') && !prefers({}, 'web') && !prefers(null, 'web'));
+ok('unset prefers no web or Telegram', !prefers({ preferredSurface: null }, 'telegram') && !prefers({}, 'web') && !prefers(null, 'web'));
+ok('...but Slack, for someone on it (the caller checks the link)', prefers({}, 'slack') && prefers({ preferredSurface: null }, 'slack'));
+ok('a set without Slack keeps it out', !prefers({ surfaces: ['web'] }, 'slack'));
 ok('the set wins over the word when both are present', prefers({ surfaces: ['web', 'slack'], preferredSurface: 'web' }, 'slack'));
 ok('slack in the set', prefers({ surfaces: ['slack'] }, 'slack') && !prefers({ surfaces: ['slack'] }, 'telegram'));
 

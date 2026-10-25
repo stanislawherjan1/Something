@@ -715,7 +715,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!r.ok) return { content: [{ type: 'text', text: r.error || 'Their accounts did not answer.' }], isError: true };
       const text = r.off ? 'Answers from a person\'s own accounts are switched off in this room. Say you cannot check it here; they can ask you in their own chat.'
         : r.none ? 'They have no account of their own connected. Answer from the team\'s integrations if one covers it; otherwise say it is not connected for this room.'
-        : r.failed ? 'Could not check their account right now. Say so; do not guess.'
+        : r.failed ? (r.reason ? `It did not work: ${r.reason}. Tell them that plainly, in your own words; do not guess beyond it.` : 'Could not check their account right now. Say so; do not guess.')
+        : r.private ? 'It is theirs, but cannot be said in this room. Offer to send it to their DM ([[PRIVATE_TASK]] when they say yes); never say there is nothing.'
         : r.secret ? 'The answer is a secret (a key, a token, a password): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
         : r.nothing ? `Their account holds nothing that answers this${r.note ? ` (${r.note})` : ''}. Say so plainly.`
         : `From their own account — say only what answers their question:\n${wrapUntrusted(String(r.answer || ''), { source: 'own-connections' })}`;
@@ -746,6 +747,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         r = await v4Call('POST', 'mine', { question: String(args?.question || '') });
         if (r.ok) {
           r.text = r.failed ? 'Could not check their memory right now. Say so; do not guess.'
+            : r.private ? 'It is theirs, but they asked to keep it private, or it cannot be said here without something about another person in the room. Do not say it here and NEVER say it is not on record: offer, in a few words, to send it to their DM, and emit [[PRIVATE_TASK]] when they say yes (at once when they asked for it privately).'
             : r.secret ? 'The answer is THEIR OWN secret (a code, a password, a key): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
             : r.nothing ? `Nothing in their own memory answers this${r.note ? ` (${r.note})` : ''}. Answer from the team's notes if they have it; otherwise say you don't have it — do not hint at their memory, and promise no DM for anything that is not theirs.`
             : `From your conversations with them — say only what answers their question: ${r.answer}`;

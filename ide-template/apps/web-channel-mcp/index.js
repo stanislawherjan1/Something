@@ -97,8 +97,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'group_send_message',
       description:
-        'Post a message into a Telegram GROUP the person is in (e.g. the team ' +
-        'group chat). Use it ONLY when the person explicitly asked for it to go ' +
+        'Post a message into a team room the person is in — a Telegram group or a ' +
+        'Slack channel (e.g. "#content"). Use it ONLY when the person explicitly asked for it to go ' +
         'to the group, and once they approved the exact text: what you pass is ' +
         'posted WORD FOR WORD, nothing is rewritten, so pass the final text, in ' +
         'the group\'s language. A message for ONE person is web_send_message, ' +
@@ -110,7 +110,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          group: { type: 'string', description: 'The group\'s name or chat id. Optional when the person is in one group only.' },
+          group: { type: 'string', description: 'The group\'s or channel\'s name ("#content") or chat id. Optional when the person is in one room only.' },
           text: { type: 'string', description: 'The message, exactly as it should appear in the group. Plain text.' },
         },
         required: ['text'],

@@ -21,6 +21,7 @@ const ok = (name, cond, extra) => {
   if (cond) pass++;
   else { fail++; console.log(`  FAIL: ${name}${extra ? `\n        ${typeof extra === 'string' ? extra : JSON.stringify(extra).slice(0, 500)}` : ''}`); }
 };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
   { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z' },
@@ -282,9 +283,22 @@ ok('(z2) a change they ask for from the room is made as in their own chat, and s
 PL.configureConnections(null);
 {
   const { groupTurnParams } = await import('./integrations/group-watcher.js');
-  const asKasia = groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'my meetings?' }).message;
-  ok('(z2) the room turn names the sender\'s own accounts and the tool to ask them', /THEIR OWN ACCOUNTS: Kasia connected Granola/.test(asKasia) && /ask_my_connections/.test(asKasia), asKasia.split('\n').find(l => /ACCOUNTS/.test(l)));
-  ok('(z2) ...and says anyone else\'s are not connected for this room, never that they do not exist', /not connected for this room/.test(asKasia) && /never that it does not exist/.test(asKasia));
+  const asKasia = told(groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'my meetings?' }));
+  ok('(z2) the room turn names the sender\'s own accounts and the tool to ask them', /Kasia connected Granola for themselves/.test(asKasia) && /ask_my_connections/.test(asKasia), asKasia.split('\n').find(l => /ACCOUNTS/.test(l)));
+  ok('(z2) ...and says anyone else\'s are not connected for this room, never that they do not exist', /isn't connected in this room/.test(asKasia) && /never that it does not exist/.test(asKasia));
+}
+{
+  PL.configureLookup(async () => ({ private: true }));
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'what do I pay Marek?' } });
+  ok('(z2) held back for the room: private, offered in the DM, never "nothing"', r.body.ok && r.body.private === true && !r.body.nothing && !r.body.answer, r.body);
+  PL.configureLookup(null);
+  PL.configureConnections(async () => ({ failed: true, reason: 'the project is paused' }));
+  r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'create a table in wikiread' } });
+  ok('(z2) a failed change says why', r.body.failed === true && r.body.reason === 'the project is paused', r.body);
+  PL.configureConnections(null);
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const p = groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'what meetings did we have?' });
+  ok('(z2) the room turn is told the team\'s integrations by name, to use before saying it has nothing', /THE TEAM'S INTEGRATIONS, loaded in this room for everyone: Granola/.test(p.systemNote), (p.systemNote.split('\n').find(l => /INTEGRATIONS/.test(l)) || '').slice(0, 200));
 }
 T.touchGroupMeta('-100777', { privateAnswers: 'off' });
 r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'x' } });

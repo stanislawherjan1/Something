@@ -17,6 +17,7 @@ import { groupTurnParams } from './integrations/group-watcher.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log(`  FAIL: ${name}`); } };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 const ctx = [
   { role: 'user', message_id: '1', who: 'Sam', text: 'is the deploy broken?' },
@@ -33,10 +34,10 @@ ok('unknown sender → shared team actor', p.actor === 'team');
 ok('unknown sender is NEVER admin (no all-access short-circuit)', p.actorIsAdmin === false);
 
 // (b) conversation + addressivity context reaches the brain.
-ok('message carries the group-chat framing', /GROUP CHAT/.test(p.message));
-ok('message includes the NEW target text', p.message.includes('is the deploy broken?'));
-ok('message names who is asking', p.message.includes('Sam'));
-ok('message routes private/personal asks to a DM', /\bDM\b/.test(p.message));
+ok('message carries the group-chat framing', /GROUP CHAT/.test(told(p)));
+ok('message includes the NEW target text', told(p).includes('is the deploy broken?'));
+ok('message names who is asking', told(p).includes('Sam'));
+ok('message routes private/personal asks to a DM', /\bDM\b/.test(told(p)));
 
 // (c) GROUP CONTEXT (group-mode v2, D2) — the load-bearing privacy invariant.
 // Every group turn must carry groupContext: true, which makes claude.js set
@@ -44,7 +45,7 @@ ok('message routes private/personal asks to a DM', /\bDM\b/.test(p.message));
 // included) and drop the whole USER tier from the prefix. A refactor that loses
 // this flag silently reopens private reads in a publicly-replying context.
 ok('group turn sets groupContext (hard private fence)', p.groupContext === true);
-ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TASK/.test(p.message));
+ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TASK/.test(told(p)));
 
 // (d) pathInGroupScope — the pure rule the scope-guard hook applies under
 // IDE_GROUP_CONTEXT=1: NO private tree for anyone; shared space stays open.
@@ -62,8 +63,8 @@ ok('group scope: shared memory allowed', pathInGroupScope('memory/CHANNELS.md') 
 // framing line; sessionId passes through to runClaudeTurn's --resume.
 const pResumed = groupTurnParams({ chatId: '-1001234567890' }, ctx, target, { sessionId: 'sess-123' }, { resumed: true });
 ok('resumed turn passes sessionId through', pResumed.sessionId === 'sess-123');
-ok('resumed turn tells the brain it has session memory', /session memory/.test(pResumed.message));
-ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(p.message));
+ok('resumed turn tells the brain it has session memory', /session memory/.test(told(pResumed)));
+ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(told(p)));
 
 // (f) DELEGATION — a [[PRIVATE_TASK]] runs in a DM, so it leaves the group
 // conversation behind unless it is handed over explicitly. It used to receive
@@ -88,17 +89,17 @@ ok('delegate is given the group conversation, with attribution',
   const team = await import('./team.js');
   const gid = Object.keys(team.getTeamConfig?.().groups || {})[0];
   const g = gid ? team.getGroup(gid) : { chatId: '-100123', title: 'Room' };
-  const pr = groupTurnParams(g, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  const pr = told(groupTurnParams(g, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
   ok('the room turn is told every word is posted: speak to the sender, never about them, silence as a marker', /EVERY WORD YOU WRITE IS POSTED/.test(pr) && /never ABOUT them in the third person/.test(pr) && /\[\[SILENT\]\]/.test(pr));
 }
 {
   const { groupTurnParams: gtp } = await import('./integrations/group-watcher.js');
-  const pr2 = gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  const pr2 = told(gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
   ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT STATE IS LOOKED UP, NEVER REMEMBERED/.test(pr2) && /Your earlier reply is not a source/.test(pr2) && /only be said after that fresh look/.test(pr2) && /the weather, prices, news/.test(pr2) && /neither is a past check that memory or a lookup hands you/.test(pr2));
 }
 {
   const { groupTurnParams: gtp3 } = await import('./integrations/group-watcher.js');
-  const pr3 = gtp3({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }).message;
+  const pr3 = told(gtp3({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
   ok('notes about search results and sources are background work, never part of the message', /search results and which source you picked/.test(pr3) && /any note to yourself between steps: it is never part of the message/.test(pr3));
 }
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
@@ -130,7 +131,10 @@ const limitErr = 'claude exited with code 1 :: Claude usage limit reached. Your 
 // in the workspace's clock with the zone named — the same sentence the web
 // chat and the direct messages use (lib/usage-limit.js).
 const enNotice = failureNoticeText(enGroup, 'limit', limitErr), plNotice = failureNoticeText(plGroup, 'limit', limitErr);
-ok('a limit notice states WHEN it comes back, the zone named', /back at 13:00 UTC\./.test(enNotice), enNotice);
+// 3pm Warsaw is 13:00 UTC in summer and 14:00 in winter: the expected hour is read off today's clock.
+const { resetInstant } = await import('./usage-limit.js');
+const utcAt = new Date(resetInstant(limitErr, Date.now()) * 1000).toISOString().slice(11, 16);
+ok('a limit notice states WHEN it comes back, the zone named', enNotice.includes(`back at ${utcAt} UTC.`), enNotice);
 // English is the DEFAULT, not an override of a KNOWN preference: an English
 // system line in a Polish conversation reads as something broken, which is what
 // a failure notice should least of all add to.
@@ -138,7 +142,7 @@ ok('a group with no pinned language gets English', /^Claude usage limit reached\
 const { NOTICE: N } = await import('./i18n/limit-notice.js');
 const plFixed = N.pl('§', '¤').split('§')[0].trim(), plAtWord = N.pl('§', '¤').split('§')[1].split('¤')[0].trim();
 ok('a group with a pinned language gets that language', plNotice.startsWith(plFixed), plNotice);
-ok('the reset time survives translation', plNotice.endsWith(`${plAtWord} 13:00 UTC.`), plNotice);
+ok('the reset time survives translation', plNotice.endsWith(`${plAtWord} ${utcAt} UTC.`), plNotice);
 ok('a re-ask is not answered with the same apology (one notice, then quiet)',
   /15 \* 60_000/.test(gwSrcNotice));
 // Startup and mid-turn silence are different failures and were conflated: a
@@ -328,11 +332,11 @@ ok('...never a line it has not seen (those are the NEW window)', !recapFor(hist,
 ok('no session → no recap (a fresh session gets the whole ring anyway)', recapFor(hist, null, NOW).length === 0);
 const newer = hist.slice(40);
 const pr = groupTurnParams({ chatId: '-1001234567890' }, newer, { ...newer[newer.length - 1], from_id: '987654321' }, {}, { resumed: true, recap: recapFor(hist, stale, NOW) });
-ok('the resumed prompt carries the earlier lines, marked as already seen', /EARLIER IN THIS GROUP/.test(pr.message) && pr.message.includes('line 10') && pr.message.includes('line 39'));
-ok('...before the messages since the last turn', pr.message.indexOf('line 39') < pr.message.indexOf('The messages since your last turn') && pr.message.indexOf('The messages since your last turn') < pr.message.indexOf('line 49'));
-ok('...and no longer tells the brain to trust its session blindly', !/trust it\. Below are ONLY/.test(pr.message) && /may have been summarised/.test(pr.message));
+ok('the resumed prompt carries the earlier lines, marked as already seen', /EARLIER IN THIS GROUP/.test(told(pr)) && told(pr).includes('line 10') && told(pr).includes('line 39'));
+ok('...before the messages since the last turn', told(pr).indexOf('line 39') < told(pr).indexOf('The messages since your last turn') && told(pr).indexOf('The messages since your last turn') < told(pr).indexOf('line 49'));
+ok('...and no longer tells the brain to trust its session blindly', !/trust it\. Below are ONLY/.test(told(pr)) && /may have been summarised/.test(told(pr)));
 const fresh = groupTurnParams({ chatId: '-1001234567890' }, hist, { ...hist[49], from_id: '987654321' });
-ok('a fresh session gets the plain recent conversation, no recap block', !/EARLIER IN THIS GROUP/.test(fresh.message) && /Recent conversation:/.test(fresh.message));
+ok('a fresh session gets the plain recent conversation, no recap block', !/EARLIER IN THIS GROUP/.test(told(fresh)) && /recent conversation:/.test(told(fresh)));
 
 // (y) A failed gate: out of plan → silent; anything else → the brain judges.
 ok('the gate out of plan keeps silent (the brain would fail too)', gateFailureKind({ ok: false, error: "You've hit your weekly limit · resets Oct 22, 12pm (UTC)" }) === 'limit');

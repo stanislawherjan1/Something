@@ -93,6 +93,27 @@ export function dmPlace(user, now = Date.now()) {
   const p = paneThreads.get(String(user || ''));
   return p && now - p.at < PANE_THREAD_MAX_AGE_MS ? { channel: p.channel, thread_ts: p.thread_ts } : null;
 }
+/**
+ * With no pane thread on record (nobody wrote in the pane since this server
+ * came up — a deploy, or the person last used it before the record existed),
+ * the person's DM is read back for its newest conversation thread: the pane's
+ * conversations are threads there. Found, it is recorded like a pane they
+ * opened. A delegated login went to the top of the DM — Activity — because
+ * the record was empty after a deploy.
+ */
+export async function recoverPane(user, channel, deps = {}, now = Date.now()) {
+  if (!user || !channel) return null;
+  const a = deps.api || api;
+  let rows = [];
+  try { rows = await a.conversationsHistory(channel, { limit: 20 }); } catch { return null; }
+  const roots = rows.filter(m => m && (Number(m.reply_count) > 0 || (m.thread_ts && m.thread_ts === m.ts)));
+  const newest = roots.sort((x, y) => Number(y.latest_reply || y.ts) - Number(x.latest_reply || x.ts))[0];
+  if (!newest) return null;
+  const last = Number(newest.latest_reply || newest.ts) * 1000;
+  if (!(now - last < PANE_THREAD_MAX_AGE_MS)) return null;
+  notePane(user, channel, newest.thread_ts || newest.ts, now);
+  return { channel: String(channel), thread_ts: String(newest.thread_ts || newest.ts) };
+}
 const recentDms = new Map();   // DM channel → when a message was last seen (ms; for the catch-up after a lost window)
 const titled = new Set();      // assistant-pane threads already given a title
 const CATCH_UP_WINDOW_MS = 6 * 3600_000;

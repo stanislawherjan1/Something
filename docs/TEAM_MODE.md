@@ -424,7 +424,8 @@ courier:
   `recipient: <slug>` to deliver into that teammate's workspace (notification +
   chat). By default it routes to the recipient's **preferred surface** (their
   workspace always; their Telegram and/or Slack too if that's their preference
-  and they've linked it). The sender can override with `channel: "web" |
+  and they've linked it; with no preference saved, Slack for someone on it —
+  Telegram stays opt-in). The sender can override with `channel: "web" |
   "telegram" | "slack"`; on Slack the message lands in the recipient's DM with
   the bot.
 - On **Telegram**, a relay reaches the operator's assistant as an injected
@@ -460,6 +461,9 @@ Each teammate can be reached on Telegram once linked:
   Telegram" prompt (which PATCHes `/api/me`).
 - `preferredSurface` — `web` / `telegram` / `both` — the teammate's own choice of
   where they want to be reached. It drives relay + reminder delivery routing.
+  Unset, a person linked to Slack is reached there too (a team on Slack lives
+  there; "send it to him" once landed only in a workspace nobody looked at);
+  Telegram is never assumed.
   Underneath it is a **set** of surfaces (`lib/surfaces.js`): the roster stores
   and the API also returns `surfaces` (for example `["web","telegram"]`), and a
   PATCH accepts either the word or an array. The word is what `both` always
@@ -551,10 +555,19 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    summarises a session that grows long (it lost the thread after a gap), the
    last lines it already saw: 10 always, 30 after more than three hours
    (`GROUP_RECAP_LINES`, `GROUP_RECAP_LINES_AFTER_GAP`, `GROUP_RECAP_GAP_MS`).
+   The room's rules (manners, privacy, files, markers) go in the turn's system
+   prompt, which is sent with every turn and never stored in the session; the
+   turn's message carries only the conversation, who is asking and what is theirs.
+   Sent as the message, the rules piled up in the session — 1 MB in thirty turns
+   — and the CLI stopped for a minute and a half to compact it, losing context.
    The turn is also told what the new message continues — the thread's opening
    message, the bot's last reply *to this sender* (in a busy room its last reply
-   was often to someone else) and the sender's own previous message — so "but
-   check the integration" is read as the follow-up it is. And it gets the team's
+   was often to someone else) and the sender's own previous message, from the
+   last half hour only (`GROUP_CONTINUES_WINDOW_MS`) — so "but check the
+   integration" is read as the follow-up it is, and "tell me more about it" is
+   never read as yesterday's subject. It is told the team's integrations by name,
+   to use before saying it has nothing. Declining is a manners rule: a few
+   friendly words and who to ask, never whose it is or how memory works. And it gets the team's
    files by path and first line (shared files only: no private tree, no memory;
    at most 40, `GROUP_SHARED_FILES_MAX`), with the rule to open the one that
    covers a date, plan or pipeline before saying it is unknown. A room with
@@ -619,7 +632,13 @@ sentences, only what the question needs. Only that answer enters the room's
 session; the excerpts never do. The one-shot leaves out anything about a person in
 the room unless the question names them, silently (a "that's about X, ask me
 privately" would itself tell X); when nothing is left it says nothing and the bot
-answers what is true of the team's notes, with no hint. Never anyone else's memory:
+answers what is true of the team's notes, with no hint. What is the asker's own
+but held back — something they asked to keep private, or that cannot be said
+without what is about someone present — comes back `PRIVATE`: the bot offers it
+in their DM and never says it is not on record (it once told an owner "no rate on
+record" for a rate he had asked to keep quiet). The one-shot speaks of memory only,
+never of tools or connections (it once said "Granola isn't connected", and the room
+turn, which had Granola loaded, believed it). Never anyone else's memory:
 the scope is the asker's own, and a question about another person never reaches
 theirs, whoever asks. Someone from outside in the room does not stop it (what the
 asker asks about themselves is theirs to have said; the one-shot is told who is
@@ -638,8 +657,11 @@ switch, two calls a turn), then a **one-shot turn as that person with their own
 `-mine` servers alone** — no built-in tools, every workspace-api tool denied, no
 session. It does what they asked, as in their own chat — a lookup, or a change on
 their own words (never on what a tool returned; when it is unclear what to change,
-nothing is changed and it asks); a secret is `SECRET`; what comes back is fenced as
-untrusted data. For anyone else a personal connection is not reachable from the room,
+nothing is changed and it asks); a secret is `SECRET`; a failure comes back with
+what failed in plain words (`FAILED: the project is paused`); what comes back is
+fenced as untrusted data. It is used only for a request about that service — a
+keyword's search volume once went to a member's own search account instead of the
+team's keyword plan. For anyone else a personal connection is not reachable from the room,
 and the bot says it is not connected *for this room*, never that it does not exist.
 Each ask is on the owner's Changes (`private_lookup`, `kind: connections`).
 

@@ -120,9 +120,11 @@ function slackAdapter() {
   async function placeFor(target, opts = {}) {
     const t = String(target || '');
     if (!/^[UW][A-Z0-9]+$/.test(t)) return { channel: slackChannelOf(t), thread_ts: opts.thread_ts || null };
-    const pane = (await listener()).dmPlace?.(t);
+    const l = await listener();
+    const pane = l.dmPlace?.(t);
     if (pane) return pane;
-    return { channel: await (await api()).openDm(t), thread_ts: null };
+    const channel = await (await api()).openDm(t);
+    return (await l.recoverPane?.(t, channel)) || { channel, thread_ts: null };
   }
   return {
     kind: 'slack',

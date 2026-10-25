@@ -30,6 +30,7 @@ writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true, 
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) pass++; else { fail++; console.log(`  FAIL: ${name}${extra !== undefined ? `\n        ${JSON.stringify(extra)}` : ''}`); } };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 const A = await import('./integrations/channel-adapter.js');
 const sends = [], reacts = [];
@@ -129,13 +130,13 @@ ok('the channel\'s durable history is named after its Slack id', existsSync(hist
 // the group turn is fenced to this channel's scope
 const params = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), [{ role: 'user', message_id: '10.0', from_id: 'U0ANN0001', who: 'Ann', text: 'hello everyone', ts: new Date().toISOString() }], { message_id: '10.0', from_id: 'U0ANN0001', text: 'hello everyone' });
 ok('the group turn runs as the roster person behind the Slack id, in group context, on this channel only', params.actor === 'ann' && params.groupContext === true && params.groupId === 'slack-C0GENERAL');
-ok('the prompt speaks of a Slack channel and points at the channel\'s own transcript', /Slack CHANNEL/.test(params.message) && params.message.includes('slack-C0GENERAL-history.jsonl') && !/Telegram GROUP CHAT/.test(params.message));
-ok('the Slack adapter\'s own bots/reactions lines are in the prompt', /OTHER BOTS: none/.test(params.message) && /a common emoji/.test(params.message));
+ok('the prompt speaks of a Slack channel and points at the channel\'s own transcript', /Slack CHANNEL/.test(told(params)) && told(params).includes('slack-C0GENERAL-history.jsonl') && !/Telegram GROUP CHAT/.test(told(params)));
+ok('the Slack adapter\'s own bots/reactions lines are in the prompt', /OTHER BOTS: none/.test(told(params)) && /a common emoji/.test(told(params)));
 
 // an open-audience room: the turn is group-only
 team.touchGroupMeta('slack-C0GENERAL', { openAudience: true, audience: { ok: false, outsiders: ['U0GUEST01'], shared: false, members: 3 } });
 const openParams = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), [], { message_id: '10.0', from_id: 'U0ANN0001', text: 'x' });
-ok('an open room with an outsider in it runs its turn on the room\'s scope only', openParams.groupOnly === true && /OPEN AUDIENCE/.test(openParams.message));
+ok('an open room with an outsider in it runs its turn on the room\'s scope only', openParams.groupOnly === true && /OPEN AUDIENCE/.test(told(openParams)));
 team.touchGroupMeta('slack-C0GENERAL', { audience: { ok: true, outsiders: [], shared: false, members: 2 } });
 ok('...the same room with everyone on the team is an ordinary room', gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), [], { message_id: '10.0', from_id: 'U0ANN0001', text: 'x' }).groupOnly === false);
 team.touchGroupMeta('slack-C0GENERAL', { openAudience: false });
@@ -164,7 +165,7 @@ A.__setAdapter('telegram', { kind: 'telegram', label: 'Telegram', roomNoun: 'Tel
 r = await gw.postToGroup({ chatId: '-1001234567890', text: 'tg post' });
 ok('a Telegram group posts through the Telegram adapter', r.ok && sends.at(-1).tg === true && sends.at(-1).chatId === '-1001234567890');
 const tgParams = gw.groupTurnParams(team.getGroup('-1001234567890'), [], { message_id: '1', from_id: '111', text: 'x' });
-ok('...and its prompt still says Telegram', /Telegram GROUP CHAT/.test(tgParams.message) && /OTHER BOTS: tg/.test(tgParams.message));
+ok('...and its prompt still says Telegram', /Telegram GROUP CHAT/.test(told(tgParams)) && /OTHER BOTS: tg/.test(told(tgParams)));
 
 // a room turn knows what the message continues, and what files the team has
 {
@@ -179,17 +180,23 @@ ok('...and its prompt still says Telegram', /Telegram GROUP CHAT/.test(tgParams.
   const c = gw.continuesFor(ring, ring[4]);
   ok('a follow-up continues the bot\'s reply to the same person, not its last reply to someone else', c.some(l => l.includes('Yes, the free plan.')) && !c.some(l => l.includes('Two posts')), c);
   ok('...and the sender\'s own message before it', c.some(l => l.includes('free plan?')));
+  const old = [
+    { role: 'user', message_id: '600.1', from_id: 'U0ANN0001', who: 'Ann', text: 'move my LATAM piece to Nov 18', ts: iso(26 * 3600_000) },
+    { role: 'assistant', message_id: '600.2', text: 'Want it on the 18th, with the other one due then?', reply_to: '600.1', ts: iso(26 * 3600_000 - 60_000) },
+    { role: 'user', message_id: '600.3', from_id: 'U0ANN0001', who: 'Ann', text: 'tell me more about it', ts: iso(1_000) },
+  ];
+  ok('what a message continues is looked for in the last half hour, never yesterday', gw.continuesFor(old, old[2]).length === 0, gw.continuesFor(old, old[2]));
   const { mkdirSync } = await import('node:fs');
   for (const d of ['Sales', 'users/ann', 'memory']) mkdirSync(join(ROOT, d), { recursive: true });
   writeFileSync(join(ROOT, 'Sales', 'pipeline.md'), '\n# Pipeline — Q4\n\nNorthbeam: proposal sent.');
   writeFileSync(join(ROOT, 'users', 'ann', 'private.md'), '# Ann private');
   writeFileSync(join(ROOT, 'memory', 'facts.md'), '# memory');
   gw.__test.forgetSharedIndex();
-  const p = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, { continues: c }).message;
+  const p = told(gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, { continues: c }));
   ok('the turn is told what the message continues', p.includes('continues') && p.includes('Yes, the free plan.'));
   ok('the turn sees the team\'s files by path and first line, never a private tree or memory', p.includes('Sales/pipeline.md — Pipeline — Q4') && !p.includes('users/ann') && !p.includes('memory/facts.md'), p.split('\n').filter(l => l.startsWith('- ') && l.includes('.md')));
   team.touchGroupMeta('slack-C0GENERAL', { openAudience: true, audience: { ok: false, outsiders: ['U0GUEST01'], shared: false, members: 3 } });
-  const pOpen = gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, {}).message;
+  const pOpen = told(gw.groupTurnParams(team.getGroup('slack-C0GENERAL'), ring, { ...ring[4] }, {}, {}));
   ok('...and a room with outsiders in it gets no list of the team\'s files', !pOpen.includes('Sales/pipeline.md'));
   team.touchGroupMeta('slack-C0GENERAL', { openAudience: false, audience: { ok: true, outsiders: [], shared: false, members: 2 } });
 }

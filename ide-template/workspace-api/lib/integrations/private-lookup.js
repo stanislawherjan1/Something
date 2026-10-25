@@ -113,8 +113,9 @@ export function lookupPrompt({ member, question, room, people = [], outsiders = 
     '',
     'RULES:',
     `- Use what you know of them (their profile and preferences above, their settings) and search their memory (memory_search, memory_timeline); answer EXACTLY what was asked and nothing beside it — usually one plain sentence, never more than three — in the language of the question, with the names, numbers and dates it needs. Never add a related fact the question did not ask for (their travel, plans, other matters), however true and theirs: asked where they are, say where they are, not where they are flying next. Facts only: no advice, no questions back, no suggestions.`,
-    `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person. Never say that something was left out and never hint at it.`,
-    `- Leave out anything ${name} asked to keep quiet or private, whoever it concerns.`,
+    `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person; answer the rest. Never say that something was left out and never hint at it.`,
+    `- If what answers the question is ${name}'s but they asked to keep it quiet or private, or it cannot be said without what is about a person in the room, reply with exactly: PRIVATE — it is offered to them in their DM instead. Never answer NOTHING for something you hold back.`,
+    '- You know their memory only. Never say anything about tools, integrations or services and whether they are connected: you cannot see them, and the room can. When the question needs one, answer with what their memory holds, or NOTHING.',
     '- When the question needs something you cannot do here (the weather, a web search, a calculation), answer with what you know of them that it needs (where they are or live, their time zone, the preference it turns on); the room does the rest. Never pass on an earlier result of such a check (a forecast, a price, a status) from the conversations: it is out of date.',
     '- If the answer is a secret that opens something (a password, a PIN, a door or lock code, a key, a login), reply with exactly: SECRET — it is never said in a room, it goes to their DM.',
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
@@ -133,8 +134,14 @@ export function parseAnswer(text) {
   if (!t) return { failed: true };
   const last = t.split('\n').map(l => l.trim()).filter(Boolean).pop() || '';
   const verdict = (re) => re.test(t) || re.test(last);
-  if (verdict(/^\**\s*FAILED\b/i)) return { failed: true };
+  if (verdict(/^\**\s*FAILED\b/i)) {
+    // "FAILED: the project is paused" — the reason, when the one-shot was asked for one.
+    const line = [t.split('\n')[0], last].find(l => /^\**\s*FAILED\b/i.test(l.trim())) || '';
+    const reason = line.replace(/^\**\s*FAILED\b[\s:—-]*/i, '').replace(/\**$/, '').trim().slice(0, 200);
+    return reason ? { failed: true, reason } : { failed: true };
+  }
   if (verdict(/^\**\s*SECRET\b/)) return { secret: true };
+  if (verdict(/^\**\s*PRIVATE\b/)) return { private: true };
   // A reply that starts (or ends) with the word is still a nothing ("NOTHING — I have no …").
   if (verdict(/^\**\s*NOTHING\b/i) || /\bNOTHING\s*\**\.?$/.test(t)) return { nothing: true };
   return { answer: t.slice(0, 1200) };
@@ -197,6 +204,15 @@ export const CONNECTIONS_DENIED_TOOLS = [
   'tab_act', 'tab_screenshot', 'tab_snapshot',
 ].map(n => `mcp__workspace-api__${n}`);
 
+/** The team's connections usable now, by name (read only marked): what a room turn has loaded. */
+export function teamConnections() {
+  try {
+    return integrationsStore.workspaceIds()
+      .filter(k => { try { return integrationsStore.isUsable(k) && !!integrationsCatalog.get(k)?.mcp; } catch { return false; } })
+      .map(k => `${integrationsCatalog.get(k)?.label || k}${integrationsStore.accessOf(k) === 'read' ? ' (read only)' : ''}`);
+  } catch { return []; }
+}
+
 /** A person's own connections usable now: the services by name, and their servers (`<name>-mine`). */
 export function ownConnections(slug) {
   if (!slug || slug === 'team') return { labels: [], servers: [] };
@@ -226,7 +242,7 @@ export function connectionsPrompt({ member, question, room, people = [], outside
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their performance — unless the request names that person. Never say that something was left out.`,
     '- If the answer is a secret that opens something (a password, a key, a token, a login), reply with exactly: SECRET',
     '- If those accounts hold nothing that answers the question, reply with exactly: NOTHING',
-    '- If the tools fail or return an error, reply with exactly: FAILED (never explain the failure).',
+    '- If the tools fail or return an error, reply with FAILED: and what failed in a few plain words (the project is paused, the table already exists) — never a key, a token or a raw error dump.',
     '- Your whole output is the answer. No preamble, no mention of tools or this task.',
   ].join('\n');
 }

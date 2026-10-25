@@ -41,10 +41,16 @@ export function parseSurfaces(v) {
   return out;
 }
 
-/** Does this person want to be reached on `surface`? Unset = no preference stated. */
+/**
+ * Does this person want to be reached on `surface`? With no preference stated,
+ * Slack counts for someone linked there (the caller checks the link): a team
+ * on Slack lives there, and "send it to him directly" once landed only in his
+ * workspace, where he did not look. Telegram stays opt-in.
+ */
 export function prefers(member, surface) {
   const set = normalizeSurfaces(member?.surfaces ?? member?.preferredSurface);
-  return !!set && set.includes(surface);
+  if (!set) return surface === 'slack';
+  return set.includes(surface);
 }
 
 /**
