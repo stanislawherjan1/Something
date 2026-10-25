@@ -66,7 +66,10 @@ const { __test } = await import('./integrations/group-watcher.js');
 const roomEn = __test.failureNoticeText({ chatId: '-100777', title: 'Team' }, 'limit', `Claude usage limit reached. Aria is back at 23:00. [resets=${secs}]`);
 ok('a room hears the same sentence, the hour with its zone', /^Claude usage limit reached\. .+ is back at 18:00 (CEST|GMT\+2)\.$/.test(roomEn), roomEn);
 const roomPl = __test.failureNoticeText({ chatId: '-100777', title: 'Team', language: 'Polish' }, 'limit', "exit 1: You've hit your weekly limit · resets 6pm (UTC)");
-ok('a Polish room in Polish, the hour from the CLI\'s printed reset', roomPl.startsWith(plHead) && / 20:00 (CEST|GMT\+2)\.$/.test(roomPl) && roomPl.includes(plAt), roomPl);
+// "6pm (UTC)" is read against today's clock, so Warsaw's hour for it moves with summer time.
+const warsawAt = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  .format(new Date(U.resetInstant("You've hit your weekly limit · resets 6pm (UTC)", Date.now()) * 1000));
+ok('a Polish room in Polish, the hour from the CLI\'s printed reset', roomPl.startsWith(plHead) && new RegExp(` ${warsawAt} (CES?T|GMT\\+[12])\\.$`).test(roomPl) && roomPl.includes(plAt), roomPl);
 
 console.log(`usage-limit: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
