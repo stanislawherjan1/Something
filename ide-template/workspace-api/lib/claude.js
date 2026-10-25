@@ -622,8 +622,9 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
 
   // Memory v4 (MEMORY_V4=read|on): the most relevant past excerpts go in FRONT
   // of the message — the user message, not the system prompt, which would void
-  // the cached prefix. The CLI is already starting while the search runs; stdin
-  // is written when it answers, within the recall budget. Group turns read
+  // the cached prefix. The CLI waits for its message on stdin before it starts
+  // (and gives up after 3 s), so stdin is written when the search answers,
+  // within the recall budget (lib/memory-recall.js). Group turns read
   // shared + that group only; page turns get nothing (lib/memory-recall.js).
   proc.stdin.on('error', () => { /* the CLI died first — its exit is reported below */ });
   (async () => {

@@ -86,11 +86,11 @@ const ctx = [{ role: 'user', message_id: '1', who: 'Nora', text: 'what did we ag
 const asMember = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', from_id: '1110001', who: 'Nora', text: 'what did we agree with Harbor Glaze?' });
 ok('a roster member\'s turn is told about ask_my_memory, for their own matters only', asMember.actor === 'nora' && /THEIR OWN MEMORY, SAID HERE/.test(told(asMember)) && /ask_my_memory/.test(told(asMember)) && /that person\'s memory is never asked from here, whoever asks/.test(told(asMember)));
 const asStranger = groupTurnParams(getGroup('-100777'), ctx, { message_id: '1', from_id: '9999999', who: 'Someone', text: 'what did we agree?' });
-ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/your first step is ask_my_memory/.test(asStranger.message));
+ok('an unknown sender\'s turn is not', asStranger.actor === 'team' && !/before you answer, call ask_my_memory/.test(asStranger.message));
 ok('a member is told their own things are theirs to share here, once-only pushback, never another person\'s', /THEIR OWN THINGS ARE THEIRS TO SHARE/.test(told(asMember)) && /when they ask again, say it here, in full/.test(told(asMember)) && /never covers anything about another person/.test(told(asMember)));
 ok('...an unknown sender is not', !/is on the team/.test(asStranger.message));
 ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(told(asMember)) && !/Time zone:/.test(told(asMember)));
-ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /your first step is ask_my_memory/.test(asMember.message) && /Your FIRST step for such a message/.test(told(asMember)) && /never when anyone asks about ANOTHER person/.test(told(asMember)));
+ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /before you answer, call ask_my_memory/.test(asMember.message) && /Your FIRST step for such a message/.test(told(asMember)) && /never when anyone asks about ANOTHER person/.test(told(asMember)));
 ok('...and "not on record" is never said before it has returned', /before it has returned/.test(told(asMember)));
 ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(told(asMember)) && /even when it touches private things: answer it here/.test(told(asMember)) && !/their personal data\), emit/.test(told(asMember)));
 ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(told(asMember)));
@@ -157,6 +157,7 @@ ok('the room turn is told a private answer is offered in the DM, never "not on r
 ok('...and that what the memory one-shot says about tools does not count', /what it says about tools or integrations does not count/.test(told(asMember)));
 ok('declining is gentle: who to ask, never whose it is or how memory works', /DECLINING, GENTLY/.test(told(asMember)) && /never "not yours"/.test(told(asMember)));
 ok('the rules are the system prompt, not the room session: the message carries the conversation and the sender', /GROUP MANNERS/.test(asMember.systemNote) && !/GROUP MANNERS/.test(asMember.message) && asMember.message.length < 1500, asMember.message.length);
+ok('the own-memory step is the last thing the turn reads, a short follow-up included', /before you answer, call ask_my_memory/.test(asMember.message.trim().split('\n').pop()) && /a short follow-up too/.test(asMember.message));
 ok('recall searches what was asked, not the rules', asMember.recallQuery === 'what did we agree with Harbor Glaze?');
 
 ok('the private fence is unchanged', /NO private space is reachable/.test(told(asMember)) && asMember.groupContext === true);

@@ -1226,7 +1226,6 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     '----',
     `Reply to the message marked "← NEW", from ${senderName}${member ? '' : ' (not recognised in the team roster)'}.`,
     opts.continues?.length ? `What it continues — read it as a follow-up to this, not as a new subject, unless it plainly changes the subject:\n${opts.continues.join('\n')}` : '',
-    member ? `${senderName} is on the team: your first step is ask_my_memory (mcp__workspace-api__ask_my_memory) with their message, as THEIR OWN MEMORY says.` : '',
     ownLabels.length
       ? `${senderName} connected ${ownLabels.join(', ')} for themselves (THEIR OWN ACCOUNTS): for a request about ${ownLabels.length > 1 ? 'one of these services' : 'that service'} or what it holds, use ask_my_connections (mcp__workspace-api__ask_my_connections).`
       : '',
@@ -1234,6 +1233,10 @@ export function groupTurnParams(group, ctxMsgs, target, cb = {}, opts = {}) {
     target && target.docPath ? `The "← NEW" message includes a FILE attachment${target.attachment && target.attachment.name ? ` ("${target.attachment.name}")` : ''}. Read it before you reply — its content is very likely what the message is about: ${target.docPath}` : '',
     target && target.attachment && !target.docPath && target.attachment.kind !== 'sticker' ? `The "← NEW" message carries a ${target.attachment.kind.replace('_', ' ')} attachment you CANNOT open (no way to listen/watch, or the download failed). Don't pretend otherwise — if its content matters, say so and ask for the gist as text.` : '',
     target && target.moreFiles && target.moreFiles.length ? `Other messages in this burst ALSO attached files — Read these too before replying, they are usually part of the same request:\n${target.moreFiles.map(f => `- ${f.path}${f.name ? ` ("${f.name}"${f.who ? ` from ${f.who}` : ''})` : ''}`).join('\n')}` : '',
+    // Last, so it is the last thing read: a short follow-up ("and when did I
+    // want it done?") was once answered from the team's calendar without it,
+    // and the calendar's due date was not the date the person had set.
+    member ? `${senderName} is on the team: before you answer, call ask_my_memory (mcp__workspace-api__ask_my_memory) with their message — every time, a short follow-up too. What they told you can differ from the team's files, and theirs is the answer about their own plans, dates and numbers.` : '',
   ].filter(Boolean).join('\n');
 
   // The rules: the same for every turn in this room (they change with the

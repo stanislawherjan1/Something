@@ -29,11 +29,13 @@ const K = 10;
 const EXCERPT_CHARS = 1500;
 const BUDGET_MS = Number(process.env.MEMORY_V4_RECALL_BUDGET_MS) || 400;
 // A person's own turn (a DM, the web chat, a room's one-shot as them) waits
-// longer: the search runs while the CLI starts (7–12 s), so waiting costs
-// nothing, and at 400 ms it never finished on a small server (410–680 ms) —
-// no turn got its excerpts. A room's turn keeps the short budget: what it is
-// given stays in the room's session for every later turn.
-export const PERSON_BUDGET_MS = Number(process.env.MEMORY_V4_RECALL_BUDGET_PERSON_MS) || 3000;
+// longer: at 400 ms the search never finished on a small server (410–680 ms)
+// and no turn got its excerpts. Not much longer: the message goes to the CLI
+// on stdin once the search answers, and the CLI starts only then — and gives
+// up on stdin after 3 s ("no stdin data received in 3s, proceeding without
+// it", then fails with no input; measured on the pinned 2.1.150). A room's
+// turn keeps the short budget: what it is given stays in the room's session.
+export const PERSON_BUDGET_MS = Math.min(Number(process.env.MEMORY_V4_RECALL_BUDGET_PERSON_MS) || 2000, 2500);
 const OPEN = '<<<MEMORY';
 const CLOSE = '<<<END MEMORY';
 

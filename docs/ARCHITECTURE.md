@@ -492,8 +492,12 @@ Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger
   `bot/recent-snapshot-monitor.sh`. Files quiet conversations (web chats, the Telegram log
   split per chat, registered group histories) into the ledger, with one routing and one
   notes call (`claude -p`, no tools, structured output) per conversation.
-- **The recall block** — built in `runClaudeTurn` while the CLI starts (no added latency;
-  a search slower than its budget is dropped: 3 s for a person's own turn, which it overlaps with the CLI's start, 400 ms for a room's turn, whose message stays in the room's session — `MEMORY_V4_RECALL_BUDGET_PERSON_MS`, `MEMORY_V4_RECALL_BUDGET_MS`) and written in front of the message on stdin.
+- **The recall block** — built in `runClaudeTurn` right after the CLI is spawned and written
+  in front of the message on stdin. The CLI waits for that message before it starts (so the
+  search adds its own time to the turn) and gives up on stdin after 3 s, so a search slower
+  than its budget is dropped: 2 s for a person's own turn (capped at 2.5 s), 400 ms for a
+  room's turn, whose message stays in the room's session (`MEMORY_V4_RECALL_BUDGET_PERSON_MS`,
+  `MEMORY_V4_RECALL_BUDGET_MS`).
 - **The embedder worker** — `apps/embedder/worker.mjs`, forked on first use with a minimal
   environment and an IPC channel; its own process, so an OOM there ends only the worker.
 - **The nightly run** — a timer in workspace-api, once a day after 04:00 local.
