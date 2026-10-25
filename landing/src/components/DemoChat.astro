@@ -294,6 +294,16 @@ import '../styles/mocks.css';
         f.style.transform = k === 1 ? '' : `scale(${k}) translateX(${CHAT - DESK}px)`;
       }
     }).observe(webBox);
+    // Telegram on a phone: the open chat, scaled to the stage's own width with
+    // room at its sides. A fixed zoom left the phone's frame on the stage's
+    // edges at 375px, and iOS Safari, which sizes zoomed boxes its own way,
+    // cut it off; a measured transform scales alike everywhere.
+    const stageEl = demo.querySelector<HTMLElement>('.stage')!;
+    new ResizeObserver(() => {
+      const cs = getComputedStyle(stageEl);
+      const inner = stageEl.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (inner > 0) demo.style.setProperty('--tgk', String(Math.min(0.84, Math.max(0.5, (inner - 24) / 390))));
+    }).observe(stageEl);
     // A screen is ready once loaded (it may finish before this script runs).
     const frameReady = new Map(frames.map((f) => [f, new Promise<void>((r) => {
       const ok = () => { f.classList.add('ready'); r(); };
@@ -739,10 +749,13 @@ import '../styles/mocks.css';
     .demo[data-surface="slack"] .window { display: flex; }
     .demo[data-surface="slack"] .bar { flex-direction: row; justify-content: center; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--hair); }
     .demo[data-surface="slack"] .ws, .demo[data-surface="slack"] .sec { display: none; }
-    /* Telegram on a phone: the open chat only, a little smaller. */
-    .phones { height: 530px; gap: 0; }
+    /* Telegram on a phone: the open chat only, scaled to the stage (--tgk, set
+       by the script, at most .84) by a transform; the box keeps the scaled
+       width (negative margins) and the stage the scaled height, so the chat
+       sits in the same place at every width. */
+    .phones { height: calc(530px / .84 * var(--tgk, .84)); gap: 0; }
     .phones .mk:first-child { display: none; }
-    .phones .mk { zoom: .84; }
+    .phones .mk { zoom: 1; width: 390px; transform: scale(var(--tgk, .84)); transform-origin: top center; margin: 0 calc(390px * (var(--tgk, .84) - 1) / 2); }
     .tgc-wall { padding-bottom: calc(57px / .84 + 14px) !important; }
     .window { height: 480px; }
     .tabs { display: none; }
