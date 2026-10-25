@@ -55,6 +55,7 @@ Confirm readable + contains expected files. If corrupt or empty, **do not send**
 ### 4. Hand it over
 
 - **Telegram:** send the file back to the chat the request came from. If unclear, ask before sending.
+- **Slack (a direct message):** attach it with `[[SEND_FILE <path>]]` on its own line in your reply; the same 50 MB limit applies (over it, say so instead of sending).
 - **Web:** don't send anything — move the archive to `~/project/users/<requester>/backups/` (or `~/project/backups/` with no team mode) and reply with that workspace path in backticks. Skip step 5 for this copy.
 - **Unattended `[BACKUP_TRIGGER]`:** nobody asked in the moment, so keep it safe — the archive holds only the shared project (no memory, no `./users`), goes only to the operator's Telegram chat, and if it is over 50 MB, skip the send and say so in one line instead of splitting or asking.
 

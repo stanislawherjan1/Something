@@ -37,7 +37,7 @@ Don't invent folders the user hasn't created.
 | Channel | Default |
 |---|---|
 | IDE / web chat (technical operator) | Always ask if non-obvious. They'll answer in seconds. |
-| Telegram, or any non-technical person | Decide yourself, mention the destination in plain language afterwards ("saved to your Reports folder, June 1st"), never block on a question. |
+| Telegram, Slack, or any non-technical person | Decide yourself, mention the destination in plain language afterwards ("saved to your Reports folder, June 1st"), never block on a question. |
 
 ## Filename conventions
 

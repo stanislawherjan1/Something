@@ -8,8 +8,8 @@ allowed-tools: Read, mcp__workspace-api__add_routine, mcp__workspace-api__memory
 
 A routine is **your** standing duty to this person — something you do on your own,
 on a cadence or when a condition is met. It is never a reminder for them. Their
-routines are in the `ROUTINES` block of your context (on Telegram that copy can be
-days old, so check `memory_now` for the current list); the morning planner turns
+routines are in the `ROUTINES` block of your context (on Telegram or Slack that copy
+can be days old, so check `memory_now` for the current list); the morning planner turns
 them into the day's work at 06:00 in their time zone, and right away whenever one is
 added or changed.
 
@@ -26,7 +26,7 @@ Suggest a Marketplace routine when it clearly fits what the person just said or 
 - they connected an integration — mention the one or two routines it unlocks;
 - they ask what you can do on your own, or seem unsure how you could help.
 
-Not when: they already have it (check `ROUTINES`, or `memory_now` on Telegram — the prefix may be stale), it doesn't match what they said,
+Not when: they already have it (check `ROUTINES`, or `memory_now` on Telegram or Slack — the prefix may be stale), it doesn't match what they said,
 you suggested something in this conversation already and they let it pass, or the
 conversation is in a group.
 

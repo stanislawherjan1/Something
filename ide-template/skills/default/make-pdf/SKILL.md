@@ -42,13 +42,16 @@ yourself reaching for `import struct` to make a PDF, **stop** and use
 4. **Deliver it.**
    - In a **1:1 Telegram DM**: send it with the Telegram `reply` tool, passing
      the absolute PDF path in its `files` array.
+   - In a **Slack DM** (or a Telegram DM answered as that person, not through the
+     `reply` tool): put `[[SEND_FILE <workspace-relative path>]]` on its own line;
+     the system attaches it to your reply.
    - On the **web**: name the file as a backticked workspace-relative path
      (`Documents/proposal.pdf`) — the UI turns it into a clickable link.
-   - In a **Telegram GROUP**: your text can't carry an attachment — emit the
-     marker `[[SEND_FILE <absolute path>]]` on its own line; the system uploads
-     that file to the group. **Never claim you sent a file unless you actually
-     attached it via `reply`'s `files`, gave the web path, or emitted a
-     `[[SEND_FILE ...]]` marker.**
+   - In a **room** — a Telegram group or a Slack channel: your text can't carry an
+     attachment — emit the marker `[[SEND_FILE <absolute path>]]` on its own line;
+     the system uploads that file to the room. **Never claim you sent a file unless
+     you actually attached it via `reply`'s `files`, gave the web path, or emitted
+     a `[[SEND_FILE ...]]` marker.**
 
 ## Changing the look — use the `style` knobs, nothing else
 
