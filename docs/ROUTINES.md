@@ -29,7 +29,9 @@ The **Routines** view shows what it has taken on. Pause or remove a routine
 there, or just tell it. A Marketplace routine that needs a service you have not
 connected offers **Connect** right there, for your own account; one picked
 before its service was connected waits on the Routines view and starts by itself
-once it is. Times follow your own time zone from Settings. In a
+once it is. Times follow your own time zone from Settings, and its messages reach you
+where you prefer: the workspace, Telegram or Slack; a routine can also speak in
+a team group or channel. In a
 team workspace each person has their own routines, and the coworker does them
 as that person, with their calendar and their accounts.
 

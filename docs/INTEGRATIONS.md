@@ -45,11 +45,13 @@ connect a service **just for themselves** — their own notetaker, task board,
 calendar, or their own key to a model: then only their own conversations reach
 it, nobody else's, not even the group's. Mail is both: the team's shared inbox
 and each person's own work mailbox side by side, each read by its owner's
-conversations. Only the two services bound to the coworker itself (its
-Telegram and Docs comments) are team-only. Telegram is always the whole
-team's and always reads and sends, so there is nothing to choose when an admin
-connects it; the "Add … on Telegram" bar at the top of the workspace is shown
-to admins only and opens the connect window right there. Both can exist side by side
+conversations. Only the services bound to the coworker itself (its
+Telegram, its Slack and Docs comments) are team-only. Telegram and Slack are
+always the whole team's and always read and send, so there is nothing to
+choose when an admin connects them. Slack is set up under AI Settings → Slack:
+the setup hands you a ready-made app to create in your own Slack workspace, and
+nothing passes through anyone else's servers. The "Keep … with you" bar at the
+top of the workspace offers both, to admins only, until one is connected. Both can exist side by side
 ("Granola" and "your own Granola"), and if both are yours, both feed your memory
 each night, each read with its own sign-in. The screen has three tabs: **Team**
 (connected for everyone), **Yours** (your own accounts) and the

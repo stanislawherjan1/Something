@@ -38,26 +38,30 @@ a look at public pages about them, which they check before anything is kept).
 The name they give is the name the team sees. Then comes a starter plan picked
 for their role: tools they can connect with their own account, and routines.
 They can connect their own account of most tools from the Marketplace too; only
-the team's own services, like the email inbox or Telegram, need an admin.
+the team's own services, like the email inbox, Telegram or Slack, need an admin.
 Members see their own settings in AI Settings; the coworker's name, face and
 instructions are an admin's to set.
 
-Each person links their own Telegram, so a message from you is from you. Only
-an admin is asked to set the coworker up on Telegram, and it is the whole
-team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
-the group's own conversation and never anyone's private memory. Ask it there about
+Each person links their own Telegram, so a message from you is from you; on
+Slack it knows you by the email you sign in with, so there is nothing to link.
+An admin sets the coworker up once on Telegram and on Slack, and it is the
+whole team's from then on. Add it to a team group on Telegram, or invite it to
+a Slack channel (an admin approves each channel once), and it listens there as
+the team's, remembering the room's own conversation and never anyone's private
+memory. If someone from outside the team is in a Slack channel, it stays quiet
+there until they leave. Ask it there about
 yourself or your own matters — where you are, what you prefer, a supplier you
 chose, a meeting you booked — and it looks it up in what you told it in your own
 chat and answers for the room to hear, because you asked. Nobody else gets it: when
 someone asks about you, your memory stays closed, whoever they are. Codes and
 passwords are the exception: those never go into a group, they come to you
 directly instead. The same goes for an account you connected for yourself (your own
-Supabase, your own mailbox): ask about it in the group, or ask for a change there,
-and it does it as you, as in your own chat, and answers there; for anyone else it is
-simply not connected in that group. Come
+Supabase, your own mailbox): ask about it in the group or channel, or ask for a
+change there, and it does it as you, as in your own chat, and answers there; for
+anyone else it is simply not connected there. Come
 back to a group after a day and it re-reads where the conversation stopped
 before it answers. In a group it knows what the team knows: what was said in that group,
-and what reached the team's shared memory from anyone's own chats. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
+and what reached the team's shared memory from anyone's own chats. Ask it, from your own chat, to post something in a group or channel you are in and it posts exactly the text you approved. Reminders and
 tasks go to the person they are for.
 
 

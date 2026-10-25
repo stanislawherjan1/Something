@@ -17,6 +17,11 @@ keys to your services. Nothing is sent through anyone else's servers to work.
   meeting transcript or a customer's note the coworker reads is treated as
   information, never as instructions; an order hidden in it is not kept in
   memory either. The server only talks to the services it has been connected to.
+- **Groups and channels.** The coworker joins a Slack channel only once an
+  admin approves it, and goes quiet in it as soon as someone from outside the
+  team is there. In a group or a channel it answers from what the team shares;
+  your own private things are said there only when you ask for them yourself,
+  and codes and passwords never are: those come to you directly.
 - **Nothing goes out without your yes.** Sending an email, posting, or changing
   something in another service happens only after you say so; until then the
   coworker suggests it or prepares it.

@@ -92,7 +92,8 @@ and "Make private" takes it back. When questions wait for you, your coworker
 says so once a day at most, in your own chat, never in a group. Privacy is enforced by where a thing is
 stored, never by role: an admin cannot read a teammate's private memory, and
 the bot never reads one person's private memory on another's behalf. A
-Telegram group has a memory of its own, readable by its members.
+Telegram group or a Slack channel has a memory of its own, readable by the
+people in it.
 
 **Meetings you did not tell it about.** Connect a meeting notetaker and you
 need not recount your meetings: each night the coworker reads the meetings of

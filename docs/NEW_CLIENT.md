@@ -251,13 +251,17 @@ What to send the end-user (template you can paste into email/Telegram):
 >
 > It then searches the web for your company, reads its website and shows what it found: fix or remove anything that's off, and only what you keep is remembered. Last comes a starter plan of tools to connect in one click and routines to switch on.
 >
-> After the setup, the bot is live. Open **Integrations** in the left sidebar to activate Telegram, Shopify, Meta Ads, Google Ads, GA4, image generation, IMAP — whatever you need. Each integration has its own setup walkthrough inside.
+> After the setup, the bot is live. Open **Integrations** in the left sidebar to activate Telegram, Shopify, Meta Ads, Google Ads, GA4, image generation, IMAP — whatever you need. Each integration has its own setup walkthrough inside. To talk to it in Slack, open **AI Settings → Slack**: it walks you through creating your own Slack app.
 >
 > Skills (the "playbooks" the bot follows) are in the **Skills** sidebar item. Default ones are read-only; create your own per-project ones from there.
 
 If the client wants you to do the Claude token step too: run `claude setup-token` on your own laptop (one token per Claude.ai account is fine — reuse across clients) and paste it into the setup yourself (the company and "about you" steps are the client's to fill in).
 
 ---
+
+Slack needs nothing at deploy time: the workspace holds one outbound
+connection to Slack (Socket Mode), so there is no public URL, port or DNS
+record to add. The client connects it from AI Settings → Slack.
 
 ## Gotchas
 

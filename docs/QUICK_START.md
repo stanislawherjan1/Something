@@ -26,7 +26,7 @@ Setting it up takes about an hour, most of it waiting:
    in one click and a few routines, each with a line on why.
 
 From there everything else is done inside the workspace: connect integrations,
-link Telegram, invite teammates, add routines. Each teammate you invite gets a
+link Telegram or Slack, invite teammates, add routines. Each teammate you invite gets a
 shorter version of the same setup the first time they sign in. Nothing here needs you to come
 back to the server. If a step fails, the troubleshooting section at the end
 covers what people usually hit.
