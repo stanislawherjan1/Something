@@ -37,6 +37,7 @@ export default function SettingsView({ sidebarOpen }) {
   const me = meQ.data;
   const integ = useApi('/api/integrations');
   const tgActive = !!(integ.data?.integrations || []).find(i => i.id === 'telegram')?.active;
+  const slActive = !!(integ.data?.integrations || []).find(i => i.id === 'slack')?.active;
   const [error, setError] = useState(null);
 
   // One PATCH per change; the fresh envelope goes to every mounted view.
@@ -66,7 +67,7 @@ export default function SettingsView({ sidebarOpen }) {
             <>
               <Group title="Profile"><ProfileRows me={me} patch={patch} onError={setError} /></Group>
               <Group title="Assistant"><AssistantRows me={me} patch={patch} /></Group>
-              {tgActive && <Group title="Telegram"><TelegramRows me={me} patch={patch} /></Group>}
+              <Group title="Reach me"><ReachRows me={me} patch={patch} tgActive={tgActive} slActive={slActive} /></Group>
               {me.role === 'admin' && <Group title="Workspace"><WorkspaceRows me={me} onError={setError} /></Group>}
               <SharedLinks isAdmin={me.role === 'admin'} onError={setError} />
             </>
@@ -243,32 +244,65 @@ function AssistantRows({ me, patch }) {
   );
 }
 
-function TelegramRows({ me, patch }) {
+// Where the assistant reaches this person — one row per surface this
+// workspace has. Every row says whether the person is linked there and lets
+// them say whether they want to be reached there. The web is always linked
+// (signing in is the link); Telegram is linked by a chat id the person pastes
+// (Telegram gives no email to match on); Slack links itself the first time
+// the person writes to the assistant there, by the email on their Slack
+// account. The preference is saved as the `surfaces` set; `preferredSurface`
+// (web / telegram / both) is what older clients still read.
+function ReachRows({ me, patch, tgActive, slActive }) {
+  const chosen = new Set(Array.isArray(me.surfaces) && me.surfaces.length ? me.surfaces
+    : me.preferredSurface === 'both' ? ['web', 'telegram'] : me.preferredSurface ? [me.preferredSurface] : ['web', ...(tgActive ? ['telegram'] : []), ...(slActive ? ['slack'] : [])]);
+  const all = ['web', ...(tgActive ? ['telegram'] : []), ...(slActive ? ['slack'] : [])];
+  const toggle = (v) => {
+    const next = new Set(chosen);
+    if (next.has(v)) { if (next.size === 1) return; next.delete(v); } else next.add(v);
+    patch({ preferredSurface: all.filter(x => next.has(x)) });
+  };
   const [chatId, setChatId] = useState(me.telegramChatId || '');
   const [seenId, setSeenId] = useState(me.telegramChatId);
   if (seenId !== me.telegramChatId) { setSeenId(me.telegramChatId); setChatId(me.telegramChatId || ''); }
-  const surface = me.preferredSurface || 'both';
-  const options = [{ value: 'both', label: 'Both' }, { value: 'telegram', label: 'Telegram' }, { value: 'web', label: 'Web' }];
   return (
     <>
-      <Row label="Chat id" hint="Links your Telegram to this workspace.">
-        <input type="text" value={chatId} maxLength={20} className={inputCls} placeholder="e.g. 123456789"
-          onChange={(e) => setChatId(e.target.value)}
-          onBlur={() => { const v = chatId.trim(); if (v !== (me.telegramChatId || '')) patch({ telegramChatId: v }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-      </Row>
-      <Row label="Reach me on" hint="Where the assistant messages you first.">
-        <div className="grid w-full grid-cols-3 gap-1 rounded-[6px] bg-muted/40 p-1">
-          {options.map((o) => (
-            <button key={o.value} type="button" onClick={() => surface !== o.value && patch({ preferredSurface: o.value })}
-              className={cn('rounded-[6px] px-2 py-1 text-[12px] font-medium transition-colors',
-                surface === o.value ? 'bg-background text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.05)]' : 'text-muted-foreground/75 hover:text-foreground/90')}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-      </Row>
+      <SurfaceRow label="Web" hint="Every conversation is kept here; a message for you shows as a notification." on={chosen.has('web')} onToggle={() => toggle('web')}>
+        <span className="text-[12px] text-muted-foreground/65">Always linked</span>
+      </SurfaceRow>
+      {tgActive && (
+        <SurfaceRow label="Telegram" hint={me.telegramChatId ? 'Linked. The assistant answers your messages there.' : 'Not linked. Send /start to @userinfobot on Telegram and paste the id it shows.'} on={chosen.has('telegram')} onToggle={() => toggle('telegram')}>
+          <input type="text" value={chatId} maxLength={20} className={cn(inputCls, 'font-mono')} placeholder="chat id, e.g. 123456789"
+            onChange={(e) => setChatId(e.target.value)}
+            onBlur={() => { const v = chatId.trim(); if (v !== (me.telegramChatId || '')) patch({ telegramChatId: v }); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+        </SurfaceRow>
+      )}
+      {slActive && (
+        <SurfaceRow label="Slack" hint={me.slackUserId ? 'Linked by the email on your Slack account.' : 'Not seen yet. Write to the assistant on Slack once; it links you by the email on your Slack account.'} on={chosen.has('slack')} onToggle={() => toggle('slack')}>
+          <span className={cn('text-[12px]', me.slackUserId ? 'font-mono text-muted-foreground/85' : 'text-muted-foreground/55')}>{me.slackUserId || 'Not linked'}</span>
+        </SurfaceRow>
+      )}
     </>
+  );
+}
+
+// A surface: its link (the control on the right) and whether the assistant
+// should reach the person there (the switch).
+function SurfaceRow({ label, hint, on, onToggle, children }) {
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium text-foreground/90">{label}</div>
+        {hint && <div className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground/70">{hint}</div>}
+      </div>
+      <div className="flex shrink-0 items-center gap-3 sm:w-[300px] sm:justify-end">
+        <div className="min-w-0 flex-1 sm:text-right">{children}</div>
+        <button type="button" role="switch" aria-checked={on} title={on ? 'Reach me here' : 'Do not reach me here'} onClick={onToggle}
+          className={cn('relative h-5 w-9 shrink-0 rounded-full transition-colors', on ? 'bg-foreground' : 'bg-muted-foreground/30')}>
+          <span className={cn('absolute top-0.5 size-4 rounded-full bg-background transition-all', on ? 'left-[18px]' : 'left-0.5')} />
+        </button>
+      </div>
+    </div>
   );
 }
 

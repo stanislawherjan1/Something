@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import StepAction from './StepAction.jsx';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Plug, Unplug, Link, Unlink, Plus, Trash2, Users, Loader2, RefreshCw, ChevronRight, Settings as SettingsIcon, BookOpen } from 'lucide-react';
+import { ArrowLeft, Check, Plug, Unplug, Link, Unlink, Plus, Trash2, Users, Loader2, RefreshCw, ChevronRight, Settings as SettingsIcon, BookOpen, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApi, invalidate } from '@/lib/useApi';
 import { Button } from '@/components/ui/button';
@@ -291,6 +292,13 @@ function ConnectionCard({ integration, reach, solo = false, detail, canManage, o
                   <div className="min-w-0 flex-1">
                     <div className="text-[13.5px] font-medium text-foreground/85">{interpolate(st.title, stepVars)}</div>
                     {st.body && <StepBody body={interpolate(st.body, stepVars)} />}
+                    {Array.isArray(st.downloads) && st.downloads.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {st.downloads.map((d, j) => (
+                          <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} render={d.render || null} />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}

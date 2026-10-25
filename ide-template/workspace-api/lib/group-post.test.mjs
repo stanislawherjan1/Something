@@ -21,7 +21,7 @@ writeFileSync(process.env.BOT_TURN_ID_HASH_FILE, createHash('sha256').update(BOT
 
 // Ann is in both groups, Bob only in the team group, Cid has no Telegram linked.
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
-  { email: 'ann@example.test', role: 'admin', slug: 'ann', displayName: 'Ann', telegramChatId: '111111111', addedAt: '2026-09-01T00:00:00Z' },
+  { email: 'ann@example.test', role: 'admin', slug: 'ann', displayName: 'Ann', telegramChatId: '111111111', slackUserId: 'U0ANN00001', addedAt: '2026-09-01T00:00:00Z' },
   { email: 'bob@example.test', role: 'member', slug: 'bob', displayName: 'Bob', telegramChatId: '222222222', addedAt: '2026-09-01T00:00:00Z' },
   { email: 'cid@example.test', role: 'member', slug: 'cid', displayName: 'Cid', addedAt: '2026-09-01T00:00:00Z' },
 ]));
@@ -30,6 +30,7 @@ writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({
   groups: {
     '-1001234567890': { title: 'Team Room', members: { 111111111: 'Ann', 222222222: 'Bob' } },
     '-1009876543210': { title: 'Suppliers', members: { 111111111: 'Ann' } },
+    'slack-C0ROOM0001': { title: '#glazes', members: { U0ANN00001: 'Ann' } },
   },
 }));
 
@@ -78,26 +79,32 @@ const hist = existsSync(histPath) ? readFileSync(histPath, 'utf8').trim().split(
 ok('...and the group\'s history has it as the assistant\'s', hist.some((h) => h.role === 'assistant' && h.text === TEXT), hist);
 
 r = await post({ text: TEXT }, ann);
-ok('in two groups, no name: asks which, lists both', r.status === 422 && /which/.test(r.body.error) && r.body.groups.length === 2 && sent.length === 1, r);
+ok('in several groups, no name: asks which, lists them', r.status === 422 && /which/.test(r.body.error) && r.body.groups.length === 3 && sent.length === 1, r);
 r = await post({ group: 'supp', text: 'Order update' }, ann);
 ok('part of a name finds the one group', r.status === 200 && sent.at(-1).chatId === '-1009876543210', r);
 
+// A Slack channel: by its bare id as Slack shows it, by the registry's id in any case, by its name without the #.
+for (const [how, group] of [['bare id', 'C0ROOM0001'], ['lowercased registry id', 'slack-c0room0001'], ['name without #', 'glazes'], ['name with #', '#Glazes']]) {
+  const before = sent.length;
+  r = await post({ group, text: 'Kiln is on.' }, ann);
+  ok(`a Slack channel is found by its ${how}`, r.status === 200 && r.body.group.chatId === 'slack-C0ROOM0001' && sent.length === before + 1 && sent.at(-1).chatId === 'slack-C0ROOM0001', r);
+}
 r = await post({ group: 'Suppliers', text: TEXT }, bob);
-ok('not a member: refused, and the list shows only his own groups', r.status === 422 && r.body.groups.length === 1 && r.body.groups[0].title === 'Team Room' && sent.length === 2, r);
+ok('not a member: refused, and the list shows only his own groups', r.status === 422 && r.body.groups.length === 1 && r.body.groups[0].title === 'Team Room' && sent.length === 6, r);
 r = await post({ group: 'Suppliers', text: TEXT, actor: 'ann', from: 'ann' }, bob);
-ok('naming someone else in the body changes nothing', r.status === 422 && sent.length === 2, r);
+ok('naming someone else in the body changes nothing', r.status === 422 && sent.length === 6, r);
 r = await post({ group: '-1000000000009', text: TEXT }, bob);
-ok('an unregistered chat id: refused', r.status === 422 && sent.length === 2, r);
+ok('an unregistered chat id: refused', r.status === 422 && sent.length === 6, r);
 r = await post({ text: 'Done with the samples.' }, bob);
 ok('in one group, no name needed', r.status === 200 && sent.at(-1).chatId === '-1001234567890' && sent.at(-1).text === 'Done with the samples.', r);
 
 r = await post({ group: 'Team Room', text: TEXT }, cid);
-ok('no Telegram linked: refused, says why', r.status === 403 && /not a member/.test(r.body.error) && sent.length === 3, r);
+ok('no Telegram linked: refused, says why', r.status === 403 && /not a member/.test(r.body.error) && sent.length === 7, r);
 
 r = await post({ group: 'Team Room', text: 'x'.repeat(gw.GROUP_POST_MAX + 1) }, ann);
-ok('too long for one message: refused, nothing sent', r.status === 422 && /too long/.test(r.body.error) && sent.length === 3, r);
+ok('too long for one message: refused, nothing sent', r.status === 422 && /too long/.test(r.body.error) && sent.length === 7, r);
 r = await post({ group: 'Team Room', text: '   ' }, ann);
-ok('empty text: refused', r.status === 422 && sent.length === 3, r);
+ok('empty text: refused', r.status === 422 && sent.length === 7, r);
 
 r = await post({ group: 'Suppliers', text: 'From the operator.' }, BOT_TOKEN);
 ok('the operator\'s brain posts as the operator', r.status === 200 && sent.at(-1).chatId === '-1009876543210', r);
@@ -106,6 +113,38 @@ gw.configurePostSender(async () => ({ ok: false, error: 'telegram 403: bot was k
 r = await post({ group: 'Team Room', text: 'Still there?' }, ann);
 ok('a failed send says so, nothing recorded as sent', r.status === 422 && /kicked/.test(r.body.error), r);
 
+// ─── what a room said lately: for its members only (/internal/room-recent) ──
+{
+  const { writeFileSync: wf, mkdirSync: md } = await import('node:fs');
+  md(join(ROOT, '.group-watcher'), { recursive: true });
+  wf(join(ROOT, '.group-watcher', '-1009876543210-history.jsonl'), [
+    { ts: '2026-10-22T10:00:00Z', role: 'user', who: 'Ann', text: 'Supplier call moved to 3pm.' },
+    { ts: '2026-10-22T10:01:00Z', role: 'assistant', text: 'Noted.' },
+  ].map(r => JSON.stringify(r)).join('\n') + '\n');
+  wf(join(ROOT, '.group-watcher', 'slack-C0ROOM0001-history.jsonl'), JSON.stringify({ ts: '2026-10-22T11:00:00Z', role: 'user', who: 'Ann', text: 'Kiln at 1200.' }) + '\n');
+  const get = async (q, token) => {
+    const headers = token ? { 'X-IDE-Turn': token } : {};
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/api/internal/room-recent?${new URLSearchParams(q)}`, { headers });
+    return { status: r.status, body: await r.json() };
+  };
+  let g = await get({ room: 'Suppliers' }, ann);
+  ok('(room) a member reads the room\'s latest lines', g.status === 200 && g.body.lines.length === 2 && g.body.lines[0].text === 'Supplier call moved to 3pm.' && g.body.lines[1].who === 'assistant', g.body);
+  const local = g.body.tz && new Intl.DateTimeFormat('sv-SE', { timeZone: g.body.tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date('2026-10-22T10:00:00Z'));
+  ok('(room) ...with each line\'s time in the reader\'s own zone, and the zone named', !!g.body.tz && g.body.lines[0].at === local && /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(local), g.body);
+  g = await get({ room: 'C0ROOM0001' }, ann);
+  ok('(room) ...a Slack channel too, by its id', g.status === 200 && g.body.lines[0].text === 'Kiln at 1200.', g.body);
+  g = await get({ room: 'Suppliers' }, bob);
+  ok('(room) someone not in the room is refused, shown only their own rooms', g.status === 403 && !g.body.lines && g.body.rooms.every(r => r.title !== 'Suppliers'), g.body);
+  g = await get({ room: 'Suppliers' });
+  ok('(room) no turn: refused', g.status === 403 && !g.body.lines);
+  g = await get({ room: 'Suppliers' }, ti.issueTurnToken({ actor: 'ann', group: true, groupId: '-1001234567890' }));
+  ok('(room) a room\'s own turn cannot read another room', g.status === 403 && !g.body.lines, g.body);
+  g = await get({}, ti.issueTurnToken({ actor: 'ann', group: true, groupId: '-1009876543210' }));
+  ok('(room) ...and reads its own with no name given', g.status === 200 && g.body.lines.length === 2, g.body);
+  g = await get({ room: 'Suppliers', n: '1' }, ann);
+  ok('(room) n bounds the lines', g.body.lines.length === 1 && g.body.lines[0].who === 'assistant', g.body);
+}
 server.close();
+
 console.log(`group-post: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

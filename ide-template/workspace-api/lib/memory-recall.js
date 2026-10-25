@@ -28,6 +28,14 @@ import { topics, nameKey, expandQuery } from './memory-views.js';
 const K = 10;
 const EXCERPT_CHARS = 1500;
 const BUDGET_MS = Number(process.env.MEMORY_V4_RECALL_BUDGET_MS) || 400;
+// A person's own turn (a DM, the web chat, a room's one-shot as them) waits
+// longer: at 400 ms the search never finished on a small server (410–680 ms)
+// and no turn got its excerpts. Not much longer: the message goes to the CLI
+// on stdin once the search answers, and the CLI starts only then — and gives
+// up on stdin after 3 s ("no stdin data received in 3s, proceeding without
+// it", then fails with no input; measured on the pinned 2.1.150). A room's
+// turn keeps the short budget: what it is given stays in the room's session.
+export const PERSON_BUDGET_MS = Math.min(Number(process.env.MEMORY_V4_RECALL_BUDGET_PERSON_MS) || 2000, 2500);
 const OPEN = '<<<MEMORY';
 const CLOSE = '<<<END MEMORY';
 
@@ -86,12 +94,12 @@ export function renderBlock({ hits, total }) {
  * shadow mode the search runs and is logged, but nothing is injected.
  * Never throws and never takes longer than the budget.
  */
-export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], pageTurn = false, sessionKey = null, message, history = [] }) {
+export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], groupOnly = false, pageTurn = false, sessionKey = null, message, history = [], budgetMs = BUDGET_MS }) {
   const mode = ledger.v4Mode();
   const t0 = Date.now();
   const out = { block: null, ids: [], total: 0, ms: 0, mode };
   if (mode === 'off' || pageTurn || !String(message || '').trim()) return out;
-  const scopes = ledger.readableScopes({ actor, groupId, memberGroups });
+  const scopes = ledger.readableScopes({ actor, groupId, memberGroups, groupOnly });
   const asked = [...history.slice(-2), message].map(s => String(s || '')).join('\n').slice(-2000);
   // A topic named by any of its spellings is searched by all of them.
   const extra = expandQuery(scopes, message).terms;
@@ -101,7 +109,7 @@ export async function buildRecallBlock({ actor = null, groupId = null, memberGro
   try {
     res = await Promise.race([
       search({ query, scopes, k: K, exclude: [...shown] }),
-      new Promise(r => setTimeout(() => r(null), BUDGET_MS)),
+      new Promise(r => setTimeout(() => r(null), budgetMs)),
     ]);
   } catch (e) {
     process.stderr.write(`[memory-v4] recall failed: ${e.message}\n`);

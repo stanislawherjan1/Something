@@ -45,11 +45,13 @@ connect a service **just for themselves** — their own notetaker, task board,
 calendar, or their own key to a model: then only their own conversations reach
 it, nobody else's, not even the group's. Mail is both: the team's shared inbox
 and each person's own work mailbox side by side, each read by its owner's
-conversations. Only the two services bound to the coworker itself (its
-Telegram and Docs comments) are team-only. Telegram is always the whole
-team's and always reads and sends, so there is nothing to choose when an admin
-connects it; the "Add … on Telegram" bar at the top of the workspace is shown
-to admins only and opens the connect window right there. Both can exist side by side
+conversations. Only the services bound to the coworker itself (its
+Telegram, its Slack and Docs comments) are team-only. Telegram and Slack are
+always the whole team's and always read and send, so there is nothing to
+choose when an admin connects them. Slack is set up under AI Settings → Slack:
+the setup hands you a ready-made app to create in your own Slack workspace, and
+nothing passes through anyone else's servers. The "Keep … with you" bar at the
+top of the workspace offers both, to admins only, until one is connected. Both can exist side by side
 ("Granola" and "your own Granola"), and if both are yours, both feed your memory
 each night, each read with its own sign-in. The screen has three tabs: **Team**
 (connected for everyone), **Yours** (your own accounts) and the
@@ -60,7 +62,11 @@ connection is **read-only** or **read and write** — the admin chooses when
 connecting and can switch it on the service's page at any time: read-only
 means the coworker reads through it and never creates, sends or changes
 anything there, for anyone, until an admin allows it. Your own connection is
-always read and write — your account, your call. What a notetaker brings into memory is always its owner's: the admin
+always read and write — your account, your call. In a team group or channel the
+coworker uses the team's connections; ask it there about your own account ("how many
+signups in my Supabase today?"), or ask for a change, and it does it as you, as in
+your own chat, and answers for the room, because you asked.
+Nobody else in the room reaches your own connections. What a notetaker brings into memory is always its owner's: the admin
 who connected the workspace's, or you for your own. An admin sees, on each
 card, who has their own account of a service, and can disconnect it; a person
 who leaves takes their own connections with them; a person whose own
@@ -145,6 +151,7 @@ provider-side app the operator provisions; those steps are documented below.
 | **Docs Comments** | Drop inline comments anchored to a text range in a Google Doc |
 | **Email (IMAP)** | Read inbox via Gmail App Password / Zoho / custom IMAP — read-only by default |
 | **Telegram** | Chat with the assistant via a Telegram bot (bot restarts ~5s on activation). The bot reacts to messages with an emoji when it sees fit (👀 when it starts looking into something, 👍 for a short acknowledgement), in direct messages and in groups; `TELEGRAM_ACK_REACTION` in the deployment `.env` additionally makes it react to every direct message the moment it takes it on |
+| **Slack** | Talk to the assistant in Slack through the workspace's own app (Socket Mode: one outbound connection held open by workspace-api, no public address, no restart). Set up under **AI Settings → Slack**, like Telegram: the app-level token always, then either the bot token pasted or the app's client id + secret and an **Install to your workspace** button (the install comes back to this workspace's own `/api/integrations/slack/oauth/callback`, nothing passes anywhere else). A direct message is a turn as the person who wrote it — matched to the roster by email — with a 👀 reaction while it works and ✅ when done (in a channel, 👀 marks the message being answered until the reply lands); people not on the team get one line asking to be added. A message for a person that they did not just ask for (a delegated answer, a reminder, a relay) goes into the assistant thread they last wrote in or opened, kept a week on disk (`.team/slack-pane-threads.json`); with none on record (nobody wrote in the pane since a deploy) their DM is read back for its newest conversation thread, which is then kept; only with none at all does it go to the top of their DM, which Slack files under History and Activity. With no delivery preference saved, a person linked to Slack is reached there. `group_send_message` posts into an approved Slack channel the person is in, as into a Telegram group. After a lost window — a dropped connection, or a restart (the last process leaves when it last heard anything in `.team/slack-listener-state.json`) — the DMs that were live and the messages in approved channels that mention the bot are read back from Slack, a few per conversation, and handled if they were not already. Channels: the bot hears only where it was invited and an admin approved (see [TEAM_MODE.md](TEAM_MODE.md)). Memory: a DM is the person's own conversation and is filed like a web chat (`source: slack`); an approved channel is filed in that channel's own scope; there is no nightly feeder and no `memory` block |
 | **Trello** | Read tasks, comment, manage labels, move cards between columns |
 | **GitHub** | Read repos, issues, pull requests (official GitHub MCP) — read-only by default |
 | **Vercel** | Projects, deployments, build and runtime logs, domains — read-only (paste an access token) |
@@ -207,7 +214,10 @@ answers a personal key only to a turn that is its owner's. The bot's own
 `.claude.json` holds the workspace set plus the operator's own connections
 (the brain is the operator's); every other turn gets its set written for it
 (`lib/claude.js` `turnMcpServers`, into the turn's own run directory) — a
-group's turn the workspace set alone. Connections from before owners existed
+group's turn the workspace set alone. A room's sender reaches their own
+connections from there only through `ask_my_connections` (see
+[TEAM_MODE.md](TEAM_MODE.md), "The asker's own accounts"): a one-shot turn as
+them with their `-mine` servers alone. Connections from before owners existed
 are the workspace's, owned by the primary admin (filled in at boot). Legacy
 MCPs that take credentials in their environment stay workspace-only.
 
@@ -664,8 +674,23 @@ a person's own.
 
 Does the connection work: a remote-MCP one gets a fresh token from the
 provider (`reauth: true` when the sign-in expired), a stored-key one is
-decrypted and checked for its required fields. `{ ok, at, detail | error }`;
-never a secret.
+decrypted and checked for its required fields; Slack asks `auth.test` and
+reports the workspace, the bot user and whether the socket is up. `{ ok, at,
+detail | error }`; never a secret.
+
+### `GET /api/integrations/slack/manifest`
+
+The Slack app manifest for this workspace's bot (its name, the scopes and
+events the surface uses, Socket Mode on, distribution off, this workspace's
+callback as the redirect — always `https://` on `FRONTEND_DOMAIN`, never the
+last hop's protocol, which behind Caddy and nginx is http), which the setup's
+**Copy manifest** puts on the clipboard (a step download with `copy: true`)
+for the admin to paste at api.slack.com. Holds no secret. `GET /api/integrations/slack/install`
+(admin) sends the admin to Slack's consent page for the app's own client id;
+`GET /api/integrations/slack/oauth/callback` stores the bot token Slack
+returns and starts the socket. `GET
+/api/integrations` carries `listener: { connected, since, lastEventAt, lost[] }`
+on the Slack entry while it is connected.
 
 ### `PATCH /api/integrations/:id`
 

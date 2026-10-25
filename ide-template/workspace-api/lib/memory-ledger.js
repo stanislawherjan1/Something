@@ -22,10 +22,10 @@ import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, 
 import { createHash, randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { atomicWrite } from './atomic-write.js';
+import { isGroupId } from './group-id.js';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
-const GROUP_RE = /^-\d{4,20}$/;
-const SOURCES = new Set(['web', 'telegram', 'group', 'email', 'note', 'review', 'migration', 'integration']);
+const SOURCES = new Set(['web', 'telegram', 'slack', 'group', 'email', 'note', 'review', 'migration', 'integration']);
 const MAX_TEXT = 12000;
 export const HIDE_GRACE_DAYS = 30;
 
@@ -41,7 +41,7 @@ export function scopeDir(scope) {
   if (scope === 'shared') return join(memoryDir(), 'ledger');
   const [kind, id] = String(scope).split(':');
   if (kind === 'user' && SLUG_RE.test(id || '') && id !== 'default') return join(memoryDir(), 'users', id, 'ledger');
-  if (kind === 'group' && GROUP_RE.test(id || '')) return join(memoryDir(), 'groups', id, 'ledger');
+  if (kind === 'group' && isGroupId(id)) return join(memoryDir(), 'groups', id, 'ledger');
   throw new Error(`invalid scope ${JSON.stringify(scope)}`);
 }
 
@@ -53,11 +53,13 @@ export function scopeDir(scope) {
  * conversations are still theirs, so a group turn — where other people talk to
  * the bot — never reads them, and switching team mode on later exposes nothing.
  */
-export function readableScopes({ actor = null, groupId = null, memberGroups = [] }) {
-  if (groupId) return ['shared', `group:${groupId}`];
+export function readableScopes({ actor = null, groupId = null, memberGroups = [], groupOnly = false }) {
+  // A room an admin opened to people outside the team reads its own scope and
+  // nothing of the team's (the "open audience" channel).
+  if (groupId) return groupOnly ? [`group:${groupId}`] : ['shared', `group:${groupId}`];
   const out = ['shared'];
   if (actor && SLUG_RE.test(actor) && actor !== 'default' && actor !== 'team') out.push(`user:${actor}`);
-  for (const g of memberGroups) if (GROUP_RE.test(String(g))) out.push(`group:${g}`);
+  for (const g of memberGroups) if (isGroupId(g)) out.push(`group:${g}`);
   return out;
 }
 

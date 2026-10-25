@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBranding } from './workspace/identity';
+import { isStockAvatar } from '@/lib/avatar';
 import TileBanner from './workspace/views/TileBanner.jsx';
 import AvatarTile, { PRESET_AVATARS } from './workspace/views/AvatarTile.jsx';
 
@@ -552,7 +553,9 @@ function Step5Done({ botName, avatarUrl, orgLogoPreview, title, onBack, onDismis
           {/* Assistant */}
           <div className="flex items-center gap-2.5 rounded-[6px] border border-border/60 px-3 py-2">
             <div className="relative size-9 shrink-0 overflow-hidden rounded-full ring-1 ring-foreground/10">
-              <TileBanner image={avatarUrl} mode="dark" center plain step={1.7} scale={1} seed="bot" paper className="!absolute inset-0 !h-full" />
+              {isStockAvatar(avatarUrl)
+                ? <TileBanner image={avatarUrl} mode="dark" center plain step={1.7} scale={1} seed="bot" paper className="!absolute inset-0 !h-full" />
+                : <img src={avatarUrl} alt="" className="absolute inset-0 size-full object-cover" />}
             </div>
             <div className="flex flex-col gap-0">
               <span className="text-[12.5px] font-medium text-foreground leading-tight">{botName || 'Assistant'}</span>

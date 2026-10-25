@@ -28,7 +28,7 @@
 
 <p align="center">
   Something lets you build a self-hosted AI coworker who knows your tools, your customers and your goals.<br/>
-  You reach them in a private web workspace, in Chrome's side panel or on Telegram, and they do the work.
+  You reach them in a private web workspace, in Chrome's side panel, on Telegram or in Slack, and they do the work.
 </p>
 
 <br/>
@@ -41,7 +41,7 @@ Everything you'd reach for to automate your work (markdown for context, skills f
 Your coworkers:
 
 - **Know you from the first day.** A short setup on first login: name your coworker, say what your company does and what you need help with. It looks your company up on the web and reads its site, shows what it found for you to fix, and suggests a starter plan of tools and routines. Each teammate gets their own shorter version.
-- **Live on the web, in Chrome and on Telegram.** Pick any; same memory everywhere.
+- **Live on the web, in Chrome, on Telegram and in Slack.** Pick any; same memory everywhere.
 - **Remember between sessions.** Markdown notes, a knowledge graph, recent threads.
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups. A Marketplace of ready-made routines shows what they can take on, with more for each tool you connect; add your own or edit any of them. Each morning they plan your day at 06:00 in your own time zone.
@@ -91,16 +91,22 @@ First time renting a server or pointing a domain? **[Full step-by-step guide →
 
 ## Talk to them anywhere
 
-Your coworker is one mind you reach from a few places: the **web workspace chat**, a **Telegram** DM, the **team Telegram groups** it's part of, and **Chrome's side panel**, next to whatever page you're on. Same name, same memory, same context, whichever you reach for.
+<p align="center">
+  <img src="assets/readme/surfaces.png" alt="The same coworker in a Slack channel and in a team's Telegram group, with a switch between the web app, Slack, Telegram and Chrome" width="820" />
+</p>
 
+<br/>
+
+Your coworker is one mind you reach wherever you already work. Same name, same memory, same context, whichever you reach for.
+
+- **Slack**: message them privately, or invite them to a channel. There they follow the conversation like a colleague, answer when someone asks, and keep everyone's private things private.
+- **Telegram**: message them like any contact, or add them to a team group. There they follow the conversation, chime in when they can genuinely help, and stay quiet otherwise.
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
 - **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
-- **Telegram**: message them like any contact. Best for on-the-go asks and getting pinged wherever you are.
-- **Telegram groups**: add it to a team group and it follows the conversation, chiming in when it's genuinely useful and staying quiet otherwise. It only takes part in groups a teammate brings it into, never barging in on its own.
 
-It's all connected. What you said on Telegram is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
+It's all connected. What you said on Telegram or Slack is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 
-Proactive messages travel the same paths. When a job finishes or a reminder comes due, your coworker pings you on Telegram, in the web app, or both; a web ping is a notification you click straight into its thread.
+Proactive messages travel the same paths. When a job finishes or a reminder comes due, your coworker pings you on Telegram, in Slack or in the web app; a web ping is a notification you click straight into its thread.
 
 <br/>
 
@@ -114,7 +120,7 @@ Proactive messages travel the same paths. When a job finishes or a reminder come
 
 <br/>
 
-Set it up once and the whole team works with it. Turn on **collaborative mode**, invite your people, and everyone gets the same coworker, in the web app, on Telegram, or in your team groups. It knows who is asking, what they're working on, and how they like to be reached.
+Set it up once and the whole team works with it. Turn on **collaborative mode**, invite your people, and everyone gets the same coworker, in the web app, on Telegram or Slack, or in your team's groups and channels. It knows who is asking, what they're working on, and how they like to be reached.
 
 **Everyone gets their own.** Each teammate connects their own tools (their inbox, calendar, notetaker, Stripe or GitHub), sets their own routines (a day plan at 8:00, a stock check on Mondays, a recap on Thursdays), writes their own skills, and keeps their own files. The coworker uses them for that person only.
 
@@ -158,14 +164,14 @@ Tell your coworker what to keep an eye on, and it takes it from there. These are
 > **You:** From now on, each morning check Shopify for orders stuck unfulfilled over 48h and flag them.<br/>
 > **Coworker:** Added to my routines. I'll check every morning and flag anything stuck.
 
-Under the hood, routines run on **reminders**: a background scheduler that survives container restarts and fires on time (once, daily, weekly, or continuous), reaching you on Telegram, in the web app, or both. You rarely touch it directly: the coworker sets and prunes its own reminders as the routines demand.
+Under the hood, routines run on **reminders**: a background scheduler that survives container restarts and fires on time (once, daily, weekly, or continuous), reaching you on Telegram, in Slack or in the web app. You rarely touch it directly: the coworker sets and prunes its own reminders as the routines demand.
 
 <br/>
 
 ## Memory
 
 <p align="center">
-  <img src="assets/readme/memory.png" alt="The coworker in the middle, the facts it remembers around it, each with where it came from" width="820" />
+  <img src="assets/readme/memory.png" alt="Three steps: something said in a Slack channel, kept as one fact with its earlier version struck through, and used a week later without being asked" width="820" />
 </p>
 
 <br/>
@@ -206,7 +212,7 @@ A new workspace starts on this memory directly. One that started on the older ca
 
 > Shopify · Meta Ads · Google Ads · Google Analytics 4 · Google Workspace · Email (IMAP) · Trello · GitHub · Vercel · X · Grok (xAI) · OpenAI (GPT) · Gemini · Gemini Image · Seedream · SignWell · Docs Comments
 
-You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write; Telegram is always the whole team's, reading and sending) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
+You connect each one from the Integrations screen, no redeploy, no `.env` editing. In a team workspace an admin connects a service for the whole team (read-only or read and write; Telegram and Slack are always the whole team's) and anyone can connect their own account of a notetaker, calendar or task board for themselves — used in their conversations only. Credentials are encrypted at rest; disconnecting wipes the secret. Setup details in [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md).
 
 <br/>
 

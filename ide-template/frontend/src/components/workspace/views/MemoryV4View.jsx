@@ -410,8 +410,20 @@ export function FactPills({ f }) {
       {f.kind === 'preference' && <Pill>preference</Pill>}
       {f.kind === 'routine' && <Pill>routine</Pill>}
       {f.review && <Pill>reviewed</Pill>}
+      {f.via && <ViaGlyph via={f.via} />}
       {f.scope !== 'private' && <ScopePill scope={f.scope} />}
     </>
+  );
+}
+
+// Where the fact was said: the web chat, Telegram or Slack — a small mark, the words on hover.
+const VIA_BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
+function ViaGlyph({ via }) {
+  const label = via === 'slack' ? 'Said on Slack' : via === 'telegram' ? 'Said on Telegram' : 'Said in the web chat';
+  return (
+    <span title={label} className="inline-flex size-4 shrink-0 items-center justify-center opacity-60" aria-label={label}>
+      {via === 'web' ? <Globe className="size-3" strokeWidth={1.75} /> : <img src={`${VIA_BASE}/integrations/${via}.svg`} alt="" className="size-3 object-contain grayscale" />}
+    </span>
   );
 }
 
@@ -486,7 +498,9 @@ export function FactRow({ f, open, onToggle, onChanged, selecting = false, picke
               line here, in full when opened); a fact written before titles shows
               its sentence alone, as before. */}
           {f.title ? (
-            <span className={cn('truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
+            // `block`: an inline span never truncates — on a wide screen the
+            // title ran under the pills beside it.
+            <span className={cn('block truncate text-[13px] font-medium leading-5 text-foreground/90', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{f.title}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           ) : (
             <span className={cn('line-clamp-2 text-[12.5px] leading-snug text-foreground/85 sm:block sm:truncate', f.past && 'text-muted-foreground/60', f.supersededWhy === 'superseded' && 'line-through decoration-muted-foreground/50')}>{plain(f.text)}{f.integration && <SourceIcon integration={f.integration} className="ml-1.5" />}</span>
           )}

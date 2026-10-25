@@ -26,6 +26,8 @@ import { restoreDefaultMemory, migrateDefaultMemory } from '../lib/memory-loader
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
 import { listUnregistered } from '../lib/integrations/group-watcher.js';
+import * as slackChannels from '../lib/integrations/slack-channels.js';
+import { pendingUsers as slackPendingUsers, forgetPending as slackForgetPending } from '../lib/integrations/slack-listener.js';
 
 // Rate limiter — see routes/integrations.js for the rationale (actor-keyed,
 // janitor sweeps stale buckets). Same shape, separate bucket count so a
@@ -80,7 +82,7 @@ export default function teamRouter() {
       // is visible to EVERYONE, so members can see each other's channels.
       // The raw chat id is a private contact handle, so only an admin or the
       // row's owner sees the actual value. `preferredSurface` stays visible too.
-      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId, operatorPinned: !!(opId && e.telegramChatId === opId) };
+      const row = { ...e, avatarUrl: avatarUrl(e.slug), telegramLinked: !!e.telegramChatId, slackLinked: !!e.slackUserId, operatorPinned: !!(opId && e.telegramChatId === opId) };
       if (!viewerIsAdmin && e.email !== viewerEmail) row.telegramChatId = null;
       return row;
     });
@@ -173,7 +175,7 @@ export default function teamRouter() {
   });
 
   router.patch('/team/:email', requireAdmin, rateLimit, express.json({ limit: '4kb' }), (req, res) => {
-    const { role, telegramChatId, preferredSurface, preferredLanguage } = req.body || {};
+    const { role, telegramChatId, preferredSurface, preferredLanguage, slackUserId } = req.body || {};
     try {
       let entry = null;
       if (role !== undefined) {
@@ -185,9 +187,15 @@ export default function teamRouter() {
         // to the integration + restart (background; don't block the response).
         if (telegramChatId !== undefined) syncTelegramAllowedIds().catch(() => {});
       }
+      // A Slack account links itself by email; an admin may link one by id when
+      // the person's Slack email is not the roster one (admins only — a self-link
+      // by id would let someone claim another person's account).
+      if (slackUserId !== undefined) {
+        entry = team.setSlack(req.params.email, { userId: slackUserId }, req.actor);
+      }
       // Reflect v2: pre-consent to auto-promote this person's org DM facts to
       // shared memory (typically the operator toggles it on themselves).
-      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, preferredSurface, or preferredLanguage).' });
+      if (!entry) return res.status(400).json({ error: 'Nothing to update (role, telegramChatId, slackUserId, preferredSurface, or preferredLanguage).' });
       res.json({ ok: true, entry });
     } catch (err) {
       res.status(400).json({ error: err.message });
@@ -219,7 +227,76 @@ export default function teamRouter() {
   router.get('/team/telegram-groups', (req, res) => {
     if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
     const canEdit = team.isAdmin(req.actor);
-    res.json({ ok: true, groups: canEdit ? team.listGroups() : [], canEdit });
+    res.json({ ok: true, groups: canEdit ? team.listGroups().filter(g => g.kind === 'telegram') : [], canEdit });
+  });
+
+  // ─── Channels of every kind (today: Slack) ──────────────────────────────
+  // The registered rooms, the rooms waiting for an admin's yes, and the people
+  // who wrote to the bot on Slack without being on the team. Admins only see
+  // the pending lists; everyone sees that the surface exists.
+  router.get('/team/channels', (req, res) => {
+    if (!req.actor) return res.status(401).json({ error: 'Unauthorized.' });
+    const canEdit = team.isAdmin(req.actor);
+    const kind = typeof req.query.kind === 'string' ? req.query.kind : null;
+    const groups = canEdit ? team.listGroups().filter(g => !kind || g.kind === kind) : [];
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true, canEdit, groups,
+      pending: canEdit ? slackChannels.pendingChannels() : [],
+      pendingPeople: canEdit ? slackPendingUsers() : [],
+    });
+  });
+
+  // Approve a room (a Slack channel the bot was added to), or change one.
+  router.post('/team/channels', requireAdmin, rateLimit, express.json({ limit: '2kb' }), async (req, res) => {
+    const { chatId, title, beat, requireMention, language, openAudience, privateAnswers } = req.body || {};
+    try {
+      const id = String(chatId || '').trim();
+      if (id.startsWith('slack-')) {
+        let group = await slackChannels.approveChannel(id, { actor: req.actor, title, beat, requireMention, language, openAudience });
+        if (privateAnswers != null && team.touchGroupMeta(id, { privateAnswers })) group = team.getGroup(id);
+        // A room reopened to outsiders, or closed to them again, is rechecked at once.
+        if (openAudience != null) await slackChannels.checkAudience(id, { quiet: true });
+        return res.status(201).json({ ok: true, group });
+      }
+      const group = team.addGroup({ chatId: id, title, beat, requireMention, language, privateAnswers, actor: req.actor });
+      syncTelegramGroups().catch(() => {});
+      res.status(201).json({ ok: true, group });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Decline or remove a room: the bot leaves a Slack channel it is removed from here.
+  router.delete('/team/channels/:chatId', requireAdmin, rateLimit, async (req, res) => {
+    const id = String(req.params.chatId || '').trim();
+    if (id.startsWith('slack-')) {
+      const known = !!team.getGroup(id) || slackChannels.pendingChannels().some(p => p.chatId === id);
+      if (!known) return res.status(404).json({ error: 'not a known channel' });
+      await slackChannels.rejectChannel(id, 'removed by an admin');
+      return res.json({ ok: true, removed: id });
+    }
+    const removed = team.removeGroup(id, req.actor);
+    if (!removed) return res.status(404).json({ error: 'group not allow-listed' });
+    syncTelegramGroups().catch(() => {});
+    res.json({ ok: true, removed: id });
+  });
+
+  // Who is in the room now — re-run the audience check on demand.
+  router.post('/team/channels/:chatId/recheck', requireAdmin, rateLimit, async (req, res) => {
+    const id = String(req.params.chatId || '').trim();
+    if (!team.getGroup(id)) return res.status(404).json({ error: 'not a registered channel' });
+    try {
+      const audience = await slackChannels.checkAudience(id);
+      res.json({ ok: true, audience, group: team.getGroup(id) });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // A person who wrote on Slack without being on the team: forget the request
+  // (adding them is POST /api/team with their email, as for anyone).
+  router.delete('/team/channels/pending-people/:id', requireAdmin, rateLimit, (req, res) => {
+    slackForgetPending(String(req.params.id || ''));
+    res.json({ ok: true });
   });
 
   // Groups the bot is IN but NOT registered yet — admin-only; powers the one-click
@@ -229,9 +306,9 @@ export default function teamRouter() {
   });
 
   router.post('/team/telegram-groups', requireAdmin, rateLimit, express.json({ limit: '2kb' }), (req, res) => {
-    const { chatId, title, beat, requireMention, language } = req.body || {};
+    const { chatId, title, beat, requireMention, language, privateAnswers } = req.body || {};
     try {
-      const group = team.addGroup({ chatId, title, beat, requireMention, language, actor: req.actor });
+      const group = team.addGroup({ chatId, title, beat, requireMention, language, privateAnswers, actor: req.actor });
       syncTelegramGroups().catch(() => {});   // re-seed access.json so the operator can reply into it
       res.status(201).json({ ok: true, group });
     } catch (err) {

@@ -117,6 +117,10 @@ function pathsFromTool(toolName, input) {
       // the post-move fence below.
       const mem = /(?:^|[\s'"=(<>;&|:`])((?:\/home\/coder\/project\/|\.?\/)?memory)(?:\/[^\s'"<>;&|`]*)?(?=$|[\s'"<>;&|`)])/g;
       while ((m = mem.exec(cmd))) out.push(`${m[1]}/`);
+      // A room's transcript or the directory ('cat .group-watcher/-1-history.jsonl',
+      // 'ls .group-watcher'): the membership rule below decides.
+      const room = /(?:^|[\s'"=(<>;&|:`])((?:[^\s'"<>;&|`]*\/)?\.group-watcher(?:\/[^\s'"<>;&|`]*)?)(?=$|[\s'"<>;&|`)])/g;
+      while ((m = room.exec(cmd))) out.push(m[1]);
       // A word that climbs ('Reports/../users/bob/x', '../x'): the rule
       // refuses any '..' — a detour is never a legitimate way to name a path
       // inside the project, and from its root it leaves the project.
@@ -326,7 +330,19 @@ async function main() {
 
   // Resolve relative to this hook's own location — hooks/ and workspace-api/
   // are siblings both in the repo and in the image (/opt/ide/*).
-  const { pathInScope, pathInGroupScope } = await import(new URL('../workspace-api/lib/scope-rule.js', import.meta.url));
+  const { pathInScope, pathInGroupScope, transcriptAllowed } = await import(new URL('../workspace-api/lib/scope-rule.js', import.meta.url));
+  // Is this person in that room? The registry answers (the room's members by
+  // their Telegram or Slack id, the person's ids on the roster); unreadable
+  // registry → nobody is (fail closed: a transcript is never shown by mistake).
+  const groupId = process.env.IDE_GROUP_ID || null;
+  let roster = null, groups = null;
+  const isMember = (roomId) => {
+    if (roster == null) { try { roster = JSON.parse(readFileSync(join(PROJECT_DIR, '.allowed-emails.json'), 'utf8')); } catch { roster = []; } }
+    if (groups == null) { try { groups = JSON.parse(readFileSync(join(PROJECT_DIR, '.team-config.json'), 'utf8')).groups || {}; } catch { groups = {}; } }
+    const me = (Array.isArray(roster) ? roster : []).find(m => m && m.slug === ownSlug);
+    const members = Object.keys(groups[roomId]?.members || {});
+    return !!me && members.some(id => id === String(me.telegramChatId || '') || id === String(me.slackUserId || ''));
+  };
 
   const toolName = data.tool_name || data.toolName || '';
   const input    = data.tool_input || data.toolInput || {};
@@ -343,6 +359,13 @@ async function main() {
     }
     const rel = relInProject(p);
     if (rel == null) continue;
+    if (!transcriptAllowed(rel, { groupCtx, groupId, isMember })) {
+      process.stderr.write(groupCtx
+        ? `Blocked: "${p}" is another room's transcript. A room's conversation reads its own transcript only.`
+        : `Blocked: "${p}" is a room's transcript, and this person is not in that room. What a room said is the room's; ` +
+          `to the user, say that conversation is between the people in it — never that you cannot see it.`);
+      process.exit(2);
+    }
     const inScope = groupCtx
       ? pathInGroupScope(rel)
       : pathInScope(rel, { isAdmin: false, ownSlug });

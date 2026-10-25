@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import TileBanner from './TileBanner.jsx';
+import StepAction from './StepAction.jsx';
 import StatusTag from './StatusTag.jsx';
 import EditorHeader from '../EditorHeader.jsx';
 import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
@@ -169,7 +170,8 @@ export default function IntegrationsDashboard({ sidebarOpen }) {
 
   // Telegram is configured in AI Settings (its own tile), not here — exclude it
   // from the Integrations catalog so it isn't set up in two places.
-  const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram'), [data]);
+  // Telegram and Slack have screens of their own under AI Settings.
+  const integrations = useMemo(() => (data?.integrations || []).filter(i => i.id !== 'telegram' && i.id !== 'slack'), [data]);
   // Sync URL → activating state. When ?activate=<id> changes, find the
   // matching integration tile and open the activation modal on it.
   // Remote-MCP OAuth entries have no modal — a deep link can't open their
@@ -1490,7 +1492,7 @@ export function ActivateModal({ integration, onClose, onSuccess }) {
   const branding = useBranding();
   // Step interpolation context — supports {{botDisplayName}}, {{botName}},
   // {{title}}, {{botAvatarUrl}}, {{logoUrl}}, {{iconUrl}} in step.title /
-  // step.body / step.downloads[].{label,url,filename}.
+  // step.body / step.downloads[].{label,url,filename,copy} (copy: put the text on the clipboard).
   const stepVars = {
     botDisplayName: branding.botDisplayName,
     botName:        branding.botName,
@@ -1689,21 +1691,9 @@ Important: do NOT ask me to paste any keys, tokens, or passwords into chat. I'll
                         <StepBody body={interpolate(step.body, stepVars)} />
                         {Array.isArray(step.downloads) && step.downloads.length > 0 && (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {step.downloads.map((d, j) => {
-                              const url = interpolate(d.url, stepVars);
-                              const filename = interpolate(d.filename || '', stepVars);
-                              return (
-                                <a
-                                  key={j}
-                                  href={url}
-                                  download={filename || true}
-                                  className="inline-flex items-center gap-1.5 rounded-[6px] border border-border/70 bg-background px-3 py-1.5 text-[12px] font-medium text-foreground/85 transition-all hover:border-foreground/30 hover:bg-muted/30 hover:text-foreground active:scale-[0.99]"
-                                >
-                                  <Download className="size-3.5" strokeWidth={1.75} />
-                                  {interpolate(d.label, stepVars)}
-                                </a>
-                              );
-                            })}
+                            {step.downloads.map((d, j) => (
+                              <StepAction key={j} label={interpolate(d.label, stepVars)} url={interpolate(d.url, stepVars)} filename={interpolate(d.filename || '', stepVars)} copy={!!d.copy} render={d.render || null} />
+                            ))}
                           </div>
                         )}
                       </div>

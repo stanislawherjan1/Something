@@ -67,6 +67,7 @@ const DEFAULTS = {
   // first paint shows a valid image instead of a broken-image icon. Once
   // /api/branding resolves these are replaced with the real URLs.
   botAvatarUrl:   BOT_FALLBACK,
+  botAvatarPreset: 1,       // the stock picture it wears (1–16), null for an upload
   logoUrl:        NEUTRAL_FALLBACK,
   iconUrl:        NEUTRAL_FALLBACK,
   legacyMode:     false,    // when true, hide UI affordances that edit branding
@@ -81,7 +82,7 @@ const BrandingContext = createContext(DEFAULTS);
 // answers — so the bot's face was always the last thing on screen. The server
 // copy still wins the moment it arrives (`loaded` stays false until then).
 const CACHE_KEY = 'branding.v1';
-const CACHED = ['title', 'botName', 'botDisplayName', 'hideIdeText', 'botAvatarUrl', 'logoUrl', 'iconUrl', 'legacyMode'];
+const CACHED = ['title', 'botName', 'botDisplayName', 'hideIdeText', 'botAvatarUrl', 'botAvatarPreset', 'logoUrl', 'iconUrl', 'legacyMode'];
 function cachedBranding() {
   try {
     const c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
@@ -98,7 +99,8 @@ export function BrandingProvider({ children }) {
       const resp = await fetch('/api/branding', { credentials: 'include' });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(CACHED.map((k) => [k, data[k] ?? DEFAULTS[k]])))); } catch { /* private mode */ }
+      // botAvatarPreset is null for an upload: kept as null, never the default.
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(CACHED.map((k) => [k, k === 'botAvatarPreset' ? (data[k] ?? null) : (data[k] ?? DEFAULTS[k])])))); } catch { /* private mode */ }
       setState(prev => ({
         ...prev,
         title:          data.title          ?? DEFAULTS.title,
@@ -106,6 +108,7 @@ export function BrandingProvider({ children }) {
         botDisplayName: data.botDisplayName ?? DEFAULTS.botDisplayName,
         hideIdeText:    !!data.hideIdeText,
         botAvatarUrl:   data.botAvatarUrl   ?? DEFAULTS.botAvatarUrl,
+        botAvatarPreset: data.botAvatarPreset ?? null,
         logoUrl:        data.logoUrl        ?? DEFAULTS.logoUrl,
         iconUrl:        data.iconUrl        ?? DEFAULTS.iconUrl,
         legacyMode:     !!data.legacyMode,

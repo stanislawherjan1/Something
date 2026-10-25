@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, PauseCircle } from 'lucide-react';
+import { Calendar, Repeat, Loader2, Trash2, X, Send, Globe, Clock, Bell, Users, PauseCircle, Hash } from 'lucide-react';
 import { Tooltip as TooltipPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -444,6 +444,14 @@ function ReminderRow({ reminder, people = {}, me = null, onDelete }) {
               <ChannelIcon channel={reminder.channel} />
             </span>
           </InfoTip>
+          {/* Aimed at a room: composed there when it fires, not sent to a person. */}
+          {reminder.room && (
+            <InfoTip label={`Composed in ${reminder.room.title || 'a room'} when it fires`}>
+              <span className="inline-flex max-w-[11rem] cursor-default items-center gap-1 truncate text-foreground/75">
+                <Hash className="size-3 shrink-0" strokeWidth={1.75} />{(reminder.room.title || reminder.room.id).replace(/^#/, '')}
+              </span>
+            </InfoTip>
+          )}
         </span>
 
         {onDelete && (
@@ -696,13 +704,20 @@ function formatRecurrence(reminder) {
 // globe. "Both" stacks the two side by side.
 // Compact channel glyph(s) only — used inline on the slim title row. The
 // labelled "Channel: …" variant (ChannelInline) lives in the expanded detail.
+// The Slack mark, as a mask so it takes the text colour like the lucide glyphs.
+function SlackGlyph() {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+  return <span role="img" aria-label="Slack" className="inline-block size-3 bg-current" style={{ WebkitMask: `url(${base}/integrations/slack.svg) center / contain no-repeat`, mask: `url(${base}/integrations/slack.svg) center / contain no-repeat` }} />;
+}
+
 function ChannelIcon({ channel }) {
   const c = (channel || 'all').toLowerCase();
   return (
     <span className="inline-flex items-center text-muted-foreground/65">
       {c === 'telegram' && <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />}
+      {c === 'slack' && <SlackGlyph />}
       {c === 'web' && <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />}
-      {(c === 'all' || (c !== 'telegram' && c !== 'web')) && (
+      {(c === 'all' || (c !== 'telegram' && c !== 'slack' && c !== 'web')) && (
         <span className="inline-flex items-center gap-1.5">
           <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />
           <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />
@@ -718,8 +733,9 @@ function ChannelInline({ channel }) {
     <span className="inline-flex items-center gap-1.5 text-foreground/70" title={channelTitle(c)}>
       <span className="text-muted-foreground/70">Channel:</span>
       {c === 'telegram' && <Send className="size-3" strokeWidth={1.75} aria-label="Telegram" />}
+      {c === 'slack' && <SlackGlyph />}
       {c === 'web' && <Globe className="size-3" strokeWidth={1.75} aria-label="Web UI" />}
-      {(c === 'all' || (c !== 'telegram' && c !== 'web')) && (
+      {(c === 'all' || (c !== 'telegram' && c !== 'slack' && c !== 'web')) && (
         <span className="inline-flex items-center gap-0.5">
           <Send  className="size-3" strokeWidth={1.75} aria-label="Telegram" />
           <span className="text-muted-foreground/55">+</span>
@@ -732,6 +748,7 @@ function ChannelInline({ channel }) {
 
 function channelTitle(c) {
   if (c === 'telegram') return 'Fires on Telegram';
+  if (c === 'slack')    return 'Fires on Slack';
   if (c === 'web')      return 'Fires in the web UI';
   return 'Fires on both surfaces';
 }

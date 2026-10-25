@@ -12,8 +12,8 @@ A background process (`{BOT}-reminders` in PM2) polls `.reminders.json` every 60
 ## The trigger format
 
 ```
-[REMINDER channel=<telegram|web|all> chat_id=<id> | <message>]
-[AMBIENT channel=<telegram|web|all> chat_id=<id> | <message>]
+[REMINDER channel=<telegram|slack|web|all> chat_id=<id> | <message>]
+[AMBIENT channel=<telegram|slack|web|all> chat_id=<id> | <message>]
 ```
 
 `[AMBIENT …]` is a reminder set with `urgency: "ambient"`: a soft item to weave into a natural opening in conversation, or a check whose outcome decides whether anything is said. If nothing is worth raising, send nothing (see `global-claude.md`).
@@ -54,6 +54,7 @@ The `channel=` token tells you where the user wants the result:
 | `channel=` | Reply with |
 |---|---|
 | `telegram` | the Telegram tool (`mcp__telegram__send_message` / the channel's reply tool) only |
+| `slack` | you never see this one in a live Telegram session: a Slack-bound reminder runs as a headless turn and the system posts your final text into the person's Slack DM. If it does reach you here, reply with `mcp__web-channel__web_send_message` and `channel="slack"`. |
 | `web` | `mcp__web-channel__web_send_message` only — the result appears in the workspace UI, not Telegram |
 | `all` | reply on Telegram if it's wired; the web bubble is mirrored automatically. If there's no Telegram, use `web_send_message`. |
 

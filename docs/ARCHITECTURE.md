@@ -492,8 +492,12 @@ Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger
   `bot/recent-snapshot-monitor.sh`. Files quiet conversations (web chats, the Telegram log
   split per chat, registered group histories) into the ledger, with one routing and one
   notes call (`claude -p`, no tools, structured output) per conversation.
-- **The recall block** — built in `runClaudeTurn` while the CLI starts (no added latency;
-  a search slower than 400 ms is dropped) and written in front of the message on stdin.
+- **The recall block** — built in `runClaudeTurn` right after the CLI is spawned and written
+  in front of the message on stdin. The CLI waits for that message before it starts (so the
+  search adds its own time to the turn) and gives up on stdin after 3 s, so a search slower
+  than its budget is dropped: 2 s for a person's own turn (capped at 2.5 s), 400 ms for a
+  room's turn, whose message stays in the room's session (`MEMORY_V4_RECALL_BUDGET_PERSON_MS`,
+  `MEMORY_V4_RECALL_BUDGET_MS`).
 - **The embedder worker** — `apps/embedder/worker.mjs`, forked on first use with a minimal
   environment and an IPC channel; its own process, so an OOM there ends only the worker.
 - **The nightly run** — a timer in workspace-api, once a day after 04:00 local.
@@ -509,6 +513,32 @@ Everything runs inside workspace-api (uid `wsapi`), the one writer of the ledger
 
 The Telegram brain (tmux) gets the v4 prefix through the same `GET /api/memory/prefix?raw=1`
 and the memory tools through the workspace-api MCP; see [MEMORY.md](MEMORY.md#how-it-works).
+
+## Slack surface
+
+Slack is a surface of the same product, not a second bot: one Socket Mode
+WebSocket held open **inside workspace-api** (`lib/integrations/slack-listener.js`,
+started by `reconcile()` at boot and after every save, pause or removal of the
+`slack` integration) brings every event in; `lib/integrations/slack-api.js` is
+the little of the Web API the surface uses (no SDK; the token is decrypted from
+the store per call). No process, uid or wrapper is added; nothing listens for
+Slack; the proxy's `*.slack.com` suffix rule covers the host Slack picks for
+the socket.
+
+What an event becomes:
+
+| Event | Path | Runs as |
+|---|---|---|
+| a DM from a roster person (matched once by the email Slack holds, kept as `slackUserId`) | `member-dm.js` with `surface: 'slack'` — a turn AS that person, own resumed session, mirrored into a "Slack" chat in their web history | their turn slot |
+| a DM from anyone else in the workspace | one fixed line, once; listed as pending for an admin | — |
+| a channel message | the group watcher (`group-watcher.js`) through the Slack channel adapter (`channel-adapter.js`), only in a channel an admin approved and only while everyone in it is on the roster (`slack-channels.js`: the audience check); a thread message is answered in its thread; a channel message in the channel, or in a thread under it when the channel is busy or the answer is long | `turn-group`, this channel's scope + shared, nothing private |
+| the bot invited to a channel | a request for an admin (`.team/slack-pending-channels.json`, the Slack page); not approved in 24 h → the bot leaves; a Slack Connect channel is left at once | — |
+| `tokens_revoked`, `app_uninstalled` | the keys leave the store, the socket closes | — |
+
+Every envelope is acknowledged before it is looked at; a message is handled
+once (`channel:ts`); events sent while the socket was down are lost and the gap
+is recorded (`listener.lost` on `GET /api/integrations`), never hidden. The
+primary admin's Slack DM is a turn like anyone's: the tmux brain is Telegram's.
 
 ## Telegram Bot Architecture
 
@@ -1070,7 +1100,7 @@ Lives at `ide-template/workspace-api/`, started by PM2 (`workspace-api` process)
 
 **Self-validating session** — `lib/auth.js` middleware reads the `ide_session` cookie, verifies the JWT against `SESSION_SECRET` (shared with auth-service via env), and cross-checks against the `X-IDE-User` header from nginx auth_request. Header alone is never trusted: defense-in-depth against in-container forgery (e.g. compromised MCP server talking to localhost:3001). On cookie/header mismatch, the actor is dropped and admin gates reject.
 
-**Usage limits** — the Claude CLI reports a spent plan as a structured `rate_limit_event` (`status`, `resetsAt`) on the stream, not as reply text. `lib/claude.js` records the first `rejected` event of a turn (warnings are ignored) and, when the turn then exits non-zero, replaces the generic exit error with one notice built by `lib/usage-limit.js`: `Claude usage limit reached. <bot name> is back at HH:MM.`, the time rendered in the workspace timezone (`IDE_TIMEZONE`, default UTC; falls back to UTC on an unknown zone). The web chat renders that error as a limit (clock icon, muted styling, no retry button) rather than a failure, and the group watcher matches the "usage limit reached" phrase to announce the limit once instead of on every retry.
+**Usage limits** — the Claude CLI reports a spent plan as a structured `rate_limit_event` (`status`, `resetsAt`) on the stream, not as reply text. `lib/claude.js` records the first `rejected` event of a turn (warnings are ignored) and, when the turn then exits non-zero, replaces the generic exit error with one notice built by `lib/usage-limit.js`: `Claude usage limit reached. <bot name> is back at HH:MM.` — the same sentence on every surface, in the reader's clock and language. The hour is the person's own zone (their Settings), else the workspace default zone (`getDefaultTimezone`), never the server's UTC; a room names the zone with the hour (`18:00 CEST`), since it is read across zones; Polish readers get it in Polish (an i18n table). The web chat renders it as a limit (clock icon, muted styling, no retry button). A Telegram teammate's or a Slack direct message gets the sentence once per reset (`member-dm.js`, every later message during the same limit stays unanswered); a group or channel gets it once, in its own language (`group-watcher.js`, the reset read from the turn's tag or the CLI's printed `resets …`, `resetInstant`); the operator's Telegram, whose brain runs in tmux and prints the limit only on its screen, is told by the bot's watch loop (`bot.sh` → `workspace-api/bin/limit-notice.mjs` → `bot-notify.sh`), once per printed line.
 
 **Encrypted store** lives at `PROJECT_DIR/.integrations/credentials.json` (mode 0600, `HARD_HIDDEN` so the file API never returns it). Append-only audit log at `.integrations/audit.log` records every activate/remove with timestamp + IP.
 

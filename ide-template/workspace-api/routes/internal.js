@@ -17,10 +17,10 @@ import * as oauthBroker from '../lib/integrations/oauth.js';
 import { publish as publishNotification } from '../lib/notify.js';
 import { createSession, getSession, linkRelayPeer, listSessions } from '../lib/sessions.js';
 import { appendToSession } from '../lib/chatHistory.js';
-import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup } from '../lib/team.js';
+import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup, getDefaultTimezone, effectiveTimezone } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
-import { routeGroupMessage, sayInGroup, postToGroup } from '../lib/integrations/group-watcher.js';
+import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
 import { idleMs, consolidateIdle } from '../lib/memory-consolidator.js';
@@ -32,12 +32,21 @@ import { resolve as resolveBranding } from '../lib/branding.js';
 import { resolveTurnToken, isInternalCall } from '../lib/turn-identity.js';
 import { isShared } from '../lib/shares.js';
 import { pathInScope } from '../lib/scope-rule.js';
+import { prefers } from '../lib/surfaces.js';
+import { deliver as deliverTo, sendToPerson } from '../lib/integrations/deliver.js';
 
 // Resolve a recipient slug to a real team member, or null. B3: a relay must
 // only ever land in a KNOWN teammate's view — never an arbitrary/invented slug.
 function resolveMember(slug) {
   if (typeof slug !== 'string' || !/^[a-z0-9-]+$/.test(slug)) return null;
   return teamList().find(m => m.slug === slug) || null;
+}
+// Does a name as the user said it ("Stanislaw", "tom") fit this person? Every
+// word of it is a word of their display name, accents aside.
+const nameWords = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+function nameFits(name, member) {
+  const said = nameWords(name), theirs = new Set(nameWords(member?.displayName));
+  return said.length > 0 && said.every(w => theirs.has(w));
 }
 
 // Cross-surface relay threading: the recipient's existing session paired with
@@ -77,33 +86,27 @@ async function deliverRunOutcome(member, deliver, reply, sentItself) {
     return;
   }
   recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'said' });
-  const channel = ['telegram', 'web', 'all'].includes(deliver.channel) ? deliver.channel : 'all';
+  const channel = ['telegram', 'slack', 'web', 'all'].includes(deliver.channel) ? deliver.channel : 'all';
   const botName = resolveBranding().botName;
   const title = String(deliver.title || botName).trim().slice(0, 120) || botName;
 
   // The web thread is the record and the place to answer from.
   const sessionId = createSession(member.slug, { title }).id;
 
-  let tgSent = false;
-  let tgMessageId = null;
-  const prefersTg = member.preferredSurface === 'telegram' || member.preferredSurface === 'both';
-  if (member.telegramChatId && (channel === 'telegram' || (channel === 'all' && prefersTg))) {
-    try {
-      const r = await sendTelegramMessage(member.telegramChatId, text);
-      tgSent = !!(r && r.ok);
-      tgMessageId = (r && r.messageId != null) ? String(r.messageId) : null;
-    } catch (err) {
-      process.stderr.write(`[invoke-turn] ${member.slug}: telegram leg failed: ${err.message}\n`);
-    }
-  }
-  const webToast = channel !== 'telegram' || !tgSent;
+  // The other surfaces: the one named, or the ones the person prefers.
+  const legs = await deliverTo(member, text, channel);
+  const tgSent = legs.telegram;
+  // A surface was named and reached: no web toast on top; otherwise the web
+  // is where it is sure to be seen.
+  const webToast = !((channel === 'telegram' || channel === 'slack') && legs[channel]);
 
   appendToSession(member.slug, sessionId, {
     role: 'assistant', text, kind: 'bot',
     delivery: {
-      channel: tgSent ? (webToast ? 'both' : 'telegram') : 'web',
+      channel: legs.sent.length ? (webToast ? 'both' : legs.sent[0]) : 'web',
       tgChatId: tgSent ? String(member.telegramChatId) : null,
-      tgMessageId,
+      tgMessageId: legs.tgMessageId,
+      slackChannel: legs.slackChannel,
       relayDepth: 0,
       framedToBrain: false,
       at: new Date().toISOString(),
@@ -112,7 +115,7 @@ async function deliverRunOutcome(member, deliver, reply, sentItself) {
   if (webToast) {
     publishNotification({ kind: 'bot', title: botName, body: text, meta: { session_id: sessionId }, recipient: member.slug });
   }
-  process.stderr.write(`[invoke-turn] ${member.slug}: outcome delivered (web${tgSent ? '+telegram' : ''})\n`);
+  process.stderr.write(`[invoke-turn] ${member.slug}: outcome delivered (web${legs.sent.map(s => `+${s}`).join('')})\n`);
 }
 
 function loopbackOnly(req, res, next) {
@@ -269,6 +272,7 @@ export default function internalRouter() {
         ...(bot ? { telegramChatId: m.telegramChatId || null } : {}),
         telegramLinked: !!m.telegramChatId,
         preferredSurface: m.preferredSurface || null,
+        surfaces: m.surfaces || null,
         preferredLanguage: m.preferredLanguage || null,
         isOperator: !!op && m.slug === op,
       }));
@@ -288,12 +292,16 @@ export default function internalRouter() {
   router.post('/internal/reminder-deliver', loopbackOnly, botOnly, async (req, res) => {
     const { recipients, channel, title, body } = req.body || {};
     try {
-      if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
-      const ch = ['telegram', 'web', 'all'].includes(channel) ? channel : 'all';
+      const ch = ['telegram', 'slack', 'web', 'all'].includes(channel) ? channel : 'all';
+      // The operator is served by the brain (a frame in the tmux session) —
+      // except on Slack, which the brain cannot reach: there the operator is a
+      // recipient like anyone, in solo mode too.
+      const opViaHere = ch === 'slack';
+      if (!getTeamMode() && !opViaHere) return res.json({ ok: true, skipped: 'solo' });
       const opSlug = primaryAdminSlug();
       let slugs = Array.isArray(recipients) ? recipients.slice() : [];
       if (slugs.length === 1 && slugs[0] === '*everyone*') slugs = teamList().map(m => m.slug);
-      slugs = [...new Set(slugs.filter(s => /^[a-z0-9-]+$/.test(s) && s !== opSlug))];
+      slugs = [...new Set(slugs.filter(s => /^[a-z0-9-]+$/.test(s) && (opViaHere || s !== opSlug)))];
       const t = String(title == null ? '' : title).trim();
       const b = String(body == null ? '' : body).trim();
       if (!t && !b) return res.status(400).json({ ok: false, error: 'title or body required' });
@@ -301,17 +309,13 @@ export default function internalRouter() {
       for (const slug of slugs) {
         const m = resolveMember(slug);
         if (!m) continue;                                 // departed/unknown → skip
-        let web = false, telegram = false;
+        let web = false;
         if (ch === 'web' || ch === 'all') {
           try { publishNotification({ kind: 'reminder', title: t || '⏰ Reminder', body: b, recipient: slug }); web = true; }
           catch (e) { process.stderr.write(`[reminder-deliver] web leg ${slug}: ${e.message}\n`); }
         }
-        if ((ch === 'telegram' || ch === 'all') && m.telegramChatId
-            && (m.preferredSurface === 'telegram' || m.preferredSurface === 'both')) {
-          try { const r = await sendTelegramMessage(m.telegramChatId, `⏰ ${t}${b ? ': ' + b : ''}`.trim()); telegram = !!(r && r.ok); }
-          catch (e) { process.stderr.write(`[reminder-deliver] tg leg ${slug}: ${e.message}\n`); }
-        }
-        delivered.push({ slug, web, telegram });
+        const legs = await deliverTo(m, `⏰ ${t}${b ? ': ' + b : ''}`.trim(), ch);
+        delivered.push({ slug, web, telegram: legs.telegram, slack: legs.slack });
       }
       return res.json({ ok: true, delivered, count: delivered.length });
     } catch (err) {
@@ -343,7 +347,9 @@ export default function internalRouter() {
   router.post('/internal/invoke-turn', loopbackOnly, botOnly, (req, res) => {
     const { actor, message, deliver } = req.body || {};
     try {
-      if (!getTeamMode()) return res.json({ ok: true, skipped: 'solo' });
+      // Solo mode has one brain, the tmux one — except for Slack, which that
+      // brain cannot reach: a Slack-bound frame runs headlessly here too.
+      if (!getTeamMode() && !/\bchannel=slack\b/.test(String(message || ''))) return res.json({ ok: true, skipped: 'solo' });
       if (typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ ok: false, error: 'message required' });
       }
@@ -435,6 +441,16 @@ export default function internalRouter() {
       // admin's chat, preserving the legacy proactive-bot + cross-surface tunnel
       // (within one user). A valid recipient slug → that teammate's chat.
       const target = resolveMember(recipient);
+      // A slug can look like another person's name: the CEO's was "stanislaw",
+      // and "tell Stanislaw…" went to him. With the name the user said beside
+      // the slug, a slug that is plainly someone else is refused, unsent.
+      const saidName = typeof req.body?.recipientName === 'string' ? req.body.recipientName.trim() : '';
+      if (target && saidName && !nameFits(saidName, target)) {
+        const meant = teamList().filter(m => nameFits(saidName, m));
+        if (meant.length) {
+          return res.status(409).json({ ok: false, error: `"${recipient}" is ${target.displayName || target.slug}, not ${saidName}. ${saidName} is ${meant.map(m => `${m.displayName} (slug ${m.slug})`).join(' or ')}. Nothing was sent; call again with the right slug.` });
+        }
+      }
       // Same precedence as /notify: explicit recipient → originator (own
       // proactive/cross-surface message) → operator/admin (Telegram + reminders
       // act as the operator). Keeps a Telegram "send to my web UI" in the
@@ -502,14 +518,17 @@ export default function internalRouter() {
       // to ALSO fire the web toast.
       const deliverTo   = target || resolveMember(actor);
       const explicitTg  = channel === 'telegram';
+      const explicitSlack = channel === 'slack';
       const explicitWeb = channel === 'web';
-      const prefersTg = !!(deliverTo?.telegramChatId &&
-        (deliverTo.preferredSurface === 'telegram' || deliverTo.preferredSurface === 'both'));
+      const prefersTg = !!(deliverTo?.telegramChatId && prefers(deliverTo, 'telegram'));
+      // Slack, the same way: named by the sender, or the recipient's own preference on a relay.
+      const wantSlack = !!(deliverTo?.slackUserId && !explicitWeb && !explicitTg &&
+        (explicitSlack || (isRelay && prefers(deliverTo, 'slack'))));
       // Send to Telegram when the sender EXPLICITLY asked for it (works for a
       // relay AND a self "send me on Telegram"), or — for a cross-user relay —
       // when the recipient's preference is Telegram. Proactive/reminders (not
       // explicit, not a relay) don't auto-forward here; they have their own path.
-      const wantTg = !!(deliverTo?.telegramChatId && !explicitWeb &&
+      const wantTg = !!(deliverTo?.telegramChatId && !explicitWeb && !explicitSlack &&
         (explicitTg || (isRelay && prefersTg)));
       // A relay whose recipient is the OPERATOR — the primary admin, whose brain
       // IS the persistent tmux claude. Deliver it via a reminder-style FRAME
@@ -557,11 +576,22 @@ export default function internalRouter() {
         tgMessageId = (r && r.messageId != null) ? String(r.messageId) : null;
       }
 
-      // Web toast: suppress when the sender explicitly chose Telegram and it
-      // landed there, OR when the frame was injected (the brain's Telegram emit
-      // is mirrored to the operator's web by web-mirror.sh, so a toast here would
-      // double the web notification too).
-      const webToast = framedToBrain ? false : !(explicitTg && tgSent);
+      // Slack: a raw send into the recipient's DM with the bot. The operator
+      // is a person like any other here — the brain has no Slack.
+      let slackSent = false;
+      let slackChannel = null;
+      if (wantSlack) {
+        const r = await sendToPerson(deliverTo, text, 'slack');
+        slackSent = r.ok;
+        slackChannel = r.channel || null;
+        if (!r.ok) process.stderr.write(`[internal] relay slack leg to ${deliverTo.slug}: ${r.error}\n`);
+      }
+
+      // Web toast: suppress when the sender explicitly chose Telegram or Slack
+      // and it landed there, OR when the frame was injected (the brain's
+      // Telegram emit is mirrored to the operator's web by web-mirror.sh, so a
+      // toast here would double the web notification too).
+      const webToast = framedToBrain ? false : !((explicitTg && tgSent) || (explicitSlack && slackSent));
 
       // Record the relay/bot message into the web thread WITH delivery truth, so
       // a teammate's Telegram reply can thread back deterministically (their
@@ -571,9 +601,10 @@ export default function internalRouter() {
         appendToSession(actor, destId, {
           role: 'assistant', text, kind: 'bot',
           delivery: {
-            channel: tgSent ? (webToast ? 'both' : 'telegram') : 'web',
+            channel: tgSent ? (webToast ? 'both' : 'telegram') : slackSent ? (webToast ? 'both' : 'slack') : 'web',
             tgChatId: wantTg && deliverTo?.telegramChatId ? String(deliverTo.telegramChatId) : null,
             tgMessageId,
+            slackChannel,
             relayDepth: depth,
             framedToBrain,
             at: new Date().toISOString(),
@@ -589,6 +620,9 @@ export default function internalRouter() {
         ok: true,
         id: destId,
         recipient: actor,
+        // Named, so the sender's turn can see who it reached: a slug can look
+        // like another person's name ("stanislaw" was the CEO's, not Stanislaw's).
+        recipientName: deliverTo?.displayName || null,
         relay: isRelay,
         delivery: {
           web: true,
@@ -596,6 +630,9 @@ export default function internalRouter() {
           telegram: tgSent,
           telegramRequested: explicitTg,
           recipientLinkedTelegram: !!deliverTo?.telegramChatId,
+          slack: slackSent,
+          slackRequested: explicitSlack,
+          recipientLinkedSlack: !!deliverTo?.slackUserId,
         },
       });
     } catch (err) {
@@ -838,6 +875,38 @@ export default function internalRouter() {
   // comes from the turn's own token, never the body, and only into a registered
   // group that person is a member of. A group turn already speaks in its own
   // group and may not reach another. loopback only.
+  // What a room said lately, for a person who is in it. The transcript file is
+  // the room's own (no person's turn can open it); this is the one way a
+  // member's turn reads the room's recent lines — "what did Cass just say in
+  // the group?" — before they reach the room's memory. The member comes from
+  // the turn's token, the room from the registry; a room's own turn reads its
+  // own room only. loopback only.
+  router.get('/internal/room-recent', loopbackOnly, (req, res) => {
+    const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
+    if (!turn) return res.status(403).json({ ok: false, error: 'no turn identity' });
+    const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/^#/, '');
+    const idOf = (v) => String(v || '').trim().replace(/^slack-/i, '').toLowerCase();
+    let mine;
+    if (turn.group) mine = turn.groupId ? [getGroup(turn.groupId)].filter(Boolean) : [];
+    else if (turn.actor) mine = memberGroupsOf(turn.actor).map((id) => getGroup(id)).filter(Boolean);
+    else mine = [];
+    const rooms = mine.map((g) => ({ chatId: g.chatId, title: g.title || null }));
+    const want = norm(req.query.room), wantId = idOf(req.query.room);
+    let hit = want ? mine.filter((g) => idOf(g.chatId) === wantId || norm(g.title) === want) : (mine.length === 1 ? mine : []);
+    if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
+    if (hit.length !== 1) return res.status(hit.length ? 422 : 403).json({ ok: false, error: hit.length ? 'more than one room matches: say which' : want ? 'not a room this person is in' : 'say which room', rooms });
+    // Times in the reader's own zone (the room's turn: the workspace's), so a
+    // person is never told they wrote something at a UTC hour they don't recognise.
+    let tz = (turn.group ? getDefaultTimezone() : effectiveTimezone(turn.actor)) || 'UTC';
+    try { new Intl.DateTimeFormat('en-GB', { timeZone: tz }); } catch { tz = 'UTC'; }
+    const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const lines = roomRecent(hit[0].chatId, Number(req.query.n) || 50).map((l) => {
+      const d = l.ts ? new Date(l.ts) : null;
+      return { ...l, at: d && !Number.isNaN(d.getTime()) ? fmt.format(d) : null };
+    });
+    return res.json({ ok: true, room: { chatId: hit[0].chatId, title: hit[0].title || null }, tz, lines });
+  });
+
   router.post('/internal/group-post', loopbackOnly, async (req, res) => {
     const turn = resolveTurnToken(String(req.get('x-ide-turn') || ''));
     if (!turn || turn.group || !turn.actor) {
@@ -848,9 +917,14 @@ export default function internalRouter() {
     if (!mine.length) {
       return res.status(403).json({ ok: false, error: 'not a member of any group the assistant is in (or Telegram is not linked for this person)', groups });
     }
-    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const want = norm(req.body?.group);
-    let hit = want ? mine.filter((g) => g.chatId === want || norm(g.title) === want) : (mine.length === 1 ? mine : []);
+    // A room by its id or its name, however the model spells it: a Slack
+    // channel's id in any case, with or without the `slack-` prefix (the
+    // registry keeps `slack-C…`, Slack shows `C…`), a title with or without
+    // its `#`. A lowercased id once matched nothing and the post was refused.
+    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/^#/, '');
+    const idOf = (s) => String(s || '').trim().replace(/^slack-/i, '').toLowerCase();
+    const want = norm(req.body?.group), wantId = idOf(req.body?.group);
+    let hit = want ? mine.filter((g) => idOf(g.chatId) === wantId || norm(g.title) === want) : (mine.length === 1 ? mine : []);
     if (!hit.length && want) hit = mine.filter((g) => norm(g.title).includes(want));
     if (hit.length !== 1) {
       const error = hit.length ? 'more than one group matches: say which' : want ? 'none of this person\'s groups matches' : 'say which group';

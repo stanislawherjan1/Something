@@ -516,9 +516,12 @@ function ChannelIcons({ entry }) {
   // `telegramLinked` is exposed to all viewers (members included); the raw chat
   // id is masked for non-admins, so prefer the flag and fall back to the id.
   const linked  = entry.telegramLinked ?? !!entry.telegramChatId;
+  const slackLinked = entry.slackLinked ?? !!entry.slackUserId;
   const surface = entry.preferredSurface;
-  const webPrimary = surface === 'web' || surface === 'both' || !linked;
-  const tgPrimary  = linked && (surface === 'telegram' || surface === 'both');
+  const surfaces = Array.isArray(entry.surfaces) ? entry.surfaces : null;
+  const webPrimary = surfaces ? surfaces.includes('web') : (surface === 'web' || surface === 'both' || !linked);
+  const tgPrimary  = linked && (surfaces ? surfaces.includes('telegram') : (surface === 'telegram' || surface === 'both'));
+  const slPrimary  = slackLinked && !!surfaces?.includes('slack');
   return (
     <div className="flex shrink-0 items-center gap-3">
       <Globe
@@ -534,6 +537,15 @@ function ChannelIcons({ entry }) {
           aria-label="Telegram linked"
           title={surface === 'both' ? 'Telegram linked · prefers web + telegram'
                : surface ? `Telegram linked · prefers ${surface}` : 'Telegram linked'}
+        />
+      )}
+      {slackLinked && (
+        <span
+          role="img"
+          aria-label="Slack linked"
+          title={slPrimary ? 'Slack linked · prefers Slack' : 'Slack linked'}
+          className={cn('inline-block size-3', slPrimary ? 'bg-foreground/55' : 'bg-muted-foreground/45')}
+          style={{ WebkitMask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/slack.svg) center / contain no-repeat`, mask: `url(${(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')}/integrations/slack.svg) center / contain no-repeat` }}
         />
       )}
     </div>
@@ -701,8 +713,10 @@ function EditMemberModal({ entry, isMe, isLastAdmin, onClose, onSuccess }) {
   );
 }
 
-function AddMemberModal({ onClose, onSuccess }) {
-  const [email, setEmail] = useState('');
+// Also opened from the Slack page for someone who wrote there without being
+// on the team: their email comes prefilled, and the caller gets it back.
+export function AddMemberModal({ onClose, onSuccess, initialEmail = '' }) {
+  const [email, setEmail] = useState(initialEmail);
   const [role, setRole]   = useState('member');
   const [busy, setBusy]   = useState(false);
   const [error, setError] = useState(null);
@@ -719,7 +733,7 @@ function AddMemberModal({ onClose, onSuccess }) {
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
-      onSuccess();
+      onSuccess(email.trim());
     } catch (err) {
       setError(err.message);
       setBusy(false);

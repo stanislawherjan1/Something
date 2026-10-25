@@ -4,6 +4,7 @@
 
 import { handle } from './server.js';
 import { NOTIFICATIONS, LIVE_NOTIFICATIONS } from './data/workspace.js';
+import { SHOWCASE } from './flags.js';
 
 const isOurs = (url) => {
   try {
@@ -27,8 +28,9 @@ export function installDemo() {
     const url = req ? req.url : String(input);
     if (!isOurs(url)) return realFetch(input, init);
     const method = (init.method || req?.method || 'GET').toUpperCase();
-    // A beat of latency, so loading states look as they do for real.
-    await new Promise((r) => setTimeout(r, 60 + Math.random() * 120));
+    // A beat of latency, so loading states look as they do for real — but not in the
+    // landing's replay, which shows the app ready, never loading.
+    if (!SHOWCASE) await new Promise((r) => setTimeout(r, 60 + Math.random() * 120));
     return handle(method, url, await bodyOf(init, req));
   };
 
@@ -60,10 +62,12 @@ export function installDemo() {
       this.onopen?.call(this, open);
       const path = new URL(this.url, location.origin).pathname;
       if (path === '/api/notifications/stream') {
-        this._emit('hello', { ok: true, replay: NOTIFICATIONS.length });
+        // The landing's replay shows the conversation alone: no backlog of notifications.
+        const replayed = SHOWCASE ? [] : NOTIFICATIONS;
+        this._emit('hello', { ok: true, replay: replayed.length });
         const base = Date.now() - 60_000;
-        NOTIFICATIONS.forEach((n, i) => this._emit('notification', { ...n, ts: n.ts || new Date(base - (NOTIFICATIONS.length - i) * 37 * 60_000).toISOString(), replay: true }));
-        LIVE_NOTIFICATIONS.forEach((n, i) => {
+        replayed.forEach((n, i) => this._emit('notification', { ...n, ts: n.ts || new Date(base - (replayed.length - i) * 37 * 60_000).toISOString(), replay: true }));
+        if (!SHOWCASE) LIVE_NOTIFICATIONS.forEach((n, i) => {
           this._timers.push(setTimeout(() => this._emit('notification', { ...n, id: `${n.id}_${Date.now().toString(36)}`, ts: new Date().toISOString() }), 25_000 * (i + 1)));
         });
       } else {
@@ -77,4 +81,7 @@ export function installDemo() {
     return isOurs(url) ? new DemoEventSource(url, opts) : new RealEventSource(url, opts);
   };
   Object.assign(window.EventSource, { CONNECTING: 0, OPEN: 1, CLOSED: 2 });
+
+  // The landing page's replay: the question typed and sent once the app is up.
+  if (SHOWCASE) import('./showcase.js').then((m) => m.startShowcase());
 }

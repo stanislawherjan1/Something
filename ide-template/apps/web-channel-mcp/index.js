@@ -80,16 +80,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
               "Optional teammate SLUG to RELAY to (cross-user). Omit to reply to " +
               "the current web user. Must be a real slug from the TEAM roster.",
           },
+          recipient_name: {
+            type: 'string',
+            description:
+              "With `recipient`: the person's name as the user said it (\"Stanislaw\"). " +
+              "A slug can look like someone else's name; when this name is plainly another " +
+              "teammate's, nothing is sent and the result gives the right slug.",
+          },
           channel: {
             type: 'string',
-            enum: ['telegram', 'web'],
+            enum: ['telegram', 'slack', 'web'],
             description:
               "Optional explicit delivery channel: set this ONLY when the user " +
-              "names one ('on Telegram' → 'telegram'; 'in their workspace' / 'on " +
-              "web' → 'web'). It OVERRIDES the recipient's default preference. " +
-              "Omit it normally: the recipient is then reached on whichever " +
-              "channel THEY prefer. 'telegram' delivers only to Telegram when " +
-              "they're linked (no duplicate web toast).",
+              "names one ('on Telegram' → 'telegram'; 'on Slack' → 'slack'; 'in " +
+              "their workspace' / 'on web' → 'web'). It OVERRIDES the recipient's " +
+              "default preference. Omit it normally: the recipient is then reached " +
+              "on whichever surfaces THEY prefer. A named surface delivers only " +
+              "there when they're linked (no duplicate web toast).",
           },
         },
       },
@@ -97,8 +104,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'group_send_message',
       description:
-        'Post a message into a Telegram GROUP the person is in (e.g. the team ' +
-        'group chat). Use it ONLY when the person explicitly asked for it to go ' +
+        'Post a message into a team room the person is in — a Telegram group or a ' +
+        'Slack channel (e.g. "#content"). Use it ONLY when the person explicitly asked for it to go ' +
         'to the group, and once they approved the exact text: what you pass is ' +
         'posted WORD FOR WORD, nothing is rewritten, so pass the final text, in ' +
         'the group\'s language. A message for ONE person is web_send_message, ' +
@@ -110,7 +117,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          group: { type: 'string', description: 'The group\'s name or chat id. Optional when the person is in one group only.' },
+          group: { type: 'string', description: 'The group\'s or channel\'s name ("#content") or chat id. Optional when the person is in one room only.' },
           text: { type: 'string', description: 'The message, exactly as it should appear in the group. Plain text.' },
         },
         required: ['text'],
@@ -129,9 +136,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // The SENDER is this turn's actor, set by claude.js as IDE_ACTOR_SLUG — wsapi
     // resolves it to a display name + uses it for attribution.
     const recipient = typeof args?.recipient === 'string' ? args.recipient.trim() : '';
+    const recipientName = typeof args?.recipient_name === 'string' ? args.recipient_name.trim() : '';
     // Explicit delivery channel override ('telegram' | 'web'); '' = recipient's
     // own preference decides.
-    const channel = (args?.channel === 'telegram' || args?.channel === 'web') ? args.channel : '';
+    const channel = (args?.channel === 'telegram' || args?.channel === 'slack' || args?.channel === 'web') ? args.channel : '';
     const from = (process.env.IDE_ACTOR_SLUG || '').trim();
     // B3 v2 relay threading: the sender's current web session id, so wsapi can
     // pair it with the recipient's relay thread and keep replies in-thread.
@@ -149,16 +157,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // → open conversation wiring goes inert.
       let sessionId = null;
       let delivery = null;
+      let sJsonName = null;
       try {
         const sRes = await fetch(CHAT_SESSION_URL, {
           method: 'POST',
           // The turn's token is what proves `from`; wsapi ignores the claim without it.
           headers: { 'Content-Type': 'application/json', 'X-IDE-Turn': process.env.IDE_TURN_ID || '' },
-          body: JSON.stringify({ title, body, recipient, from, fromSession, channel }),
+          body: JSON.stringify({ title, body, recipient, recipientName, from, fromSession, channel }),
         });
         const sJson = await sRes.json().catch(() => ({}));
+        // The slug is someone other than the person named: nothing is sent.
+        if (sRes.status === 409) return { content: [{ type: 'text', text: sJson.error || 'That slug is someone else; nothing was sent.' }], isError: true };
         if (sRes.ok && sJson?.ok && sJson?.id) sessionId = sJson.id;
         if (sJson?.delivery) delivery = sJson.delivery;
+        if (sJson?.recipientName) sJsonName = String(sJson.recipientName);
       } catch (_) { /* swallow — fall through to notify */ }
 
       // Fire the web toast UNLESS this went to Telegram-only by explicit request
@@ -196,18 +208,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // instead of promising a channel that didn't happen. Covers relay + self.
       const d = delivery || {};
       const who = recipient ? 'their' : 'your';
+      // Slack is reported like Telegram: the bot once said "workspace" for a
+      // message that had also reached the person's Slack, and could not tell.
+      const also = d.slack ? ` AND ${who} Slack` : '';
       let where;
-      if (d.telegram && d.webToast === false) {
-        where = `Delivered to ${who} Telegram.`;
+      if ((d.telegram || d.slack) && d.webToast === false) {
+        where = `Delivered to ${who} ${[d.telegram ? 'Telegram' : null, d.slack ? 'Slack' : null].filter(Boolean).join(' and ')}.`;
       } else if (d.telegram) {
-        where = `Delivered to ${who} workspace AND ${who} Telegram.`;
+        where = `Delivered to ${who} workspace AND ${who} Telegram${also}.`;
       } else if (d.telegramRequested && d.recipientLinkedTelegram === false) {
         where = `Delivered to ${who} workspace. Telegram was requested but ${recipient ? 'they have' : 'you have'} NOT linked Telegram, so it did NOT reach Telegram; tell the user that plainly, don't claim it went to Telegram.`;
       } else if (d.telegramRequested) {
         where = `Delivered to ${who} workspace. Telegram was requested but the Telegram send did not go through; say it's in the workspace, not on Telegram.`;
+      } else if (d.slackRequested && d.recipientLinkedSlack === false) {
+        where = `Delivered to ${who} workspace. Slack was requested but ${recipient ? 'they are' : 'you are'} NOT linked to Slack, so it did NOT reach Slack; say so plainly.`;
+      } else if (d.slackRequested && !d.slack) {
+        where = `Delivered to ${who} workspace. Slack was requested but the Slack send did not go through; say it's in the workspace, not on Slack.`;
       } else {
-        where = `Delivered to ${who} workspace.`;
+        where = `Delivered to ${who} workspace${also}.`;
       }
+      // Who it reached, by name: check it is the person the user meant.
+      if (recipient && delivery && sJsonName) where = `To ${sJsonName} (${recipient}): ${where} If ${sJsonName} is not who the user meant, say so at once.`;
       return {
         content: [{
           type: 'text',

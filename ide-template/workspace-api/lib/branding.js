@@ -100,6 +100,30 @@ function avatarMtime() {
   }
 }
 
+// Which stock picture the bot wears, or null for an uploaded one. A preset is
+// copied into the same file an upload goes to, so the file is compared with
+// the presets (size first, then bytes), once per change of the file. The
+// screens draw a stock picture in the dot-grid halftone and show an upload as
+// it is; without this every preset counted as an upload and lost its look.
+let presetSeen = { mt: null, n: null };
+function avatarPreset(mt) {
+  if (!mt) return null;
+  if (presetSeen.mt === mt) return presetSeen.n;
+  let n = null;
+  try {
+    const size = statSync(AVATAR_FILE).size;
+    let mine = null;
+    for (let i = 1; i <= 16 && n === null; i++) {
+      const p = join(PRESET_DIR, `${i}.png`);
+      if (!existsSync(p) || statSync(p).size !== size) continue;
+      mine ??= readFileSync(AVATAR_FILE);
+      if (mine.equals(readFileSync(p))) n = i;
+    }
+  } catch { n = null; }
+  presetSeen = { mt, n };
+  return n;
+}
+
 function logoMtime() {
   try {
     if (!existsSync(LOGO_FILE)) return null;
@@ -185,6 +209,7 @@ export function resolve() {
     botDisplayName: capitalize(botName),  // for UI rendering
     hideIdeText,
     botAvatarUrl,
+    botAvatarPreset: avatarPreset(mt),   // 1–16 for a stock picture, null for an upload
     logoUrl,
     iconUrl,
     legacyMode: isLegacyMode(),

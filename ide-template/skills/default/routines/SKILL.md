@@ -8,8 +8,8 @@ allowed-tools: Read, mcp__workspace-api__add_routine, mcp__workspace-api__memory
 
 A routine is **your** standing duty to this person — something you do on your own,
 on a cadence or when a condition is met. It is never a reminder for them. Their
-routines are in the `ROUTINES` block of your context (on Telegram that copy can be
-days old, so check `memory_now` for the current list); the morning planner turns
+routines are in the `ROUTINES` block of your context (on Telegram or Slack that copy
+can be days old, so check `memory_now` for the current list); the morning planner turns
 them into the day's work at 06:00 in their time zone, and right away whenever one is
 added or changed.
 
@@ -26,7 +26,7 @@ Suggest a Marketplace routine when it clearly fits what the person just said or 
 - they connected an integration — mention the one or two routines it unlocks;
 - they ask what you can do on your own, or seem unsure how you could help.
 
-Not when: they already have it (check `ROUTINES`, or `memory_now` on Telegram — the prefix may be stale), it doesn't match what they said,
+Not when: they already have it (check `ROUTINES`, or `memory_now` on Telegram or Slack — the prefix may be stale), it doesn't match what they said,
 you suggested something in this conversation already and they let it pass, or the
 conversation is in a group.
 
@@ -60,6 +60,11 @@ The person can also add it themselves: Routines → Marketplace → Add.
   Make it concrete like the catalog's: which source you read (tasks board, mailbox
   tools, calendar, web search), how often, and when it's worth telling them. Tag it
   with the integration's id when it uses one (`#shopify`), so it shows that logo.
+- **Say exactly where it goes.** A routine that writes somewhere names the place in
+  the routine itself, never "the channel" or "the group": a room by its exact name as
+  a tag — a Slack channel's `#name`, a Telegram group's title — or a person by name.
+  The planner aims each firing at that room (its id from the CHANNELS card). With
+  more than one room registered and none named, ask which before writing it.
 - **Change one** (theirs or a Marketplace one) — `memory_write` with
   `op: supersede`, `match:` its title, and the whole routine again in the same form.
 - **Stop one** — `memory_write` with `op: retire` and `match:` its title.

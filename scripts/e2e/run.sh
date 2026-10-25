@@ -4,13 +4,13 @@
 #   run.sh smoke        isolation + imports: no or few model turns, after every deploy
 #   run.sh full         every suite, in turn (many real model turns, ~1 hour or more)
 #   run.sh <name>...    the named suites (isolation imports access sharing
-#                       shared-spaces accounts skills lifestyle group tasks-memory
+#                       shared-spaces accounts skills lifestyle group room-private tasks-memory
 #                       conversation memory-sight planner)
 # The deployment comes from E2E_CLIENT or scripts/e2e/.env.local (see lib.sh).
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SMOKE="isolation imports"
-FULL="isolation imports access sharing shared-spaces accounts skills lifestyle group tasks-memory conversation memory-sight planner"
+FULL="isolation imports access sharing sharing-org shared-spaces accounts skills lifestyle group group-window group-mine room-private tasks-memory conversation memory-sight planner"
 usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 [ $# -gt 0 ] || usage
 case "$1" in

@@ -1,0 +1,78 @@
+---
+// Compare: truly yours, self-hosted. Three cards, each a way Something is
+// yours, with the proof attached (as the chat attaches a file).
+
+// lucide icon bodies (24-unit grid).
+const ICON = {
+  code: '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+};
+const svg = (body: string) => `<svg viewBox="0 0 24 24">${body}</svg>`;
+// The icon as an image for the halftone banner (as the routine tiles draw theirs).
+const iconSrc = (k: keyof typeof ICON) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`)}`;
+// lucide git-fork, for the fork's attachment.
+const FORK = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#1c1b18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></svg>')}`;
+
+// icon, highlight, the rest, attachment [logo, name, detail]
+const points: { icon: keyof typeof ICON; hi: string; rest: string; file: [string, string, string] }[] = [
+  { icon: 'code', hi: 'Read every line you run.', rest: 'The code is public on GitHub, so you can verify everything.', file: ['/integrations/github.svg', 'stanislawherjan1/Something', 'Open source · AGPL-3.0'] },
+  { icon: 'wrench', hi: 'Fork it, change anything.', rest: 'Vibe-code new screens and tools with Claude Code or Cursor.', file: [FORK, 'your-fork', 'a margins screen, built in an afternoon'] },
+  { icon: 'wallet', hi: 'Runs on your Claude plan.', rest: 'Your Pro or Max plan covers it, with no charge per API call.', file: ['/integrations/claude.svg', 'Claude Pro or Max', 'plus a server from about €7 a month'] },
+];
+---
+<section id="compare">
+  <div class="wrap own">
+    <div class="own-head fade-up">
+      <h2 class="own-title">Self-hosted. Truly yours.</h2>
+      <p class="lead">A solution you own, not rent. It runs on your server, under your control.</p>
+    </div>
+
+    <div class="own-row fade-up">
+      {points.map((p) => (
+        <div class="own-col">
+          <div class="own-art" data-halftone data-image={iconSrc(p.icon)} data-soft data-center data-scale="0.8" data-seed={p.hi}></div>
+          <div class="own-body">
+          <h3>{p.hi}</h3>
+          <p>{p.rest}</p>
+          <span class="own-file"><img src={p.file[0]} alt="" /><span><b>{p.file[1]}</b><i>{p.file[2]}</i></span></span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  /* The FAQ's margins below it: the full width of the page's column. */
+  #compare { padding-top: 120px; }
+  .own-head { text-align: center; margin-bottom: 40px; }
+  .own-head .lead { margin: 12px auto 0; }
+  .own-title { font-size: clamp(26px, 3.4vw, 36px); line-height: 1.12; font-weight: 600; letter-spacing: -0.03em; color: var(--fg-90); text-wrap: balance; }
+
+  /* Three ways it's yours: quiet cards, side by side (a near-page tint, barely lifted). */
+  .own-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .own-col { display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: color-mix(in oklab, var(--card) 40%, var(--background)); border: 1px solid var(--hair); box-shadow: 0 10px 24px -20px rgba(0,0,0,.18); }
+  /* The banner on top: the icon in halftone, as the routine tiles and the app's settings draw theirs. */
+  .own-art { height: 120px; flex-shrink: 0; background: var(--paper) !important; border-bottom: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
+  .own-body { flex: 1; display: flex; flex-direction: column; align-items: flex-start; padding: 22px 24px 24px; }
+  .own-col h3 { margin: 0; font-size: 16px; line-height: 1.4; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-90); }
+  .own-col p { margin: 6px 0 22px; font-size: 15px; line-height: 1.55; color: var(--fg-85); }
+  .own-file { display: inline-flex; align-items: center; gap: 12px; margin-top: auto; padding: 10px 18px 10px 10px; border-radius: 12px; background: var(--background); border: 1px solid var(--hair); }
+  .own-file img { width: 32px; height: 32px; padding: 6px; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .06); object-fit: contain; }
+  .own-file > span { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+  .own-file b { font-size: 13px; font-weight: 600; color: var(--fg-90); }
+  .own-file i { font-style: normal; font-size: 12px; color: color-mix(in oklab, var(--muted-foreground) 75%, transparent); }
+
+  @media (max-width: 860px) {
+    .own-row { grid-template-columns: 1fr; }
+    .own-body { padding: 18px 20px 20px; }
+    .own-art { height: 104px; }
+  }
+  @media (max-width: 620px) {
+    #compare { padding-top: 72px; }
+    .own-head { margin-bottom: 28px; text-align: left; }
+    .own-head .lead { margin-left: 0; }
+  }
+</style>

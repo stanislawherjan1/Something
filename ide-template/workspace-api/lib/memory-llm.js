@@ -28,17 +28,31 @@ let override = null;
 /** Replace the transport (tests). `fn({system, user, schema, model}) → object`, or null to restore. */
 export function configureRunner(fn) { override = fn; }
 
+// How much the model may think before it answers. Unbounded, the small model
+// thought for twelve thousand tokens over a two-line conversation: a notes call
+// took 100 s (four seconds of it the answer), timed out on longer windows, and
+// a note saved mid-turn ran past the tool's limit. Off entirely is worse: the
+// router then paraphrases the lines it must copy word for word, and nothing
+// crosses. A cap keeps the care and drops the minutes.
+export const THINKING_TOKENS = Number(process.env.MEMORY_V4_THINKING_TOKENS) || 2000;
+
+/** The environment one memory call runs with (exported for the test). */
+export function cliEnv({ tools = [], base = process.env } = {}) {
+  // No auto-memory either: with cwd in /tmp the CLI kept a MEMORY.md there and
+  // fed it to every call — someone else's notes in front of the sorter.
+  const env = { ...base, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', MAX_THINKING_TOKENS: String(THINKING_TOKENS) };
+  // Not for a call that may search: with it set, WebSearch's request goes out
+  // with thinking disabled, the API refuses it (400) and the model reports
+  // "nothing found" — a silent empty look-up.
+  if (!tools.length) env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+  return env;
+}
+
 // `tools`: the built-in tools the call may use — none by default. Onboarding's
 // look-up allows WebSearch alone (it runs on Anthropic's side; nothing else opens).
 function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS, tools = [] }) {
   return new Promise((resolve, reject) => {
-    // No auto-memory either: with cwd in /tmp the CLI kept a MEMORY.md there and
-    // fed it to every call — someone else's notes in front of the sorter.
-    const env = { ...process.env, DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };
-    // Not for a call that may search: with it set, WebSearch's request goes out
-    // with thinking disabled, the API refuses it (400) and the model reports
-    // "nothing found" — a silent empty look-up.
-    if (!tools.length) env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = '1';
+    const env = cliEnv({ tools });
     if (!env.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
       try { env.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); } catch { /* fall through */ }
     }
@@ -67,12 +81,29 @@ function viaCli({ system, user, schema, model, timeoutMs = TIMEOUT_MS, tools = [
   });
 }
 
-/** One structured call; retried once. Throws when both attempts fail. */
+/**
+ * One structured call; a failed call is retried once — but not a timeout:
+ * a model that took the whole budget once takes it again, and the retry
+ * doubled every wait (a note the assistant saved mid-turn once ran for five
+ * minutes and the tool gave up). Throws when the attempts fail. How long a
+ * call took is logged when it failed or was slow, so a slow night shows why.
+ */
 export async function runStructured({ system, user, schema, model = MEMORY_MODEL, timeoutMs, tools = [] }) {
   const call = override || viaCli;
   let last;
   for (let attempt = 0; attempt < 2; attempt++) {
-    try { return await call({ system, user, schema, model, timeoutMs, tools }); } catch (e) { last = e; }
+    const t0 = Date.now();
+    try {
+      const out = await call({ system, user, schema, model, timeoutMs, tools });
+      const took = Date.now() - t0;
+      if (took > SLOW_MS) process.stderr.write(`[memory-llm] slow: ${model} answered in ${Math.round(took / 1000)} s\n`);
+      return out;
+    } catch (e) {
+      last = e;
+      process.stderr.write(`[memory-llm] ${model} failed after ${Math.round((Date.now() - t0) / 1000)} s: ${e.message}${e.message === 'timeout' || attempt ? '' : ' — retrying once'}\n`);
+      if (e.message === 'timeout') break;
+    }
   }
   throw last;
 }
+const SLOW_MS = 30_000;

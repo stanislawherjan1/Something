@@ -23,8 +23,10 @@ import { check as checkInvariants } from './memory-invariants.js';
 import { updateDigest, updateProfiles } from './memory-views.js';
 import { atomicWrite } from './atomic-write.js';
 import { seedLinks } from './memory-task-links.js';
+import { regateUngated } from './memory-regate.js';
 import { pruneBackups } from './migrate.js';
 import { list as rosterList, listGroups, memberGroupsOf } from './team.js';
+import { isGroupId } from './group-id.js';
 
 const RUN_HOUR = Number(process.env.MEMORY_V4_MAINTENANCE_HOUR) || 4;
 const TZ = process.env.IDE_TIMEZONE || 'UTC';
@@ -88,7 +90,7 @@ export function archiveOrphanUsers({ now = Date.now() } = {}) {
 /** The people and groups a night's digests cover. */
 function targets() {
   const people = rosterList().map(u => u.slug).filter(s => s && s !== 'default' && /^[a-z0-9-]+$/.test(s));
-  const groups = listGroups().map(g => String(g.chatId)).filter(g => /^-\d{4,20}$/.test(g));
+  const groups = listGroups().map(g => String(g.chatId)).filter(isGroupId);
   return { people, groups };
 }
 
@@ -133,6 +135,11 @@ export async function runNightly({ at = Date.now() } = {}) {
     return out;
   });
 
+
+  // Notes saved mid-turn while the router was not answering never met the
+  // sharing gate (routes/memory-v4.js tags their record `ungated`): judged
+  // now, a few a night (lib/memory-regate.js).
+  await step('regate', () => regateUngated({ now: at, log: (m) => run.errors.push(m) }));
 
   // Tasks the day left without a link to the fact behind them get one careful
   // look (lib/memory-task-links.js seedLinks): a few model calls a night.

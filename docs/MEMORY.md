@@ -20,6 +20,12 @@ remark under it. Say something is no longer true ("I didn't get the job") and
 the old fact is struck through, with what replaced it next to it. You correct
 it the way you would a colleague: just tell it.
 
+What reaches the team from your own chats is the outcome of work for the
+company that a teammate depends on (a supplier chosen, an order booked), judged
+against what the company card says about who does what. Your own life never
+does, nor anything you ask it to keep to itself; when in doubt, it stays
+yours. With sharing set to ask, it asks you first.
+
 Ask it to remember something and it writes it down there and then. How you
 want it to work ("no emoji", "always suggest a time"), a fact about you, a team
 rule or what the company does goes straight onto its card; anything else
@@ -86,7 +92,8 @@ and "Make private" takes it back. When questions wait for you, your coworker
 says so once a day at most, in your own chat, never in a group. Privacy is enforced by where a thing is
 stored, never by role: an admin cannot read a teammate's private memory, and
 the bot never reads one person's private memory on another's behalf. A
-Telegram group has a memory of its own, readable by its members.
+Telegram group or a Slack channel has a memory of its own, readable by the
+people in it.
 
 **Meetings you did not tell it about.** Connect a meeting notetaker and you
 need not recount your meetings: each night the coworker reads the meetings of
@@ -200,15 +207,33 @@ ends the day it happens.
 
 `lib/memory-consolidator.js`, poked every minute by the snapshot monitor. A
 conversation that has been quiet for 15 minutes is filed **whole** in its
-owner's scope — web chat → that user, a Telegram DM → the roster person whose
+owner's scope — web chat → that user (a Telegram or Slack DM mirrored into
+their web history is filed under them with that surface as its `source`), a
+Telegram DM → the roster person whose
 chat it is (a stranger's chat → nobody), a registered group → that group's
 scope. Code decides the owner, never a model. Two small-model calls then only
-*add*:
+*add* (every memory model call thinks within a cap, `MEMORY_V4_THINKING_TOKENS`,
+2000 by default: unbounded, a notes call thought for twelve thousand tokens over
+two lines and took 100 s; off, the router paraphrased the lines it must copy):
 
 - **the router** (1:1 conversations) marks the lines that are team-relevant
-  (`shared`) or borderline (`ask`). Every marked line must be word-for-word in
-  the conversation, so an invented or injected line cannot count; a router
-  failure shares nothing and loses nothing. The router is a signal, not the
+  (`shared`) or borderline (`ask`). It reads the conversation with the
+  organisation in mind (`lib/memory-org.js`): who is on the team and the
+  company card's own bullets, as data — so the outcome of work a member does
+  for the company (a supplier chosen, a quote received, a client order booked)
+  can reach the teammate whose role the card says depends on it. It never
+  moves anything out of private (the member's own life, pay, health, HR,
+  judgements, anything asked to be kept), and when it cannot tell, the line
+  stays private: a private fact shared costs far more than a team fact missed.
+  The notes pass labels such work "a company or project", not "the person
+  themselves", so the sharing gate does not turn every supplier call into a
+  question; an owner in `ask` mode is still asked. Every marked line must be word-for-word in
+  the conversation, so an invented or injected line cannot count. A router
+  failure is not a decision: the window is not filed and the next tick retries
+  it (three times, like a failed notes pass); only then is it filed as private
+  with nothing offered to the team, and the run says so. (A night with the
+  model down once filed every window with no sharing decision, and nothing
+  ever came back to them.) The router is a signal, not the
   decision: `lib/memory-sharing.js` decides **per fact** once the notes pass
   has filed it. A fact whose evidence sits in a `shared` line may cross; one in
   an `ask` line always asks; the rest stay. The person's mode on the roster
@@ -369,7 +394,10 @@ fields came back — names and lengths only, never what was said.
   person's own memory then goes through the same sharing gate as a filed
   conversation — the router reads the person's words, each new fact goes to
   the team, to a question or stays by their mode, and the answer carries
-  `shared` / `asked` counts; takes the fact as
+  `shared` / `asked` counts. When the router does not answer, the note is
+  still saved, its record is tagged `ungated`, the answer says `ungated` and
+  the nightly run's `regate` step judges it once the model is back —
+  `lib/memory-regate.js`; it used to stay private with nobody told; takes the fact as
   it now stands **and the person's own words it comes from** — a name that is
   in neither those words nor memory is refused by name, so a correction cannot
   arrive with an invented first name — the person's own name in any form and a
@@ -401,7 +429,11 @@ fields came back — names and lengths only, never what was said.
 
 Scopes a turn may read come from its identity, never from the model: a person
 reads their own scope, shared, and the groups they are in; a group turn reads
-shared + that group; there is no admin bypass.
+shared + that group; there is no admin bypass. The one bridge is the group
+brain's `ask_my_memory`: a roster member asking about themselves or their own
+matters in a room gets, from a one-shot turn run as them (their scopes, profile
+and preferences, memory reads only), at most three sentences fit for the room — only those enter the room's session
+(`lib/integrations/private-lookup.js`, `docs/TEAM_MODE.md`).
 
 ### Search and the embedder
 
@@ -508,6 +540,17 @@ Per candidate, against the facts **current in the same scope**:
   old is marked `replacedBy` it with `why: superseded`, struck through under
   Past & superseded with what says so now) | `unrelated` (added). Any failure →
   added: a fact is never lost to this.
+- **one conversation filed in parts is one conversation.** A long window filed
+  in chunks, a meeting's notes and its transcript: a fuller wording of a thing
+  the earlier part already made a fact of is written into that fact in place —
+  no earlier version, no second source. The parts are told by the record's
+  conversation id *and the window*: a chat that never ends (a group, a Telegram
+  DM) is filed window by window, and a later window is another conversation,
+  so what it adds is a `merge`, `corrects` or `supersedes` like any other — with
+  the earlier wording kept as a version, the earlier record as a source, and
+  the fact dated by the day memory learned it (the Facts list shows it under
+  today, Changes counts it). Before this, a group's "ok, sent" days after the
+  decision it followed was folded into the decision's fact silently.
 
 Never across scopes: a private fact never meets a shared one. What crosses
 scopes is the **view**: "Right now" shows the same thing said in a group and in

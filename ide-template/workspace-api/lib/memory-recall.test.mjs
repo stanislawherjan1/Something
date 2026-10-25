@@ -115,6 +115,11 @@ E.configureEmbedder(async (texts) => { await new Promise(res => setTimeout(res, 
 (await import('./memory-search.js'))._resetForTests();
 r = await RC.buildRecallBlock({ actor: 'stan', message: 'Pinecrest launch' });
 ok('(d) a slow search is dropped, not waited for', r.block === null && r.ms < 1000, r);
+E.configureEmbedder(async (texts) => { await new Promise(res => setTimeout(res, 600)); return texts.map(() => [1, 0]); });
+(await import('./memory-search.js'))._resetForTests();
+r = await RC.buildRecallBlock({ actor: 'stan', message: 'Pinecrest launch', budgetMs: RC.PERSON_BUDGET_MS });
+ok('(d) a person\'s own turn waits for a search slower than a room\'s budget', r.ms >= 500 && r.ids.length > 0, { ms: r.ms, ids: r.ids.length });
+ok('(d) ...within its own budget, two seconds by default, under the CLI\'s three-second wait for stdin', RC.PERSON_BUDGET_MS === 2000);
 E.configureEmbedder(async () => { throw new Error('none'); });
 
 // ─── (e) end to end: what the model receives ─────────────────────────────────

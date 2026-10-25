@@ -1,0 +1,101 @@
+---
+// Slack, pared down: the workspace's channels on the left (the rest fading
+// into placeholders) and one exchange in #ops, the coworker answering a
+// teammate like a colleague. Slack's marks (#channel, @mention, APP,
+// reactions) in the landing's quiet palette, built small so the messages read
+// large on the stage.
+import '../../styles/mocks.css';
+
+const ico = {
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  caret: '<path d="m6 9 6 6 6-6"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+};
+const i = (k: keyof typeof ico, cls = 'sl-i') => `<svg class="${cls}" viewBox="0 0 24 24">${ico[k]}</svg>`;
+const channels = ['general', 'launch', 'ops', 'studio', 'wholesale'];
+const ghosts = [64, 52, 70, 46, 58];
+---
+<div class="mk">
+<div class="sl">
+  <aside class="sl-side">
+    <div class="sl-ws"><b>Saltmarsh Ceramics</b><span set:html={i('caret', 'sl-i xs')} /></div>
+    <div class="sl-list">
+      <div class="sl-sec"><span set:html={i('caret', 'sl-i xs')} />Channels</div>
+      {channels.map(c => <span class={`sl-ch ${c === 'ops' ? 'on' : ''}`}><span set:html={i('hash', 'sl-i sm')} />{c}</span>)}
+      {ghosts.map((w, k) => <span class="sl-ghost" style={`--w:${w}%; opacity:${1 - k * 0.17}`}><i></i><i></i></span>)}
+    </div>
+  </aside>
+  <main class="sl-main">
+  <header class="sl-head">
+    <b><span set:html={i('hash', 'sl-i')} />ops<span set:html={i('caret', 'sl-i xs')} /></b>
+    <span class="sl-here"><i></i>Aria is here</span>
+  </header>
+  <div class="sl-feed">
+    <div class="sl-msg">
+      <img class="sl-av" src="/people/p2.jpg" alt="" />
+      <div>
+        <p class="sl-who"><b>Leo</b><time>10:03 AM</time></p>
+        <p><span class="sl-at">@Aria</span> the badges ship a day late. Can we still make the fair?</p>
+      </div>
+    </div>
+    <div class="sl-msg">
+      <span class="sl-av bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+      <div>
+        <p class="sl-who"><b>Aria</b><em class="sl-app">APP</em><time>10:03 AM</time></p>
+        <p>Yes. Setup starts Saturday at 8, so Friday still works. I moved the badge task and asked the printer for noon at the latest.</p>
+        <span class="sl-reacts"><span>🙌 2</span></span>
+      </div>
+    </div>
+  </div>
+  <div class="sl-compose">
+    <span>Message #ops</span>
+    <span class="sl-send" set:html={i('send', 'sl-i')} />
+  </div>
+  </main>
+</div>
+</div>
+
+<style>
+  .sl {
+    display: grid; grid-template-columns: 190px 1fr; width: 800px; height: 502px; overflow: hidden;
+    border-radius: 14px; border: 1px solid #e8e7e2; background: #fff; color: #1c1b18; text-align: left;
+    font-family: var(--font); box-shadow: 0 30px 70px -30px rgba(0,0,0,.28);
+  }
+  .sl :global(.sl-i.xs) { width: 14px; height: 14px; color: rgb(28 27 24 / .45); }
+  .sl :global(.sl-i.sm) { width: 15px; height: 15px; color: rgb(28 27 24 / .5); translate: 0 1px; }
+  .sl-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #ecebe6; }
+  .sl-ws { display: flex; align-items: center; gap: 6px; height: 54px; padding: 0 18px; border-bottom: 1px solid #ecebe6; }
+  .sl-ws b { font-size: 13.5px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+  .sl-list { display: flex; flex-direction: column; gap: 2px; padding: 12px 10px; }
+  .sl-sec { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; font-size: 13.5px; color: rgb(28 27 24 / .6); }
+  .sl-ch { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 7px; font-size: 14.5px; line-height: 1; color: rgb(28 27 24 / .78); }
+  .sl-ch.on { background: color-mix(in oklab, #1c1b18 7%, transparent); color: #1c1b18; font-weight: 600; }
+  .sl-ghost { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; }
+  .sl-ghost i { height: 12px; border-radius: 4px; background: rgb(28 27 24 / .06); }
+  .sl-ghost i:first-child { width: 14px; }
+  .sl-ghost i:last-child { width: var(--w); }
+  .sl-main { display: flex; flex-direction: column; min-width: 0; }
+  .sl :global(.sl-i) { width: 17px; height: 17px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+  .sl-head { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 22px; border-bottom: 1px solid #ecebe6; }
+  .sl-head b { display: flex; align-items: center; gap: 4px; font-size: 16px; font-weight: 600; line-height: 1; }
+  .sl-head :global(.sl-i) { color: rgb(28 27 24 / .5); translate: 0 1px; }
+  .sl-here { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: rgb(28 27 24 / .55); }
+  .sl-here i { width: 7px; height: 7px; border-radius: 99px; background: #4f9a6b; }
+
+  .sl-feed { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 8px 0; }
+  .sl-msg { display: flex; gap: 12px; padding: 6px 22px; font-size: 15.5px; line-height: 1.5; }
+  .sl-msg p { margin: 0; }
+  .sl-av { width: 38px; height: 38px; flex-shrink: 0; border-radius: 9px; object-fit: cover; }
+  .sl-av.bot { display: inline-block; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .08); }
+  .sl-who { display: flex; align-items: center; gap: 7px; margin-bottom: 1px !important; }
+  .sl-who b { font-weight: 700; }
+  .sl-who time { font-size: 12px; color: rgb(28 27 24 / .45); }
+  .sl-app { padding: 0 5px; border-radius: 4px; background: rgb(28 27 24 / .07); color: rgb(28 27 24 / .55); font: 600 10px var(--font); font-style: normal; letter-spacing: .03em; }
+  .sl-at { padding: 1px 4px; border-radius: 4px; background: rgb(18 100 163 / .09); color: #1264a3; }
+  .sl-reacts { display: flex; gap: 5px; margin-top: 8px; }
+  .sl-reacts span { padding: 2px 9px; border-radius: 99px; box-shadow: inset 0 0 0 1px #e3e2dd; background: #faf9f6; font-size: 12.5px; color: rgb(28 27 24 / .7); }
+
+  .sl-compose { display: flex; align-items: center; justify-content: space-between; margin: 0 22px 20px; padding: 8px 8px 8px 16px; border-radius: 10px; box-shadow: inset 0 0 0 1px #dedcd6; font-size: 14.5px; color: rgb(28 27 24 / .45); }
+  .sl-send { display: grid; place-items: center; width: 34px; height: 32px; border-radius: 7px; background: #1c1b18; color: #fff; }
+</style>

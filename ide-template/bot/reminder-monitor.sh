@@ -189,6 +189,21 @@ fire_operator() {
     # in global-claude.md). Everything else fires as a normal [REMINDER].
     local frame="REMINDER"
     [ "$urgency" = "ambient" ] && frame="AMBIENT"
+    # Slack is not a surface the tmux brain has (no Slack tool there). A
+    # Slack-bound reminder runs as a headless turn, which delivers its result
+    # through web_send_message with channel=slack — the operator is a person
+    # like any other on that surface. No tmux frame, no raw text.
+    if [ "$channel" = "slack" ]; then
+        [ -z "$OP_SLUG" ] && fetch_op_slug
+        if invoke_turn_operator "[${frame} channel=slack | ${message}]"; then
+            log "Slack-bound reminder ran as a headless turn (urgency=${urgency})"
+            FIRE_PATH="invoke-turn"
+            return 0
+        fi
+        log "Slack-bound reminder: no headless turn available — staying silent rather than sending machine text: ${message:0:60}"
+        FIRE_PATH="undelivered-no-brain"
+        return 1
+    fi
     # Route through the serialized, idle-gated injector (tmux-inject.sh) instead
     # of a raw send-keys. That guarantees this reminder can never interleave with
     # a live user turn or another injection (2026-07-13 incident). exit 3 =
@@ -319,7 +334,9 @@ let r = {};
 try { r = JSON.parse(process.env.RESP || '{}'); } catch { process.exit(2); }
 if (r.skipped) process.exit(0);
 const rows = Array.isArray(r.delivered) ? r.delivered : [];
-const dead = rows.filter(d => !d.web && !d.telegram).map(d => d.slug);
+// Slack counts: a Slack-only delivery once read as "reached nobody", so the
+// reminder was sent again, escalated to the operator and finally parked.
+const dead = rows.filter(d => !d.web && !d.telegram && !d.slack).map(d => d.slug);
 if (!rows.length) { process.stderr.write('no recipient resolved'); process.exit(3); }
 if (dead.length)  { process.stderr.write('reached nobody: ' + dead.join(',')); process.exit(3); }
 NODE
@@ -402,6 +419,15 @@ while true; do
     # Each due message is printed as a single line (newlines replaced with space)
     MESSAGES=$(node - "$REMINDERS_FILE" "$CHAT_ID" << 'NODEEOF'
 const fs = require('fs');
+// Team mode, as workspace-api decides it (lib/team.js getTeamMode): the
+// explicit switch, else more than one person on the roster.
+const SOLO = (() => {
+  try {
+    const cfg = JSON.parse(fs.readFileSync((process.env.PROJECT_DIR || '/home/coder/project') + '/.team-config.json', 'utf8'));
+    if (typeof cfg.teamMode === 'boolean') return !cfg.teamMode;
+  } catch { /* no config: the roster decides */ }
+  try { const r = JSON.parse(fs.readFileSync((process.env.PROJECT_DIR || '/home/coder/project') + '/.allowed-emails.json', 'utf8')); return !(Array.isArray(r) && r.length > 1); } catch { return true; }
+})();
 
 const [,, file, chatId] = process.argv;
 const now = Date.now();
@@ -612,7 +638,9 @@ reminders = reminders.map(r => {
     // Channel hint travels with the wire message via a tab separator —
     // bash splits on it below. Default 'all' covers legacy reminders that
     // pre-date the field.
-    const channel = (typeof r.channel === 'string' && ['telegram','web','all'].includes(r.channel))
+    // 'slack' too: fire_operator runs a Slack-bound one headlessly. Left out of
+    // this list, a Slack reminder silently became 'all' and never reached Slack.
+    const channel = (typeof r.channel === 'string' && ['telegram','web','slack','all'].includes(r.channel))
         ? r.channel : 'all';
     // Team mode: recipients ride as the 2nd column (CSV of slugs, or the
     // '*everyone*' sentinel). EMPTY = solo / operator-only → the bash side
@@ -620,7 +648,12 @@ reminders = reminders.map(r => {
     // columns so a teammate's clean notification keeps the heading/detail
     // split; `wire` stays the operator's brain-frame message (unchanged).
     // Flatten newlines AND tabs so the 5-column structure can't be broken.
-    const recipientsCsv = Array.isArray(r.recipients) ? r.recipients.join(',') : '';
+    // Solo: one person, one brain. A solo turn that carried the operator's slug
+    // wrote recipients: [<operator>], and the teammate path then asked wsapi
+    // for a second turn that solo always refuses — a planner duty retried four
+    // times and went dead. In solo the recipients column is empty: the
+    // operator's own path, as it always was.
+    const recipientsCsv = !SOLO && Array.isArray(r.recipients) ? r.recipients.join(',') : '';
     // \x1f (unit separator) between columns — a NON-whitespace delimiter so bash
     // `read` PRESERVES empty fields (an empty recipients column = solo; a
     // whitespace IFS like \t would collapse it). Flatten it (+ newlines/tabs)

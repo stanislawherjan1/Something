@@ -127,9 +127,11 @@ function shapeOf(img, size, mode) {
 // the wave failing ('wave-broken', 'wave-blocked', 'wave-scatter', 'wave-fault').
 // In use: 'constellation' + soft (Team), 'wave' + soft (sign-in), 'wave-fault'
 // + soft (sign-in failed, access denied). Kept on purpose for later surfaces: 'ramp' + soft and 'rings' + soft.
-export default function TileBanner({ icon: Icon, icons, abstract, image, mode = 'alpha', scale = ICON_SCALE, seed = 'tile', opacity = 1, center = false, step = STEP, plain = false, lineArt = false, soft = false, paper = false, className }) {
+export default function TileBanner({ icon: Icon, icons, abstract, image, mode = 'alpha', scale = ICON_SCALE, seed = 'tile', opacity = 1, center = false, step = STEP, plain = false, lineArt = false, soft = false, paper = false, onDrawn = null, className }) {
   const boxRef = useRef(null);
   const canvasRef = useRef(null);
+  const onDrawnRef = useRef(onDrawn);   // latest callback, without redrawing when it changes
+  useEffect(() => { onDrawnRef.current = onDrawn; }, [onDrawn]);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
@@ -150,11 +152,15 @@ export default function TileBanner({ icon: Icon, icons, abstract, image, mode = 
         c.setTransform(1, 0, 0, 1, 0, 0);
         c.clearRect(0, 0, canvas.width, canvas.height);
         c.drawImage(hit, 0, 0);
+        onDrawnRef.current?.(canvas);
         return;
       }
       failed = false;
       await render(w, h, dpr);
       if (cancelled || failed || !canvas.width) return;
+      // `onDrawn`: the picture is complete — a caller may copy it (the bot's
+      // face exported for Slack or Telegram, as the screens draw it).
+      onDrawnRef.current?.(canvas);
       const snap = document.createElement('canvas');
       snap.width = canvas.width; snap.height = canvas.height;
       snap.getContext('2d').drawImage(canvas, 0, 0);

@@ -43,7 +43,7 @@ Tools currently wired up for this workspace:
 ✅ GA4 — traffic and conversions
 ✅ Image generation (Seedream + Nano Banana)
 ✅ Email — reading and replying
-✅ Reminders — Telegram alerts at scheduled times
+✅ Reminders — on Telegram, Slack or the workspace, at scheduled times
 
 Want me to demo any of these on a real example? Just say "show me X".
 More can be connected under Integrations.

@@ -17,6 +17,7 @@
  * brute-forcing a partially-known field cost-prohibitive.
  */
 
+import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import express from 'express';
 import * as catalog from '../lib/integrations/catalog.js';
@@ -30,6 +31,9 @@ import { isReady, readinessError } from '../lib/integrations/crypto.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { publish as notify } from '../lib/notify.js';
 import { flushAllWaiting } from '../lib/routines-add.js';
+import * as slackListener from '../lib/integrations/slack-listener.js';
+import * as slackApi from '../lib/integrations/slack-api.js';
+import { resolve as resolveBranding } from '../lib/branding.js';
 
 // Tiny in-memory rate limiter — sliding window. Keyed on the verified actor
 // email (req.actor) when present, falling back to req.ip when not. The actor
@@ -148,7 +152,84 @@ async function afterChange(key, { files = true, skill = true, forceRestart = fal
   catch (err) { process.stderr.write(`[integrations] egress refresh failed: ${err.message}\n`); }
   const restarting = changed || forceRestart;
   const restartOk = restarting ? await runtime.restartBot() : true;
+  // The Slack socket lives in this process: it follows the store, no restart.
+  if (key === 'slack') {
+    try { slackListener.reconcile(); } catch (err) { process.stderr.write(`[integrations] slack listener: ${err.message}\n`); }
+  }
   return { restarting, restartFailed: restarting && !restartOk };
+}
+
+/**
+ * The Slack app manifest for this workspace's bot: Socket Mode on, the bot's
+ * name, the scopes the surface uses, the events it listens to — and nothing
+ * for distribution, joining channels on its own, posting where it is not, or
+ * acting as a person. See docs/future-plans/SLACK_CHANNEL.md §13.
+ */
+export function slackManifest(branding = {}, { redirectUri = null } = {}) {
+  const name = String(branding.botDisplayName || branding.botName || 'Assistant').slice(0, 35);
+  // The organisation by name when the workspace has one ("Workspace" is the
+  // default title, not a name); Slack shows this line under the app's name.
+  const org = String(branding.title || '').trim();
+  const whose = org && !/^workspace$/i.test(org) && org.toLowerCase() !== name.toLowerCase() ? `${org}'s` : "your team's";
+  return {
+    display_information: { name, description: `${name} is ${whose} AI coworker. Write to it here as you would to a colleague.`.slice(0, 139) },
+    features: {
+      bot_user: { display_name: name, always_online: true },
+      app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false, home_tab_enabled: false },
+      assistant_view: { assistant_description: `Ask ${name} anything, as you would a colleague.` },
+    },
+    oauth_config: {
+      ...(redirectUri ? { redirect_urls: [redirectUri] } : {}),
+      scopes: {
+        bot: [
+          'app_mentions:read', 'assistant:write', 'chat:write', 'channels:history', 'channels:read', 'groups:history', 'groups:read',
+          'im:history', 'im:read', 'im:write', 'mpim:history', 'mpim:read', 'reactions:write', 'files:read', 'files:write',
+          'users:read', 'users:read.email',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        bot_events: [
+          'app_mention', 'message.im', 'message.channels', 'message.groups', 'message.mpim', 'member_joined_channel',
+          'member_left_channel', 'channel_left', 'channel_shared', 'channel_unshared', 'channel_archive', 'channel_deleted',
+          'group_left', 'group_archive', 'app_uninstalled', 'tokens_revoked', 'app_home_opened', 'assistant_thread_started',
+          'assistant_thread_context_changed',
+        ],
+      },
+      interactivity: { is_enabled: false },
+      org_deploy_enabled: false,
+      socket_mode_enabled: true,
+      token_rotation_enabled: false,
+    },
+  };
+}
+
+// The address Slack sends the install back to: this workspace's own domain.
+// The client's own public origin, as the other OAuth path builds it: always
+// https on FRONTEND_DOMAIN. The request's protocol is not it — behind Caddy
+// and the frontend's nginx the hop reached this process as http, and the
+// manifest carried an http:// redirect Slack refuses.
+function slackRedirectUri(req) {
+  const host = String(process.env.FRONTEND_DOMAIN || req.get('x-forwarded-host') || req.get('host') || 'localhost').split(',')[0].trim();
+  return `https://${host}/api/integrations/slack/oauth/callback`;
+}
+// One-shot states for the install round trip, ten minutes each.
+const slackState = (() => {
+  const live = new Map();
+  return {
+    issue() { const s = randomBytes(18).toString('base64url'); live.set(s, Date.now() + 600_000); return s; },
+    take(s) { const exp = live.get(s); live.delete(s); for (const [k, e] of live) if (e < Date.now()) live.delete(k); return !!exp && exp > Date.now(); },
+  };
+})();
+// Does the Slack app still need installing (no bot token), and can it be from here?
+function slackInstallState() {
+  try {
+    const plain = store.decryptFor('slack');
+    const needed = !String(plain?.SLACK_BOT_TOKEN || '').trim();
+    const possible = !!(String(plain?.SLACK_CLIENT_ID || '').trim() && String(plain?.SLACK_CLIENT_SECRET || '').trim());
+    return { needed, possible };
+  } catch { return { needed: false, possible: false }; }
 }
 
 function escapeHtml(s) {
@@ -220,6 +301,9 @@ export default function integrationsRouter() {
         canConnectPersonal:  Boolean(entry.personal) && Boolean(me),
         // Pausable integrations: switched off for now, key kept.
         ...(entry.pausable ? { paused: Boolean(s?.active) && store.isPaused(entry.id) } : {}),
+        // The Slack socket: up or not, since when, what it missed — and whether
+        // the app still has to be installed (no bot token yet) and can be from here.
+        ...(entry.process === 'slack-listener' && s?.active ? { listener: slackListener.status(), ...(admin ? { install: slackInstallState() } : {}) } : {}),
       };
     });
     // no-store so the dashboard's post-OAuth refetch always sees the freshly
@@ -235,6 +319,53 @@ export default function integrationsRouter() {
   // Pause / resume a `pausable` integration without removing it: the key stays,
   // its tools and its egress hosts go away until resumed. No bot restart —
   // the tools that use it check at the start of every turn.
+  // The Slack app manifest, with this workspace's bot name in it: what the
+  // admin pastes at api.slack.com to create the app. No secret in it.
+  router.get('/integrations/slack/manifest', requireActor, (req, res) => {
+    const b = resolveBranding();
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Disposition', `attachment; filename="${(b.botName || 'bot').replace(/[^a-z0-9_-]/gi, '')}-slack-manifest.json"`);
+    res.json(slackManifest(b, { redirectUri: slackRedirectUri(req) }));
+  });
+
+  // Install the app into the workspace from here: the admin is sent to
+  // Slack's consent page for the app's own client id; Slack comes back with a
+  // code to this workspace's domain, and the bot token lands in the store.
+  // Nothing of it passes anywhere but Slack and this box.
+  router.get('/integrations/slack/install', requireAdmin, readyOr503, (req, res) => {
+    let plain;
+    try { plain = store.decryptFor('slack'); } catch { plain = null; }
+    const clientId = String(plain?.SLACK_CLIENT_ID || '').trim();
+    if (!plain || !clientId || !String(plain.SLACK_CLIENT_SECRET || '').trim()) {
+      return res.status(400).send(oauthResultPage(false, 'Add the Slack app\'s client id and secret first (AI Settings → Slack → Manage tokens).'));
+    }
+    const state = slackState.issue();
+    const url = slackApi.installUrl({ clientId, redirectUri: slackRedirectUri(req), scopes: slackManifest().oauth_config.scopes.bot, state });
+    res.redirect(302, url);
+  });
+
+  router.get('/integrations/slack/oauth/callback', readyOr503, async (req, res) => {
+    const { code, state, error } = req.query || {};
+    if (error) return res.status(400).send(oauthResultPage(false, `Slack returned: ${escapeHtml(String(error))}`, 'slack'));
+    if (typeof code !== 'string' || !code || typeof state !== 'string' || !slackState.take(state)) {
+      return res.status(400).send(oauthResultPage(false, 'Missing or stale code or state — start the install again from the Slack page.', 'slack'));
+    }
+    let plain;
+    try { plain = store.decryptFor('slack'); } catch { plain = null; }
+    if (!plain?.SLACK_CLIENT_ID || !plain?.SLACK_CLIENT_SECRET) return res.status(400).send(oauthResultPage(false, 'The Slack app\'s client id and secret are no longer stored.', 'slack'));
+    let got;
+    try {
+      got = await slackApi.oauthAccess({ clientId: plain.SLACK_CLIENT_ID, clientSecret: plain.SLACK_CLIENT_SECRET, code, redirectUri: slackRedirectUri(req) });
+    } catch (err) {
+      return res.status(502).send(oauthResultPage(false, `Slack did not accept the install: ${escapeHtml(err.message)}`, 'slack'));
+    }
+    try { store.updateInternal('slack', { SLACK_BOT_TOKEN: String(got.access_token) }); }
+    catch (err) { return res.status(500).send(oauthResultPage(false, `Installed, but the token could not be stored: ${escapeHtml(err.message)}`, 'slack')); }
+    const after = await afterChange('slack', { skill: false });
+    if (after.error) process.stderr.write(`[integrations] slack install: ${after.error}\n`);
+    res.send(oauthResultPage(true, `Installed in ${escapeHtml(got.team?.name || 'your workspace')}.`, 'slack', { team: got.team?.name || null }));
+  });
+
   router.put('/integrations/:id/paused', requireAdmin, readyOr503, rateLimit, express.json({ limit: '1kb' }), (req, res) => {
     const id = req.params.id;
     const cat = catalog.get(id);
@@ -355,6 +486,15 @@ export default function integrationsRouter() {
       return res.status(400).json({ error: 'Body must be { fields: { ... } }.' });
     }
 
+    // Slack: the bot token comes either pasted, or from the install done from
+    // here (client id + secret); the app-level token is always needed.
+    if (key === 'slack') {
+      const f = body.fields || {};
+      const has = (n) => typeof f[n] === 'string' && f[n].trim();
+      if (!has('SLACK_BOT_TOKEN') && !(has('SLACK_CLIENT_ID') && has('SLACK_CLIENT_SECRET'))) {
+        return res.status(400).json({ error: 'Add the Bot token, or the Client id and Client secret to install from here.' });
+      }
+    }
     try {
       store.activate(key, body, { owner: target.owner, reach: target.reach, access: target.access });
     } catch (err) {
@@ -466,6 +606,12 @@ export default function integrationsRouter() {
       if ((cat.fields || []).some(f => f.type === 'remote-mcp-oauth')) {
         await oauth.getFreshToken(target.key);
         return res.json({ ok: true, at, detail: 'Signed in; the provider accepted the token.' });
+      }
+      if (cat.process === 'slack-listener') {
+        // Ask Slack itself: the bot token names the workspace, the socket says whether it is up.
+        const who = await slackApi.authTest();
+        const l = slackListener.status();
+        return res.json({ ok: true, at, detail: `Installed in ${who.team} as @${who.user}; ${l.connected ? `listening since ${l.since}` : (l.error ? `not connected: ${l.error}` : 'connecting…')}.` });
       }
       const plain = store.decryptFor(target.key);
       const items = Array.isArray(plain) ? plain : [plain];

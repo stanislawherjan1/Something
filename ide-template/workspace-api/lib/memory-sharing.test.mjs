@@ -106,5 +106,20 @@ const r2 = await A.resolveAsk('alex', id2, 'keep', 'alex', { rememberSubject: fa
 ok('answering "keep" files nothing', r2.ok && !F.all('shared').some(f => f.title === 'Jarek wants office'));
 ok('a pending question carries the fact, the reason and the key', A.listAsks('alex').every(a => a.fact && a.reason && a.key));
 
+// A note the notes pass said a teammate depends on (with the company in mind):
+// a signal of its own, for company or team work only, never past a person.
+const none = { shared: '', ask: '', askQuestion: '' };
+const work = { title: 'Glaze supplier chosen', text: 'Harbor Glaze supplies the spring celadon.', kind: 'fact', concerns: 'a company or project', subject: 'Harbor Glaze', entities: [{ name: 'Harbor Glaze', kind: 'company' }], evidence: 'Harbor Glaze answered', teamNeeds: true };
+ok('a teammate-depends note reaches the team in automatic mode with no router mark', S.decide({ mode: 'auto', fact: work, routed: none }).outcome === 'team');
+ok('...is a question in ask-first mode', S.decide({ mode: 'ask', fact: work, routed: none }).outcome === 'ask');
+ok('...stays in "never"', S.decide({ mode: 'never', fact: work, routed: none }).outcome === 'private');
+ok('...yields to a "keep" rule', S.decide({ mode: 'auto', fact: work, routed: none, rules: [{ subject: 'Harbor Glaze', decision: 'keep' }] }).outcome === 'private');
+ok('...and to an earlier "keep" answer', S.decide({ mode: 'auto', fact: work, routed: none, decided: new Map([[S.factKey(work), 'keep']]) }).outcome === 'private');
+ok('the flag on a note about the person themselves counts for nothing', S.decide({ mode: 'auto', fact: { ...work, concerns: 'the person themselves' }, routed: none }).outcome === 'private');
+ok('...nor on a note about another person', S.decide({ mode: 'auto', fact: { ...work, concerns: 'another person', subject: 'Mara', entities: [{ name: 'Mara', kind: 'person' }] }, routed: none }).outcome === 'private');
+ok('...nor on a preference', S.decide({ mode: 'auto', fact: { ...work, kind: 'preference' }, routed: none }).outcome === 'private');
+ok('...nor when the model left the concern unsaid', S.decide({ mode: 'auto', fact: { ...work, concerns: undefined }, routed: none }).outcome === 'private');
+ok('without the flag nothing changes: no router mark, private', S.decide({ mode: 'auto', fact: { ...work, teamNeeds: undefined }, routed: none }).outcome === 'private');
+
 console.log(`memory-sharing: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

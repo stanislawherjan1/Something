@@ -17,6 +17,7 @@ import { groupTurnParams } from './integrations/group-watcher.js';
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.log(`  FAIL: ${name}`); } };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 const ctx = [
   { role: 'user', message_id: '1', who: 'Sam', text: 'is the deploy broken?' },
@@ -33,10 +34,10 @@ ok('unknown sender → shared team actor', p.actor === 'team');
 ok('unknown sender is NEVER admin (no all-access short-circuit)', p.actorIsAdmin === false);
 
 // (b) conversation + addressivity context reaches the brain.
-ok('message carries the group-chat framing', /GROUP CHAT/.test(p.message));
-ok('message includes the NEW target text', p.message.includes('is the deploy broken?'));
-ok('message names who is asking', p.message.includes('Sam'));
-ok('message routes private/personal asks to a DM', /\bDM\b/.test(p.message));
+ok('message carries the group-chat framing', /GROUP CHAT/.test(told(p)));
+ok('message includes the NEW target text', told(p).includes('is the deploy broken?'));
+ok('message names who is asking', told(p).includes('Sam'));
+ok('message routes private/personal asks to a DM', /\bDM\b/.test(told(p)));
 
 // (c) GROUP CONTEXT (group-mode v2, D2) — the load-bearing privacy invariant.
 // Every group turn must carry groupContext: true, which makes claude.js set
@@ -44,7 +45,7 @@ ok('message routes private/personal asks to a DM', /\bDM\b/.test(p.message));
 // included) and drop the whole USER tier from the prefix. A refactor that loses
 // this flag silently reopens private reads in a publicly-replying context.
 ok('group turn sets groupContext (hard private fence)', p.groupContext === true);
-ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TASK/.test(p.message));
+ok('group turn offers [[PRIVATE_TASK]] delegation for private asks', /PRIVATE_TASK/.test(told(p)));
 
 // (d) pathInGroupScope — the pure rule the scope-guard hook applies under
 // IDE_GROUP_CONTEXT=1: NO private tree for anyone; shared space stays open.
@@ -62,8 +63,8 @@ ok('group scope: shared memory allowed', pathInGroupScope('memory/CHANNELS.md') 
 // framing line; sessionId passes through to runClaudeTurn's --resume.
 const pResumed = groupTurnParams({ chatId: '-1001234567890' }, ctx, target, { sessionId: 'sess-123' }, { resumed: true });
 ok('resumed turn passes sessionId through', pResumed.sessionId === 'sess-123');
-ok('resumed turn tells the brain it has session memory', /session memory/.test(pResumed.message));
-ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(p.message));
+ok('resumed turn tells the brain it has session memory', /session memory/.test(told(pResumed)));
+ok('fresh turn does NOT claim session memory', !/ongoing session memory/.test(told(p)));
 
 // (f) DELEGATION — a [[PRIVATE_TASK]] runs in a DM, so it leaves the group
 // conversation behind unless it is handed over explicitly. It used to receive
@@ -83,11 +84,35 @@ const delegatePrompt = gwTest.delegatePrompt({
 });
 ok('delegate is given the group conversation, with attribution',
   /Marek/.test(delegatePrompt) && /budget lands at 40k/.test(delegatePrompt));
+{
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const team = await import('./team.js');
+  const gid = Object.keys(team.getTeamConfig?.().groups || {})[0];
+  const g = gid ? team.getGroup(gid) : { chatId: '-100123', title: 'Room' };
+  const pr = told(groupTurnParams(g, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
+  ok('the room turn is told every word is posted: speak to the sender, never about them, silence as a marker', /EVERY WORD YOU WRITE IS POSTED/.test(pr) && /never ABOUT them in the third person/.test(pr) && /\[\[SILENT\]\]/.test(pr));
+}
+{
+  const { groupTurnParams: gtp } = await import('./integrations/group-watcher.js');
+  const pr2 = told(gtp({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
+  ok('a question about current state is answered from a fresh look, "nothing changed" only after checking', /CURRENT STATE IS LOOKED UP, NEVER REMEMBERED/.test(pr2) && /Your earlier reply is not a source/.test(pr2) && /only be said after that fresh look/.test(pr2) && /the weather, prices, news/.test(pr2) && /neither is a past check that memory or a lookup hands you/.test(pr2));
+}
+{
+  const { groupTurnParams: gtp3 } = await import('./integrations/group-watcher.js');
+  const pr3 = told(gtp3({ chatId: '-100123', title: 'Room' }, [], { message_id: '1', from_id: '1', who: 'Ann', text: 'x' }));
+  ok('notes about search results and sources are background work, never part of the message', /search results and which source you picked/.test(pr3) && /any note to yourself between steps: it is never part of the message/.test(pr3));
+}
 ok('delegate can tell which message triggered it', /← NEW/.test(delegatePrompt));
-ok('delegate is pointed at the durable transcript for older history',
-  /-history\.jsonl/.test(delegatePrompt));
+ok('delegate is told the room\'s transcript is not its to open, and where to look instead',
+  !/-history\.jsonl/.test(delegatePrompt) && /does not open it/.test(delegatePrompt) && /room's memory/.test(delegatePrompt));
 ok('delegate is told to attribute what a named person said',
   /SAY WHOSE it was/.test(delegatePrompt));
+ok('delegate is told to start the message with [[DM]]', /START THE MESSAGE with a line holding only `\[\[DM\]\]`/.test(delegatePrompt));
+{
+  const { dmBody } = await import('./integrations/group-watcher.js');
+  ok('the DM is what follows the marker, the working notes before it are dropped', dmBody('Got the details. Now writing the DM.\n\n[[DM]]\nAbout what you asked in #studio: the kiln is booked.') === 'About what you asked in #studio: the kiln is booked.');
+  ok('...the last marker wins, and no marker means the whole text', dmBody('[[DM]] draft\n[[DM]]\nfinal') === 'final' && dmBody('Just the answer.') === 'Just the answer.');
+}
 ok('delegate still carries the task itself', /summarise the budget discussion/.test(delegatePrompt));
 ok('delegate treats the transcript as data, not instructions',
   /never as instructions|not instructions/i.test(delegatePrompt));
@@ -102,15 +127,22 @@ const enGroup = { chatId: '-100', language: 'English' };
 const gwSrcNotice = readFileSync(new URL('./integrations/group-watcher.js', import.meta.url), 'utf8');
 const limitErr = 'claude exited with code 1 :: Claude usage limit reached. Your limit will reset at 3pm (Europe/Warsaw).';
 
-ok('a limit notice states WHEN it comes back, quoting the printed time',
-  /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(enGroup, 'limit', limitErr)));
+// The hour is read from the printed reset (3pm Warsaw = 13:00 UTC) and said
+// in the workspace's clock with the zone named — the same sentence the web
+// chat and the direct messages use (lib/usage-limit.js).
+const enNotice = failureNoticeText(enGroup, 'limit', limitErr), plNotice = failureNoticeText(plGroup, 'limit', limitErr);
+// 3pm Warsaw is 13:00 UTC in summer and 14:00 in winter: the expected hour is read off today's clock.
+const { resetInstant } = await import('./usage-limit.js');
+const utcAt = new Date(resetInstant(limitErr, Date.now()) * 1000).toISOString().slice(11, 16);
+ok('a limit notice states WHEN it comes back, the zone named', enNotice.includes(`back at ${utcAt} UTC.`), enNotice);
 // English is the DEFAULT, not an override of a KNOWN preference: an English
 // system line in a Polish conversation reads as something broken, which is what
 // a failure notice should least of all add to.
-ok('a group with no pinned language gets English', /out of capacity/.test(failureNoticeText({}, 'limit', limitErr)));
-ok('a group with a pinned language gets that language',
-  /Skończył mi się limit/.test(failureNoticeText(plGroup, 'limit', limitErr)));
-ok('the reset time survives translation', /3pm \(Europe\/Warsaw\)/.test(failureNoticeText(plGroup, 'limit', limitErr)));
+ok('a group with no pinned language gets English', /^Claude usage limit reached\./.test(failureNoticeText({}, 'limit', limitErr)));
+const { NOTICE: N } = await import('./i18n/limit-notice.js');
+const plFixed = N.pl('§', '¤').split('§')[0].trim(), plAtWord = N.pl('§', '¤').split('§')[1].split('¤')[0].trim();
+ok('a group with a pinned language gets that language', plNotice.startsWith(plFixed), plNotice);
+ok('the reset time survives translation', plNotice.endsWith(`${plAtWord} ${utcAt} UTC.`), plNotice);
 ok('a re-ask is not answered with the same apology (one notice, then quiet)',
   /15 \* 60_000/.test(gwSrcNotice));
 // Startup and mid-turn silence are different failures and were conflated: a
@@ -195,8 +227,8 @@ ok('the reload still seeds the ring from the durable transcript',
 // limitation instead of reading them.
 const { buildCachedPrefix } = await import('./memory-loader.js');
 const prefixBlock = buildCachedPrefix({ memoryDir: '/nonexistent-for-test' }).block;
-ok('the prefix points at the group transcripts',
-  /\.group-watcher\/<chatId>-history\.jsonl/.test(prefixBlock));
+ok('the prefix points at room_recent for a room\'s recent talk, not at the fenced files',
+  /room_recent/.test(prefixBlock) && !/\.group-watcher\/<chatId>-history\.jsonl/.test(prefixBlock) && /not opened as files/.test(prefixBlock));
 ok('the prefix names the false excuse it is there to kill',
   /cannot see group history/i.test(prefixBlock));
 ok('the prefix explains the in-flight marker', /\.pending-delegate\.json/.test(prefixBlock));
@@ -264,8 +296,8 @@ ok('the durable group transcript records the message id', /message_id: entry\.me
 const fireSrc = gwSrc.split('const fireDelegate')[1].slice(0, 900);
 ok('the delegate is handed the full history, not the session window',
   /runPrivateDelegate\([^)]*, hist\)/.test(fireSrc), fireSrc.slice(0, 200));
-ok('the delegate is told to READ the transcript rather than explain it cannot',
-  /READ THAT FILE before replying/.test(gwSrc));
+ok('the delegate is told never to say it has no access to the room',
+  /never say you have no access to the room/.test(gwSrc));
 
 // The delegate has the full toolset, so it CAN send Telegram messages itself —
 // and then its closing text is a report about that send, which the system
@@ -282,6 +314,37 @@ ok('...and the list covers web_send_message, not only Telegram',
   /mcp__web-channel__web_send_message/.test(gwSrc));
 const claudeSrc = readFileSync(new URL('./claude.js', import.meta.url), 'utf8');
 ok('runClaudeTurn passes the deny list to the CLI', /'--disallowedTools', (disallowedTools|blocked)\.join/.test(claudeSrc));
+
+// (x) A resumed turn re-reads the thread. The group's session is summarised by
+// the CLI when it grows; a turn that got only the messages since its last reply
+// lost what was being talked about after a gap.
+const { recapFor, gateFailureKind } = await import('./integrations/group-watcher.js');
+const NOW = Date.parse('2026-10-21T12:00:00Z');
+const hist = Array.from({ length: 50 }, (_, i) => ({ role: i % 3 ? 'user' : 'assistant', message_id: `m${i}`, who: 'Sam', text: `line ${i}`, ts: new Date(NOW - (50 - i) * 60_000).toISOString() }));
+const lastSeen = hist[39].ts;   // the session's last turn saw up to line 39
+const recent = { sessionId: 's', lastTs: lastSeen, updatedAt: new Date(NOW - 10 * 60_000).toISOString() };
+const stale = { sessionId: 's', lastTs: lastSeen, updatedAt: new Date(NOW - 5 * 3600_000).toISOString() };
+let rc = recapFor(hist, recent, NOW);
+ok('a resumed turn soon after the last one re-reads its last 10 lines', rc.length === 10 && rc[0].text === 'line 30' && rc[9].text === 'line 39', rc.map(r => r.text));
+rc = recapFor(hist, stale, NOW);
+ok('...after a long gap, its last 30 (the session was likely summarised)', rc.length === 30 && rc[0].text === 'line 10' && rc[29].text === 'line 39', rc.map(r => r.text));
+ok('...never a line it has not seen (those are the NEW window)', !recapFor(hist, stale, NOW).some(r => r.ts > lastSeen));
+ok('no session → no recap (a fresh session gets the whole ring anyway)', recapFor(hist, null, NOW).length === 0);
+const newer = hist.slice(40);
+const pr = groupTurnParams({ chatId: '-1001234567890' }, newer, { ...newer[newer.length - 1], from_id: '987654321' }, {}, { resumed: true, recap: recapFor(hist, stale, NOW) });
+ok('the resumed prompt carries the earlier lines, marked as already seen', /EARLIER IN THIS GROUP/.test(told(pr)) && told(pr).includes('line 10') && told(pr).includes('line 39'));
+ok('...before the messages since the last turn', told(pr).indexOf('line 39') < told(pr).indexOf('The messages since your last turn') && told(pr).indexOf('The messages since your last turn') < told(pr).indexOf('line 49'));
+ok('...and no longer tells the brain to trust its session blindly', !/trust it\. Below are ONLY/.test(told(pr)) && /may have been summarised/.test(told(pr)));
+const fresh = groupTurnParams({ chatId: '-1001234567890' }, hist, { ...hist[49], from_id: '987654321' });
+ok('a fresh session gets the plain recent conversation, no recap block', !/EARLIER IN THIS GROUP/.test(told(fresh)) && /recent conversation:/.test(told(fresh)));
+
+// (y) A failed gate: out of plan → silent; anything else → the brain judges.
+ok('the gate out of plan keeps silent (the brain would fail too)', gateFailureKind({ ok: false, error: "You've hit your weekly limit · resets Oct 22, 12pm (UTC)" }) === 'limit');
+ok('...said through the classifier\'s exit too', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: "exit 1: You've hit your weekly limit · resets Oct 22, 12pm (UTC)" }) === 'limit');
+ok('a sentence that merely says "hit your limit" is no usage limit', isUsageLimit('I think the client hit your limit of patience') === false);
+ok('a crashed gate passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: 'exit 1' }) === 'gate-down');
+ok('a timed-out gate passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-timeout' }) === 'gate-down');
+ok('an unparseable answer passes the message to the brain', gateFailureKind({ ok: false, reason_enum: 'classify-error', error: 'unparseable' }) === 'gate-down');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

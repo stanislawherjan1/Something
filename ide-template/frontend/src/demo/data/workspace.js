@@ -38,6 +38,7 @@ const FILE_PATHS = [
   'Products/copy/ember-collection.md',
   'Wholesale/brewline-cafes.md',
   'Wholesale/price-list.md',
+  'Wholesale/cafe-demo-plan.md',
   'Suppliers/ostra-clay.md',
   'Suppliers/boxwell-packaging.md',
   'Marketing/newsletter-this-week.md',
@@ -152,6 +153,28 @@ The shop's new "Prices & shipping" page goes live with the Breakfast Bundle. Che
 - [x] Floors removed from the public version
 - [ ] Shipping line matches the rule actually live in Shopify
 - [ ] Nora's sign-off (Mara's newsletter review is waiting on it)
+`,
+
+  'Wholesale/cafe-demo-plan.md': `# Café buyers demo
+
+Owner: Nora, with Tom. Tuesday ${nice(-3)}, 10:00 at the studio. Goal: two cafés on a standing order before the winter menu.
+
+## Who's coming
+
+| Buyer | Café | Wants to see |
+|---|---|---|
+| Ines | Brewline Cafés, 6 sites | Tide mugs in volume |
+| Sam | Field & Flour | A glaze with their logo |
+| Rosa | Harbour Roasters | Delivery to two sites |
+| Jamie | Little Kiln Café | A sample set |
+
+## Running order
+
+| Time | What | Who |
+|---|---|---|
+| 10:00 | The studio and the kiln | Lena |
+| 10:20 | The range, with wholesale prices | Tom |
+| 10:45 | Custom glazes and lead times | Nora |
 `,
 
   'Products/ember-launch-plan.md': `# Ember launch plan
@@ -1471,6 +1494,25 @@ export const INTEGRATIONS = {
 // ── Telegram groups, locks, branding ────────────────────────────────────────
 
 const tgMembers = (...slugs) => Object.fromEntries(slugs.map(s => [PEOPLE[s].telegramChatId, PEOPLE[s].name]));
+
+export const SLACK_CHANNELS = {
+  groups: [
+    { chatId: 'slack-C0SALT0001', kind: 'slack', title: '#studio', requireMention: true, language: '',
+      members: { U0SALTNORA: 'Nora Vale', U0SALTMARA: 'Mara Quill', U0SALTLEO: 'Leo Brandt' },
+      audience: { ok: true, outsiders: [], shared: false, members: 4, checkedAt: at(-1, '09:12') },
+      addedAt: at(-30, '10:00'), addedBy: PEOPLE.nora.email },
+    { chatId: 'slack-C0SALT0002', kind: 'slack', title: '#wholesale', requireMention: false, language: 'English', paused: true,
+      members: { U0SALTNORA: 'Nora Vale', U0SALTTOM: 'Tom Ashby' },
+      audience: { ok: false, outsiders: ['U0GUEST001'], shared: false, members: 4, checkedAt: at(0, '08:40') },
+      addedAt: at(-12, '15:30'), addedBy: PEOPLE.nora.email },
+  ],
+  pending: [
+    { chatId: 'slack-C0SALT0003', channel: 'C0SALT0003', title: '#kiln-log', inviterSlug: 'lena', members: 5, private: false, at: at(0, '07:55') },
+  ],
+  pendingPeople: [
+    { id: 'U0NEWHIRE1', email: 'pia@saltmarshceramics.example', name: 'Pia Larsen', at: at(0, '08:10') },
+  ],
+};
 
 export const TELEGRAM_GROUPS = [
   { chatId: '-1007001000001', title: `${COMPANY.short} team`, requireMention: false, language: 'English',

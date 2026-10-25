@@ -106,6 +106,21 @@ if [ "$(id -u)" = "0" ]; then
     chmod  -R g+rwX    /home/coder/project 2>/dev/null || true
     find /home/coder/project -type d -exec chmod g+s {} \; 2>/dev/null || true
 
+    # The rooms' transcripts (.group-watcher/) are the rooms' own: written by
+    # workspace-api, read by a room's turn (turn-group) — and by no person's
+    # turn, the bot's, or the editor's (a non-member's turn once could, and the
+    # hook was the only thing in the way). wsapi is in turn-group, so it still
+    # writes; the setgid bit keeps new files in the group. A member asking
+    # about a room is answered from the room's memory, which the memory tools
+    # scope by membership.
+    if getent group turn-group >/dev/null 2>&1; then
+        mkdir -p /home/coder/project/.group-watcher
+        chown wsapi:turn-group /home/coder/project/.group-watcher 2>/dev/null || true
+        chmod 2770 /home/coder/project/.group-watcher 2>/dev/null || true
+        chgrp -R turn-group /home/coder/project/.group-watcher 2>/dev/null || true
+        chmod -R u+rwX,g+rwX,o-rwx /home/coder/project/.group-watcher 2>/dev/null || true
+    fi
+
     # /home/coder itself is mode 0700 owner=coder. wsapi + mcp need to
     # TRAVERSE it to reach PROJECT_DIR — Linux requires +x on every path
     # component. `o+x` grants traversal to everyone without granting
@@ -399,10 +414,13 @@ PY
                 mkdir -p "$CACHE_DIR"
                 cp -a "$PLUGIN_SRC/." "$CACHE_DIR/"
             fi
-            if [ ! -d "$MARKET_DIR/.claude-plugin" ]; then
-                mkdir -p "$MARKET_DIR"
-                cp -a /opt/ide/plugins-src/. "$MARKET_DIR/"
-            fi
+            # The marketplace copy is refreshed from the image on every boot,
+            # not only when missing: the CLI reconciles the install with the
+            # version the marketplace advertises, and a copy left from months
+            # earlier (0.0.6 while the image carried 0.0.7) switched a bot back
+            # to an old, broken plugin copy on its next restart.
+            mkdir -p "$MARKET_DIR"
+            cp -a /opt/ide/plugins-src/. "$MARKET_DIR/"
             mkdir -p /home/bot/.claude/plugins
             cat > /home/bot/.claude/plugins/installed_plugins.json <<INSTALLED_EOF
 {
@@ -1090,6 +1108,10 @@ if [ -d /opt/ide/skills/default ]; then
     #    pre-existing user content — first-deploy safe default)
     for d in "$SKILLS_DIR"/*/; do
         [ -d "$d" ] || continue
+        # An empty SKILL.md is nobody's work (a torn copy): it would be kept as
+        # "unstamped", and the default then copied INSIDE it — a skill the CLI
+        # sees as empty, with the real one a level down where it never looks.
+        if [ -f "$d/SKILL.md" ] && [ ! -s "$d/SKILL.md" ]; then rm -rf "$d"; continue; fi
         if [ -f "$d/SKILL.md" ]; then
             src=$(awk -F': *' '/^source:/{print $2; exit}' "$d/SKILL.md" 2>/dev/null | tr -d '[:space:]')
             case "$src" in
@@ -1103,6 +1125,12 @@ if [ -d /opt/ide/skills/default ]; then
     for skill_src in /opt/ide/skills/default/*/; do
         [ -d "$skill_src" ] || continue
         name=$(basename "$skill_src")
+        # A person's own skill of the same name was kept above and wins; `cp -r`
+        # into an existing directory would nest the default inside it.
+        if [ -e "$SKILLS_DIR/$name" ]; then
+            echo "[entrypoint] skill '$name': a project skill of that name is kept, the default is not installed"
+            continue
+        fi
         cp -r "$skill_src" "$SKILLS_DIR/$name"
     done
 

@@ -7,17 +7,8 @@ import Hero from '../components/Hero.astro';
 import Routines from '../components/Routines.astro';
 import '../styles/mocks.css';
 import ChromeMock from '../components/mocks/ChromeMock.astro';
-
-// Memory: what the coworker picked up, where from. [fact, source logo or glyph, source, pill, x, y]
-const memories: [string, string, string, string, number, number][] = [
-  ['Mara answers fastest on Telegram', 'telegram', 'Telegram', 'preference', -330, -150],
-  ['Never discount the mug set below €39', '@chat', 'Web chat', 'reviewed', 330, -165],
-  ['The café chain reorders every six weeks', 'shopify', 'Shopify', '', -370, 70],
-  ['Investor calls are on Thursdays', 'gcalendar', 'Calendar', '', 365, 60],
-  ['Free shipping stays at €50 and up', '@group', 'Team group', 'Shared', 0, 215],
-];
-const CHAT = '<svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
-const GROUP = '<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+import SlackMock from '../components/mocks/SlackMock.astro';
+import { svg } from '../lib/icons';
 
 // Team: collaborative mode on in the middle, the team around it — each person
 // with what they're doing through it now, their own tools and their own routine.
@@ -29,6 +20,27 @@ const crew: [string, string, number, number, string, string[], string][] = [
   ['p4', 'Jonas', 390, 150, 'Chasing the supplier for Mara', ['stripe', 'shopify'], 'Invoices · Mon'],
 ];
 
+// Talk to them anywhere: the demo's surface switch over the same coworker in
+// a Slack channel and a team's Telegram group. [label, logo, on]
+const SLACK = '<svg viewBox="0 0 122.8 122.8"><path d="M25.8 77.6c0 7.1-5.8 12.9-12.9 12.9S0 84.7 0 77.6s5.8-12.9 12.9-12.9h12.9v12.9zm6.5 0c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9v32.3c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V77.6z" fill="#e01e5a"/><path d="M45.2 25.8c-7.1 0-12.9-5.8-12.9-12.9S38.1 0 45.2 0s12.9 5.8 12.9 12.9v12.9H45.2zm0 6.5c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H12.9C5.8 58.1 0 52.3 0 45.2s5.8-12.9 12.9-12.9h32.3z" fill="#36c5f0"/><path d="M97 45.2c0-7.1 5.8-12.9 12.9-12.9s12.9 5.8 12.9 12.9-5.8 12.9-12.9 12.9H97V45.2zm-6.5 0c0 7.1-5.8 12.9-12.9 12.9s-12.9-5.8-12.9-12.9V12.9C64.7 5.8 70.5 0 77.6 0s12.9 5.8 12.9 12.9v32.3z" fill="#2eb67d"/><path d="M77.6 97c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9-12.9-5.8-12.9-12.9V97h12.9zm0-6.5c-7.1 0-12.9-5.8-12.9-12.9s5.8-12.9 12.9-12.9h32.3c7.1 0 12.9 5.8 12.9 12.9s-5.8 12.9-12.9 12.9H77.6z" fill="#ecb22e"/></svg>';
+const CHROME = '<svg class="line" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M21.17 8H12M3.95 6.06 8.54 14M10.88 21.94 15.46 16"/></svg>';
+const places: [string, string, boolean][] = [
+  ['Slack', SLACK, true],
+  ['Telegram', '<img src="/integrations/telegram.svg" alt="" />', false],
+  ['Web', '<img class="fav" src="/favicon.svg" alt="" />', false],
+  ['Chrome', CHROME, false],
+];
+
+// The phone: a chat with Aria, as in the demo under the hero: asked on the
+// go, a short answer.
+const ARIA_PIC = { 'data-halftone': '', 'data-image': '/avatars/1.png', 'data-mode': 'dark', 'data-center': '', 'data-plain': '', 'data-paper': '', 'data-step': '1.7', 'data-scale': '1', 'data-seed': 'bot' };
+
+// Memory: heard in a channel, kept as one fact with its history, used a week
+// later. The fact card follows the Memory screen (Memory.astro on the site).
+const BRAIN = '<svg viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>';
+const REPLACE = '<path d="M14 4a1 1 0 0 1 1-1"/><path d="M15 10a1 1 0 0 1-1-1"/><path d="M21 4a1 1 0 0 0-1-1"/><path d="M21 9a1 1 0 0 1-1 1"/><path d="m3 7 3 3 3-3"/><path d="M6 10V5a2 2 0 0 1 2-2h2"/><rect x="3" y="14" width="7" height="7" rx="1"/>';
+const ARROW = '<svg viewBox="0 0 48 24"><path d="M2 12h42M36 5l8 7-8 7"/></svg>';
+
 // Integrations: every mark we ship, as tiles.
 const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4','linear','github','airtable','miro','monday','todoist','calendly','calcom','paypal','mailchimp','cloudflare','atlassian','sentry','netlify','neon','supabase','webflow','zapier','amplitude','wix','firecrawl','gdrive','gsheets','gdocs','gslides','gcalendar','gtasks','email','trello','x','openai','gemini','grok','clickup','deepl','tally','telegram'];
 ---
@@ -38,6 +50,37 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
 
     <span class="label">assets/readme/hero.png</span>
     <div class="slide s-hero"><Hero /></div>
+
+    <span class="label">assets/readme/surfaces.png</span>
+    <div class="slide s-where">
+      <div class="where-art">
+        <div class="sw">
+          {places.map(([label, logo, on]) => <span class={`sw-i ${on ? 'on' : ''}`}><span class="sw-logo" set:html={logo} />{label}</span>)}
+        </div>
+        <div class="pair">
+          <div class="pair-slack"><div class="pair-fit"><SlackMock /></div></div>
+          <div class="pair-phone"><div class="pair-fit"><div class="mk"><div class="phone">
+            <div class="tg-status"><b>9:41</b><span class="island"></span><span class="tg-batt"></span></div>
+            <div class="tg-head">
+              <span class="tg-back" set:html={svg('back') + '<i>Chats</i>'} />
+              <span class="tg-who"><b>Aria</b><span>bot</span></span>
+              <span class="tg-av"><span class="bot" {...ARIA_PIC}></span></span>
+            </div>
+            <div class="tg-wall ph-wall">
+              <span class="tg-date">Today</span>
+              <div class="tg-msg out">Move the supplier call to Thursday and tell Mara?<span class="tg-meta">9:41 <i>✓✓</i></span></div>
+              <div class="tg-msg in">Done. The supplier call is on Thursday at 10, and Mara knows.<span class="tg-meta">9:41</span></div>
+              <div class="tg-msg in">I’ll remind you at 9:45 with last week’s numbers.<span class="tg-meta">9:41</span><span class="vc-react">👍</span></div>
+            </div>
+            <div class="tg-input">
+              <span set:html={svg('tgclip', 'tg-i')} />
+              <span class="tg-field">Message<span set:html={svg('smile', 'tg-i sm')} /></span>
+              <span set:html={svg('mic', 'tg-i')} />
+            </div>
+          </div></div></div></div>
+        </div>
+      </div>
+    </div>
 
     <span class="label">assets/readme/team.png</span>
     <div class="slide">
@@ -92,25 +135,38 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
 
     <span class="label">assets/readme/memory.png</span>
     <div class="slide">
-      <div class="mind">
-        <div class="mind-bg" data-halftone data-abstract="network" data-seed="memory"></div>
-        <svg class="mind-links" viewBox="0 0 1120 560" aria-hidden="true">
-          {memories.map(([, , , , x, y]) => <line x1="560" y1="280" x2={560 + x} y2={280 + y} />)}
-        </svg>
-        <div class="mind-core">
-          <span class="core-face" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
-          <b>Aria</b><span>24 facts</span>
-        </div>
-        {memories.map(([fact, src, label, pill, x, y]) => (
-          <div class="fact" style={`left:${560 + x}px; top:${280 + y}px`}>
-            <p>{fact}</p>
-            <span class="fact-meta">
-              {src.startsWith('@') ? <span class="src-ico" set:html={src === '@chat' ? CHAT : GROUP} /> : <img src={`/integrations/${src}.svg`} alt="" />}
-              {label}
-              {pill && <span class={`pill ${pill === 'preference' ? 'violet' : pill === 'reviewed' ? 'emerald' : ''}`}>{pill}</span>}
-            </span>
+      <div class="story">
+        <!-- 1. Heard: said in passing, in a channel -->
+        <div class="st-step">
+          <span class="st-label"><b>1</b>Heard</span>
+          <div class="st-card st-said">
+            <div class="st-who"><img src="/people/p2.jpg" alt="" /><b>Leo</b><span class="st-where"><span set:html={SLACK} />#ops · Oct 28</span></div>
+            <p>Brewline now orders every four weeks, they confirmed by email.</p>
           </div>
-        ))}
+        </div>
+        <span class="st-arrow" set:html={ARROW} />
+        <!-- 2. Kept: one fact per thing, the old version struck through -->
+        <div class="st-step">
+          <span class="st-label"><b>2</b>Kept</span>
+          <div class="st-card st-fact">
+            <div class="st-fhead"><span class="st-brain" set:html={BRAIN} />Memory</div>
+            <p class="st-title">Brewline reorders every four weeks</p>
+            <span class="pill accent"><svg viewBox="0 0 24 24" set:html={REPLACE} />supersedes 1 earlier</span>
+            <ol class="st-line">
+              <li><span class="st-dot"></span><span class="st-meta">Sep 12 · no longer true</span><p class="gone">Brewline reorders every six weeks.</p></li>
+              <li class="update"><span class="st-dot"></span><span class="st-meta">Oct 28 · from Leo on Slack</span><p>First four-week order is due on Nov 4.</p></li>
+            </ol>
+          </div>
+        </div>
+        <span class="st-arrow" set:html={ARROW} />
+        <!-- 3. Used: a week later, unasked -->
+        <div class="st-step">
+          <span class="st-label"><b>3</b>Used</span>
+          <div class="st-card st-said">
+            <div class="st-who"><span class="st-bot" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span><b>Aria</b><span class="st-where">Nov 3 · 9:00</span></div>
+            <p>Brewline’s order is due tomorrow. I drafted it from their last one. Want me to send it?</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -165,8 +221,62 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
   .s-memory :global(.mem-copy) { display: none; }
   .s-memory :global(.mem) { display: flex; justify-content: center; }
   .s-memory :global(.mv) { max-width: 600px; }
-  .s-memory :global(.mv-row) { opacity: 1 !important; transform: none !important; }
+  .s-memory :global(.mv-fact) { opacity: 1 !important; transform: none !important; }
   .s-mock { display: flex; justify-content: center; }
+
+  /* Talk to them anywhere: the switch, then Slack with the phone over its edge. */
+  .where-art { display: flex; flex-direction: column; align-items: center; gap: 36px; }
+  .sw { display: flex; gap: 2px; padding: 4px; border-radius: 12px; border: 1px solid var(--hair); background: var(--card); box-shadow: 0 10px 30px -20px rgba(0,0,0,.25); }
+  .sw-i { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border-radius: 8px; font: 500 14px var(--font); color: var(--muted-foreground); }
+  .sw-i.on { background: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+  .sw-logo { display: grid; place-items: center; width: 18px; height: 18px; }
+  .sw-logo :global(svg), .sw-logo :global(img) { width: 18px; height: 18px; }
+  .sw-logo :global(img.fav) { border-radius: 5px; outline: 1px solid rgb(40 37 32 / .1); }
+  .sw-logo :global(svg.line) { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  /* Slack with the phone over its right edge; the phone's foot cut by the
+     picture's own frame, the slide's margins as on every other image. */
+  .pair { position: relative; width: 1104px; height: 640px; overflow: hidden; }
+  .pair-slack { position: absolute; left: 0; top: 0; width: 920px; height: 578px; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 70px -32px rgba(0,0,0,.35); }
+  .pair-slack .pair-fit { width: 800px; height: 502px; transform: scale(1.15); transform-origin: 0 0; }
+  /* Slack keeps a readable line length; the text ends before the phone. */
+  .pair-slack :global(.sl-msg p:not(.sl-who)) { max-width: 420px; }
+  .pair-phone { position: absolute; left: 800px; top: 110px; }
+  .pair-phone .pair-fit { width: 390px; transform: scale(.78); transform-origin: 0 0; }
+  .ph-wall { gap: 8px; justify-content: flex-start; }
+  .ph-wall .tg-msg { max-width: 82%; }
+  .ph-wall .tg-msg.in { position: relative; }
+  .vc-react { position: absolute; left: 10px; bottom: -14px; padding: 1px 7px; border-radius: 99px; background: #fff; font-size: 13px; box-shadow: 0 1px 3px rgb(0 0 0 / .18); }
+  .ph-wall .tg-msg:last-child { margin-bottom: 14px; }
+  .s-where .tg-who span { font-size: 13px; color: #8e8e93; }
+
+  /* Memory: three steps, left to right. */
+  .story { display: flex; align-items: center; justify-content: center; gap: 22px; }
+  .st-step { display: flex; flex-direction: column; gap: 14px; }
+  .st-label { display: flex; align-items: center; gap: 8px; font: 500 13px var(--font); color: var(--muted-foreground); }
+  .st-label b { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 99px; background: var(--card); border: 1px solid var(--hair); font-size: 12px; font-weight: 600; color: var(--foreground); }
+  .st-card { width: 320px; padding: 16px 18px; border-radius: 10px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 18px 40px -24px rgba(0,0,0,.28); }
+  .st-fact { width: 360px; }
+  .st-who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13.5px; }
+  .st-who img, .st-bot { width: 28px; height: 28px; border-radius: 7px; overflow: hidden; object-fit: cover; flex-shrink: 0; }
+  .st-bot { display: inline-block; border-radius: 99px; background: #efede7 !important; box-shadow: 0 0 0 1px var(--hair); }
+  .st-where { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 11.5px; color: var(--muted-foreground); }
+  .st-where :global(svg) { width: 12px; height: 12px; }
+  .st-said p { font-size: 14.5px; line-height: 1.5; color: var(--fg-90); }
+  .st-fhead { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+  .st-brain :global(svg) { display: block; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .st-title { font-size: 15px; font-weight: 600; line-height: 1.4; margin-bottom: 8px; }
+  .pill.accent { gap: 5px; background: rgb(37 99 235 / .07); color: #1d4ed8; box-shadow: inset 0 0 0 1px rgb(37 99 235 / .22); }
+  .pill.accent svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .st-line { position: relative; list-style: none; margin: 14px 0 0 4px; padding: 0 0 0 20px; border-left: 1px solid var(--hair); }
+  .st-line li { position: relative; padding-bottom: 12px; }
+  .st-line li:last-child { padding-bottom: 0; }
+  .st-dot { position: absolute; left: -24.5px; top: 4px; width: 8px; height: 8px; border-radius: 99px; background: color-mix(in oklab, var(--muted-foreground) 30%, transparent); box-shadow: 0 0 0 2px var(--card); }
+  .update .st-dot { background: var(--card); box-shadow: inset 0 0 0 2px #2563eb, 0 0 0 2px var(--card); }
+  .st-meta { display: block; margin-bottom: 2px; font-size: 11px; color: var(--muted-foreground); }
+  .st-line p { font-size: 13px; line-height: 1.5; color: var(--fg-85); }
+  .st-line p.gone { color: var(--muted-foreground); text-decoration: line-through; }
+  .st-arrow { margin-top: 28px; color: color-mix(in oklab, var(--foreground) 30%, transparent); }
+  .st-arrow :global(svg) { display: block; width: 44px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 
   /* Editor: the markdown editor alone. */
   .ed-card { width: 920px; overflow: hidden; border-radius: 10px; border: 1px solid #e8e7e2; background: #f7f6f2; box-shadow: 0 30px 70px -32px rgba(0,0,0,.3); }
@@ -177,22 +287,9 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
   .ed-card tr > :last-child { border-right: 0; }
   .ed-card tr:last-child td { border-bottom: 0; }
 
-  /* Memory: what they keep, around them, linked; a network underneath. */
-  .mind { position: relative; width: 1120px; height: 560px; margin: 0 auto; }
-  .mind-bg { position: absolute !important; inset: 0; border-radius: 8px; opacity: .55; background: transparent !important; -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 40%, transparent 100%); }
+  /* The team's links from the switch to each person. */
   .mind-links { position: absolute; inset: 0; width: 100%; height: 100%; }
   .mind-links line { stroke: color-mix(in oklab, var(--foreground) 28%, transparent); stroke-width: 1; stroke-dasharray: 3 4; }
-  .mind-core { position: absolute; left: 560px; top: 280px; translate: -50% -50%; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 18px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 18px 40px -22px rgba(0,0,0,.25); }
-  .core-face { width: 64px; height: 64px; border-radius: 99px; overflow: hidden; background: #efede7 !important; box-shadow: 0 0 0 1px var(--hair); }
-  .mind-core b { margin-top: 4px; font-size: 14px; font-weight: 600; }
-  .mind-core span:last-child { font-size: 11.5px; color: var(--muted-foreground); }
-  .fact { position: absolute; translate: -50% -50%; width: 250px; padding: 11px 14px; border-radius: 6px; background: var(--card); border: 1px solid var(--hair); box-shadow: 0 12px 28px -18px rgba(0,0,0,.22); }
-  .fact p { font-size: 13.5px; line-height: 1.45; color: var(--fg-90); }
-  .fact-meta { margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); }
-  .fact-meta img, .src-ico :global(svg) { width: 13px; height: 13px; }
-  .src-ico { display: flex; }
-  .src-ico :global(svg) { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .fact-meta .pill { margin-left: auto; }
   .pill { display: inline-flex; align-items: center; padding: 3px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 500; line-height: 1; color: color-mix(in oklab, var(--muted-foreground) 80%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 12%, transparent); }
   .pill.violet { background: rgb(139 92 246 / .07); color: #6d28d9; box-shadow: inset 0 0 0 1px rgb(139 92 246 / .25); }
   .pill.emerald { background: rgb(16 185 129 / .07); color: #047857; box-shadow: inset 0 0 0 1px rgb(16 185 129 / .25); }

@@ -21,6 +21,7 @@ const ok = (name, cond, extra) => {
   if (cond) pass++;
   else { fail++; console.log(`  FAIL: ${name}${extra ? `\n        ${typeof extra === 'string' ? extra : JSON.stringify(extra).slice(0, 500)}` : ''}`); }
 };
+const told = (p) => `${p.message}\n${p.systemNote || ''}`;   // what the turn is told: its message and the rules
 
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
   { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z' },
@@ -207,6 +208,102 @@ ok('a fact about the person becomes a question even in automatic mode', r.status
 r = await call('POST', '/note', { token: groupTurn, body: { text: 'The pilot starts on 4 November.', said: 'The pilot starts on 4 November.' } });
 ok('a group note is the group\'s: no gate, nothing crosses', r.status === 200 && !r.body.shared && !r.body.asked, r.body);
 T.setSharing('kasia@example.test', 'ask');
+
+// ─── (z) a member's own memory asked from a team room ────────────────────────
+const PL = await import('./integrations/private-lookup.js');
+const asked = [];
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return /glaze/.test(question) ? { answer: 'Harbor Glaze supplies the celadon at 14 GBP a kilo.' } : { nothing: true }; });
+r = await call('POST', '/mine', { token: kasiaTurn, body: { question: 'the glaze?' } });
+ok('(z) a person\'s own turn is refused: this is for a room', r.status === 403, r.body);
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) a group turn for an unknown sender is refused', r.status === 403 && /known person/.test(r.body.error), r.body);
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'nobody', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) a group turn for someone not on the roster is refused', r.status === 403, r.body);
+r = await call('POST', '/mine', { token: groupTurn, body: {} });
+ok('(z) a question is required', r.status === 400, r.body);
+const kasiaRoom = ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' });
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'what did we agree on the glaze?' } });
+ok('(z) a roster member in the team\'s room gets their own memory\'s answer', r.status === 200 && r.body.ok && !r.body.nothing && /Harbor Glaze/.test(r.body.answer), r.body);
+ok('(z) ...looked up as them, told who is in the room', asked.at(-1)?.slug === 'kasia' && Array.isArray(asked.at(-1)?.people), asked.at(-1));
+ok('(z) ...and it is on their Changes as theirs', L.readEvents().some(e => e.op === 'private_lookup' && e.scope === 'user:kasia' && e.answered === true && e.group === '-100777'));
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'the kiln schedule?' } });
+ok('(z) nothing in their memory is "nothing", never a guess', r.body.ok && r.body.nothing === true && !r.body.answer, r.body);
+r = await call('POST', '/mine', { token: kasiaRoom, body: { question: 'the glaze?' } });
+ok('(z) a third lookup in one turn is not made', r.body.nothing === true && /twice/.test(r.body.note || ''), r.body);
+PL.configureLookup(async () => { throw new Error('model down'); });
+const lastKasia = ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' });
+r = await call('POST', '/mine', { token: lastKasia, body: { question: 'the glaze?' } });
+ok('(z) a failed lookup says so, not an answer', r.body.failed === true && !r.body.answer && /do not guess/.test(r.body.note || ''), r.body);
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return { answer: 'You prefer short replies in Polish.' }; });
+T.recordGroupMember('-100777', '9999999', 'Olek');
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'how do I like my replies?' } });
+ok('(z) with someone from outside in the room, the asker still gets their own answer (theirs to have said)', r.body.ok && r.body.answer === 'You prefer short replies in Polish.' && r.body.outsiders === 1, r.body);
+ok('(z) ...and the one-shot is told who is there', asked.at(-1)?.people?.includes('Olek'), asked.at(-1));
+PL.configureLookup(async () => ({ secret: true }));
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'what is my door code?' } });
+ok('(z) a secret: never said in a room, the DM offered, never the value', r.body.ok && r.body.secret === true && !r.body.answer && /DM/.test(r.body.note || ''), r.body);
+PL.configureLookup(async ({ member, question, people }) => { asked.push({ slug: member.slug, question, people }); return { answer: 'You prefer short replies in Polish.' }; });
+{
+  const fs = await import('node:fs');
+  const f = join(ROOT, '.team-config.json');
+  const c = JSON.parse(fs.readFileSync(f, 'utf8'));
+  c.teamMode = false; fs.writeFileSync(f, JSON.stringify(c));
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'stan', group: true, groupId: '-100777' }), body: { question: 'where am I this week?' } });
+  ok('(z) a solo workspace: its one person reaches their own memory from a room too', r.body.ok && !!r.body.answer && asked.at(-1)?.slug === 'stan', r.body);
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'where is Stan this week?' } });
+  ok('(z) ...and nobody else does, solo or not', r.status === 403, r.body);
+  c.teamMode = true; fs.writeFileSync(f, JSON.stringify(c));
+}
+T.touchGroupMeta('-100777', { privateAnswers: 'off' });
+r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'the glaze?' } });
+ok('(z) the room\'s switch off: nothing', r.body.nothing === true && r.body.off === true, r.body);
+T.touchGroupMeta('-100777', { privateAnswers: 'team' });
+PL.configureLookup(null);
+
+// ─── (z2) a member's own connections asked from a team room ──────────────────
+r = await call('POST', '/mine/connections', { token: kasiaTurn, body: { question: 'how many rows in my users table?' } });
+ok('(z2) a person\'s own turn is refused: this is for a room', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'team', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) an unknown sender in a room is refused', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'nobody', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) someone not on the roster is refused', r.status === 403, r.body);
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: {} });
+ok('(z2) a question is required', r.status === 400, r.body);
+const conn = [];
+PL.configureConnections(async ({ member, servers, prompt }) => { conn.push({ slug: member.slug, servers, prompt }); return { answer: 'Your notetaker has 3 meetings from this week.' }; });
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'how many meetings did I have this week?' } });
+ok('(z2) a member asks their own account from the room and gets its answer', r.body.ok && /3 meetings/.test(r.body.answer || ''), r.body);
+ok('(z2) ...asked as them, with their own servers alone', conn.at(-1)?.slug === 'kasia' && conn.at(-1).servers.length > 0 && conn.at(-1).servers.every(n => n.endsWith('-mine')), conn.at(-1) && { servers: conn.at(-1).servers });
+ok('(z2) ...and the ask is on their Changes', L.readEvents().some(e => e.op === 'private_lookup' && e.kind === 'connections' && e.scope === 'user:kasia' && e.answered === true));
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'stan', group: true, groupId: '-100777' }), body: { question: 'my meetings?' } });
+ok('(z2) someone with no account of their own is told so, and nothing runs as them', r.body.ok && r.body.none === true && !r.body.answer && conn.at(-1).slug === 'kasia', r.body);
+PL.configureConnections(async ({ question }) => ({ answer: /rename/.test(question) ? 'Renamed it to "Kickoff".' : 'x' }));
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'rename my last meeting to Kickoff' } });
+ok('(z2) a change they ask for from the room is made as in their own chat, and said', r.body.ok && /Renamed/.test(r.body.answer || ''), r.body);
+PL.configureConnections(null);
+{
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const asKasia = told(groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'my meetings?' }));
+  ok('(z2) the room turn names the sender\'s own accounts and the tool to ask them', /Kasia connected Granola for themselves/.test(asKasia) && /ask_my_connections/.test(asKasia), asKasia.split('\n').find(l => /ACCOUNTS/.test(l)));
+  ok('(z2) ...and says anyone else\'s are not connected for this room, never that they do not exist', /isn't connected in this room/.test(asKasia) && /never that it does not exist/.test(asKasia));
+}
+{
+  PL.configureLookup(async () => ({ private: true }));
+  r = await call('POST', '/mine', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'what do I pay Marek?' } });
+  ok('(z2) held back for the room: private, offered in the DM, never "nothing"', r.body.ok && r.body.private === true && !r.body.nothing && !r.body.answer, r.body);
+  PL.configureLookup(null);
+  PL.configureConnections(async () => ({ failed: true, reason: 'the project is paused' }));
+  r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'create a table in wikiread' } });
+  ok('(z2) a failed change says why', r.body.failed === true && r.body.reason === 'the project is paused', r.body);
+  PL.configureConnections(null);
+  const { groupTurnParams } = await import('./integrations/group-watcher.js');
+  const p = groupTurnParams(T.getGroup('-100777'), [], { message_id: '1', from_id: '2220002', who: 'Kasia', text: 'what meetings did we have?' });
+  ok('(z2) the room turn is told the team\'s integrations by name, to use before saying it has nothing', /THE TEAM'S INTEGRATIONS, loaded in this room for everyone: Granola/.test(p.systemNote), (p.systemNote.split('\n').find(l => /INTEGRATIONS/.test(l)) || '').slice(0, 200));
+}
+T.touchGroupMeta('-100777', { privateAnswers: 'off' });
+r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'x' } });
+ok('(z2) the room\'s switch off covers their accounts too', r.body.off === true && !r.body.answer, r.body);
+T.touchGroupMeta('-100777', { privateAnswers: 'team' });
 
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);

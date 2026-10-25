@@ -38,14 +38,30 @@ a look at public pages about them, which they check before anything is kept).
 The name they give is the name the team sees. Then comes a starter plan picked
 for their role: tools they can connect with their own account, and routines.
 They can connect their own account of most tools from the Marketplace too; only
-the team's own services, like the email inbox or Telegram, need an admin.
+the team's own services, like the email inbox, Telegram or Slack, need an admin.
 Members see their own settings in AI Settings; the coworker's name, face and
 instructions are an admin's to set.
 
-Each person links their own Telegram, so a message from you is from you. Only
-an admin is asked to set the coworker up on Telegram, and it is the whole
-team's once it is. Add the coworker to a team group and it listens there as the team's, remembering
-the group's own conversation and never anyone's private memory. Ask it, from your workspace or your Telegram chat, to post something in a group you are in and it posts exactly the text you approved. Reminders and
+Each person links their own Telegram, so a message from you is from you; on
+Slack it knows you by the email you sign in with, so there is nothing to link.
+An admin sets the coworker up once on Telegram and on Slack, and it is the
+whole team's from then on. Add it to a team group on Telegram, or invite it to
+a Slack channel (an admin approves each channel once), and it listens there as
+the team's, remembering the room's own conversation and never anyone's private
+memory. If someone from outside the team is in a Slack channel, it stays quiet
+there until they leave. Ask it there about
+yourself or your own matters — where you are, what you prefer, a supplier you
+chose, a meeting you booked — and it looks it up in what you told it in your own
+chat and answers for the room to hear, because you asked. Nobody else gets it: when
+someone asks about you, your memory stays closed, whoever they are. Codes and
+passwords are the exception: those never go into a group, they come to you
+directly instead. The same goes for an account you connected for yourself (your own
+Supabase, your own mailbox): ask about it in the group or channel, or ask for a
+change there, and it does it as you, as in your own chat, and answers there; for
+anyone else it is simply not connected there. Come
+back to a group after a day and it re-reads where the conversation stopped
+before it answers. In a group it knows what the team knows: what was said in that group,
+and what reached the team's shared memory from anyone's own chats. Ask it, from your own chat, to post something in a group or channel you are in and it posts exactly the text you approved. Reminders and
 tasks go to the person they are for.
 
 
@@ -120,7 +136,7 @@ role badges, and recipient pickers react live.
 ## 2. Roster & roles
 
 The whitelist lives in `.allowed-emails.json` (array of
-`{ email, role, addedAt, addedBy, slug, displayName, telegramChatId, preferredSurface }`)
+`{ email, role, addedAt, addedBy, slug, displayName, telegramChatId, preferredSurface }` — read back with `surfaces`, see §8)
 with an append-only `.allowed-emails.audit.log`. Anyone on the list can sign in
 with that Google account; everyone else is refused at auth.
 
@@ -159,7 +175,7 @@ Each teammate gets a path-safe **slug** (derived from their email, e.g.
 `users/<slug>/`) plus a `displayName` and an avatar. The slug is the stable key
 used everywhere a person is referenced: file scope, reminder recipients, task
 owners, relay routing. `GET /api/me` returns the caller's
-`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface, preferredLanguage, languageLocked, timezone, timezoneLocked, timezoneFrom, timezoneSetAt, defaultTimezone, effectiveTimezone }`.
+`{ email, slug, role, isAdmin, displayName, teamMode, personalRoot, telegramChatId, preferredSurface, surfaces, preferredLanguage, languageLocked, timezone, timezoneLocked, timezoneFrom, timezoneSetAt, defaultTimezone, effectiveTimezone }`.
 
 Each person edits their own profile on the **Settings** page (user menu →
 Settings): picture, name, reply language and time zone, and their Telegram link
@@ -327,7 +343,13 @@ by a turn that runs **as that teammate** — their identity, their private memor
 and files, the tools a web turn of theirs has — never by the operator's
 assistant session. One conversation is kept per teammate (the turn resumes it),
 the reply goes back on Telegram, and the exchange is recorded in a "Telegram"
-chat in their web history. (`lib/integrations/member-dm.js`.)
+chat in their web history. (`lib/integrations/member-dm.js`.) A Slack direct
+message takes the same path for everyone, the primary admin included — Slack
+has no tmux brain — with its own resumed session (`slack-session.json`) and a
+"Slack" chat in the web history; the sender is matched to the roster by the
+email Slack holds for them, once, and kept as `slackUserId` on their entry
+(`setSlack`, `userBySlackId`). Someone in the Slack workspace who is not on
+the roster gets one fixed line asking to be added, and no turn.
 
 **Locks.** An admin marks a shared path read-only (`.team/locks.json`,
 `lib/locks.js`; `POST /api/files/lock|unlock` admin-only, `GET /api/files/locks`).
@@ -405,8 +427,11 @@ courier:
 - From a workspace, the assistant uses `web_send_message` with
   `recipient: <slug>` to deliver into that teammate's workspace (notification +
   chat). By default it routes to the recipient's **preferred surface** (their
-  workspace always; their Telegram too if that's their preference and they've
-  linked it). The sender can override with `channel: "web" | "telegram"`.
+  workspace always; their Telegram and/or Slack too if that's their preference
+  and they've linked it; with no preference saved, Slack for someone on it —
+  Telegram stays opt-in). The sender can override with `channel: "web" |
+  "telegram" | "slack"`; on Slack the message lands in the recipient's DM with
+  the bot.
 - On **Telegram**, a relay reaches the operator's assistant as an injected
   `[RELAY …]` frame (out-of-band, like a fired reminder): the bot presents it to
   the operator naming the person, and relays the operator's answer back in the
@@ -440,6 +465,14 @@ Each teammate can be reached on Telegram once linked:
   Telegram" prompt (which PATCHes `/api/me`).
 - `preferredSurface` — `web` / `telegram` / `both` — the teammate's own choice of
   where they want to be reached. It drives relay + reminder delivery routing.
+  Unset, a person linked to Slack is reached there too (a team on Slack lives
+  there; "send it to him" once landed only in a workspace nobody looked at);
+  Telegram is never assumed.
+  Underneath it is a **set** of surfaces (`lib/surfaces.js`): the roster stores
+  and the API also returns `surfaces` (for example `["web","telegram"]`), and a
+  PATCH accepts either the word or an array. The word is what `both` always
+  meant — web and Telegram — kept so older clients keep working; a surface the
+  word cannot name shows up only in `surfaces`.
 
 Telegram itself is **team-wide** (`teamWide` in the catalog): an admin connects
 the bot once for everyone, with no read-only/read-and-write choice (it always
@@ -495,8 +528,22 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    pre-filter that judges *in context* (the recent thread, including the bot's own
    prior replies), never the last line alone. It drops only obvious noise (a bare
    reaction, two people clearly talking to each other); when unsure, it passes. A
-   direct address — `@mention`, a reply to the bot, or the bot's **name** (incl.
-   inflected forms) — bypasses the gate outright.
+   direct address — `@mention`, a reply to the bot, a message in a Slack thread the
+   bot has posted in, or the bot's **name** (incl. inflected forms) — bypasses the
+   gate outright, and so does a follow-up from **any** person the bot answered in
+   the last three minutes (kept per person: with several people talking, answering
+   one no longer closes another's window). Where the bot spoke is kept in the
+   durable history (`thread_id` on each line), so a restart does not forget its
+   threads. Nor does a restart lose a question: while a turn runs, the message it
+   answers is marked on disk (`.group-watcher/<room>-inflight-<id>.json`), and the
+   next process takes up a mark younger than 15 minutes once, without the gate
+   (`GROUP_INFLIGHT_REPLAY_MS`). Each reply records which message it answered
+   (`reply_to`), so a message read back after a restart — Slack's catch-up, below —
+   is answered only if it never was. A gate that fails (a crash, a
+   timeout, an unreadable answer) hands the message to the brain rather than
+   dropping it — the brain is the real judge and stays silent on its own; only a
+   spent plan ("You've hit your weekly limit", which the brain would hit too)
+   keeps the message out, and the breaker tells the group so.
    The durable history each group keeps (`.group-watcher/<chatId>-history.jsonl`)
    names a sender as the roster names them when their Telegram id is on it, and
    by their Telegram profile otherwise — it is what memory files a group from,
@@ -507,6 +554,29 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
    is the real judge: if it has nothing useful to add it stays **silent** (no
    message, no "typing…"). The cheap gate is deliberately permissive precisely
    because the brain makes the final call.
+   Each group keeps **one resumable session** (`.group-watcher/<chatId>-session.json`);
+   a turn on it gets the messages since its last turn — and, because the CLI
+   summarises a session that grows long (it lost the thread after a gap), the
+   last lines it already saw: 10 always, 30 after more than three hours
+   (`GROUP_RECAP_LINES`, `GROUP_RECAP_LINES_AFTER_GAP`, `GROUP_RECAP_GAP_MS`).
+   The room's rules (manners, privacy, files, markers) go in the turn's system
+   prompt, which is sent with every turn and never stored in the session; the
+   turn's message carries only the conversation, who is asking and what is theirs.
+   Sent as the message, the rules piled up in the session — 1 MB in thirty turns
+   — and the CLI stopped for a minute and a half to compact it, losing context.
+   The turn is also told what the new message continues — the thread's opening
+   message, the bot's last reply *to this sender* (in a busy room its last reply
+   was often to someone else) and the sender's own previous message, from the
+   last half hour only (`GROUP_CONTINUES_WINDOW_MS`) — so "but check the
+   integration" is read as the follow-up it is, and "tell me more about it" is
+   never read as yesterday's subject. It is told the team's integrations by name,
+   to use before saying it has nothing. Declining is a manners rule: a few
+   friendly words and who to ask, never whose it is or how memory works. And it gets the team's
+   files by path and first line (shared files only: no private tree, no memory;
+   at most 40, `GROUP_SHARED_FILES_MAX`), with the rule to open the one that
+   covers a date, plan or pipeline before saying it is unknown. A room with
+   outsiders in it gets no such list.
+   Where those lines and the session's recollection differ, the lines win.
 
 ### Behaviour
 
@@ -529,11 +599,75 @@ Every message in a registered group runs a cheap gate, then (maybe) the full bra
 The group brain runs as `actor='team'` — **shared scope only**. Scope-guard fences
 it out of every member's private `memory/users/<slug>/` tree, so a group reply can
 never surface one person's private memory. Its own working notes live under
-`memory/groups/<id>/` (admin-only via the file API). Replies are public to the
+`memory/groups/<id>/` (admin-only via the file API). The room's transcript
+(`.group-watcher/<room>-history.jsonl`) is the room's own: readable by the room's
+turn and by a person who is in that room, by nobody else — on disk (the directory
+is the room turn's group) and in the scope-guard hook (by membership from the
+registry). Replies are public to the
 whole group, so the brain offers a DM for anything that needs private/personal
 data. Security rests on **admission** (registration), not on filtering message
 content: once a group is registered, messages from anyone in it are treated as the
 team's.
+
+**The asker's own memory, said in the room** (`ask_my_memory`,
+`lib/integrations/private-lookup.js`). A room's session holds nobody's profile,
+preferences or private memory: it is shared by everyone who writes there, and
+whatever it is handed a later sender could have recited. So a roster member who
+asks about themselves or their own matters in the room — where they are, what they
+prefer, their suppliers, meetings, decisions, their plans and numbers, or something
+whose answer depends on who they are ("the weather for me") — wants what they told
+the bot in their own chat, said here. Whether a question is "about their own
+matters" is not left to the brain (it seldom saw "is X staying?" or "what is the
+deal worth?" as the asker's own plans): for **every** message the bot answers from a
+roster member, the watcher starts the lookup alongside the turn's start, with the
+exchange around the message (what it follows: the thread's opening message, the
+bot's last reply to them, their previous message — a bare "tell what I think" found
+nothing alone), and the turn's first step is `ask_my_memory`, which receives that
+lookup. The bot says something is not on record only after it has returned. A
+bound (`GROUP_LOOKUP_PREFETCH_PER_HOUR`, default 120) keeps a chatty room from
+spending the plan; past it the turn asks itself. The group brain does not read
+anything itself: workspace-api (`POST /api/internal/memory/v4/mine`) checks in code that the
+turn is a group turn whose token names a roster person (the watcher resolved the
+sender from their Slack or Telegram identity) and that the room is registered — in
+a solo workspace too — then runs a **one-shot private turn as that person** (their
+own scopes, their profile and preferences, no group context, no session,
+`memory_search`/`memory_timeline` and nothing else) that answers in at most three
+sentences, only what the question needs. Only that answer enters the room's
+session; the excerpts never do. The one-shot leaves out anything about a person in
+the room unless the question names them, silently (a "that's about X, ask me
+privately" would itself tell X); when nothing is left it says nothing and the bot
+answers what is true of the team's notes, with no hint. What is the asker's own
+but held back — something they asked to keep private, or that cannot be said
+without what is about someone present — comes back `PRIVATE`: the bot offers it
+in their DM and never says it is not on record (it once told an owner "no rate on
+record" for a rate he had asked to keep quiet). The one-shot speaks of memory only,
+never of tools or connections (it once said "Granola isn't connected", and the room
+turn, which had Granola loaded, believed it). Never anyone else's memory:
+the scope is the asker's own, and a question about another person never reaches
+theirs, whoever asks. Someone from outside in the room does not stop it (what the
+asker asks about themselves is theirs to have said; the one-shot is told who is
+there and leaves them out); two lookups a turn, and the owner sees each one in
+Changes. The room's
+switch (**Answers from the asker's own memory**, on by default) turns it off for a
+room. The same path for a Slack channel and a Telegram group.
+
+**The asker's own accounts, said in the room** (`ask_my_connections`, same module).
+A room's turn loads the team's connections and nobody's own, for the same reason as
+memory. When the sender has connected a service for themselves, the room turn is
+told its name for that turn only ("Kasia connected Granola for themselves") and asks
+it through `ask_my_connections` → `POST /api/internal/memory/v4/mine/connections`:
+the same checks as the memory route (turn token, roster, registered room, the room's
+switch, two calls a turn), then a **one-shot turn as that person with their own
+`-mine` servers alone** — no built-in tools, every workspace-api tool denied, no
+session. It does what they asked, as in their own chat — a lookup, or a change on
+their own words (never on what a tool returned; when it is unclear what to change,
+nothing is changed and it asks); a secret is `SECRET`; a failure comes back with
+what failed in plain words (`FAILED: the project is paused`); what comes back is
+fenced as untrusted data. It is used only for a request about that service — a
+keyword's search volume once went to a member's own search account instead of the
+team's keyword plan. For anyone else a personal connection is not reachable from the room,
+and the bot says it is not connected *for this room*, never that it does not exist.
+Each ask is on the owner's Changes (`private_lookup`, `kind: connections`).
 
 ### Tuning
 
@@ -544,6 +678,94 @@ per-turn timeout, and message-parts cap are env-overridable and documented inlin
 in `group-watcher.js`.
 
 ---
+
+### Slack channels
+
+A Slack channel is a room of the same kind as a Telegram group — the same
+watcher, the same two-stage decision, the same group turn (`turn-group`, this
+channel's scope and the shared one, every private tree fenced), the same
+markers — behind the channel adapter (`lib/integrations/channel-adapter.js`);
+its id in the registry is `slack-<channel id>` and its files are named after
+it. What differs is how it gets in and who may be in it
+(`lib/integrations/slack-channels.js`):
+
+- **Admission is an admin's yes.** Anyone in a workspace can add an app to a
+  channel, so being added only makes a request (the Slack page under AI Settings
+  lists it; admins are notified) — unless the one who added it is an admin of
+  this workspace (on the roster, matched by their Slack account): that is the
+  admin's yes, and the channel is registered at once. Approved → registered;
+  an approved channel gets the whole of it by default — the assistant joins
+  in on its own and the room is **open to outsiders** (below) — and an admin
+  can turn either off. Not approved within 24 h, or declined → the bot leaves
+  the channel.
+- **The audience check.** At approval and on every join, leave, share or
+  unshare, every member must be a roster person of this workspace. Anyone else
+  — a guest, another workspace's user, a bot — **pauses** the channel: the bot
+  is silent there (a message, a reminder or a direct post into it is refused,
+  not swallowed) until they leave; admins hear both ways. A shared (Slack
+  Connect) channel is left at once and can never be approved.
+- **Replies go into the thread** of the message they answer (a top-level
+  message starts one); a reminder or a direct post into the channel is
+  top-level.
+- **Files go with the reply.** A file the assistant wrote for the room, or for
+  a person in a direct message, is attached (`[[SEND_FILE …]]`, the system
+  uploads it into the conversation and thread) — a path alone is no answer
+  where nobody opens the workspace. The same on Telegram.
+- **Memory**: the channel's history is filed into `memory/groups/slack-C…/`,
+  that channel's own scope, as a Telegram group's is.
+- **Open to outsiders** (per channel, on by default): the assistant stays in
+  a room that holds people outside the team. While someone outside the team
+  is actually in it, every turn there is **group-only** — it reads and writes
+  that channel's own memory and nothing of the team's shared memory
+  (`readableScopes({ groupOnly })`, carried on the turn token); the prompt
+  tells the assistant it is among outside parties. What belongs to the person
+  asking (a task they own, their own plans) stays theirs to disclose: asked
+  for it in the room, the assistant says it, and if it thinks the room is the
+  wrong place it says so once and gives way when asked again. That is
+  ownership, not rank: it never covers another person's things, an admin's
+  request included. One exception, in every room whoever is in it: a secret
+  that opens something (a password, a PIN, a door or lock code, a key, a
+  login) is never said there, even when its owner insists — it goes to their
+  DM, and the lookup returns `SECRET` instead of the value. Only the asker's
+  own: asked for another person's login or code, the bot says it does not have
+  it for them and promises no DM. (Told it could say
+  a code in a team-only room, the model would not, so the rule says what it
+  does.) With everyone on the team it is an ordinary room.
+  Nothing of the sender's own is put into the room's session, not even their
+  time zone: "the weather for me" goes through their own lookup, which knows
+  their settings. Turned off, the room is paused while an outsider is
+  in it. A shared (Slack Connect) channel is paused whatever the setting.
+- **Threads**: a message inside a thread is answered in that thread, which
+  keeps its own session (`.group-watcher/<id>-thread-<ts>-session.json`). A
+  channel message is answered in the channel when it is a quiet
+  back-and-forth, and in a thread under it when the channel is busy (someone
+  else posted since, or two or more others spoke in the last ten minutes) or
+  the answer is long (`placeReply` in `group-watcher.js`); a thread the bot
+  opened that way stays the channel's session. The channel's history ring is
+  the context for all of them.
+- **People**: a teammate is linked by the email their Slack account carries,
+  the first time they write (`slackUserId`); someone who writes without being
+  on the team appears as pending on the Slack page, to add with one click
+  (their email joins the roster as a member and their Slack account is linked
+  at once). An
+  admin may also link an account by its member id (`PATCH /api/team/:email
+  { slackUserId }`, the Link control on the Slack page) when the Slack email is
+  not the roster one — never a self-service link by id, which would let a
+  person claim another's account.
+
+### Where a person meets their surfaces — team mode
+
+One rule for every surface: the roster entry (email) is the person; each
+surface hangs an id on it; proactive messages follow the person's own
+**Reach me** set, except when a sender names a surface.
+
+| | Telegram | Slack | Web |
+|---|---|---|---|
+| Connected by | an admin, once, for the whole team (`teamWide`) | an admin, once: the workspace's own app | — |
+| A person is linked | by a chat id — an admin on the Telegram page, or the person in **Settings → Reach me** | by the email on their Slack account, the first time they write; an admin may link by member id | by signing in |
+| Rooms | groups the bot was added to by a roster member (auto-registered) | channels an admin approved, with the audience check | — |
+| Who sees the links | admins on the surface's page (People); everyone sees the marks on **Team** | the same | — |
+| The person's own view | **Settings → Reach me**: one row per surface — linked or not, and whether to be reached there | the same row | always on |
 
 ## 11. Privacy model
 
@@ -568,11 +790,12 @@ though it can **relay** a question straight to that teammate.
 |------|----------|
 | `.allowed-emails.json` | Roster: email, role, slug, displayName, telegram contact. |
 | `.allowed-emails.audit.log` | Append-only roster change log. |
-| `.team-config.json` | Solo vs collaborative flag **+ registered Telegram groups** (`groups`). |
+| `.team-config.json` | Solo vs collaborative flag **+ registered rooms** (`groups`: Telegram groups by chat id, Slack channels as `slack-C…`, with `paused` / `audience` for the latter). |
+| `.team/slack-pending-channels.json`, `.team/slack-pending.json` | Slack channels waiting for an admin's approval; people who wrote on Slack without being on the team. |
 | `users/<slug>/…` | Each teammate's personal files. |
 | `memory/users/<slug>/…` | Each teammate's private memory cards. |
 | `memory/groups/<id>/…` | A registered group's brain working notes (admin-only via the file API). |
-| `memory/CHANNELS.md` | Generated shared card: the registered groups + their members (see §10). |
+| `memory/CHANNELS.md` | Generated shared card: the registered groups and channels + their members (see §10). |
 
 All of the above are workspace-managed state: hidden from the normal file tree
 and excluded from Drive sync.
@@ -585,6 +808,7 @@ and excluded from Drive sync.
 | `PUT /api/team/default-timezone` | Admin — the workspace default time zone. |
 | `GET/POST/PATCH/DELETE /api/team`, `PUT /api/team/mode` | Roster + mode (admin-gated writes). |
 | `GET/POST/DELETE /api/team/telegram-groups` | Registered Telegram groups (admin-gated). |
+| `GET /api/team/channels[?kind=slack]`, `POST /api/team/channels`, `DELETE /api/team/channels/:id`, `POST …/:id/recheck`, `DELETE …/pending-people/:id` | Rooms of every kind: the registered ones, the Slack channels waiting for approval and the people pending; approve / edit (`requireMention`, `language`), decline or leave, re-run the audience check, forget a pending person (admin-gated). |
 | `GET /api/reminders`, `POST /api/reminders/cancel` | Actor-scoped reminder board. |
 | `GET/POST/PATCH/DELETE /api/tasks` | Shared task board (DELETE removes a task for good; finished work moves to Done). |
 | `GET /internal/roster` | Loopback — roster for the reminder MCP's name→slug resolution. |

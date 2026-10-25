@@ -26,6 +26,8 @@ import { execFileSync } from 'node:child_process';
 import { PROJECT_DIR } from './config.js';
 import { v4Mode } from './memory-ledger.js';
 import * as integrationsStore from './integrations/store.js';
+import { normalizeGroupId, groupIdKind } from './group-id.js';
+import { normalizeSurfaces, parseSurfaces, legacySurface, describeSurfaces } from './surfaces.js';
 
 const FILE      = join(PROJECT_DIR, '.allowed-emails.json');
 const TMP       = join(PROJECT_DIR, '.allowed-emails.json.tmp');
@@ -43,9 +45,9 @@ const VALID_ROLES = new Set(['admin', 'member', 'observer']);
 // slot per person on the roster. A build constant — enlarging it is a change
 // to the image.
 export const TURN_POOL_SIZE = Number(process.env.TURN_POOL_SIZE || 24);
-// Where a teammate prefers to be reached for relays. 'both' = web thread (always
-// the record) + a Telegram ping; 'telegram' = prefer TG; 'web' = web only.
-const VALID_SURFACES = new Set(['web', 'telegram', 'both']);
+// Where a teammate prefers to be reached for relays: a set of surfaces
+// (lib/surfaces.js). Stored as the set; read back as the set (`surfaces`) and
+// as the one word older clients know (`preferredSurface`: web/telegram/both).
 
 // Preferred WRITING LANGUAGE — SHARED roster metadata (not private), because
 // another teammate's bot needs it to compose a relay in the right language and
@@ -189,7 +191,11 @@ export function list() {
     // Cross-surface contact (team mode): the teammate's linked Telegram chat id
     // and where they prefer to be reached. Drives relay delivery routing.
     telegramChatId:   normalizeChatId(e.telegramChatId),
-    preferredSurface: VALID_SURFACES.has(e.preferredSurface) ? e.preferredSurface : null,
+    // Their Slack user id in the connected workspace — matched by email the
+    // first time they write, never typed in by hand.
+    slackUserId:      normalizeSlackUserId(e.slackUserId),
+    surfaces:         normalizeSurfaces(e.preferredSurface),
+    preferredSurface: legacySurface(e.preferredSurface),
     // Shared so a teammate's bot can relay to this person in their language.
     preferredLanguage: normalizeLang(e.preferredLanguage),
     // A session token issued before this moment is no longer accepted: set
@@ -645,11 +651,7 @@ export function setTelegram(email, { chatId, preferredSurface, preferredLanguage
     }
   }
   if (preferredSurface !== undefined) {
-    const cleared = preferredSurface === '' || preferredSurface === null;
-    if (!cleared && !VALID_SURFACES.has(preferredSurface)) {
-      throw new Error('Preferred surface must be web, telegram, or both.');
-    }
-    patch.preferredSurface = cleared ? null : preferredSurface;
+    patch.preferredSurface = parseSurfaces(preferredSurface);   // the set, or null to clear; throws on junk
   }
   if (preferredLanguage !== undefined) {
     patch.preferredLanguage = normalizeLang(preferredLanguage);
@@ -803,6 +805,46 @@ export function userByChatId(chatId) {
   return list().find(m => m.telegramChatId === id) || null;
 }
 
+// ─── Slack identity ──────────────────────────────────────────────────────────
+// A Slack user id (U…/W…) is matched to a roster entry by the email Slack
+// holds for it, the first time that person writes to the bot; from then on
+// the id is the key. Removing someone from the roster cuts their Slack the
+// same moment: every lookup reads the roster live.
+function normalizeSlackUserId(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return /^[UW][A-Z0-9]{6,20}$/.test(s) ? s : null;
+}
+
+/** Which member is this Slack user (inbound routing), or null. */
+export function userBySlackId(userId) {
+  const id = normalizeSlackUserId(userId);
+  if (!id) return null;
+  return list().find(m => m.slackUserId === id) || null;
+}
+
+/**
+ * Link (or, with '' / null, unlink) a Slack user id to a roster entry. One id
+ * belongs to one person. Returns the updated member.
+ */
+export function setSlack(email, { userId } = {}, actor) {
+  const e = normalize(email);
+  const entries = readRaw();
+  const idx = entries.findIndex(x => normalize(x.email) === e);
+  if (idx === -1) throw new Error(`${e} is not on the team.`);
+  const cleared = userId === '' || userId === null || userId === undefined;
+  const id = cleared ? null : normalizeSlackUserId(userId);
+  if (!cleared && !id) throw new Error('That is not a Slack user id.');
+  if (id && entries.some((x, i) => i !== idx && normalizeSlackUserId(x.slackUserId) === id)) {
+    throw new Error('That Slack account is already linked to another teammate.');
+  }
+  entries[idx] = { ...entries[idx], slackUserId: id };
+  writeRaw(entries);
+  appendAudit('slack_update', e, { actor: normalize(actor) || null, linked: !!id });
+  writeTeamRoster();
+  return find(e);
+}
+
 // ─── Team config: solo vs collaborative ──────────────────────────────────────
 // A solo workspace shouldn't carry team UI (the Workspace/Personal split, role
 // badges, invite flow) — that's overkill for one person. `teamMode` gates all
@@ -859,22 +901,24 @@ export function setTeamMode(enabled, actor) {
 // watcher → isolated group brain). Stored under the team config's `groups` key,
 // NOT the member allowlist: group membership is the access boundary, not a
 // per-sender list (operator decision — the bot only joins the team's own group).
-// A group id is a NEGATIVE integer (supergroups are -100…); normalizeGroupId is
+// A Telegram group id is a NEGATIVE integer (supergroups are -100…), another
+// surface's carries its prefix (lib/group-id.js); normalizeGroupId is
 // deliberately SEPARATE from normalizeChatId (positive-only, guards the DM
 // fan-out invariant — see its comment). Design: docs/future-plans/TELEGRAM_GROUP_MODE.md
-function normalizeGroupId(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  return /^-\d{6,20}$/.test(s) ? s : null;
-}
 
-/** All allow-listed groups as [{ chatId, title, requireMention, beat, addedAt, addedBy }]. */
+/** All allow-listed groups as [{ chatId, kind, title, requireMention, beat, paused, audience, addedAt, addedBy }]. */
 export function listGroups() {
   const cfg = readConfig();
   const g = (cfg && typeof cfg.groups === 'object' && cfg.groups) ? cfg.groups : {};
   return Object.entries(g)
     .filter(([chatId]) => normalizeGroupId(chatId))
-    .map(([chatId, v]) => ({ chatId, ...(v && typeof v === 'object' ? v : {}) }));
+    .map(([chatId, v]) => ({ chatId, kind: groupIdKind(chatId), ...(v && typeof v === 'object' ? v : {}) }));
+}
+
+/** Registered and not paused: the assistant may speak there now. */
+export function isGroupActive(chatId) {
+  const g = getGroup(chatId);
+  return !!g && !g.paused;
 }
 
 /** Config for one group, or null if not allow-listed. */
@@ -883,7 +927,7 @@ export function getGroup(chatId) {
   if (!id) return null;
   const cfg = readConfig();
   const v = cfg.groups && cfg.groups[id];
-  return v && typeof v === 'object' ? { chatId: id, ...v } : null;
+  return v && typeof v === 'object' ? { chatId: id, kind: groupIdKind(id), ...v } : null;
 }
 
 /**
@@ -893,9 +937,9 @@ export function getGroup(chatId) {
  */
 export function memberGroupsOf(slug) {
   const u = list().find(x => x.slug === slug);
-  const tid = u?.telegramChatId;
-  if (!tid) return [];
-  return listGroups().filter(g => g.members && Object.prototype.hasOwnProperty.call(g.members, tid)).map(g => g.chatId);
+  const ids = [u?.telegramChatId, u?.slackUserId].filter(Boolean);
+  if (!ids.length) return [];
+  return listGroups().filter(g => g.members && ids.some(id => Object.prototype.hasOwnProperty.call(g.members, id))).map(g => g.chatId);
 }
 
 /** Is this group allow-listed (the assistant may operate in it)? */
@@ -908,15 +952,30 @@ export function isAllowedGroup(chatId) {
  * (ambient — the whole point of group mode); `beat` is an optional operator
  * override that steers what the relevance watcher treats as on-beat.
  */
-export function addGroup({ chatId, title, requireMention, beat, language, actor } = {}) {
+export function addGroup({ chatId, title, requireMention, beat, language, openAudience, privateAnswers, actor } = {}) {
   const id = normalizeGroupId(chatId);
-  if (!id) throw new Error('invalid group id (must be a negative integer)');
+  if (!id) throw new Error('invalid group id (a Telegram chat id is a negative integer; a Slack channel is slack-C…)');
   const cfg = readConfig();
   if (!cfg.groups || typeof cfg.groups !== 'object') cfg.groups = {};
   const prev = cfg.groups[id] && typeof cfg.groups[id] === 'object' ? cfg.groups[id] : {};
+  // An admin approves every Slack channel, so an approved one gets the
+  // whole of it: it joins in on its own and stays when an outsider is in the
+  // room (with the room's own memory only, then). Both can be turned off.
+  const slack = groupIdKind(id) === 'slack';
   cfg.groups[id] = {
     title:          title != null ? String(title).slice(0, 120) : (prev.title || ''),
     requireMention: requireMention != null ? !!requireMention : (prev.requireMention ?? false),
+    // Paused: registered, but the room holds someone not on the roster (the
+    // audience check), so the assistant stays silent until it is ours again.
+    ...(prev.paused ? { paused: true } : {}),
+    ...(prev.audience ? { audience: prev.audience } : {}),
+    // Open audience: people outside the team may be in the room; the assistant
+    // speaks there from the room's own memory only, never the team's.
+    ...((openAudience != null ? !!openAudience : (prev.openAudience ?? slack)) ? { openAudience: true } : {}),
+    // Answers from the asker's own memory, said in the room (routes/memory-v4.js
+    // `/internal/memory/v4/mine`): on unless an admin switched it off. 'team'
+    // = while everyone in the room is on the team; 'off' = never.
+    ...((privateAnswers != null ? privateAnswers : prev.privateAnswers) === 'off' ? { privateAnswers: 'off' } : {}),
     beat:           beat != null ? String(beat).slice(0, 600) : (prev.beat || ''),
     // Optional per-group reply language (free text, e.g. "English", "Polish").
     // Empty → the brain infers the language from each message, as in 1:1.
@@ -942,7 +1001,7 @@ export function addGroup({ chatId, title, requireMention, beat, language, actor 
  * from the gate's language verdicts). Writes only on a REAL change and emits no
  * audit event: this is drift-sync, not an operator action. Returns true if it wrote.
  */
-export function touchGroupMeta(chatId, { title, language } = {}) {
+export function touchGroupMeta(chatId, { title, language, paused, audience, requireMention, openAudience, privateAnswers } = {}) {
   const id = normalizeGroupId(chatId);
   if (!id) return false;
   const cfg = readConfig();
@@ -953,8 +1012,28 @@ export function touchGroupMeta(chatId, { title, language } = {}) {
     g.title = String(title).slice(0, 120);
     changed = true;
   }
+  if (paused != null && !!paused !== !!g.paused) {
+    if (paused) g.paused = true; else delete g.paused;
+    changed = true;
+  }
+  if (audience !== undefined && JSON.stringify(audience) !== JSON.stringify(g.audience)) {
+    if (audience) g.audience = audience; else delete g.audience;
+    changed = true;
+  }
+  if (requireMention != null && !!requireMention !== !!g.requireMention) {
+    g.requireMention = !!requireMention;
+    changed = true;
+  }
+  if (openAudience != null && !!openAudience !== !!g.openAudience) {
+    if (openAudience) g.openAudience = true; else delete g.openAudience;
+    changed = true;
+  }
   if (language != null && String(language).slice(0, 40) !== (g.language || '')) {
     g.language = String(language).slice(0, 40);
+    changed = true;
+  }
+  if (privateAnswers != null && (privateAnswers === 'off') !== (g.privateAnswers === 'off')) {
+    if (privateAnswers === 'off') g.privateAnswers = 'off'; else delete g.privateAnswers;
     changed = true;
   }
   if (!changed) return false;
@@ -988,7 +1067,7 @@ export function removeGroup(chatId, actor) {
 export function recordGroupMember(chatId, fromId, name) {
   const id = normalizeGroupId(chatId);
   const fid = String(fromId == null ? '' : fromId).trim();
-  if (!id || !/^\d{4,20}$/.test(fid)) return false;
+  if (!id || !/^(\d{4,20}|[UW][A-Z0-9]{6,20})$/.test(fid)) return false;
   const cfg = readConfig();
   if (!cfg.groups || !cfg.groups[id]) return false;
   const g = cfg.groups[id];
@@ -1016,21 +1095,24 @@ export function writeChannelsCard() {
     const groups = listGroups();
     const head = `---
 card: CHANNELS
-purpose: The Telegram GROUPS this assistant is in + who's in them + their chat_ids. Auto-maintained by workspace-api — do NOT hand-edit.
+purpose: The Telegram GROUPS and Slack CHANNELS this assistant is in + who's in them + their ids. Auto-maintained by workspace-api — do NOT hand-edit.
 write_when: a group is registered/removed, or a new member is seen in a group. Never written by the agent.
 ---
 
-# CHANNELS — Telegram groups I'm in
+# CHANNELS — groups and channels I'm in
 
 `;
     let body;
     if (!groups.length) {
-      body = "_Not in any Telegram group yet._\n";
+      body = "_Not in any group or channel yet._\n";
     } else {
       body = groups.map(g => {
         const members = g.members && typeof g.members === 'object' ? Object.values(g.members) : [];
         const mlist = members.length ? members.join(', ') : '(no members seen yet)';
-        return `## ${g.title || 'Untitled group'}\n- chat_id: \`${g.chatId}\` (use this with the Telegram reply tool to post here)\n- members seen: ${mlist}\n`;
+        const where = g.kind === 'slack' ? 'Slack channel' : 'Telegram group';
+        const how = g.kind === 'slack' ? 'post here with group_send_message; a reminder or routine aimed here sets chat to this id' : 'post here with the Telegram reply tool; a reminder or routine aimed here sets chat to this id';
+        const state = g.paused ? ' — PAUSED: someone not on the team is in it, so I stay silent there' : (g.requireMention ? ' — answers only when addressed' : '');
+        return `## ${g.title || 'Untitled group'} (${where})\n- id: \`${g.chatId}\` (${how})${state}\n- members seen: ${mlist}\n`;
       }).join('\n');
     }
     const content = head + body;
@@ -1067,10 +1149,11 @@ export function writeTeamRoster() {
     }
     const contactHint = (m) => {
       // Bot-facing routing guideline — surface only, never the raw chat id.
-      const linked = m.telegramChatId ? 'Telegram linked' : 'no Telegram';
-      const pref = m.preferredSurface
-        ? `prefers ${m.preferredSurface}`
-        : (m.telegramChatId ? 'prefers either' : 'web only');
+      const on = [m.telegramChatId ? 'Telegram linked' : 'no Telegram', ...(m.slackUserId ? ['Slack linked'] : [])];
+      const linked = on.join(', ');
+      const pref = m.surfaces
+        ? `prefers ${describeSurfaces(m.surfaces)}`
+        : (m.telegramChatId || m.slackUserId ? 'prefers either' : 'web only');
       return `${pref} (${linked})`;
     };
     const langHint = (m) => (m.preferredLanguage ? `writes in ${m.preferredLanguage}` : 'unknown');

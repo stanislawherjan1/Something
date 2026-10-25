@@ -3,6 +3,10 @@
 
 export const IS_DEMO = import.meta.env.VITE_DEMO === '1';
 
+// The landing page's replay (?showcase=<id>): one conversation played through
+// the real app, from the composer to the reply (demo/showcase.js).
+export const SHOWCASE = IS_DEMO && typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('showcase') || '') : '';
+
 // Who the visitor is looking through: the founder (admin) or Mara (member).
 const VIEWER_KEY = 'demo:viewer';
 export function getViewer() {

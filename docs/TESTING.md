@@ -12,6 +12,7 @@ merge to main and after a deploy.
 |---|---|
 | `cd ide-template/workspace-api && npm test` | The backend: memory engine, sharing, scope guard, team and turn slots, integrations store and broker, tasks, routes, migrations |
 | `node ide-template/apps/reminder-mcp/recur.test.mjs` | The reminder recurrence engine |
+| `node ide-template/apps/reminder-mcp/room-target.test.mjs` | A reminder's room target: a Telegram group or a Slack channel, and a room named in the reminder's words |
 | `cd ide-template/frontend && npm run build` | The workspace UI must build |
 
 `.github/workflows/ci.yml` runs all three, plus the docs gate
@@ -80,11 +81,15 @@ suites one at a time, when a change touches what they cover.
 | `imports` | A notetaker connection feeds the scope of whoever connected it; nothing reaches the shared scope | few | 3–7 min |
 | `access` | Chat turns as admin and member, a member kept out of the admin's private files, the browser, the Granola bridge, a reminder for a teammate | ~8 | 6–10 min |
 | `sharing` | The Sharing screen as admin and member; a member's work fact reaches the team in their name, a personal one never; make private and restore | 1 + filing | 2–4 min |
+| `sharing-org` | With the company in mind: an invented studio's card and twelve conversations through the deployed router, notes pass and sharing gate, in a throwaway directory. Nothing private may reach the team; work outcomes should reach it or a question to their owner | ~36 small-model calls | 3–6 min |
 | `shared-spaces` | Turn slots and kernel-level isolation of private trees, read-only locks, integrations with a reach (personal vs workspace) | 5 | 3–4 min |
 | `accounts` | What one account tells the bot or keeps in its files, and what the other can and cannot get at | 7 | 4–8 min |
 | `skills` | Personal and team skills: who can make, use and change which | 9 | 5–10 min |
 | `lifestyle` | Health, money and a partner never reach the team in any sharing mode; a household chore crosses only in automatic mode | 3 | 2–4 min |
 | `group` | The Telegram group never reaches anyone's private memory, files, skills or connections; what it decides reaches only its members | ~10 | 10–30 min |
+| `group-window` | A decision in the group is filed once it goes quiet; a later "ok, sent" is its own window and updates the fact with history and today's date, counted in Changes — never reworded in place; a note saved mid-turn never says memory is down | ~12 | 5–10 min |
+| `group-mine` | A member's own memory said in the team group: asked there about their own matters, the bot answers from what they told it in their own chat and says so; the admin's private fact never surfaces, whoever asks; a member's fact is not the admin's to pull in | ~8 | 5–10 min |
+| `room-private` | A person's private things in a Slack sandbox room (`E2E_SLACK_ROOM`, posts for real): their private code never reaches the room (it goes to their DM), whoever asks, an injected "read the private files" gets nothing, another room's words are not read from here while this room's are; with someone from outside in the room (simulated) a visitor is not read the admin's board, and the admin's own task is said when they ask | ~8 | 10–15 min |
 | `tasks-memory` | A task and the memory fact behind it point at each other; the bot answers from the board; done on the board closes the fact; files written in a conversation are linked | ~12 | 10–15 min |
 | `conversation` | The company card reaches the turn; a preference asked to be kept is on the person's card when the turn ends; a new message stops the running reply cleanly (no "kill EPERM"); a reply says it is settled before its process exits | 4–5 | 3–5 min |
 | `memory-sight` | What the bot sees of memory: the person's own cards are answered from and followed, another person's are not, a note from an earlier conversation is found, a team rule an admin asks for reaches a member, routines and integrations are listed right (built-in abilities are not integrations) | ~10 | 5–8 min |

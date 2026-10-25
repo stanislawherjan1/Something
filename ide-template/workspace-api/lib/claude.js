@@ -27,12 +27,14 @@ import { routinesOwner } from './memory-v4-writes.js';
 import { syncMcpServers, personalServers } from './integrations/runtime.js';
 import * as integrationsStore from './integrations/store.js';
 import * as integrationsCatalog from './integrations/catalog.js';
-import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, slotOf } from './team.js';
+import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, effectiveTimezone, slotOf } from './team.js';
 import * as asks from './memory-asks.js';
-import { buildRecallBlock, withRecall } from './memory-recall.js';
+import { buildRecallBlock, PERSON_BUDGET_MS, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
 import { setTurnRecall, issueTurnToken, revokeTurnToken } from './turn-identity.js';
+import { normalizeGroupId } from './group-id.js';
+import { prefers } from './surfaces.js';
 
 // mcpServers config for the web chat's claude (written by syncMcpServers).
 // How much of claude's stderr to keep for diagnosing a failed turn.
@@ -125,6 +127,7 @@ export function turnEnv(env) {
  *   onText(delta)               — text_delta from the assistant
  *   onToolStart({id, name})     — assistant invoked a tool (chip should appear)
  *   onToolEnd({id, ok, error?}) — tool finished; ok=false when claude reported is_error
+ *   onToolInput({id, name, input}) — the call's arguments, once they have streamed in
  *   onImage({mediaType, data})  — image returned by a tool (e.g. Playwright
  *                                 screenshot); data is base64 without the
  *                                 `data:` prefix.
@@ -176,7 +179,7 @@ export function buildTurnPrefix({ actor, groupContext, groupId = null, isTgOpera
   // arrives per turn with the message (lib/memory-recall.js), not in here.
   if (['read', 'on'].includes(v4Mode())) {
     if (groupContext) {
-      const gid = /^-\d{4,20}$/.test(String(groupId || '')) ? String(groupId) : null;
+      const gid = normalizeGroupId(groupId);
       return buildCachedPrefixV4({ memoryDir, extraCards: [
         { id: 'STANDING_RULES', body: gid ? rulesCard([`group:${gid}`]) : '' },
         { id: 'WHAT_IS_GOING_ON', body: gid ? groupGoingOnCard(gid) : '' },
@@ -225,11 +228,18 @@ function localNow(tz) {
 function reachLine(slug, m) {
   try {
     const telegramOn = integrationsStore.isUsable('telegram');
-    const linked = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
-    const prefers = m?.preferredSurface === 'telegram' ? ' They prefer Telegram.' : m?.preferredSurface === 'web' ? ' They prefer the web workspace.' : '';
-    return linked
-      ? `Reaches them on: the web workspace and Telegram.${prefers}`
-      : `Reaches them on: the web workspace only${telegramOn ? ' (they have not linked Telegram)' : ''} — never set a reminder or a message for them on Telegram.`;
+    const slackOn = integrationsStore.isUsable('slack');
+    const linkedTg = telegramOn && (!!m?.telegramChatId || slug === primaryAdminSlug());
+    const linkedSlack = slackOn && !!m?.slackUserId;
+    const on = ['the web workspace', ...(linkedTg ? ['Telegram'] : []), ...(linkedSlack ? ['Slack'] : [])];
+    const prefs = ['web', 'telegram', 'slack'].filter(s => prefers(m, s) && (s === 'web' || (s === 'telegram' ? linkedTg : linkedSlack)));
+    const names = { web: 'the web workspace', telegram: 'Telegram', slack: 'Slack' };
+    const preference = prefs.length && prefs.length < on.length ? ` They prefer ${prefs.map(p => names[p]).join(' and ')}.` : '';
+    const missing = [...(telegramOn && !linkedTg ? ['Telegram'] : []), ...(slackOn && !linkedSlack ? ['Slack'] : [])];
+    const list = on.length > 2 ? `${on.slice(0, -1).join(', ')} and ${on[on.length - 1]}` : on.join(' and ');
+    return on.length > 1
+      ? `Reaches them on: ${list}.${preference}${missing.length ? ` They have not linked ${missing.join(' or ')} — never set a reminder or a message for them there.` : ''}`
+      : `Reaches them on: the web workspace only${missing.length ? ` (they have not linked ${missing.join(' or ')})` : ''} — never set a reminder or a message for them on ${missing.length ? missing.join(' or ') : 'another surface'}.`;
   } catch { return ''; }
 }
 
@@ -330,7 +340,10 @@ export function routinesCard(slug) {
   // of it, a single routine at the end was missed on an empty-looking morning
   // and the planner told the person they had none.
   return [`Their routines (${list.length}): ${list.map(r => r.title).join('; ')}. Each is planned on its cadence — they manage these on their Routines page.`,
-    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}`),
+    // The tags too: a routine that posts somewhere names the room as a tag
+    // ("#all-something"), and without it the planner had "post to the Slack
+    // channel" with no channel to put on the reminder.
+    ...list.map(r => `- ${r.title}${r.description ? ` — ${String(r.description).replace(/\s+/g, ' ').slice(0, 1500)}` : ''}${Array.isArray(r.tags) && r.tags.length ? ` (${r.tags.map(t => `#${t}`).join(' ')})` : ''}`),
     '',
     ROUTINE_RULES].join('\n');
 }
@@ -357,7 +370,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onImage, onError, onDone, onSettled }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -391,7 +404,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // show it, so the call fails and the chat shows an error chip instead of the
   // question. The product asks in plain words anyway — no pickers in a
   // conversation — so the tool is never offered here.
-  const blocked = ['AskUserQuestion', ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
+  // The CLI's own to-do tools are not the product's task board: a group turn
+  // once "added" a task to the session's list, told the person it was on their
+  // board, and it was nowhere. The board (the task-management skill, the
+  // tasks API) is the only task list a turn has.
+  const CLI_TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
+  const blocked = ['AskUserQuestion', ...CLI_TODO_TOOLS, ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
   // A page turn — started from the browser panel with the page shared, Look
   // or Act — reads a web page, and a page can carry injected instructions. So
   // it holds nothing a page could turn against the user: no built-in tools at
@@ -490,11 +508,11 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const roster = mates.length
       ? ` Your teammates (DIFFERENT people): ${mates.map(fmtMate).join(', ')}. ` +
         `When the user names one of them, they mean that other person — not themselves. ` +
-        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list. ` +
-        `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram": there is NO separate Telegram tool on this surface. By default the recipient gets the message on whichever channel THEY prefer (their workspace always; their Telegram if that's their preference). But if the user EXPLICITLY names a channel ("on Telegram", "in their workspace"), pass channel="telegram" or channel="web" to web_send_message to honor it — that OVERRIDES the recipient's default. (The same applies to messaging the CURRENT user: "message me on Telegram" → web_send_message with channel="telegram" and no recipient.) ` +
+        `To RELAY a message to a teammate (the user says "tell X", "ask X", "let X know", "pass this to X"), call web_send_message with recipient = that teammate's slug from this list — find the person by their NAME, then take the slug written beside it (a slug can look like another person's name), and pass recipient_name with the name the user said. ` +
+        `web_send_message is the ONLY way to reach a teammate from here — use it EVEN when the user says "on Telegram" or "on Slack": there is NO separate Telegram or Slack tool on this surface. By default the recipient gets the message on whichever surfaces THEY prefer (their workspace always; Slack when they are on it, unless they chose otherwise; Telegram if that's their preference). But if the user EXPLICITLY names a surface ("on Telegram", "on Slack", "in their workspace"), pass channel="telegram", channel="slack" or channel="web" to web_send_message to honor it — that OVERRIDES the recipient's default. (The same applies to messaging the CURRENT user: "message me on Slack" → web_send_message with channel="slack" and no recipient.) ` +
         `NEVER tell ${me} you sent or passed something on unless you ACTUALLY called web_send_message and it returned success — do not narrate a send you didn't make. The tool result says WHERE it landed; relay that truthfully (if it says web only, tell ${me} it's in the teammate's workspace, don't claim Telegram). ` +
         `Compose the relay as a natural, human message addressed to THEM — greet them, weave the sender in conversationally ("${me} is asking whether…", "${me} wanted me to let you know…"), and DON'T write a robotic "X asked me to forward" preamble; what you write is delivered verbatim. Write it in the RECIPIENT's language — if their roster entry shows "writes in <lang>", use that language; otherwise match the language they'd most likely prefer. ` +
-        `A team Telegram GROUP is a different thing: when ${me} asks for something to go to the group, use group_send_message with the exact text ${me} approved (it is posted word for word); web_send_message never reaches a group, and sending each teammate a copy is not posting to the group.`
+        `A team room — a Telegram group or a Slack channel such as #content — is a different thing: when ${me} asks for something to go there, use group_send_message with the exact text ${me} approved (it is posted word for word); web_send_message never reaches a group, and sending each teammate a copy is not posting to the group.`
       : '';
     const adminNote = actorIsAdmin ? ' This user is an admin and may access all files.' : '';
     systemParts.push(
@@ -572,9 +590,11 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Group-context flag for the scope-guard hook: hard-blocks ALL private trees
   // (including the sender's own and an admin's) — see hooks/scope-guard.mjs.
   if (groupContext) childEnv.IDE_GROUP_CONTEXT = '1';
+  // ...and which room, so the hook lets it read its own transcript and no other's.
+  if (groupContext && groupId) childEnv.IDE_GROUP_ID = String(groupId);
   // Proof of who this turn is, for the memory routes (lib/turn-identity.js):
   // they take the actor and group flag from this token, never from a header.
-  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId });   // what this turn is handed from memory is noted on it below
+  const turnId = issueTurnToken({ actor, group: !!groupContext, groupId, groupOnly });   // what this turn is handed from memory is noted on it below
   childEnv.IDE_TURN_ID = turnId;
   // A turn started from the browser extension's panel carries a one-turn token
   // that lets the tab tools reach the user's tab (routes/tab.js). No other turn
@@ -603,8 +623,9 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
 
   // Memory v4 (MEMORY_V4=read|on): the most relevant past excerpts go in FRONT
   // of the message — the user message, not the system prompt, which would void
-  // the cached prefix. The CLI is already starting while the search runs; stdin
-  // is written when it answers, within the recall budget. Group turns read
+  // the cached prefix. The CLI waits for its message on stdin before it starts
+  // (and gives up after 3 s), so stdin is written when the search answers,
+  // within the recall budget (lib/memory-recall.js). Group turns read
   // shared + that group only; page turns get nothing (lib/memory-recall.js).
   proc.stdin.on('error', () => { /* the CLI died first — its exit is reported below */ });
   (async () => {
@@ -614,11 +635,13 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
       recall = await buildRecallBlock({
         actor: groupContext ? null : me,
         groupId: groupContext ? groupId : null,
+        groupOnly: !!(groupContext && groupOnly),
         memberGroups: groupContext ? [] : memberGroupsOf(me),
         pageTurn,
         sessionKey: webSessionId || sessionId || null,
         message: recallQuery ?? message,   // the person's own words when the caller wrapped them
         history: recallHistory,
+        ...(groupContext ? {} : { budgetMs: PERSON_BUDGET_MS }),
       });
       try { setTurnRecall(turnId, recall?.ids || []); } catch { /* best effort */ }
     } catch (err) {
@@ -645,6 +668,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // is looking at that tab already, the tool pill says the bot looked too.
   // Genuine tool images (Playwright screenshots) still show.
   const toolNamesById = new Map();
+  const toolInputs = new Map();   // block index → { id, name, json } while a call's arguments stream
   const shouldForwardImage = (toolUseId) => {
     const name = toolNamesById.get(toolUseId);
     return name !== 'Read' && name !== 'mcp__workspace-api__tab_screenshot';
@@ -785,9 +809,26 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
         continue;
       }
 
+      // A call's arguments stream in after its start; collected per block and
+      // handed over whole (a DM turn tells a relay to someone else from a
+      // message to the person asking by the recipient it names).
+      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'input_json_delta' && toolInputs.has(ev.index)) {
+        toolInputs.get(ev.index).json += String(ev.delta.partial_json || '');
+        continue;
+      }
+      if (ev?.type === 'content_block_stop' && toolInputs.has(ev.index)) {
+        const t = toolInputs.get(ev.index);
+        toolInputs.delete(ev.index);
+        let input = {};
+        try { input = t.json ? JSON.parse(t.json) : {}; } catch { input = {}; }
+        try { onToolInput?.({ id: t.id, name: t.name, input }); } catch { /* the caller's problem */ }
+        continue;
+      }
+
       // Tool invocation — surface as a chip in the UI.
       if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
         toolNamesById.set(ev.content_block.id, ev.content_block.name);
+        if (onToolInput) toolInputs.set(ev.index, { id: ev.content_block.id, name: ev.content_block.name, json: '' });
         onToolStart?.({
           id:   ev.content_block.id,
           name: ev.content_block.name,
@@ -844,7 +885,15 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     if (limitRejectedAt) {
       let who = '';
       try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
-      return onError(limitNotice(limitRejectedAt === true ? null : limitRejectedAt, who));
+      // The reader's clock: the person's own zone (their Settings), else the
+      // workspace's — never the server's UTC. A room's turn names the zone,
+      // since the room is read across zones. The instant rides along in a tag
+      // so a surface that re-says it in another language keeps the hour
+      // (member-dm, group-watcher); the web chat strips the tag.
+      const secs = limitRejectedAt === true ? null : limitRejectedAt;
+      let tz = null;
+      try { tz = actor && actor !== 'default' && actor !== 'team' ? effectiveTimezone(actor) : getDefaultTimezone(); } catch { tz = null; }
+      return onError(limitNotice(secs, who, { tz, zoneLabel: !!groupContext }) + (secs ? ` [resets=${secs}]` : ''));
     }
 
     onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`

@@ -12,10 +12,11 @@ import { PEOPLE, VIEWERS, COMPANY } from './data/cast.js';
 import { memoryFor, searchFor } from './data/memory.js';
 import {
   FILES, FILE_CONTENT, SESSIONS, HISTORIES, TASKS, REMINDERS, SKILLS,
-  INTEGRATIONS, TELEGRAM_GROUPS, LOCKS, BRANDING,
+  INTEGRATIONS, TELEGRAM_GROUPS, SLACK_CHANNELS, LOCKS, BRANDING,
 } from './data/workspace.js';
 import { inMinutes } from './time.js';
-import { getViewer, DEMO_REPLY } from './flags.js';
+import { getViewer, DEMO_REPLY, SHOWCASE } from './flags.js';
+import { showcaseTurn, SHOWCASE_PEOPLE, SHOWCASE_TASKS } from './showcase.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -76,17 +77,19 @@ function mePayload() {
   return {
     email: me.email, slug: me.slug, role: me.role, isAdmin: !isMember,
     teamMode: state.teamMode, personalRoot: state.teamMode ? `users/${me.slug}` : null,
-    avatarUrl: me.avatar, telegramChatId: me.telegramChatId, preferredSurface: 'both',
+    avatarUrl: me.avatar, telegramChatId: me.telegramChatId, preferredSurface: 'both', surfaces: ['web', 'telegram'], slackUserId: me.slackUserId || null,
     ...state.me, defaultTimezone: state.defaultTz, effectiveTimezone: state.me.timezone || state.defaultTz,
   };
 }
 function teamPayload() {
   const entries = Object.values(PEOPLE)
     .filter((p) => !state.removedMembers.has(p.email))
+    // The landing's replay shows a smaller team: the people its conversations name.
+    .filter((p) => !SHOWCASE || SHOWCASE_PEOPLE.includes(p.slug))
     .map((p, i) => ({
       email: p.email, role: p.role, displayName: p.name, slug: p.slug, avatarUrl: p.avatar,
-      addedAt: inMinutes(-60 * 24 * (120 - i * 9)), telegramChatId: p.telegramChatId,
-      preferredSurface: p.telegramChatId ? 'both' : 'web', preferredLanguage: p.language,
+      addedAt: inMinutes(-60 * 24 * (120 - i * 9)), telegramChatId: p.telegramChatId, slackUserId: p.slackUserId || null,
+      preferredSurface: p.telegramChatId ? 'both' : 'web', surfaces: p.telegramChatId ? ['web', 'telegram'] : ['web'], preferredLanguage: p.language, slackLinked: !!p.slackUserId,
     }));
   return { teamMode: state.teamMode, entries, me: { email: me.email, role: me.role, isAdmin: !isMember } };
 }
@@ -280,7 +283,9 @@ const factOfTask = (() => {
 function tasksPayload() {
   const people = {};
   for (const p of Object.values(PEOPLE)) people[p.slug] = { name: p.name, avatar: p.avatar };
-  return { ok: true, teamMode: state.teamMode, me: meSlug, people, tasks: state.tasks.map((t) => (factOfTask[t.id] ? { ...t, fact: factOfTask[t.id] } : t)) };
+  // The landing's replay shows a shorter board: the tasks its conversations name, and a few around them.
+  const tasks = SHOWCASE ? state.tasks.filter((t) => SHOWCASE_TASKS.some((x) => t.title.startsWith(x))) : state.tasks;
+  return { ok: true, teamMode: state.teamMode, me: meSlug, people, tasks: tasks.map((t) => (factOfTask[t.id] ? { ...t, fact: factOfTask[t.id] } : t)) };
 }
 
 // ── Skills ───────────────────────────────────────────────────────────────────
@@ -337,6 +342,11 @@ export async function handle(method, url, body) {
   if (path === '/api/team/mode') { if (typeof b.enabled === 'boolean') state.teamMode = b.enabled; return json({ ok: true, teamMode: state.teamMode, merged: [] }); }
   if (path === '/api/team/default-timezone') { state.defaultTz = b.timezone || 'UTC'; return json({ ok: true, defaultTimezone: state.defaultTz }); }
   if (path === '/api/team/telegram-groups') return json({ ok: true, canEdit: !isMember, groups: TELEGRAM_GROUPS });
+  if (path === '/api/team/channels' && method === 'GET') return json({ ok: true, canEdit: !isMember, groups: isMember ? [] : SLACK_CHANNELS.groups, pending: isMember ? [] : SLACK_CHANNELS.pending, pendingPeople: isMember ? [] : SLACK_CHANNELS.pendingPeople });
+  if (path === '/api/team/channels' && method === 'POST') { const p = SLACK_CHANNELS.pending.find((x) => x.chatId === b.chatId); if (p) { SLACK_CHANNELS.pending = SLACK_CHANNELS.pending.filter((x) => x !== p); SLACK_CHANNELS.groups.push({ chatId: p.chatId, kind: 'slack', title: p.title, requireMention: true, language: '', members: {}, audience: { ok: true, outsiders: [], shared: false, members: p.members, checkedAt: new Date().toISOString() }, addedAt: new Date().toISOString(), addedBy: me.email }); } else { const g = SLACK_CHANNELS.groups.find((x) => x.chatId === b.chatId); if (g) { if (b.language !== undefined) g.language = b.language; if (b.requireMention !== undefined) g.requireMention = !!b.requireMention; } } return json({ ok: true }); }
+  if (/^\/api\/team\/channels\/pending-people\//.test(path) && method === 'DELETE') { const id = decodeURIComponent(path.split('/')[5]); SLACK_CHANNELS.pendingPeople = SLACK_CHANNELS.pendingPeople.filter((x) => x.id !== id); return json({ ok: true }); }
+  if (/^\/api\/team\/channels\/[^/]+\/recheck$/.test(path)) { const id = decodeURIComponent(path.split('/')[4]); const g = SLACK_CHANNELS.groups.find((x) => x.chatId === id); if (g) g.audience = { ...(g.audience || {}), checkedAt: new Date().toISOString() }; return json({ ok: true, audience: g?.audience || null, group: g || null }); }
+  if (/^\/api\/team\/channels\/[^/]+$/.test(path) && method === 'DELETE') { const id = decodeURIComponent(path.split('/')[4]); SLACK_CHANNELS.groups = SLACK_CHANNELS.groups.filter((x) => x.chatId !== id); SLACK_CHANNELS.pending = SLACK_CHANNELS.pending.filter((x) => x.chatId !== id); return json({ ok: true, removed: id }); }
   if (path.startsWith('/api/team/') && method === 'DELETE') { state.removedMembers.add(decodeURIComponent(path.split('/')[3]).toLowerCase()); return json({ ok: true }); }
   if (path.startsWith('/api/team')) return json({ ok: true });
 
@@ -396,7 +406,8 @@ export async function handle(method, url, body) {
   if (path === '/api/files/download') return json({ error: 'Downloads are off in the demo.' }, 400);
 
   // Chat: the conversations are there to read; there is no model to answer.
-  if (path === '/api/chat/sessions' && method === 'GET') return json({ sessions: state.sessions });
+  // The landing's replay starts from an empty chat.
+  if (path === '/api/chat/sessions' && method === 'GET') return json({ sessions: SHOWCASE ? state.sessions.filter((x) => x.id.startsWith('demo-new-')) : state.sessions });
   if (path === '/api/chat/sessions' && method === 'POST') {
     const s = { id: `demo-new-${++state.newSession}`, title: 'New chat', pinned: false, archived: false, messageCount: 0, lastMessageAt: new Date().toISOString() };
     state.sessions.unshift(s);
@@ -410,12 +421,12 @@ export async function handle(method, url, body) {
   }
   if (path === '/api/chat/history') {
     const sid = q.get('sessionId') || state.sessions[0]?.id || '';
-    const messages = HISTORIES[sid] || [];
+    const messages = SHOWCASE ? [] : (HISTORIES[sid] || []);
     return json({ messages, total: messages.length, has_more: false });
   }
   if (path === '/api/chat/threads') return json({ threads: [] });
   // Anything said to Aria gets the same answer, streamed as a real turn is.
-  if (path === '/api/chat') return demoTurn();
+  if (path === '/api/chat') return SHOWCASE ? showcaseTurn() : demoTurn();
   if (path === '/api/bot/send') return json({ ok: true });
 
   // Reminders.
@@ -453,6 +464,7 @@ export async function handle(method, url, body) {
   }
 
   // Integrations.
+  if (path === '/api/integrations/slack/manifest') return json({ display_information: { name: 'Aria' }, features: { bot_user: { display_name: 'Aria', always_online: true }, app_home: { messages_tab_enabled: true } }, oauth_config: { scopes: { bot: ['chat:write', 'im:history', 'users:read.email'] } }, settings: { socket_mode_enabled: true, event_subscriptions: { bot_events: ['message.im', 'app_mention'] } } });
   if (path === '/api/integrations' && method === 'GET') return json(integrationsList());
   if (path === '/api/integrations/make-personal') return json({ ok: true, moved: (b.ids || []).map((i) => `${i}@${meSlug}`), failed: [], restarting: false });
   if (/^\/api\/integrations\/[^/]+\/make-personal$/.test(path)) return json({ ok: true, key: `${path.split('/')[3]}@${meSlug}`, restarting: false });

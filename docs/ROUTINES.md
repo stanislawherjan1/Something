@@ -29,7 +29,9 @@ The **Routines** view shows what it has taken on. Pause or remove a routine
 there, or just tell it. A Marketplace routine that needs a service you have not
 connected offers **Connect** right there, for your own account; one picked
 before its service was connected waits on the Routines view and starts by itself
-once it is. Times follow your own time zone from Settings. In a
+once it is. Times follow your own time zone from Settings, and its messages reach you
+where you prefer: the workspace, Telegram or Slack; a routine can also speak in
+a team group or channel. In a
 team workspace each person has their own routines, and the coworker does them
 as that person, with their calendar and their accounts.
 
@@ -282,7 +284,7 @@ history.
 | `due` | Next fire time (ISO, UTC). A one-shot more than 5 minutes in the past is refused by `set_reminder`, with the current time in the workspace timezone, so a plan placed on the wrong date is fixed instead of firing all at once |
 | `recur` | `interval` (every N minutes/hours/days/weeks), `weekly` (days + time), `monthly` (day or `last` + time); optional `until` / `count` / `skip_hours` / `skip_days`. Times are **UTC** |
 | `urgency` | `now` (default) or `ambient` — a soft item woven into conversation at a natural opening |
-| `channel` | `telegram`, `web` or `all` |
+| `channel` | `telegram`, `slack`, `web` or `all` (`slack`: the result goes to the person's Slack DM with the bot; for the operator it runs as a headless turn, since the tmux brain has no Slack) |
 | `recipients` | Roster slugs, or everyone (admin only) |
 | `origin` | `planner` for planner-placed items |
 | `timed` | `true` when the time itself matters; such an item is never held back for pacing |
@@ -304,10 +306,10 @@ history.
 
 | Reminder | Route |
 |---|---|
-| Targets a Telegram group (`chat`) | `/api/internal/group-say` — the group assistant composes it (a person's own "post this in the group" goes word for word through `/api/internal/group-post` instead) |
+| Targets a room (`chat`: a Telegram group's id or a Slack channel's `slack-C…`; a reminder whose words name a registered room — `#channel`, a group's title — and carries no `chat` is aimed there by the tool) | `/api/internal/group-say` — the room's assistant composes it (a person's own "post this in the group" goes word for word through `/api/internal/group-post` instead) |
 | Solo, or for the operator | `[REMINDER …]` / `[AMBIENT …]` frame into the operator's session; if that session is busy or offline, a headless turn |
 | A teammate's planner trigger (`exec`) | `/api/internal/invoke-turn` — runs the planner as that teammate |
-| A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram per `channel`); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |
+| A reminder the planner placed for a teammate (`origin: planner`) | `/api/internal/invoke-turn` with `deliver` — the assistant does the work **as that teammate**; its final reply is delivered to them (a thread in their chat, plus Telegram and/or Slack per `channel` and their preference); a `[[SILENT]]` reply sends nothing. The reminder's own text is never shown to them |
 | A plain reminder a user asked for ("remind me at 3…") | `/api/internal/reminder-deliver` — a notification with the stored text |
 
 A reminder is consumed only once delivery is confirmed; failures retry with backoff
