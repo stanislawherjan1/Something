@@ -233,8 +233,9 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
   .sw-logo :global(svg), .sw-logo :global(img) { width: 18px; height: 18px; }
   .sw-logo :global(img.fav) { border-radius: 5px; outline: 1px solid rgb(40 37 32 / .1); }
   .sw-logo :global(svg.line) { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  /* Slack with the phone over its right edge; the phone's foot cut by the
-     picture's own frame, the slide's margins as on every other image. */
+  /* Slack with the phone over its right edge; the phone runs off the
+     picture's bottom edge (no margin under it), as under the hero. */
+  .s-where { padding: 64px 0 0; }
   .pair { position: relative; width: 1104px; height: 640px; overflow: hidden; }
   .pair-slack { position: absolute; left: 0; top: 0; width: 920px; height: 578px; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 70px -32px rgba(0,0,0,.35); }
   .pair-slack .pair-fit { width: 800px; height: 502px; transform: scale(1.15); transform-origin: 0 0; }
