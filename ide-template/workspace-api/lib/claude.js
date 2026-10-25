@@ -29,7 +29,7 @@ import * as integrationsStore from './integrations/store.js';
 import * as integrationsCatalog from './integrations/catalog.js';
 import { primaryAdminSlug, memberGroupsOf, getTeamMode, list as teamList, getDefaultTimezone, effectiveTimezone, slotOf } from './team.js';
 import * as asks from './memory-asks.js';
-import { buildRecallBlock, withRecall } from './memory-recall.js';
+import { buildRecallBlock, PERSON_BUDGET_MS, withRecall } from './memory-recall.js';
 import { limitNotice } from './usage-limit.js';
 import { resolve as resolveBranding } from './branding.js';
 import { setTurnRecall, issueTurnToken, revokeTurnToken } from './turn-identity.js';
@@ -639,6 +639,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
         sessionKey: webSessionId || sessionId || null,
         message: recallQuery ?? message,   // the person's own words when the caller wrapped them
         history: recallHistory,
+        ...(groupContext ? {} : { budgetMs: PERSON_BUDGET_MS }),
       });
       try { setTurnRecall(turnId, recall?.ids || []); } catch { /* best effort */ }
     } catch (err) {

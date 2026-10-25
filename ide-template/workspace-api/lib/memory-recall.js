@@ -28,6 +28,12 @@ import { topics, nameKey, expandQuery } from './memory-views.js';
 const K = 10;
 const EXCERPT_CHARS = 1500;
 const BUDGET_MS = Number(process.env.MEMORY_V4_RECALL_BUDGET_MS) || 400;
+// A person's own turn (a DM, the web chat, a room's one-shot as them) waits
+// longer: the search runs while the CLI starts (7–12 s), so waiting costs
+// nothing, and at 400 ms it never finished on a small server (410–680 ms) —
+// no turn got its excerpts. A room's turn keeps the short budget: what it is
+// given stays in the room's session for every later turn.
+export const PERSON_BUDGET_MS = Number(process.env.MEMORY_V4_RECALL_BUDGET_PERSON_MS) || 3000;
 const OPEN = '<<<MEMORY';
 const CLOSE = '<<<END MEMORY';
 
@@ -86,7 +92,7 @@ export function renderBlock({ hits, total }) {
  * shadow mode the search runs and is logged, but nothing is injected.
  * Never throws and never takes longer than the budget.
  */
-export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], groupOnly = false, pageTurn = false, sessionKey = null, message, history = [] }) {
+export async function buildRecallBlock({ actor = null, groupId = null, memberGroups = [], groupOnly = false, pageTurn = false, sessionKey = null, message, history = [], budgetMs = BUDGET_MS }) {
   const mode = ledger.v4Mode();
   const t0 = Date.now();
   const out = { block: null, ids: [], total: 0, ms: 0, mode };
@@ -101,7 +107,7 @@ export async function buildRecallBlock({ actor = null, groupId = null, memberGro
   try {
     res = await Promise.race([
       search({ query, scopes, k: K, exclude: [...shown] }),
-      new Promise(r => setTimeout(() => r(null), BUDGET_MS)),
+      new Promise(r => setTimeout(() => r(null), budgetMs)),
     ]);
   } catch (e) {
     process.stderr.write(`[memory-v4] recall failed: ${e.message}\n`);
