@@ -228,9 +228,11 @@ us, not the provider: `syncMcpServers` writes `.team/integration-access.json`
 (`{ "<server name>": "read" }`, group `workspace`), and the scope-guard hook
 refuses a write tool of such a server in every turn — the admin's and the
 brain's included — with a sentence that says an admin can allow changes on
-the service's page. Which tools are writes: the catalog entry's `writeTools`
-list when it has one, otherwise a tool whose name says it changes something
-(create, update, delete, send, post, move, …). A person's own connection is
+the service's page. Which tools are writes: a tool whose name says it
+changes something (create, update, delete, send, post, move, …), plus any the
+catalog entry lists in `writeTools` — for tools that change something or spend
+money behind a harmless name (ElevenLabs' `creative_generate_speech`). The list
+only adds; it never lets a plainly named write through. A person's own connection is
 always `write`. Switching access is `PATCH /api/integrations/:id { access }`
 — no reconnect, no restart; a new connection takes `?access=read` on `PUT`
 and on `…/oauth/start`.

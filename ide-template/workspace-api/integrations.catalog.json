@@ -2127,6 +2127,15 @@
         ],
         "clientIdMetadata": true
       },
+      "writeTools": [
+        "agents_duplicate",
+        "agents_run_tests",
+        "creative_design_voice",
+        "creative_generate_image",
+        "creative_generate_speech",
+        "creative_generate_video",
+        "creative_run_flow_nodes"
+      ],
       "tagline": "Voice agents and calls"
     }
   ]
