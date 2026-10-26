@@ -2103,6 +2103,40 @@
         "default": true,
         "what": "your meetings' notes and transcripts, each night"
       }
+    },
+    {
+      "id": "elevenlabs",
+      "label": "ElevenLabs",
+      "logo": "/integrations/elevenlabs.svg",
+      "description": "Your ElevenLabs account through its official MCP server: voice agents, phone numbers, calls and conversations, text to speech. Requests go to ElevenLabs.",
+      "category": "ai",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "ElevenLabs connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://api.us.elevenlabs.io/v1/mcp",
+        "name": "elevenlabs",
+        "allowedHosts": [
+          "api.us.elevenlabs.io",
+          "api.elevenlabs.io"
+        ],
+        "clientIdMetadata": true
+      },
+      "writeTools": [
+        "agents_duplicate",
+        "agents_run_tests",
+        "creative_design_voice",
+        "creative_generate_image",
+        "creative_generate_speech",
+        "creative_generate_video",
+        "creative_run_flow_nodes"
+      ],
+      "tagline": "Voice agents and calls"
     }
   ]
 }

@@ -1369,8 +1369,8 @@ access to the repository are part of the deployment's security.
 
 ### 25. Files shared by link
 
-A shared Markdown file is readable without signing in: the one `/api` path nginx
-serves outside `auth_request` is `GET /api/public/share/<token>` (GET only, cookies
+A shared Markdown file is readable without signing in: nginx serves
+`GET /api/public/share/<token>` outside `auth_request` (GET only, cookies
 and `X-IDE-User` stripped). The token is the permission: 18 random bytes, base64url,
 checked against a strict pattern before any lookup.
 - **What leaves:** the file's name and current text. Never its path (a path names
@@ -1396,6 +1396,27 @@ checked against a strict pattern before any lookup.
 - **Abuse:** a per-address cap on the public read (60 a minute by default,
   `SHARE_PUBLIC_PER_MIN`). Behaviour tests (incl. expiry and the hook, run as a
   separate process): `node lib/shares.test.mjs`.
+
+### 26. OAuth client metadata document
+
+The other `/api` path nginx serves outside `auth_request` is the exact
+`GET /api/public/oauth/client-metadata.json` (GET only, cookies and `X-IDE-User`
+stripped). Its URL is the OAuth `client_id` for a remote-MCP provider that has no
+dynamic registration and fetches client metadata instead (MCP SEP-991); only a
+catalog entry with `mcp.clientIdMetadata: true` uses it.
+- **What leaves:** the client name shown on the consent screen (the bot's display
+  name), this deployment's own callback URL as the only redirect URI, and the fixed
+  public-client grant shape (`authorization_code` + `refresh_token`, PKCE, no
+  secret). No identity, no tokens, nothing per user. The host comes from
+  `FRONTEND_DOMAIN` (else the forwarded host), as for the OAuth start.
+- **Why it can't be abused for a code:** the redirect URI in the document is this
+  domain's callback, so a provider sends codes only here; the callback still needs
+  the single-use `state` minted by an admin's start and the PKCE verifier held in
+  memory. Someone else naming this URL as their client id gets codes delivered to
+  this deployment, which discards them.
+- **Cached ids:** a stored URL-based client id is reused only while it equals this
+  deployment's current document URL, so a move to another domain starts afresh.
+  Behaviour test: `node lib/oauth-client-metadata.test.mjs`.
 
 ## Security Checklist
 

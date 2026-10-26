@@ -245,9 +245,10 @@ async function main() {
 
   // Read-only integrations: an admin connected a service for the team as
   // read-only (.team/integration-access.json, written by workspace-api with
-  // the bot's config). Its write tools are refused in every turn — the
-  // catalog names them per service (`writeTools`); otherwise a tool whose name
-  // says it changes something counts. Reading is untouched.
+  // the bot's config). Its write tools are refused in every turn — a tool
+  // whose name says it changes something, and any the catalog adds for the
+  // service (`writeTools`: changes or spends behind a harmless name). Reading
+  // is untouched.
   {
     const toolName = data.tool_name || data.toolName || '';
     const m = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(toolName);
@@ -264,7 +265,7 @@ async function main() {
           if (Array.isArray(entry?.writeTools)) writeTools = entry.writeTools;
         } catch { /* no catalog here: the name decides */ }
         const WRITE_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark)([_-]|$)/i;
-        const isWrite = writeTools ? writeTools.includes(tool) : WRITE_RE.test(tool);
+        const isWrite = WRITE_RE.test(tool) || !!writeTools?.includes(tool);
         if (isWrite) {
           process.stderr.write(
             `Blocked: ${server.replace(/-mine$/, '')} is connected for the team as read-only, so "${tool}" (a change) is not available. ` +

@@ -157,7 +157,7 @@ ide-template/skills/
     ├── <one folder per hosted integration>/   ← notion, linear, todoist, monday, airtable, clickup, atlassian, miro,
     │                                            calcom, calendly, granola, tally, stripe, paypal, klaviyo,
     │                                            mailchimp, wix, webflow, github, sentry, supabase, neon, netlify, vercel,
-    │                                            cloudflare, amplitude, ga4, zapier, deepl,
+    │                                            cloudflare, amplitude, ga4, zapier, deepl, elevenlabs,
     │                                            parallel, firecrawl, cryptocom, fireflies, fathom, otter,
     │                                            readai, krisp — tools, write rules, gotchas, routines
     └── trello/
