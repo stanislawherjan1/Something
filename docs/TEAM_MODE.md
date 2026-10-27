@@ -416,9 +416,16 @@ the **team board** (a room has no own list); a caller with no identity, the
 team board. A person moves their own task to the team board and takes back a
 team task they own or created; an unowned team task is claimed (`owner`) in the
 same call rather than taken quietly. Nobody can move anyone else's task into or
-out of a private list. Each column shows the team's tasks first, then a "Mine"
-divider and the person's own, with a lock on each own row; the lock is the
-switch between the lists. A drag changes a task's column, never its list.
+out of a private list. On the Tasks screen an own task sits in its column like
+any other, assigned to its person; the list and the board do not say who sees
+a task. A task opened (a click on its title or card) shows everything: the
+column as a menu to move it, who does it, the description in full, priority,
+deadline, visibility ("Only you" / "Whole team", with the switch that puts an
+own task on the team board), when it was added and the memory fact it came
+from. "Show only my tasks" in the header narrows the screen to the tasks
+assigned to the person, whoever sees them. A drag changes a task's column,
+never its list. Taking a team task back to one's own list is done through the
+bot.
 
 A task's `owner` records **who's responsible**, set to a teammate's roster
 **slug** (the board renders their profile picture). The AI resolves a name to
@@ -429,6 +436,12 @@ moves it to the team board.
 **Assigning a task does NOT notify the teammate** — it only records ownership.
 If they should be pinged, that's a relay or a `set_reminder` with `recipient`,
 separate from the board.
+
+Asked in a room ("anything on my list?"), the person's own list is answered the
+way their own memory is: the group brain's `ask_my_memory` runs a one-shot turn
+as them, outside the room, with their open own tasks in its prompt beside their
+profile and memory; only its few sentences reach the room, and only the asker
+can ask about their own list — another person's is never asked from a room.
 
 Memory and the two lists: a task and the fact it came from point at each other
 (see [MEMORY.md](MEMORY.md)); a fact's pointer carries the task's list and a
