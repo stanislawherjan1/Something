@@ -1268,9 +1268,29 @@ about which facts a model chose to keep.
   that group. No admin bypass anywhere — not in the tools, the Memory screen
   API, the backup download, or the file rule.
 - **The file rule** (`lib/scope-rule.js`, used by the tools' scope guard and the
-  file API) treats `.team/users/<slug>/` (chat history, routines) like the other
-  private trees, and lets no raw path reach `memory/groups/` for anyone — group
-  memory is read through the tools, which check membership.
+  file API) treats `.team/users/<slug>/` (chat history, routines, the person's
+  own task list) like the other private trees, and lets no raw path reach
+  `memory/groups/` for anyone — group memory is read through the tools, which
+  check membership.
+- **A person's own task list** (`.team/users/<slug>/tasks.json`, `lib/tasks.js`)
+  is private by path, not by a flag: a flag inside the shared `.tasks.json`
+  would be read by every turn's shell. `/api/tasks` returns it to its person
+  only (the signed-in actor, or the turn token's actor — never a group turn, a
+  claimed header, or an admin by role); another person's own task is 404 to
+  anyone else. A fact's pointer at a task carries the task's list and a private
+  task's title only inside its person's scope (`taskPointer` in
+  `lib/memory-task-links.js`), and every reader — the recall block, the Memory
+  screen, the nightly linking — resolves a pointer only into a list it may
+  read. A finished own task retires only its person's own facts.
+- **Nothing private is written into a tree that is not the person's yet**
+  (`lib/private-tree.js`). `.team/users/` is the workspace group's with setgid
+  and every turn user is in that group, so a directory workspace-api made
+  there itself would hand a 0660 file to every member's turn. The own task
+  list and `routines.json` are written only when `.team/users/<slug>/` already
+  belongs to a `priv-*` group (`priv-tree assign` ran: on add, at boot, at the
+  solo→team switch); otherwise the write is refused with a plain error and
+  never redirected to the shared board. Outside the container, where no tree
+  is ever owned, the check is skipped as for the helper itself.
 - **After the move, memory is reached only through the tools.** Once the
   migration stamp is there, the scope guard (`hooks/scope-guard.mjs`) refuses
   every raw read or listing of `memory/` (Read, Grep, Glob, and `memory/`

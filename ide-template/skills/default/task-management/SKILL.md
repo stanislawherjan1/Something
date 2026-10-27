@@ -1,6 +1,6 @@
 ---
 name: task-management
-description: Use this when the user wants to add, update, move, assign, delete, or review tasks. Tasks live on a structured board (Backlog / In Progress / Done) served by the workspace API over HTTP at http://localhost:3001/api/tasks — read and write it with the Bash tool (curl). There are no mcp__tasks__* tools; don't look for them. Each task can be assigned to a teammate.
+description: Use this when the user wants to add, update, move, assign, delete, or review tasks. Tasks live on a structured board (Backlog / In Progress / Done) served by the workspace API over HTTP at http://localhost:3001/api/tasks — read and write it with the Bash tool (curl). There are no mcp__tasks__* tools; don't look for them. In a team, a task is on the person's own list or on the team board; each task can be assigned to a teammate.
 allowed-tools: Bash, Read, mcp__reminders__set_reminder, mcp__reminders__list_reminders, mcp__reminders__cancel_reminder
 ---
 
@@ -24,11 +24,15 @@ the workspace API on loopback with the **Bash tool (`curl`)**:
 The `X-IDE-Turn` header tells the API whose turn this is (the person you are
 talking to); always send it, exactly as written.
 
-- **List returns** `{ ok, teamMode, me, people: {slug→{name,avatar}}, tasks: [...] }`.
+- **List returns** `{ ok, teamMode, me, people: {slug→{name,avatar}}, tasks: [...] }`:
+  the team board plus the person's own list, each task saying which with
+  `scope` (`shared` = the team board, `user:<slug>` = their own list). You never
+  get anyone else's own list, and an id from it is "not found" to you.
   **Always list before adding or changing** — find an existing task to update
   instead of duplicating, and to read a task's `id`.
 - **Add** — only `title` is required; `description`, `status`, `owner`,
-  `priority`, `deadline` are optional. Defaults to the Backlog. Returns
+  `priority`, `deadline`, `scope` are optional. Defaults to the Backlog and,
+  in a team, to the person's own list (see **Two lists** below). Returns
   `{ ok, task }` with the new `id`.
 - **Update / move** — PATCH only the fields that change. Changing columns = PATCH
   `status`. Returns the updated task.
@@ -43,11 +47,44 @@ the workspace without a login — don't add auth headers. Never `Read`/`Write`
 `completed` stamp. If you ever see a `Tasks.md` in the project, it's a
 pre-migration leftover — ignore it; the board is the API.
 
+## Two lists, one board (team mode)
+
+In a team each person has **their own list** and everyone shares **the team
+board**. Both are on the same Tasks screen; only the person sees their own
+list, and no admin can look into it.
+
+- **Talking to one person in their own chat (a DM, the web chat):** a task goes
+  on **their own list** unless they want it on the team board ("add it to the
+  team's tasks", "put it on the board"), **assign it to someone else**
+  (`owner` naming a teammate → the team board, since that person must see
+  it), or leave it **unowned on purpose** (`"owner": null` → the team's
+  backlog). Pass `"scope": "shared"` when they want the team board; pass
+  nothing for their own list. `"scope": "mine"` asks for their own list
+  explicitly.
+- **In a group or channel:** every task goes on the team board; a room has no
+  own list and may not ask for one (the API refuses `mine` there).
+- **Say where it went, in plain words:** "added it to your list" vs. "put it on
+  the team board" — never the field or the scope name. When someone adds a task
+  for themselves that the team clearly waits on, say it is on their own list
+  and offer the team board once; don't move it on your own.
+- **Moving between the lists:** `PATCH {"scope":"shared"}` puts the person's
+  own task on the team board; `PATCH {"scope":"mine"}` takes a team task **they
+  own or created** to their own list (an unowned team task is claimed with
+  `{"scope":"mine","owner":"<their slug>"}` in the same call — never taken
+  quietly). Giving an own task to someone (`owner` = a teammate) moves it to
+  the team board. Nobody can move anyone else's task to or from a private
+  list; a request to do so is declined in one sentence.
+- **A reminder for the whole team** (admin only) names only tasks on the team
+  board, never one from your own list.
+- Solo workspace: one list, the board; `scope` has no meaning there.
+
 ## Task shape
 
 `id` (e.g. `t_a1b2c3d4`) · `title` · `description` · `status` (`backlog` /
 `in_progress` / `done`) · `owner` (a teammate slug or `null`) · `priority`
 (`high` / `medium` / `low` or `null`) · `deadline` (`YYYY-MM-DD` or `null`) ·
+`scope` (`shared` = the team board, `user:<slug>` = that person's own list; an
+own task's owner is always that person) ·
 `completed` (auto-stamped when status → `done`, cleared when moved back — **never
 set it yourself**). Full field + writing guidance → `references/templates.md`.
 
@@ -67,10 +104,12 @@ task; a task can be *assigned* to a teammate without notifying them — see belo
 ## Assigning a task — `owner`
 
 `owner` is **who's responsible**, not who created it. **Leave `owner` out and the
-task is the person asking's** — the API fills it in from the turn header. Pass a
+task is the person asking's** — the API fills it in from the turn header, and in
+a team the task is then on their own list. Pass a
 teammate's roster **slug** (valid slugs are in the `people` map of the list
 response) only when the user assigns someone else ("assign this to Jan" →
-`"owner":"jan"`), and `"owner": null` only when they say nobody owns it yet. In a
+`"owner":"jan"`, which puts it on the team board), and `"owner": null` only when
+they say nobody owns it yet (the team's backlog). In a
 group conversation nothing is filled in: name the owner or leave it unowned.
 **Assigning does NOT
 notify the teammate** — it just records ownership; to ping them, that's a relay or
@@ -99,6 +138,9 @@ the board, never "I don't know" while a task for it exists.
 
 1. `curl -s -H "X-IDE-Turn: $IDE_TURN_ID" http://localhost:3001/api/tasks` — check for an existing task to update instead.
 2. POST → Backlog, unless work has already started (`"status":"in_progress"`).
+   In a team: their own list unless it is for someone else, unowned on
+   purpose, or they want it on the team board (`"scope":"shared"`) — see **Two
+   lists** above. Say which list it went on.
 3. `title` is imperative and self-contained; `priority` and `deadline` when known (omit otherwise); `owner` per above.
    **`record` whenever memory is where the task comes from:** if the request,
    decision or deadline behind this task is in your memory block or in a
@@ -139,4 +181,4 @@ Unless they have the `deadline-at-risk` routine, at session start list the board
 
 ## Summarizing the board
 
-When asked "what's open?" / "what do we have?": list the board, then summarize In Progress + high-priority Backlog items (and flag overdue). Don't dump the whole board.
+When asked "what's open?" / "what do we have?": list the board, then summarize In Progress + high-priority Backlog items (and flag overdue). Don't dump the whole board. In a team, keep the two lists apart in the answer ("on your list: … · on the team board: …"); "what is everyone working on" is the team board alone.

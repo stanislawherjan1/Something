@@ -202,7 +202,7 @@ Before spawning, it prepends a **cached system-prompt prefix** via `buildCachedP
 
 One process-wide `chokidar` watcher on `PROJECT_DIR`. Filtered with the same `isVisibleEntry` predicate as the tree listing (default visibility — technical/hidden file changes don't generate events even when `include_hidden` mode is on in the UI), with explicit carve-outs so the dashboards update without a reload:
 
-- `.claude/skills`, `.reminders.json`, `.tasks.json`;
+- `.claude/skills`, `.reminders.json`, `.tasks.json`, and `.team/users/<slug>/tasks.json` (a person's own task list; the event is tagged with its owner and reaches only their streams — the rest of `.team/**` stays unwatched);
 - mini-apps (`.claude/miniapps/**`, and `users/<slug>/.claude/miniapps/**` in team mode — the rest of `users/**` stays unwatched);
 - the memory wiki (`memory/**`, which backs Routines and the Memory dashboard), except `memory/_engine/` (undo snapshots and logs written by every memory write) and archived reflect output (`memory/_reflect/`).
 

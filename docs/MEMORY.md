@@ -43,7 +43,10 @@ that it is not saved, never that it is.
   state; when the task is done, the fact is closed with it. Each night, tasks
   that have no such link yet get one careful look, so older tasks find the
   fact they came from too; a meeting's notes or a project's overview are never
-  closed by one task. A fact also lists
+  closed by one task. In a team a task may be on someone's own list rather
+  than the team board: a shared fact then shows the task only to that person,
+  and finishing an own task closes only that person's own facts, never a
+  shared one. A fact also lists
   the notes and write-ups its conversation produced, each a click away. **Hide** takes a fact off the screen and out of the bot's reach;
   it comes back from Changes for 30 days, then it is gone. **Erase** removes
   it for good at once, and the same words cannot be learned again. Erasing

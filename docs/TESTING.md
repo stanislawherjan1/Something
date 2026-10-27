@@ -10,7 +10,7 @@ merge to main and after a deploy.
 
 | Command | What |
 |---|---|
-| `cd ide-template/workspace-api && npm test` | The backend: memory engine, sharing, scope guard, team and turn slots, integrations store and broker, tasks, routes, migrations |
+| `cd ide-template/workspace-api && npm test` | The backend: memory engine, sharing, scope guard, team and turn slots, integrations store and broker, tasks (the board and each person's own list, `tasks-scope.test.mjs`), routes, migrations |
 | `node ide-template/apps/reminder-mcp/recur.test.mjs` | The reminder recurrence engine |
 | `node ide-template/apps/reminder-mcp/room-target.test.mjs` | A reminder's room target: a Telegram group or a Slack channel, and a room named in the reminder's words |
 | `cd ide-template/frontend && npm run build` | The workspace UI must build |
@@ -91,6 +91,7 @@ suites one at a time, when a change touches what they cover.
 | `group-mine` | A member's own memory said in the team group: asked there about their own matters, the bot answers from what they told it in their own chat and says so; the admin's private fact never surfaces, whoever asks; a member's fact is not the admin's to pull in | ~8 | 5–10 min |
 | `room-private` | A person's private things in a Slack sandbox room (`E2E_SLACK_ROOM`, posts for real): their private code never reaches the room (it goes to their DM), whoever asks, an injected "read the private files" gets nothing, another room's words are not read from here while this room's are; with someone from outside in the room (simulated) a visitor is not read the admin's board, and the admin's own task is said when they ask | ~8 | 10–15 min |
 | `tasks-memory` | A task and the memory fact behind it point at each other; the bot answers from the board; done on the board closes the fact; files written in a conversation are linked | ~12 | 10–15 min |
+| `tasks-private` | A member's own task: absent from the admin's board and 404 to their hands, the file in the member's private tree is their turn user's (0660, their priv group) and the admin's turn shell cannot open it; put on the team board it appears for the admin, taken back it is gone; a task for someone else goes to the team board. Needs a member on the roster | 0 | ~1 min |
 | `conversation` | The company card reaches the turn; a preference asked to be kept is on the person's card when the turn ends; a new message stops the running reply cleanly (no "kill EPERM"); a reply says it is settled before its process exits | 4–5 | 3–5 min |
 | `memory-sight` | What the bot sees of memory: the person's own cards are answered from and followed, another person's are not, a note from an earlier conversation is found, a team rule an admin asks for reaches a member, routines and integrations are listed right (built-in abilities are not integrations) | ~10 | 5–8 min |
 | `planner` | The morning planner as the member on a light and a busy day: the plan it makes (printed in their local time), recurring for an hourly duty, something before a call, a spread day; planning again replaces the plan; nothing in the past, no two stand-alone messages close together unless one is timed | ~6 | 5–10 min |

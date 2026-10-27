@@ -12,6 +12,7 @@ Markdown. Each task has these fields:
 | `owner` | Who's responsible — a teammate slug, or none. See below. |
 | `priority` | `high` / `medium` / `low`, or none. |
 | `deadline` | `YYYY-MM-DD`, or none. |
+| `scope` | Team mode only. `shared` = the team board, everyone's; `user:<slug>` = that person's own list, which only they see. On create pass `shared` for the team board or `mine` for the person's own list (the default in their own chat); on update `shared` / `mine` moves the task between the lists. See below. |
 
 `completed` is stamped automatically when a task moves to `done` — never set it
 yourself.
@@ -39,6 +40,23 @@ sentences. Skip it when the title is self-explanatory.
 Assigning a task to a teammate does **not** notify them — it just records
 ownership. If the user wants the teammate pinged, that's a relay or a
 `set_reminder` with `recipient`, separate from the board.
+
+## `scope` — the person's own list or the team board
+
+A task on a person's **own list** is theirs alone: it is in their own tree on
+the server, no teammate or admin gets it back from the board, and its `owner`
+is always that person. A task on the **team board** is everyone's.
+
+- **Default in the person's own chat:** their own list. The team board when
+  they ask for it, when `owner` names someone else, or when `owner` is `null`
+  on purpose.
+- **In a room:** always the team board; `mine` is refused there.
+- **Moves:** `{"scope":"shared"}` on an own task; `{"scope":"mine"}` on a team
+  task the person owns or created (claim an unowned one with `owner` in the
+  same call). An own task given an `owner` other than its person moves to the
+  team board. Nobody moves anyone else's task into or out of a private list.
+- A task on an own list may still be linked to a shared memory fact; the team
+  then sees that the fact has a task somewhere, nothing of what it says.
 
 ## Priority definitions
 
