@@ -141,7 +141,7 @@ the board, never "I don't know" while a task for it exists.
    In a team: their own list unless it is for someone else, unowned on
    purpose, or they want it on the team board (`"scope":"shared"`) — see **Two
    lists** above. Say which list it went on.
-3. `title` is imperative and self-contained; `priority` and `deadline` when known (omit otherwise); `owner` per above.
+3. `title` is imperative and self-contained; **`description` carries the full context** — the board shows only the title, so write in the description what was asked and by whom, the decision or request behind it, the numbers, dates, names and links from the conversation, what "done" looks like, blockers and who is waiting; a few sentences to a few short paragraphs, never empty (`references/templates.md`). `priority` and `deadline` when known (omit otherwise); `owner` per above.
    **`record` whenever memory is where the task comes from:** if the request,
    decision or deadline behind this task is in your memory block or in a
    `memory_search` result, copy that excerpt's id (the `id …` in its header
@@ -160,7 +160,10 @@ the board, never "I don't know" while a task for it exists.
 ## Updating a task
 
 `PATCH /api/tasks/<id>` with only the changed fields when the deadline changes,
-owner changes, a blocker resolves, or new info arrives. A deadline change triggers
+owner changes, a blocker resolves, or new info arrives. New context from a
+later conversation (a decision, a number, a file, a blocker) goes into the
+`description` — extend it, keep what was there; the description is the task's
+whole story. A deadline change triggers
 cancel-old-reminder + set-new-reminder (see `references/reminder-rules.md`); other
 field changes don't need reminder updates.
 

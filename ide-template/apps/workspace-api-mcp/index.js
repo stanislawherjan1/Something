@@ -261,7 +261,7 @@ const GROUP_MEMBER_TURN = process.env.IDE_GROUP_CONTEXT === '1' && !!process.env
 const MINE_TOOL = {
   name: 'ask_my_memory',
   description:
-    'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences and what they told you in their own conversations — for this room to hear. ' +
+    'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences, what they told you in their own conversations and the tasks on their own list (the one only they see) — for this room to hear. ' +
     'Call it FIRST for every message you answer from them (their own memory is already being searched for that message): it says what is theirs on it — their plans, deals, numbers, opinions, meetings, preferences — or nothing. Never for anyone else\'s matters or memory. ' +
     'It runs as them, outside this room, and returns at most three sentences already fit for the room (anything about another person present is left out unless they named them). ' +
     'Say only the part that answers what they asked; anything else it returned stays unsaid. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',

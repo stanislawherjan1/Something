@@ -7,7 +7,7 @@ Markdown. Each task has these fields:
 | Field | Meaning |
 |---|---|
 | `title` | Short imperative heading — self-contained. "Send Q3 report to acme". |
-| `description` | Optional context: why it matters, what's needed, blockers, file paths. |
+| `description` | The whole context, in full — the board shows only the title; everything a person needs when they open the task lives here. See below. |
 | `status` | `backlog` / `in_progress` / `done`. |
 | `owner` | Who's responsible — a teammate slug, or none. See below. |
 | `priority` | `high` / `medium` / `low`, or none. |
@@ -25,8 +25,32 @@ the title alone.
 - ✅ "Send Q3 report to acme" · "Call John about the contract" · "Pay invoice INV-1042"
 - ❌ "Q3" (too vague) · cramming the whole story into the title (that's `description`).
 
-**Description** — the "why now / what to include / who's waiting". One or two
-sentences. Skip it when the title is self-explanatory.
+**Description** — write it every time, and write it in full. The list and the
+board show the title alone; the description is what a person reads when they
+open the task, days later, without the conversation in front of them. Put in
+it what you know from the conversation, as a short brief:
+
+- what was asked and by whom, and what "done" looks like;
+- the context: the decision or request behind it, the numbers, dates, names,
+  amounts and places that were mentioned, the thread or meeting it came from;
+- what is needed to do it: files or links (paths in the workspace, a document, a
+  ticket), who to involve, what to check first;
+- blockers, dependencies, what is waiting on it and who is waiting.
+
+Several sentences or a few short paragraphs; plain prose, no headings. Never
+leave it empty because the title "says it all", and never a bare phrase that
+repeats the title — a week later the person no longer remembers what it was
+about, and the description is all they have.
+
+- ❌ "Pricing sheet for the client." · "Follow up." · "" (empty)
+- ✅ "Orbis asked on Tuesday's call for a pricing sheet for the wholesale tier
+  before their board meets on 20 October; Ann promised it by the 18th. Base it
+  on the September price list (Sales/pricing-2026-09.xlsx) with the 8% volume
+  discount Nora approved for orders above 500 units. Jonas still has to confirm
+  the shipping surcharge for Portugal, which the sheet needs. Send it to Marta
+  Reyes at Orbis and copy Nora; the deal is about €40k a year." Keep out what should not be there: on the team board,
+nothing from a person's private conversations or memory beyond what they asked
+to put on the board; secrets never.
 
 ## `owner` — who the task is assigned to
 

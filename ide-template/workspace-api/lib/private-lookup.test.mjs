@@ -52,6 +52,25 @@ ok('the one-shot answers about the person too (profile, preferences), only what 
 ok('a question it cannot finish (the weather) gets what is known of them that it needs', /the weather, a web search/.test(prompt) && /where they are or live, their time zone/.test(prompt));
 ok('the one-shot answers exactly what was asked, no related facts beside it', /answer EXACTLY what was asked and nothing beside it/.test(prompt) && /Never add a related fact the question did not ask for/.test(prompt));
 ok('...never an earlier forecast or price from the conversations', /Never pass on an earlier result of such a check/.test(prompt));
+// Their own task list rides along, open tasks only, never another person's.
+const TK = await import('./tasks.js');
+TK.writeScope('user:nora', [
+  { id: 't_n1', title: 'Call the accountant about the year-end filing', status: 'in_progress', deadline: '2026-11-03', owner: 'nora' },
+  { id: 't_n2', title: 'Old one, finished', status: 'done', owner: 'nora', completed: '2026-10-01' },
+]);
+TK.writeScope('user:mara', [{ id: 't_m1', title: 'MARA-ONLY apply for the course', status: 'backlog', owner: 'mara' }]);
+const withList = PL.lookupPrompt({ member: nora, question: 'anything on my list?', room: getGroup('-100777'), people: ['Nora', 'Mara'], ownTasks: TK.readScope('user:nora') });
+ok('the asker\'s own open tasks are in the prompt, with state and due day', /NORA'S OWN TASK LIST/.test(withList) && /- Call the accountant about the year-end filing \(in progress\), due 2026-11-03/.test(withList), withList);
+ok('...a finished one is not', !/Old one, finished/.test(withList));
+ok('...and the prompt says the list is theirs alone and knows the board is the room\'s', /theirs alone/.test(withList) && /memory and their own task list only/.test(withList));
+ok('an empty list is said to be empty', /OWN TASK LIST[^\n]*nothing open/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
+ok('lookupMine reads the asker\'s list, never another person\'s', await (async () => {
+  let seen = null;
+  PL.configureLookup(async ({ prompt }) => { seen = prompt; return { answer: 'ok' }; });
+  await PL.lookupMine({ member: nora, question: 'anything on my list?', room: getGroup('-100777') });
+  PL.configureLookup(null);
+  return /Call the accountant/.test(seen || '') && !/MARA-ONLY/.test(seen || '');
+})());
 ok('the one-shot holds back secrets (SECRET) in every room', /reply with exactly: SECRET/.test(prompt) && /reply with exactly: SECRET/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100888'), people: ['Nora', 'Olek the glazer'], outsiders: ['Olek the glazer'] })));
 ok('an empty room says so', /besides Nora: nobody else recorded/.test(PL.lookupPrompt({ member: nora, question: 'x', room: getGroup('-100777'), people: ['Nora'] })));
 

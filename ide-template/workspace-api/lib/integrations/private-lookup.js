@@ -18,7 +18,10 @@
  * So the group brain gets a tool (`ask_my_memory`, apps/workspace-api-mcp),
  * and the tool runs a ONE-SHOT private turn AS that member (their own scopes,
  * no group context, no session, memory reads only) that answers the question
- * in at most three sentences fit for the room. Only that answer enters the
+ * in at most three sentences fit for the room. Their own task list (the one
+ * only they see on the board) is handed to it in the prompt the way their
+ * profile is: a room turn reads the team board and nothing of anyone's own
+ * list, and "what's on my list?" asked in the room is theirs to have said. Only that answer enters the
  * group session; the search results stay in the one-shot. Who may ask is
  * decided in code by the route (routes/memory-v4.js, `/internal/memory/v4/mine`):
  * the turn's token names the sender, the roster vouches for them, the room
@@ -34,6 +37,7 @@ import { list as rosterList, userByChatId, userBySlackId } from '../team.js';
 import { groupIdKind } from '../group-id.js';
 import * as integrationsStore from './store.js';
 import * as integrationsCatalog from './catalog.js';
+import { readScope } from '../tasks.js';
 
 const LOOKUP_TIMEOUT = Number(process.env.GROUP_LOOKUP_TIMEOUT_MS) || 120_000;
 
@@ -101,21 +105,30 @@ export function peopleInRoom(group) {
   return [...names].filter(Boolean);
 }
 
-export function lookupPrompt({ member, question, room, people = [], outsiders = [] }) {
+const OWN_LIST_MAX = 25;
+/** The open tasks on a person's own list, one line each, for the one-shot. */
+export function ownListLines(tasks) {
+  return (tasks || []).filter(t => t && t.status !== 'done').slice(0, OWN_LIST_MAX)
+    .map(t => `- ${String(t.title || '').slice(0, 120)}${t.status === 'in_progress' ? ' (in progress)' : ''}${t.deadline ? `, due ${t.deadline}` : ''}`);
+}
+
+export function lookupPrompt({ member, question, room, people = [], outsiders = [], ownTasks = [] }) {
   const name = member.displayName || member.slug;
   const others = people.filter(p => p !== name);
   const out = new Set(outsiders);
+  const list = ownListLines(ownTasks);
   return [
-    `[PRIVATE LOOKUP — asked in the room "${String(room?.title || room?.chatId || 'the room').slice(0, 60)}"] ${name} asked there, in front of the others, about themselves or something that may be in THEIR OWN memory — who they are, where they are, what they prefer, the conversations you have had with them. Answer from what you know of them, for the room to read.`,
+    `[PRIVATE LOOKUP — asked in the room "${String(room?.title || room?.chatId || 'the room').slice(0, 60)}"] ${name} asked there, in front of the others, about themselves or something that may be in THEIR OWN memory — who they are, where they are, what they prefer, the conversations you have had with them, the tasks on their own list. Answer from what you know of them, for the room to read.`,
     '',
     `THE QUESTION, as ${name} asked it (with what it follows in the room, when it is a follow-up): ${String(question).slice(0, 1500)}`,
     `PEOPLE IN THE ROOM besides ${name}: ${others.length ? others.map(p => (out.has(p) ? `${p} (not on the team)` : p)).join(', ') : 'nobody else recorded'}`,
+    `${name.toUpperCase()}'S OWN TASK LIST (theirs alone — the team board the room already knows is not here): ${list.length ? `\n${list.join('\n')}` : 'nothing open'}`,
     '',
     'RULES:',
     `- Use what you know of them (their profile and preferences above, their settings) and search their memory (memory_search, memory_timeline); answer EXACTLY what was asked and nothing beside it — usually one plain sentence, never more than three — in the language of the question, with the names, numbers and dates it needs. Never add a related fact the question did not ask for (their travel, plans, other matters), however true and theirs: asked where they are, say where they are, not where they are flying next. Facts only: no advice, no questions back, no suggestions.`,
     `- Leave out anything ABOUT a person in the room — what they earn, their health, their work, their performance, what ${name} thinks of them — unless the question names that person; answer the rest. Never say that something was left out and never hint at it.`,
     `- If what answers the question is ${name}'s but they asked to keep it quiet or private, or it cannot be said without what is about a person in the room, reply with exactly: PRIVATE — it is offered to them in their DM instead. Never answer NOTHING for something you hold back.`,
-    '- You know their memory only. Never say anything about tools, integrations or services and whether they are connected: you cannot see them, and the room can. When the question needs one, answer with what their memory holds, or NOTHING.',
+    '- You know their memory and their own task list only. Never say anything about tools, integrations or services and whether they are connected: you cannot see them, and the room can. When the question needs one, answer with what their memory holds, or NOTHING.',
     '- When the question needs something you cannot do here (the weather, a web search, a calculation), answer with what you know of them that it needs (where they are or live, their time zone, the preference it turns on); the room does the rest. Never pass on an earlier result of such a check (a forecast, a price, a status) from the conversations: it is out of date.',
     '- If the answer is a secret that opens something (a password, a PIN, a door or lock code, a key, a login), reply with exactly: SECRET — it is never said in a room, it goes to their DM.',
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
@@ -153,8 +166,12 @@ export function parseAnswer(text) {
  */
 export async function lookupMine({ member, question, room }) {
   const people = peopleInRoom(room);
-  const prompt = lookupPrompt({ member, question, room, people, outsiders: outsidersOf(room) });
-  if (runner) return runner({ member, question, room, people, prompt });
+  // Their own list, read here as workspace-api: the one-shot has no tool that
+  // reaches the board, and the room turn never sees anyone's own list.
+  let ownTasks = [];
+  try { ownTasks = readScope(`user:${member.slug}`); } catch { ownTasks = []; }
+  const prompt = lookupPrompt({ member, question, room, people, outsiders: outsidersOf(room), ownTasks });
+  if (runner) return runner({ member, question, room, people, prompt, ownTasks });
   const text = await new Promise((resolve) => {
     let out = '', lastSegment = '', done = false, proc = null;
     const finish = (r) => { if (done) return; done = true; clearTimeout(timer); try { proc && proc.kill('SIGKILL'); } catch { /* gone */ } resolve(r); };

@@ -30,7 +30,9 @@ F="$P/.team/users/$MEMBER_SLUG/tasks.json"
 MSLOT="$(echo "$ROSTER" | jsonq "next((str(e.get('slot','')) for e in a if e.get('slug')=='$MEMBER_SLUG'), '')")"
 ASLOT="$(echo "$ROSTER" | jsonq "next((str(e.get('slot','')) for e in a if e.get('slug')=='$ADMIN_SLUG'), '')")"
 MSLOT="$(printf '%02d' "${MSLOT:-0}")"; ASLOT="$(printf '%02d' "${ASLOT:-0}")"
-check "owner and group are the member's turn user and priv group" "turn-$MSLOT:priv-$MSLOT" "$(R "docker exec -u 1001 $C stat -c '%U:%G' $F")"
+# workspace-api writes the file (it is the owner until priv-tree's next pass);
+# the setgid directory gives it the member's priv group, which is what matters.
+check "the file's group is the member's priv group" "priv-$MSLOT" "$(R "docker exec -u 1001 $C stat -c '%G' $F")"
 check "mode: group may read, nobody else" "0" "$(R "docker exec -u 1001 $C stat -c '%a' $F" | python3 -c 'import sys; m=int(sys.stdin.read().strip() or "777",8); print(m & 0o007)')"
 check "the admin's turn user cannot open it" "no" "$(R "docker exec -u turn-$ASLOT $C sh -c 'cat $F >/dev/null 2>&1 && echo yes || echo no'")"
 check "...the member's own can" "yes" "$(R "docker exec -u turn-$MSLOT $C sh -c 'cat $F >/dev/null 2>&1 && echo yes || echo no'")"
