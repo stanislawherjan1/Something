@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, createContext, useContext } from 'react';
-import { KanbanSquare, CircleUserRound, Calendar, CheckCircle2, Columns3, List as ListIcon, Brain } from 'lucide-react';
+import { KanbanSquare, CircleUserRound, Calendar, CheckCircle2, Columns3, List as ListIcon, Brain, Lock, LockOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import EditorHeader from '../EditorHeader.jsx';
@@ -18,26 +18,24 @@ export const TASK_COLUMNS = [
 ];
 
 /**
- * KanbanView — render Tasks.md as a board.
+ * KanbanView — the task board, from /api/tasks (see the task-management skill
+ * in ide-template/skills/default/task-management/SKILL.md).
  *
- * Format (matches the task-management skill in
- * ide-template/skills/default/task-management/SKILL.md):
- *
- *   ## Column                                    ← e.g. Backlog / In Progress / Done
- *   ### Task title                               ← card heading
- *   **Owner:** Name · **Priority:** High · **Deadline:** YYYY-MM-DD or TBD
- *
- *   One or more paragraphs describing the task.
- *
- *   ### Next task title
- *   ...
- *
- * Cards in `## Done` may also carry `**Completed:** YYYY-MM-DD`.
- *
- * Iteration 3: read-only render. Drag-drop + write-back to file lands later.
+ * Two lists, one board. In team mode a task is on the team board (everyone's)
+ * or on the person's own list (`scope: 'user:<slug>'`, a file in their private
+ * tree that only they get back from the API). Each column shows the team's
+ * tasks first, then a "Mine" divider and the person's own; an own row carries a
+ * lock. The lock is also the switch: on an own task it puts the task on the
+ * team board, on a team task the person owns or created a hover-only open
+ * lock takes it to their list. A drag changes a task's column, never its list
+ * (the API numbers each list's columns separately). Solo has one list and
+ * shows none of this.
  */
 // slug → { name, avatar } for resolving a task's Owner to a teammate's profile.
 export const PeopleContext = createContext({});
+// Who is looking (their roster slug), for "this task is mine to take".
+const MeContext = createContext(null);
+const isOwn = (t) => /^user:/.test(t?.scope || '');
 
 export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
   const { data, loading, error, reload } = useApi('/api/tasks');
@@ -85,17 +83,33 @@ export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
     }
   }, [reload]);
 
+  // A drop changes the column only; the task keeps its list, and its place
+  // is the end of that list's part of the column.
+  const moveTo = useCallback((id, status) => {
+    const list = tasks || [];
+    const t = list.find(x => x.id === id);
+    const order = list.filter(x => x.status === status && isOwn(x) === isOwn(t)).length;
+    patchTask(id, { status, order });
+  }, [tasks, patchTask]);
+
   const columns = useMemo(() => {
     const list = tasks || [];
-    return TASK_COLUMNS.map(c => ({
-      key: c.key,
-      name: c.name,
-      cards: list.filter(t => t.status === c.key).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
-    }));
+    const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
+    return TASK_COLUMNS.map(c => {
+      const cards = list.filter(t => t.status === c.key);
+      return {
+        key: c.key,
+        name: c.name,
+        cards,
+        team: cards.filter(t => !isOwn(t)).sort(byOrder),
+        mine: cards.filter(isOwn).sort(byOrder),
+      };
+    });
   }, [tasks]);
 
   const isInitialLoad = loading && !data;
   const isEmpty = tasks && tasks.length === 0;
+  const me = teamMode ? (data?.me || null) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -115,11 +129,13 @@ export default function KanbanView({ path, fileEventNonce, sidebarOpen }) {
         {!isInitialLoad && isEmpty && <TasksEmptyState />}
         {!isInitialLoad && tasks && !isEmpty && (
           <PeopleContext.Provider value={teamMode ? people : null}>
-            <div className="h-full pb-6 pt-2">
-              {viewMode === 'list'
-                ? <ListView columns={columns} onPatch={patchTask} />
-                : <Board columns={columns} onPatch={patchTask} />}
-            </div>
+            <MeContext.Provider value={me}>
+              <div className="h-full pb-6 pt-2">
+                {viewMode === 'list'
+                  ? <ListView columns={columns} onPatch={patchTask} onMove={moveTo} />
+                  : <Board columns={columns} onPatch={patchTask} onMove={moveTo} />}
+              </div>
+            </MeContext.Provider>
           </PeopleContext.Provider>
         )}
       </div>
@@ -156,13 +172,11 @@ function ToggleButton({ active, label, icon: Icon, onClick }) {
   );
 }
 
-function ListView({ columns, onPatch }) {
-  // Drop onto a section → move the task there, appended to the end.
-  const onDropTask = (id, status, cards) => onPatch(id, { status, order: cards.length });
+function ListView({ columns, onPatch, onMove }) {
   return (
     <div className="flex w-full flex-col gap-7 px-6 pt-2">
       {columns.map((col) => (
-        <ListSection key={col.key} column={col} onPatch={onPatch} onDropTask={onDropTask} />
+        <ListSection key={col.key} column={col} onPatch={onPatch} onDropTask={onMove} />
       ))}
     </div>
   );
@@ -171,6 +185,7 @@ function ListView({ columns, onPatch }) {
 function ListSection({ column, onPatch, onDropTask }) {
   const isDone = column.key === 'done';
   const [over, setOver] = useState(false);
+  const row = (card) => <ListRow key={card.id} card={card} done={isDone} onPatch={onPatch} />;
   return (
     <section
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true); }}
@@ -179,7 +194,7 @@ function ListSection({ column, onPatch, onDropTask }) {
         e.preventDefault();
         setOver(false);
         const id = e.dataTransfer.getData('text/plain');
-        if (id) onDropTask(id, column.key, column.cards);
+        if (id) onDropTask(id, column.key);
       }}
       className={cn(
         'flex flex-col gap-2 rounded-[6px] p-2.5 -m-2.5 transition-colors',
@@ -198,13 +213,57 @@ function ListSection({ column, onPatch, onDropTask }) {
         </div>
       ) : (
         <ul className="divide-y divide-border/60 border-y border-border/60">
-          {column.cards.map((card) => (
-            <ListRow key={card.id} card={card} done={isDone} onPatch={onPatch} />
-          ))}
+          {column.team.map(row)}
+          {/* The person's own tasks, after the team's: a thin divider, then the rows. */}
+          {column.mine.length > 0 && <MineDivider as="li" />}
+          {column.mine.map(row)}
         </ul>
       )}
     </section>
   );
+}
+
+// The line between the team's tasks and the person's own, in a column.
+function MineDivider({ as = 'div' }) {
+  const cls = 'flex items-center gap-1.5 px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/60';
+  const inner = <><Lock className="size-[11px]" strokeWidth={1.75} />Mine</>;
+  return as === 'li' ? <li className={cls}>{inner}</li> : <div className={cls}>{inner}</div>;
+}
+
+// Which list a task is on, and the switch between the lists. An own task shows
+// a lock (only you see it); clicking puts it on the team board. A team task the
+// person owns or created shows an open lock on hover; clicking takes it to their
+// own list. Anyone else's team task shows nothing: it is not theirs to take.
+function ScopeMark({ card, onPatch }) {
+  const me = useContext(MeContext);
+  if (!me) return null;
+  if (isOwn(card)) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onPatch?.(card.id, { scope: 'shared' }); }}
+        title="Only you see this. Click to put it on the team board."
+        aria-label="On your own list. Put it on the team board"
+        className="inline-flex items-center text-muted-foreground/60 transition-colors hover:text-foreground/85"
+      >
+        <Lock className="size-[13px]" strokeWidth={1.75} />
+      </button>
+    );
+  }
+  if (card.owner === me || card.createdBy === me) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onPatch?.(card.id, { scope: 'mine', ...(card.owner === me ? {} : { owner: me }) }); }}
+        title="On the team board. Click to keep it to yourself."
+        aria-label="On the team board. Keep it to yourself"
+        className="inline-flex items-center text-muted-foreground/35 opacity-0 transition-opacity hover:text-foreground/85 group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <LockOpen className="size-[13px]" strokeWidth={1.75} />
+      </button>
+    );
+  }
+  return null;
 }
 
 function ListRow({ card, done, onPatch }) {
@@ -243,7 +302,8 @@ function ListRow({ card, done, onPatch }) {
       </span>
       {/* Fixed-width cells so owners, dates and tags line up from row to row. */}
       <span className="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground/75">
-        {showOwner && <span className="w-[76px] truncate"><Assignee owner={card.owner} /></span>}
+        {showOwner && <span className="flex w-[16px] justify-center"><ScopeMark card={card} onPatch={onPatch} /></span>}
+        {showOwner && <span className="w-[76px] truncate">{!isOwn(card) && <Assignee owner={card.owner} />}</span>}
         <span className="w-[60px]">
           {card.deadline && (
             <span className="inline-flex items-center gap-1 text-[11.5px] tabular-nums">
@@ -344,21 +404,18 @@ function ListSkeleton() {
   );
 }
 
-function Board({ columns, onPatch }) {
-  // Drop onto a column → move the task there, appended to the end.
-  const onDropTask = (taskId, status, targetCards) => {
-    onPatch(taskId, { status, order: targetCards.length });
-  };
+function Board({ columns, onPatch, onMove }) {
   return (
     <div className="flex h-full gap-5 overflow-x-auto px-6 pt-2 after:w-1 after:shrink-0 after:content-['']">
-      {columns.map((col) => <Column key={col.key} column={col} onDropTask={onDropTask} />)}
+      {columns.map((col) => <Column key={col.key} column={col} onDropTask={onMove} onPatch={onPatch} />)}
     </div>
   );
 }
 
-function Column({ column, onDropTask }) {
+function Column({ column, onDropTask, onPatch }) {
   const isDone = column.key === 'done';
   const [over, setOver] = useState(false);
+  const cardOf = (card) => <Card key={card.id} card={card} done={isDone} onPatch={onPatch} />;
   return (
     <div className="flex min-w-[260px] max-w-[360px] flex-1 flex-col gap-3">
       <div className="flex items-center gap-2 px-1">
@@ -374,14 +431,16 @@ function Column({ column, onDropTask }) {
           e.preventDefault();
           setOver(false);
           const id = e.dataTransfer.getData('text/plain');
-          if (id) onDropTask(id, column.key, column.cards);
+          if (id) onDropTask(id, column.key);
         }}
         className={cn(
           'flex min-h-[64px] flex-col gap-2 rounded-[6px] p-1 -m-1 transition-colors',
           over && 'outline-dashed outline-1 -outline-offset-1 outline-foreground/35',
         )}
       >
-        {column.cards.map((card) => <Card key={card.id} card={card} done={isDone} />)}
+        {column.team.map(cardOf)}
+        {column.mine.length > 0 && <MineDivider />}
+        {column.mine.map(cardOf)}
         {column.cards.length === 0 && (
           <div className="rounded-[6px] border border-dashed border-border/70 px-3.5 py-3 text-[12px] text-muted-foreground/55">
             {over ? 'Drop here' : 'No tasks'}
@@ -392,16 +451,17 @@ function Column({ column, onDropTask }) {
   );
 }
 
-function Card({ card, done }) {
+function Card({ card, done, onPatch }) {
   const [dragging, setDragging] = useState(false);
   const navigate = useNavigate();
+  const me = useContext(MeContext);
   return (
     <div
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', card.id); e.dataTransfer.effectAllowed = 'move'; setDragging(true); }}
       onDragEnd={() => setDragging(false)}
       className={cn(
-        'cursor-grab rounded-[6px] border border-border/55 bg-card p-3.5 transition-all duration-150 active:cursor-grabbing',
+        'group cursor-grab rounded-[6px] border border-border/55 bg-card p-3.5 transition-all duration-150 active:cursor-grabbing',
         'hover:border-foreground/15 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]',
         done && 'opacity-70',
         dragging && 'opacity-40',
@@ -420,9 +480,10 @@ function Card({ card, done }) {
         </p>
       )}
 
-      {(card.owner || card.priority || card.deadline || card.fact) && (
+      {(card.owner || card.priority || card.deadline || card.fact || (me && isOwn(card))) && (
         <div className="mt-3 flex items-center gap-2.5 text-[11.5px] text-muted-foreground/75">
-          <Assignee owner={card.owner} />
+          <ScopeMark card={card} onPatch={onPatch} />
+          {!isOwn(card) && <Assignee owner={card.owner} />}
           {card.deadline && (
             <span className="inline-flex items-center gap-1 tabular-nums">
               <Calendar className="size-[12px]" strokeWidth={1.75} />

@@ -283,8 +283,11 @@ const factOfTask = (() => {
 function tasksPayload() {
   const people = {};
   for (const p of Object.values(PEOPLE)) people[p.slug] = { name: p.name, avatar: p.avatar };
+  // Two lists, one board: the team's tasks and the viewer's own (someone
+  // else's own list is not theirs to see).
+  const visible = state.tasks.filter((t) => !t.scope || t.scope === 'shared' || t.scope === `user:${meSlug}`);
   // The landing's replay shows a shorter board: the tasks its conversations name, and a few around them.
-  const tasks = SHOWCASE ? state.tasks.filter((t) => SHOWCASE_TASKS.some((x) => t.title.startsWith(x))) : state.tasks;
+  const tasks = SHOWCASE ? visible.filter((t) => SHOWCASE_TASKS.some((x) => t.title.startsWith(x))) : visible;
   return { ok: true, teamMode: state.teamMode, me: meSlug, people, tasks: tasks.map((t) => (factOfTask[t.id] ? { ...t, fact: factOfTask[t.id] } : t)) };
 }
 
@@ -442,7 +445,10 @@ export async function handle(method, url, body) {
   if (path === '/api/tasks' && method === 'GET') return json(tasksPayload());
   if (path === '/api/tasks' && method === 'POST') {
     const status = TASK_STATUSES.includes(b.status) ? b.status : 'backlog';
-    const task = { id: 't_' + Math.random().toString(36).slice(2, 9), title: String(b.title || 'Untitled task'), description: String(b.description || ''), status, owner: b.owner || null, priority: b.priority || null, deadline: b.deadline || null, completed: status === 'done' ? today() : null, order: state.tasks.filter((t) => t.status === status).length };
+    // A person's own task unless it is for someone else, unowned on purpose, or wanted on the team board.
+    const owner = 'owner' in b ? b.owner || null : meSlug;
+    const scope = b.scope === 'shared' || owner !== meSlug ? 'shared' : `user:${meSlug}`;
+    const task = { id: 't_' + Math.random().toString(36).slice(2, 9), title: String(b.title || 'Untitled task'), description: String(b.description || ''), status, owner, priority: b.priority || null, deadline: b.deadline || null, completed: status === 'done' ? today() : null, order: state.tasks.filter((t) => t.status === status && (t.scope || 'shared') === scope).length, createdBy: meSlug, scope };
     state.tasks.push(task);
     return json({ ok: true, task });
   }
@@ -450,7 +456,12 @@ export async function handle(method, url, body) {
     const t = state.tasks.find((x) => x.id === decodeURIComponent(path.slice('/api/tasks/'.length)));
     if (!t) return json({ ok: false, error: 'task not found' }, 404);
     if (method === 'DELETE') { state.tasks = state.tasks.filter((x) => x !== t); return json({ ok: true }); }
+    if (t.scope && t.scope !== 'shared' && t.scope !== `user:${meSlug}`) return json({ ok: false, error: 'task not found' }, 404);
     for (const k of ['title', 'description', 'owner', 'priority', 'deadline', 'order']) if (k in b) t[k] = b[k];
+    // Between the lists: an own task to the team board; a team task of theirs to their own list.
+    if (b.scope === 'shared') t.scope = 'shared';
+    else if (b.scope === 'mine' && (t.owner === meSlug || t.createdBy === meSlug || b.owner === meSlug)) { t.scope = `user:${meSlug}`; t.owner = meSlug; }
+    else if (t.scope !== 'shared' && 'owner' in b && b.owner !== meSlug) t.scope = 'shared';
     if ('status' in b && TASK_STATUSES.includes(b.status)) { t.status = b.status; t.completed = b.status === 'done' ? (t.completed || today()) : null; }
     return json({ ok: true, task: t });
   }
