@@ -11,7 +11,7 @@
  *                      cannot hide anything (the whole group talks to it).
  * There is no admin bypass: privacy is by path, never by role.
  */
-import { readTasks } from '../lib/tasks.js';
+import { readFor, isUserScope } from '../lib/tasks.js';
 import { attachTasks, factsByRecord } from '../lib/memory-task-links.js';
 import { attachFiles, filesOfFact } from '../lib/memory-file-links.js';
 import { avatarUrl } from '../lib/user-avatars.js';
@@ -251,12 +251,16 @@ export default function memoryV4Router() {
     const recs = new Map(ledger.read({ scopes: v.read }).map(r => [r.id, r]));
     const items = [];
     const all = facts.visible(v.read, { history: true });
-    // The board, for the facts that point at a task: its live title and state.
-    // A task that is gone leaves no pill behind.
+    // The board, for the facts that point at a task: its live title and state,
+    // from the lists this viewer may read (the team board and their own). A
+    // task that is gone leaves no pill behind; so does someone else's own task
+    // behind a shared fact — it is not this viewer's to see.
     let board = null;
+    const lists = (v.read || []).filter(s => s === 'shared' || isUserScope(s));
     const taskOf = (f) => {
       if (!f.task?.id) return null;
-      if (!board) { try { board = new Map(readTasks().map(t => [t.id, t])); } catch { board = new Map(); } }
+      if (!lists.includes(f.task.scope || 'shared')) return null;
+      if (!board) { try { board = new Map(readFor(lists).map(t => [t.id, t])); } catch { board = new Map(); } }
       const t = board.get(f.task.id);
       if (!t) return null;
       // As the board shows it: who, by when, how urgent.

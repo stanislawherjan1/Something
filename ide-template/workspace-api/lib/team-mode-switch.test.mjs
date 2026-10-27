@@ -80,8 +80,14 @@ const mig = await L.append({ scope: 'shared', source: 'migration', ts: '2026-06-
 F.apply('shared', [{ op: 'add', fact: { title: 'ResearchTech founding', text: 'Stan founded ResearchTech in 2023 (SOLO-HISTORY).', kind: 'fact', entities: [{ name: 'ResearchTech', kind: 'company' }] } }], { record: mig.id, standing: 'said', by: 'migration', ts: '2026-06-01T10:00:00Z' });
 const kept = await L.append({ scope: 'shared', source: 'note', ts: '2026-06-02T10:00:00Z', text: 'The team uses Linear for issues (TEAM-KNOWLEDGE).', origin: 'user:stan', tags: { sharedFact: true, from: 'stan' } });
 F.apply('shared', [{ op: 'add', fact: { title: 'Linear for issues', text: 'The team uses Linear for issues (TEAM-KNOWLEDGE).', kind: 'fact' } }], { record: kept.id, standing: 'said', by: 'note', ts: '2026-06-02T10:00:00Z' });
+// The solo board is the owner's: it becomes their own list with the switch.
+const TK = await import('./tasks.js');
+TK.writeTasks([{ id: 't_solo1', title: 'SOLO-TASK one', status: 'backlog', owner: 'me', order: 0, createdAt: '2026-06-01T10:00:00Z' }, { id: 't_solo2', title: 'SOLO-TASK two', status: 'done', owner: null, order: 0, createdAt: '2026-06-01T10:00:00Z', completed: '2026-06-02' }]);
 r = await call('stan@example.test', 'PUT', '/team/mode', { enabled: true });
 ok('...and on again', r.status === 200 && T.getTeamMode() === true, r);
+ok('the solo board is the owner\'s own list now', TK.readScope('user:stan').map(t => t.title).sort().join() === 'SOLO-TASK one,SOLO-TASK two' && TK.readScope('user:stan').every(t => t.owner === 'stan'), TK.readScope('user:stan'));
+ok('...and the team starts with an empty board', TK.readTasks().length === 0);
+ok('...the answer says so', r.body.movedTasks?.moved === 2, r.body);
 ok('the owner\'s profile card moves to their private memory with the switch', (() => { try { return /SOLO-TOWN/.test(readFileSync(join(ROOT, 'memory', 'users', 'stan', 'USER_PROFILE.md'), 'utf8')); } catch { return false; } })());
 ok('...and no flat copy is left for the team', (() => { try { readFileSync(join(ROOT, 'memory', 'USER_PROFILE.md')); return false; } catch { return true; } })());
 ok('solo history leaves shared memory', !F.all('shared').some(f => /SOLO-HISTORY/.test(f.text)) && !L.read({ scopes: ['shared'] }).some(x => /SOLO-HISTORY/.test(x.text)), F.all('shared').map(f => f.text));
@@ -89,7 +95,15 @@ ok('...and is the owner\'s private memory', F.all('user:stan').some(f => /SOLO-H
 ok('a fact shared on purpose stays shared', F.all('shared').some(f => /TEAM-KNOWLEDGE/.test(f.text)));
 ok('the answer says what moved', r.body.movedToOwner?.moved === 1 && r.body.movedToOwner?.facts === 1, r.body);
 r = await call('stan@example.test', 'PUT', '/team/mode', { enabled: true });
-ok('switching on again moves nothing twice', r.status === 200 && !r.body.movedToOwner && F.all('user:stan').filter(f => /SOLO-HISTORY/.test(f.text)).length === 1, r.body);
+ok('switching on again moves nothing twice', r.status === 200 && !r.body.movedToOwner && !r.body.movedTasks && F.all('user:stan').filter(f => /SOLO-HISTORY/.test(f.text)).length === 1, r.body);
+// Off again (the route calls this; the switch itself is rate-limited here): the
+// owner's list rejoins the board, and on again it is theirs once more.
+ok('off again: the owner\'s list rejoins the board', (() => {
+  const off = TK.ownerListToSolo('stan');
+  const back = TK.readTasks().map(t => t.title).sort().join() === 'SOLO-TASK one,SOLO-TASK two' && TK.readScope('user:stan').length === 0;
+  const on = TK.soloBoardToOwner('stan');
+  return off.moved === 2 && back && on.moved === 2 && TK.readScope('user:stan').length === 2 && TK.readTasks().length === 0;
+})());
 
 // On switching on: a connection the owner keeps for themselves.
 store.activate('trello', { fields: { TRELLO_API_KEY: 'k-solo', TRELLO_TOKEN: 't-solo' } }, { owner: 'stan', reach: 'workspace', access: 'write' });

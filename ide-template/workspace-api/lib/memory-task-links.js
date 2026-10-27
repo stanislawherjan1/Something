@@ -9,7 +9,7 @@
  * fact that stopped being true the day the task was done.
  */
 import * as facts from './memory-facts.js';
-import { readTasks, writeTasks } from './tasks.js';
+import { readFor, readScope, writeScope, isUserScope, slugOfScope } from './tasks.js';
 import { list as rosterList, getTeamMode, primaryAdminSlug } from './team.js';
 import { runStructured, DECIDE_MODEL } from './memory-llm.js';
 
@@ -75,9 +75,28 @@ export function describeTask(t) {
 }
 
 /**
+ * What a fact keeps about its task: the id, which list it is on, and its
+ * title only where a reader of the fact may read the task — a shared task's
+ * everywhere, a private task's only in its own person's memory. The Memory
+ * screen and the bot read the live title from the board anyway; the stored
+ * one is for a task that is gone. A private task's words never sit in a
+ * record outside its person's scope.
+ */
+export function taskPointer(t, factScope) {
+  const scope = t.scope || 'shared';
+  const carry = scope === 'shared' || scope === factScope;
+  return { id: t.id, scope, ...(carry ? { title: t.title } : {}) };
+}
+
+/** The task scopes among a reader's memory scopes: the board and their own list. */
+const boardScopes = (scopes) => [...new Set((scopes || []).filter(s => s === 'shared' || isUserScope(s)))];
+
+/**
  * For each excerpt (a ledger record) the tasks its facts carry, from the
  * board as it is now. Only scopes the reader may read; a record from
- * elsewhere gets nothing. Mutates the hits: `h.tasks = [line, …]`.
+ * elsewhere gets nothing, and a pointer at a list the reader may not read
+ * (someone's own task behind a shared fact) shows nothing — not "no longer
+ * on the board", which means a deleted task. Mutates the hits: `h.tasks = [line, …]`.
  */
 /**
  * The facts of each scope, indexed by the records they stand on — built once
@@ -100,15 +119,17 @@ export function attachTasks(hits, scopes, idx = null) {
   let board = null;
   const allowed = new Set(scopes || []);
   const byRec = idx || factsByRecord([...new Set(hits.map(h => h?.scope).filter(s => allowed.has(s)))]);
+  const readable = new Set(boardScopes(scopes));
   for (const h of hits) {
     if (!h?.id || !h.scope || !allowed.has(h.scope)) continue;
     const fs = byRec.get(h.scope)?.get(h.id) || [];
     const lines = [];
     for (const f of fs) {
       if (f.task?.id) {
-        if (!board) { try { board = new Map(readTasks().map(t => [t.id, t])); } catch { board = new Map(); } }
+        if (!readable.has(f.task.scope || 'shared')) continue;   // someone's own task: not this reader's to see
+        if (!board) { try { board = new Map(readFor([...readable]).map(t => [t.id, t])); } catch { board = new Map(); } }
         const t = board.get(f.task.id);
-        lines.push(t ? describeTask(t) : `task "${f.task.title}": no longer on the board`);
+        lines.push(t ? describeTask(t) : `task "${f.task.title || '…'}": no longer on the board`);
       } else if (f.retiredWhy === 'done on the task board') {
         lines.push(`done on the task board${f.retired ? ` on ${String(f.retired).slice(0, 10)}` : ''}`);
       }
@@ -127,7 +148,10 @@ export function tasksCreatedDuring({ from, to, owner = null, group = false, slac
   const a = Date.parse(from) - slackMs, b = Date.parse(to || from) + slackMs;
   if (!Number.isFinite(a) || !Number.isFinite(b)) return [];
   let tasks = [];
-  try { tasks = readTasks(); } catch { return []; }
+  // A person's conversation may have put the task on their own list; a
+  // group's can only have reached the team board.
+  const scopes = ['shared', ...(!group && owner && /^[a-z0-9-]+$/.test(owner) ? [`user:${owner}`] : [])];
+  try { tasks = readFor(scopes); } catch { return []; }
   return tasks.filter(t => {
     if (t.fact?.id) return false;
     const c = Date.parse(t.createdAt || '');
@@ -136,21 +160,34 @@ export function tasksCreatedDuring({ from, to, owner = null, group = false, slac
   }).map(t => ({ id: t.id, title: t.title }));
 }
 
-/** Link a filed fact and a task both ways. Returns true when both sides were written. */
-export async function linkFactToTask(scope, factId, taskId) {
+/**
+ * Link a filed fact and a task both ways. Returns true when both sides were
+ * written. The task is looked for on the team board and, for a person's fact,
+ * on that person's own list (`taskScope` names the list when the caller knows
+ * it): a shared fact links only to shared tasks, a person's fact to theirs or
+ * the team's.
+ */
+export async function linkFactToTask(scope, factId, taskId, { taskScope = null } = {}) {
   const f = facts.get(scope, factId);
   if (!f) return false;
-  // The board: read, change, write with nothing awaited in between (a person
-  // or the bot may be writing it at the same moment). A fact holds one task:
-  // a task that held it before lets go.
-  const tasks = readTasks();
-  const t = tasks.find(x => x.id === taskId);
-  if (!t) return false;
-  for (const o of tasks) if (o !== t && o.fact?.id === f.id && o.fact.scope === scope) delete o.fact;
-  t.fact = { id: f.id, scope, title: f.title || String(f.text || '').slice(0, 80) };
-  writeTasks(tasks);
-  await facts.amend(scope, factId, { task: { id: t.id, title: t.title } });
-  return true;
+  const lists = taskScope ? [taskScope] : ['shared', ...(isUserScope(scope) ? [scope] : [])];
+  for (const s of lists) {
+    // One person's task never links to another person's fact.
+    if (isUserScope(s) && isUserScope(scope) && s !== scope) continue;
+    // The list: read, change, write with nothing awaited in between (a person
+    // or the bot may be writing it at the same moment). A fact holds one task:
+    // a task that held it before lets go.
+    const tasks = readScope(s);
+    const t = tasks.find(x => x.id === taskId);
+    if (!t) continue;
+    for (const o of tasks) if (o !== t && o.fact?.id === f.id && o.fact.scope === scope) delete o.fact;
+    t.fact = { id: f.id, scope, title: f.title || String(f.text || '').slice(0, 80) };
+    t.updatedAt = new Date().toISOString();
+    try { writeScope(s, tasks); } catch (e) { process.stderr.write(`[memory-v4] task link: ${e.message}\n`); return false; }
+    await facts.amend(scope, factId, { task: taskPointer(t, scope) });
+    return true;
+  }
+  return false;
 }
 
 // ─── the nightly seeding: tasks with no link, one careful look each ─────────
@@ -170,7 +207,10 @@ const SEED_WEEK = 7 * 86400_000;
  */
 export async function seedLinks({ now = Date.now(), cap = 15, log = () => {} } = {}) {
   let tasks = [];
-  try { tasks = readTasks(); } catch { return { asked: 0, linked: 0 }; }
+  // The team board and every person's own list (this runs as workspace-api,
+  // which reads them all); each task is offered only its own person's memory.
+  const lists = ['shared', ...(getTeamMode() ? rosterList().map(m => `user:${m.slug}`).filter(s => isUserScope(s)) : [])];
+  try { tasks = readFor(lists); } catch { return { asked: 0, linked: 0 }; }
   // Due: no link, a real title, not tried this week. Oldest try first, so a
   // few stubborn tasks cannot hold every night's slots.
   const due = tasks.filter(t => !t.fact && t.title && t.title.trim().length >= 4 && (!t.linkTried || now - Date.parse(t.linkTried.at) > SEED_WEEK))
@@ -180,7 +220,7 @@ export async function seedLinks({ now = Date.now(), cap = 15, log = () => {} } =
   const picks = [];
   let asked = 0;
   for (const t of due) {
-    const who = t.owner || t.createdBy || (getTeamMode() ? primaryAdminSlug() : null);
+    const who = isUserScope(t.scope) ? slugOfScope(t.scope) : (t.owner || t.createdBy || (getTeamMode() ? primaryAdminSlug() : null));
     const scopes = ['shared', ...(who && /^[a-z0-9-]+$/.test(who) ? [`user:${who}`] : [])];
     const pool = [];
     for (const s of scopes) { let fs = []; try { fs = facts.all(s); } catch { continue; } for (const f of fs) if (!f.hidden && !f.replacedBy && !f.task) pool.push({ s, f }); }
@@ -205,17 +245,20 @@ export async function seedLinks({ now = Date.now(), cap = 15, log = () => {} } =
   // The board may have changed during the calls (minutes): only the
   // bookkeeping is written, onto the board as it is now, with no wait.
   if (tried.size) {
-    const cur = readTasks();
-    for (const t of cur) if (tried.has(t.id)) t.linkTried = tried.get(t.id);
-    writeTasks(cur);
+    for (const s of lists) {
+      const cur = readScope(s);
+      let any = false;
+      for (const t of cur) if (tried.has(t.id)) { t.linkTried = tried.get(t.id); any = true; }
+      if (any) { try { writeScope(s, cur); } catch (e) { log(`task links: ${s}: ${e.message}`); } }
+    }
   }
   let linked = 0, closed = 0;
   for (const x of picks) {
     if (claims.get(x.p.f.id) > 1) continue;
     try {
-      if (!(await linkFactToTask(x.p.s, x.p.f.id, x.t.id))) continue;
+      if (!(await linkFactToTask(x.p.s, x.p.f.id, x.t.id, { taskScope: x.t.scope }))) continue;
       linked++;
-      const nowT = readTasks().find(t => t.id === x.t.id);
+      const nowT = readScope(x.t.scope).find(t => t.id === x.t.id);
       if (nowT?.status === 'done' && !x.p.f.retired && isTheMatter(x.p.f, nowT.title)) { await facts.retire(x.p.s, x.p.f.id, 'task board', { why: 'done on the task board' }); closed++; }
     } catch (e) { log(`task links: ${x.t.id}: ${e.message}`); }
   }

@@ -17,6 +17,7 @@
  */
 
 import { soloSharedToOwner } from '../lib/memory-solo.js';
+import { soloBoardToOwner, ownerListToSolo } from '../lib/tasks.js';
 import { Router } from 'express';
 import express from 'express';
 import * as team from '../lib/team.js';
@@ -126,11 +127,26 @@ export default function teamRouter() {
     }
     const wasTeam = team.getTeamMode();
     const teamMode = team.setTeamMode(enabled, req.actor);
+    // Switched on: the owner's trees must be theirs before anything of theirs
+    // is written into them (the board below) — not at the next boot.
+    if (teamMode && !wasTeam) {
+      try { team.reconcileSlots(); } catch (err) { process.stderr.write(`[team] reconcile at the switch: ${err.message}\n`); }
+    }
     // Switched on: what solo kept in shared memory is the owner's, not the new team's.
     let movedToOwner = null;
     if (teamMode && !wasTeam) {
       try { movedToOwner = await soloSharedToOwner(team.primaryAdminSlug()); }
       catch (err) { process.stderr.write(`[team] solo memory to the owner: ${err.message}\n`); }
+    }
+    // The solo board was the owner's too: it becomes their own list, and the
+    // team starts with an empty board. Off again: their list rejoins the board.
+    let movedTasks = null;
+    try {
+      if (teamMode && !wasTeam) movedTasks = soloBoardToOwner(team.primaryAdminSlug());
+      else if (!teamMode && wasTeam) movedTasks = ownerListToSolo(team.primaryAdminSlug());
+    } catch (err) {
+      process.stderr.write(`[team] solo board and the owner's list: ${err.message}\n`);
+      movedTasks = { moved: 0, notMoved: true, why: err.code === 'PRIVATE_TREE_NOT_READY' ? 'the owner\'s private tree is not theirs yet; the board stays shared' : err.message };
     }
     // Solo reads the one person's cards flat, team mode from users/<admin>:
     // move them with the switch. Waiting for the next boot left the owner's
@@ -144,7 +160,7 @@ export default function teamRouter() {
     // the caller's users/<slug> as workspace-api's, readable by every turn,
     // and only a boot re-assigned it before (seen on the canary).
     try { team.reconcileSlots(); } catch (err) { process.stderr.write(`[team] reconcile after the switch: ${err.message}\n`); }
-    res.json({ ok: true, teamMode, merged, ...(movedToOwner ? { movedToOwner } : {}) });
+    res.json({ ok: true, teamMode, merged, ...(movedToOwner ? { movedToOwner } : {}), ...(movedTasks?.moved || movedTasks?.notMoved ? { movedTasks } : {}) });
   });
 
   // The workspace's default time zone (people without their own use it).
