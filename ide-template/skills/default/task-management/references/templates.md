@@ -20,29 +20,35 @@ yourself.
 ## Writing a good title + description
 
 **Title** — imperative and self-contained; the user should know what to do from
-the title alone.
+the title alone. Title and description keep the language of the request: a
+task asked for in Polish gets a Polish title and a Polish description, not a
+translation (the person reads it, not you).
 
 - ✅ "Send Q3 report to acme" · "Call John about the contract" · "Pay invoice INV-1042"
 - ❌ "Q3" (too vague) · cramming the whole story into the title (that's `description`).
 
 **Description** — write it every time, and write it in full. The list and the
 board show the title alone; the description is what a person reads when they
-open the task, days later, without the conversation in front of them. Put in
-it what you know from the conversation, as a short brief:
+open the task, days later, without the conversation in front of them. Write it
+the way you would brief a colleague who was not in the conversation: a few
+plain sentences that tell the story — what this is about and why it came up,
+what "done" looks like, the numbers, dates, names, amounts and places that
+were mentioned, the thread or meeting it came from, the files or links it
+needs (paths in the workspace, a document, a ticket), who to involve or check
+with first, and what is waiting on it. Prose, no headings, no field labels.
 
-- what was asked and by whom, and what "done" looks like;
-- the context: the decision or request behind it, the numbers, dates, names,
-  amounts and places that were mentioned, the thread or meeting it came from;
-- what is needed to do it: files or links (paths in the workspace, a document, a
-  ticket), who to involve, what to check first;
-- blockers, dependencies, what is waiting on it and who is waiting.
-
-Several sentences or a few short paragraphs; plain prose, no headings. Never
-leave it empty because the title "says it all", and never a bare phrase that
-repeats the title — a week later the person no longer remembers what it was
-about, and the description is all they have.
+The person who asked is part of the story when it matters ("Tom wants the
+coffee in before Thursday's client visit"), never a header: the task already
+records who added it, when and on which list (`createdBy`, `createdAt`,
+`scope`), so a description that opens with "Requested by …", "Added by …" or
+"for the team board" is padding, not context. Never leave it empty because the
+title "says it all", and never a bare phrase that repeats the title. When the
+conversation holds nothing beyond the request itself, say in one or two
+sentences what it concerns as far as you know (the client, the thread, the
+deadline they gave) and do not invent the rest.
 
 - ❌ "Pricing sheet for the client." · "Follow up." · "" (empty)
+- ❌ "Requested by Tom Potanski on 2026-10-28, for the team board." (a form, not a brief)
 - ✅ "Orbis asked on Tuesday's call for a pricing sheet for the wholesale tier
   before their board meets on 20 October; Ann promised it by the 18th. Base it
   on the September price list (Sales/pricing-2026-09.xlsx) with the 8% volume

@@ -62,7 +62,11 @@ list, and no admin can look into it.
   nothing for their own list. `"scope": "mine"` asks for their own list
   explicitly.
 - **In a group or channel:** every task goes on the team board; a room has no
-  own list and may not ask for one (the API refuses `mine` there).
+  own list and may not ask for one (the API refuses `mine` there). When
+  someone there asks to put a task on their own list, it stays on the team
+  board and you say in one sentence that their own list is only reachable in
+  a DM with you — never say it went to their list (nothing can put it there
+  from a room, and `ask_my_memory` only reads).
 - **Say where it went, in plain words:** "added it to your list" vs. "put it on
   the team board" — never the field or the scope name. When someone adds a task
   for themselves that the team clearly waits on, say it is on their own list
@@ -141,7 +145,7 @@ the board, never "I don't know" while a task for it exists.
    In a team: their own list unless it is for someone else, unowned on
    purpose, or they want it on the team board (`"scope":"shared"`) — see **Two
    lists** above. Say which list it went on.
-3. `title` is imperative and self-contained; **`description` carries the full context** — the board shows only the title, so write in the description what was asked and by whom, the decision or request behind it, the numbers, dates, names and links from the conversation, what "done" looks like, blockers and who is waiting; a few sentences to a few short paragraphs, never empty (`references/templates.md`). `priority` and `deadline` when known (omit otherwise); `owner` per above.
+3. `title` is imperative and self-contained, and title and description are in the language of the request; **`description` carries the full context** — the board shows only the title, so write in the description, as you would brief a colleague who was not in the conversation, what this is about and why it came up, what "done" looks like, the numbers, dates, names and links from the conversation, blockers and who is waiting; a few plain sentences, never empty, never a form ("Requested by X on <date>, for the team board" is padding — who added it, when and on which list the task records itself) (`references/templates.md`). `priority` and `deadline` when known (omit otherwise); `owner` per above.
    **`record` whenever memory is where the task comes from:** if the request,
    decision or deadline behind this task is in your memory block or in a
    `memory_search` result, copy that excerpt's id (the `id …` in its header
