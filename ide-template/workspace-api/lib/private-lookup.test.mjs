@@ -79,6 +79,8 @@ ok('NOTHING is nothing', PL.parseAnswer('NOTHING').nothing === true && PL.parseA
 ok('an answer is the answer', PL.parseAnswer('Harbor Glaze supplies the celadon at 14 GBP a kilo.').answer === 'Harbor Glaze supplies the celadon at 14 GBP a kilo.');
 ok('an explanation that ends in the verdict is the verdict, never posted', PL.parseAnswer('The memory lookup tools are not responding right now, so I cannot verify this.\n\nNOTHING').nothing === true && PL.parseAnswer('I could not reach the records.\nFAILED').failed === true);
 ok('SECRET is a secret held back, never the value', PL.parseAnswer('SECRET').secret === true && PL.parseAnswer('It is a door code.\nSECRET').secret === true && !PL.parseAnswer('SECRET').answer);
+ok('REQUEST is a request the one-shot could not act on, never an answer', PL.parseAnswer('REQUEST').request === true && PL.parseAnswer('I cannot add that here.\nREQUEST').request === true && !PL.parseAnswer('REQUEST').answer && !PL.parseAnswer('REQUEST').nothing);
+ok('the one-shot is told it only reads: a request to do something gets REQUEST', /reply with exactly: REQUEST/.test(prompt) && /Never answer as if it were done/.test(prompt));
 ok('FAILED is a failure', PL.parseAnswer('FAILED').failed === true);
 ok('...and an answer that merely mentions the word is still an answer', PL.parseAnswer('NOTHING was decided about the kiln; Mara will call Harbor Glaze on Friday.').nothing === true && PL.parseAnswer('Mara said nothing was decided; she calls Friday.').answer !== undefined);
 ok('the one-shot is told to say FAILED when its tools fail', /reply with exactly: FAILED/.test(prompt));
@@ -111,6 +113,7 @@ ok('...an unknown sender is not', !/is on the team/.test(asStranger.message));
 ok('nothing of the sender\'s own (not even their time zone) is put into the room\'s shared session', !/own time zone/.test(told(asMember)) && !/Time zone:/.test(told(asMember)));
 ok('the member\'s own memory is the turn\'s first step for every message, never for another person', /before you answer, call ask_my_memory/.test(asMember.message) && /Your FIRST step for such a message/.test(told(asMember)) && /never when anyone asks about ANOTHER person/.test(told(asMember)));
 ok('...and "not on record" is never said before it has returned', /before it has returned/.test(told(asMember)));
+ok('...and a request it could not act on is never reported as done: the task goes on the team board, the own list is for their DM', /nothing was done — never say it was/.test(told(asMember)) && /a task goes on the team board/.test(told(asMember)) && /their own list is theirs in a DM with you/.test(told(asMember)));
 ok('a question about themselves is answered in the room, not sent to a DM: the DM path is for private work or when they ask for it', /private WORK on their own files/.test(told(asMember)) && /even when it touches private things: answer it here/.test(told(asMember)) && !/their personal data\), emit/.test(told(asMember)));
 ok('...and the room turn says only the part that answers, now and later', /say only the part that answers what they asked/.test(told(asMember)));
 {

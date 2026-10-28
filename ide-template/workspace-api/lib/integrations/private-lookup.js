@@ -131,6 +131,7 @@ export function lookupPrompt({ member, question, room, people = [], outsiders = 
     '- You know their memory and their own task list only. Never say anything about tools, integrations or services and whether they are connected: you cannot see them, and the room can. When the question needs one, answer with what their memory holds, or NOTHING.',
     '- When the question needs something you cannot do here (the weather, a web search, a calculation), answer with what you know of them that it needs (where they are or live, their time zone, the preference it turns on); the room does the rest. Never pass on an earlier result of such a check (a forecast, a price, a status) from the conversations: it is out of date.',
     '- If the answer is a secret that opens something (a password, a PIN, a door or lock code, a key, a login), reply with exactly: SECRET — it is never said in a room, it goes to their DM.',
+    '- You change nothing here and nothing you write does anything: this is a lookup, as them, for the room to hear. When the message asks you to ADD, MOVE, CHANGE, REMOVE, SAVE, REMIND, SEND or otherwise DO something — to their list, their memory, their files, anyone — reply with exactly: REQUEST. Never answer as if it were done, and never do the question\'s part of it.',
     '- If their memory holds nothing that answers the question, reply with exactly: NOTHING',
     '- If the memory tools fail or return an error, reply with exactly: FAILED (never explain the failure; the room is told you could not check).',
     '- Your whole output is the answer. No preamble, no mention of memory, tools or this task.',
@@ -154,6 +155,8 @@ export function parseAnswer(text) {
     return reason ? { failed: true, reason } : { failed: true };
   }
   if (verdict(/^\**\s*SECRET\b/)) return { secret: true };
+  // A request to do something: the one-shot only reads, so nothing happened.
+  if (verdict(/^\**\s*REQUEST\b/)) return { request: true };
   if (verdict(/^\**\s*PRIVATE\b/)) return { private: true };
   // A reply that starts (or ends) with the word is still a nothing ("NOTHING — I have no …").
   if (verdict(/^\**\s*NOTHING\b/i) || /\bNOTHING\s*\**\.?$/.test(t)) return { nothing: true };
@@ -162,7 +165,8 @@ export function parseAnswer(text) {
 
 /**
  * Ask a member's own memory one question, as them, in a one-shot turn.
- * Returns `{ answer }`, `{ nothing: true }` or `{ failed: true }` — never a guess.
+ * Returns `{ answer }`, `{ nothing: true }`, `{ request: true }` (it was told to
+ * do something, which it cannot) or `{ failed: true }` — never a guess.
  */
 export async function lookupMine({ member, question, room }) {
   const people = peopleInRoom(room);

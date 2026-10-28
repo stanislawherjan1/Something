@@ -1033,6 +1033,7 @@ export default function memoryV4Router() {
     if (!r || r.failed) return res.json({ ok: true, failed: true, note: 'could not check their memory right now; say so, do not guess' });
     if (r.secret) return res.json({ ok: true, nothing: true, secret: true, note: 'the answer is a secret (a code, a password): never said in a room; send it to their DM' });
     if (r.private) return res.json({ ok: true, private: true, note: 'theirs, but held back for this room: offer it in their DM' });
+    if (r.request) return res.json({ ok: true, nothing: true, request: true, note: 'a request to do something, not a question: nothing was done — their own list and memory cannot be changed from a room' });
     return res.json({ ok: true, nothing: !answered, answer: answered ? r.answer : null, ...(outsiders.length ? { outsiders: outsiders.length } : {}) });
   });
 

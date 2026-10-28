@@ -442,6 +442,10 @@ way their own memory is: the group brain's `ask_my_memory` runs a one-shot turn
 as them, outside the room, with their open own tasks in its prompt beside their
 profile and memory; only its few sentences reach the room, and only the asker
 can ask about their own list — another person's is never asked from a room.
+That one-shot only reads: told to do something ("add this to my list") it
+answers `REQUEST`, the room turn is told nothing was done, the task goes on the
+team board as every room task does, and the person hears in one sentence that
+their own list is theirs in a DM.
 
 Memory and the two lists: a task and the fact it came from point at each other
 (see [MEMORY.md](MEMORY.md)); a fact's pointer carries the task's list and a
