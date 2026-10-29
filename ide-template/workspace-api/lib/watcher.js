@@ -39,6 +39,7 @@ function queueEvent(type, abs) {
   // them only to that user's own SSE streams.
   const owner = path.match(/^users\/([^/]+)\//)?.[1]
     || path.match(/^memory\/users\/([^/]+)\//)?.[1]
+    || path.match(/^\.team\/users\/([^/]+)\//)?.[1]
     || null;
   pending.push({ type, path, owner });
   if (flushTimer) return;
@@ -73,6 +74,12 @@ const watcher = chokidar.watch(PROJECT_ABS, {
     // reload. Visibility in the file tree is gated separately in files.js —
     // watching doesn't expose content.
     if (rel === '.claude' || rel.startsWith('.claude/skills') || rel === '.reminders.json' || rel === '.tasks.json') return false;
+    // A person's own task list lives in their private tree (.team/users/<slug>/
+    // tasks.json). The same narrow corridor as mini apps below: descend .team →
+    // users → <slug> → tasks.json and nothing else (their chats stay dark);
+    // queueEvent tags the event with its owner so only their streams see it.
+    if (rel === '.team' || rel === '.team/users' || /^\.team\/users\/[^/]+$/.test(rel) || /^\.team\/users\/[^/]+\/tasks\.json$/.test(rel)) return false;
+    if (rel.startsWith('.team/')) return true;   // rest of .team/** stays dark
     // The memory wiki. `memory` is SOFT_HIDDEN, so the visibility gate at the
     // bottom of this function stopped chokidar from ever descending into it and
     // NO memory write produced an event: the Routines panel subscribed to this

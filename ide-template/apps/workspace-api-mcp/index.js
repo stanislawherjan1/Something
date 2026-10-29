@@ -261,8 +261,8 @@ const GROUP_MEMBER_TURN = process.env.IDE_GROUP_CONTEXT === '1' && !!process.env
 const MINE_TOOL = {
   name: 'ask_my_memory',
   description:
-    'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences and what they told you in their own conversations — for this room to hear. ' +
-    'Call it FIRST for every message you answer from them (their own memory is already being searched for that message): it says what is theirs on it — their plans, deals, numbers, opinions, meetings, preferences — or nothing. Never for anyone else\'s matters or memory. ' +
+    'In a room only: what you know of the PERSON YOU ARE ANSWERING — their profile, preferences, what they told you in their own conversations and the tasks on their own list (the one only they see) — for this room to hear. ' +
+    'Call it FIRST for every message you answer from them (their own memory is already being searched for that message): it says what is theirs on it — their plans, deals, numbers, opinions, meetings, preferences — or nothing. It only reads: when it says the message was a request, nothing was done. Never for anyone else\'s matters or memory. ' +
     'It runs as them, outside this room, and returns at most three sentences already fit for the room (anything about another person present is left out unless they named them). ' +
     'Say only the part that answers what they asked; anything else it returned stays unsaid. When it returns nothing, say the team\'s notes have nothing — never hint that their own memory might.',
   inputSchema: { type: 'object', properties: { question: { type: 'string', description: 'What they asked, in their own words.' } }, required: ['question'] },
@@ -749,6 +749,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           r.text = r.failed ? 'Could not check their memory right now. Say so; do not guess.'
             : r.private ? 'It is theirs, but they asked to keep it private, or it cannot be said here without something about another person in the room. Do not say it here and NEVER say it is not on record: offer, in a few words, to send it to their DM, and emit [[PRIVATE_TASK]] when they say yes (at once when they asked for it privately).'
             : r.secret ? 'The answer is THEIR OWN secret (a code, a password, a key): never said in a room. Say so in a few words and send it to their DM ([[PRIVATE_TASK]]) when they ask for it.'
+            : r.request ? 'That was a request to DO something, not a question, and NOTHING was done: this lookup only reads. Their own task list is out of a room\'s reach (no [[PRIVATE_TASK]] for it either): a task asked for here goes on the team board, as always, and you say in one sentence that their own list is theirs in a DM with you. Never say something was added to, moved to or changed on their list.'
             : r.nothing ? `Nothing in their own memory answers this${r.note ? ` (${r.note})` : ''}. Answer from the team's notes if they have it; otherwise say you don't have it — do not hint at their memory, and promise no DM for anything that is not theirs.`
             : `From your conversations with them — say only what answers their question: ${r.answer}`;
         }

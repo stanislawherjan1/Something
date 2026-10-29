@@ -1289,8 +1289,12 @@ export const SESSIONS = Object.fromEntries(Object.entries(SESSION_META).map(([sl
 
 const task = (id, title, description, status, owner, priority, deadline, order, extra = {}) => ({
   id, title, description, status, owner, priority, deadline,
-  completed: null, order, createdAt: at(-10, '09:30'), createdBy: 'nora', ...extra,
+  completed: null, order, createdAt: at(-10, '09:30'), createdBy: 'nora', scope: 'shared', ...extra,
 });
+// A person's own list: what they asked the coworker to keep for them in their
+// own chat. Only that person gets these back from the board.
+const ownTask = (slug, id, title, description, status, priority, deadline, order, extra = {}) =>
+  task(id, title, description, status, slug, priority, deadline, order, { createdBy: slug, scope: `user:${slug}`, ...extra });
 
 export const TASKS = [
   task('t_pricing_page', 'Sign off the new pricing page',
@@ -1332,6 +1336,17 @@ export const TASKS = [
   task('t_ember_packshots', 'Ember pack shots for the shop',
     'Shot in the studio before launch; 24 images on the collection and product pages.',
     'done', 'ivy', 'high', day(-13), 1, { completed: day(-14), createdAt: at(-20, '09:00'), createdBy: 'ivy' }),
+  // Nora's own list.
+  ownTask('nora', 't_nora_accountant', 'Call the accountant about the year-end filing',
+    'Ask whether the studio extension counts as an investment this year. Have the Brewline contract to hand.',
+    'in_progress', 'medium', day(4), 0),
+  ownTask('nora', 't_nora_mentor', 'Prepare notes for the mentoring call',
+    'Three questions: pricing the wholesale tier, the second kiln, whether to take the spring trade fair.',
+    'backlog', 'low', day(9), 0),
+  // Mara's own list.
+  ownTask('mara', 't_mara_course', 'Apply for the brand-design course',
+    'Applications close end of the month. Portfolio: the Ember campaign, the newsletter redesign, the market stall.',
+    'backlog', 'medium', day(12), 0),
 ];
 
 // ── Reminders ───────────────────────────────────────────────────────────────

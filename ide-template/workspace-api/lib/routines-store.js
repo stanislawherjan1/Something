@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { atomicWrite } from './atomic-write.js';
+import { assertPrivateTree } from './private-tree.js';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
 
@@ -140,9 +141,18 @@ export function readRoutines(slug) {
 export function writeRoutines(slug, { routines, unparsed = [] }) {
   const now = new Date().toISOString();
   const p = routinesPath(slug);
+  // A person's file goes only into a tree that is already theirs (priv-tree
+  // owned): a directory made here would be the workspace group's, readable by
+  // every member's turn (lib/private-tree.js). Solo's 'default' is nobody's
+  // private tree and is made as before.
+  const personal = slug && slug !== 'default';
+  // In the container "ready" means the directory exists and is the person's,
+  // so the mkdir below makes nothing there; it only makes the tree outside the
+  // container (dev, tests), where no tree is ever owned.
+  if (personal) assertPrivateTree(slug);
   mkdirSync(dirname(p), { recursive: true });
   const data = { version: 1, routines: routines.map(r => normalizeRoutine(r, now)), unparsed: unparsed.map(String) };
-  atomicWrite(p, JSON.stringify(data, null, 2) + '\n');
+  atomicWrite(p, JSON.stringify(data, null, 2) + '\n', personal ? { mode: 0o660 } : {});
   return data;
 }
 

@@ -38,7 +38,7 @@ const url = `http://127.0.0.1:${server.address().port}/api/tasks`;
 const annTurn = issueTurnToken({ actor: 'ann' });
 const post = async (body, headers = { 'x-ide-turn': annTurn }) => (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })).json();
 const patch = async (id, body, headers = { 'x-ide-turn': annTurn }) => (await fetch(`${url}/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })).json();
-const del = async (id) => (await fetch(`${url}/${id}`, { method: 'DELETE' })).json();
+const del = async (id, headers = { 'x-ide-turn': annTurn }) => (await fetch(`${url}/${id}`, { method: 'DELETE', headers })).json();
 
 // ─── (a) what the bot reads under an excerpt, state by state ────────────────
 const ts = '2026-10-11T09:00:00Z';
@@ -90,6 +90,7 @@ ok('(e) done closes the fact that carries the title, and the excerpt says done o
 // ─── (f) which tasks the nightly filing may offer ───────────────────────────
 const now = Date.now();
 const iso = (ms) => new Date(now + ms).toISOString();
+T.writeScope('user:ann', []);   // Ann's own list is read too; only the board below is in play
 T.writeTasks([
   { id: 't_in',    title: 'In the window, Ann\'s',      status: 'backlog', owner: 'ann',  createdAt: iso(-5 * 60_000) },
   { id: 't_early', title: 'An hour before',             status: 'backlog', owner: 'ann',  createdAt: iso(-60 * 60_000) },
@@ -267,6 +268,7 @@ const factNo = (user, re) => { const m = user.split('\n').find(l => re.test(l));
 await F.apply('user:ann', [{ op: 'add', fact: { title: 'Rebuild onboarding by Oct 31', text: 'Ann committed to rebuilding the onboarding flow by 31 October.', kind: 'status', about: 'deadline', when: '2026-10-31' } }], { record: 'r-onb', standing: 'said', by: 'web', ts: '2026-10-11T09:00:00Z' });
 await F.apply('user:ann', [{ op: 'add', fact: { title: 'Project Atlas', text: 'Project Atlas: website, README and the launch are in progress.', kind: 'fact' } }], { record: 'r-atlas', standing: 'said', by: 'web', ts: '2026-10-11T09:00:00Z' });
 await F.apply('user:ann', [{ op: 'add', fact: { title: 'Call with Wrona', text: 'Call with Wrona: budget agreed, Ann sends the brief, kickoff on Monday.', kind: 'fact' } }], { record: 'r-wrona', standing: 'said', by: 'web', ts: '2026-10-11T09:00:00Z' });
+T.writeScope('user:ann', []);   // the seeding reads every list; only these four are due
 T.writeTasks([
   { id: 'n_onb',   title: 'Zaprojektuj nowy onboarding', status: 'backlog', owner: null, createdBy: null, createdAt: '2026-10-11T10:00:00Z' },
   { id: 'n_web',   title: 'Atlas website',               status: 'done', owner: 'ann', createdAt: '2026-10-11T10:00:00Z', completed: '2026-10-12' },

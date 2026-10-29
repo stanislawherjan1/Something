@@ -46,7 +46,7 @@ Your coworkers:
 - **Act on your tools.** Pull Shopify orders, draft Gmail replies, schedule Instagram posts, query GA4, and ask before anything goes out.
 - **Reach out first.** Restock alerts, weekly reports, deadlines; they schedule their own follow-ups. A Marketplace of ready-made routines shows what they can take on, with more for each tool you connect; add your own or edit any of them. Each morning they plan your day at 06:00 in your own time zone.
 - **Write their own playbooks.** A *skill* is a markdown file describing how to handle a recurring task, editable right from the UI.
-- **Keep the task list moving.** Your `Tasks.md` becomes a list or board view with owner, priority, and deadline, kept current as work progresses.
+- **Keep the task list moving.** Tasks live on a list or board view with owner, priority, and deadline, kept current as work progresses. In a team you have your own list, which only you see, and the team board.
 - **Work with your whole team.** One coworker for everyone: each teammate brings their own tools and routines, the team shares a board and files, and work moves between people through it.
 
 <br/>
@@ -124,7 +124,7 @@ Set it up once and the whole team works with it. Turn on **collaborative mode**,
 
 **Everyone gets their own.** Each teammate connects their own tools (their inbox, calendar, notetaker, Stripe or GitHub), sets their own routines (a day plan at 8:00, a stock check on Mondays, a recap on Thursdays), writes their own skills, and keeps their own files. The coworker uses them for that person only.
 
-**The team shares the rest.** The task board, the team's files, what everyone has learned, and the tools the admin connects for everyone. Ask *"what is everyone working on this week?"* and it answers from all of it.
+**The team shares the rest.** The team board, the team's files, what everyone has learned, and the tools the admin connects for everyone. Ask *"what is everyone working on this week?"* and it answers from all of it. A task you ask for in your own chat goes on your own list until you put it on the board or hand it to someone.
 
 **Work moves between people.** Hand off a task, pass on a message, or tell the whole team at once, and it lands where each person will see it, in their language:
 

@@ -74,6 +74,16 @@ import json,sys,re
 try: a=json.load(sys.stdin)
 except Exception: sys.exit(0)
 print(' '.join(t['id'] for t in a.get('tasks',[]) if re.search(r'(Orbis|Nowak|Kowalski|E2E)-[0-9]{6}|Q4 budget draft|Orbis.*pricing sheet|Kowalski.*invoice summary', t.get('title','')+' '+t.get('description',''))))" | while read -r ids; do for id in $ids; do R "docker exec $C curl -s -X DELETE http://127.0.0.1:3001/api/tasks/$id" >/dev/null; done; done
+# test tasks off every person's own list (the board above is the team's only;
+# a person's list is read as workspace-api, which may read them all)
+R "docker exec -u 1001 $C python3 -c \"
+import json,glob,re
+for p in glob.glob('/home/coder/project/.team/users/*/tasks.json'):
+  try: a=json.load(open(p))
+  except Exception: continue
+  b=[t for t in a if not re.search(r'(Orbis|Nowak|Kowalski|E2E)-[0-9]{6}|Q4 budget draft|Orbis.*pricing sheet|Kowalski.*invoice summary', t.get('title','')+' '+t.get('description',''))]
+  if len(b)!=len(a): open(p,'w').write(json.dumps(b,indent=2)); print('own list:', p.split('/')[-2], len(a)-len(b), 'test tasks removed')
+\"" 2>/dev/null
 # the filing trace a test asked for
 R "docker exec -u 1001 $C rm -f /home/coder/project/memory/_engine/trace.jsonl /var/wsapi-store/trace/consolidator.jsonl" >/dev/null 2>&1
 echo "cleanup done"

@@ -32,7 +32,14 @@ ok('...or nobody, on purpose', (await add({ 'x-ide-turn': annTurn }, { title: 'D
 ok('a group\'s turn is nobody\'s', (await add({ 'x-ide-turn': groupTurn }, { title: 'E' })).owner === null);
 ok('no identity at all: unowned', (await add({}, { title: 'F' })).owner === null);
 ok('a name off the roster is dropped', (await add({ 'x-ide-turn': annTurn }, { title: 'G', owner: 'nobody' })).owner === null);
-ok('all seven on the board', JSON.parse(readFileSync(join(ROOT, '.tasks.json'), 'utf8')).length === 7);
+// A task said by a person in their own chat (or made in the browser) is on
+// their own list; one given to someone else, left unowned on purpose, a
+// group's or nobody's is on the team board.
+const T0 = await import('./tasks.js');
+ok('five on the team board', JSON.parse(readFileSync(join(ROOT, '.tasks.json'), 'utf8')).length === 5);
+ok('...Stan\'s and Ann\'s own ones on their lists', T0.readScope('user:stan').length === 1 && T0.readScope('user:ann').length === 1 && T0.readScope('user:ann')[0].title === 'B');
+ok('a group may not ask for an own list', (await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-ide-turn': groupTurn }, body: JSON.stringify({ title: 'H', scope: 'mine' }) })).json()).ok === false);
+ok('a person may put a task on the team board on purpose', (await add({ 'x-ide-turn': annTurn }, { title: 'I', scope: 'shared' })).scope === 'shared');
 
 // ── done → the memory fact that carried the task is retired ─────────────────
 process.env.MEMORY_V4 = 'on';
@@ -48,9 +55,12 @@ let r = await patch(deck.id, { status: 'in_progress' }, { 'x-ide-turn': annTurn 
 ok('moving a task along retires nothing', !r.retiredFacts && F.all('user:ann').every(f => !f.retired));
 r = await patch(deck.id, { status: 'done' }, { 'x-ide-turn': annTurn });
 const annFacts = F.all('user:ann');
-ok('done: the fact that carried the task is retired, with why', r.retiredFacts === 2 && annFacts.find(f => f.title === 'Deck for Orbis')?.retired && annFacts.find(f => f.title === 'Deck for Orbis')?.retiredWhy === 'done on the task board', r);
+ok('done: the fact that carried the task is retired, with why', r.retiredFacts === 1 && annFacts.find(f => f.title === 'Deck for Orbis')?.retired && annFacts.find(f => f.title === 'Deck for Orbis')?.retiredWhy === 'done on the task board', r);
 ok('...a fact about the same client that is not the task stays', !annFacts.find(f => f.title === 'Orbis contract')?.retired);
-ok('...the team\'s copy goes too', F.all('shared').find(f => f.title === 'Deck for Orbis')?.retired);
+// The task is Ann's own: a shared fact marked "done on the task board" with
+// no task anyone else can see would tell the team something was done, and by
+// whom, and leave a line nobody can follow. The team's copy stays open.
+ok('...the team\'s copy stays: an own task closes own facts only', !F.all('shared').find(f => f.title === 'Deck for Orbis')?.retired);
 ok('...another person\'s private memory is not touched', !F.all('user:stan')[0]?.retired);
 r = await patch(deck.id, { status: 'done' }, { 'x-ide-turn': annTurn });
 ok('done again retires nothing more', !r.retiredFacts);
@@ -86,13 +96,19 @@ const stanTurn = issueTurnToken({ actor: 'stan' });
 const boardAs = async (h) => (await (await fetch(url, { headers: h })).json()).tasks;
 const linkedT = (await boardAs({ 'x-ide-turn': annTurn })).find(t => t.fact?.id === pricingFact.id);
 ok('the owner sees the private fact on the board', linkedT?.fact?.title === 'Orbis pricing sheet request', linkedT?.fact);
-const asStan = (await boardAs({ 'x-ide-turn': stanTurn })).find(t => t.id === linkedT?.id);
-ok('...a teammate sees only that it has a source', asStan?.fact?.private === true && !asStan.fact.title && !asStan.fact.id, asStan?.fact);
+let asStan = (await boardAs({ 'x-ide-turn': stanTurn })).find(t => t.id === linkedT?.id);
+ok('...a teammate does not see the task at all while it is Ann\'s own', !asStan);
+ok('...nor can touch it by id', (await (await fetch(`${url}/${linkedT.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'x-ide-turn': stanTurn }, body: JSON.stringify({ title: 'x' }) })).status) === 404);
+r = await patch(linkedT.id, { scope: 'shared' }, { 'x-ide-turn': annTurn });
+ok('Ann puts it on the team board', r.ok && r.moved === 'shared' && r.task.scope === 'shared' && !T0.readScope('user:ann').some(t => t.id === linkedT.id), r);
+asStan = (await boardAs({ 'x-ide-turn': stanTurn })).find(t => t.id === linkedT?.id);
+ok('...now a teammate sees it, and only that it has a source', asStan?.fact?.private === true && !asStan.fact.title && !asStan.fact.id, asStan?.fact);
+ok('...the fact\'s pointer carries the task\'s list', F.get('user:ann', pricingFact.id)?.task?.scope === 'shared');
 
 // ── the audit: no lost writes, no probing or changing someone else's memory ──
 const many = await Promise.all(Array.from({ length: 12 }, (_, i) => add({ 'x-ide-turn': annTurn }, { title: `Parallel ${i}` })));
-const onBoard = JSON.parse(readFileSync(join(ROOT, '.tasks.json'), 'utf8'));
-ok('twelve creates at once: all twelve are on the board', many.every(t => t?.id) && many.every(t => onBoard.some(x => x.id === t.id)), onBoard.length);
+const onBoard = T0.readScope('user:ann');
+ok('twelve creates at once: all twelve are on Ann\'s list', many.every(t => t?.id) && many.every(t => onBoard.some(x => x.id === t.id)), onBoard.length);
 await F.apply('user:stan', [{ op: 'add', fact: { title: 'Stan private plan', text: 'Stan plans to leave the Orbis account quietly in December.', kind: 'status', about: 'deadline', when: '2026-12-01' } }], { record: 'r-stan', standing: 'said', by: 'web', ts });
 const probe = await add({ 'x-ide-turn': annTurn }, { title: 'Leave the Orbis account quietly in December', owner: 'stan', status: 'done' });
 ok('a done task on Stan\'s behalf neither closes nor reveals Stan\'s private fact', !probe.retiredFacts && !F.all('user:stan').find(f => f.title === 'Stan private plan')?.retired, probe);

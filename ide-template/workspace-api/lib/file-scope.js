@@ -2,12 +2,12 @@
  * Actor-scoped file access for team mode (Phase A).
  *
  * Layered ON TOP of resolveSafePath (which jails every path to PROJECT_DIR):
- *   - admin            → everything, including system files (the `users/` tree,
- *                        dotfiles) when the system-files toggle is passed.
- *   - member/observer  → the shared TEAM space (everything under PROJECT_DIR
- *                        that is NOT under `users/`) plus their OWN
- *                        `users/<slug>/...`. Any other `users/<other>/...` path
- *                        is rejected.
+ *   - everyone, admins included → the shared TEAM space (everything under
+ *                        PROJECT_DIR that is NOT a private tree) plus their
+ *                        OWN private trees (`users/<slug>/`, `memory/users/<slug>/`,
+ *                        `.team/users/<slug>/`). Any other person's tree is
+ *                        rejected: privacy is by path, never by role, and the
+ *                        rule itself lives in scope-rule.js (pathInScope).
  *
  * Non-destructive layout: the existing PROJECT_DIR root IS the team space — no
  * content moves. Personal space is the new `users/<slug>/` subtree.
@@ -52,9 +52,8 @@ function relPosix(absPath) {
 }
 
 /**
- * True if the actor may touch this (already PROJECT_DIR-jailed) absolute path.
- *   admin            → always.
- *   member/observer  → team space (not under users/) OR own users/<slug>/...
+ * True if the actor may touch this (already PROJECT_DIR-jailed) absolute path:
+ * the team space, or their own private trees — the same for every role.
  */
 export function actorCanAccess(absPath, req) {
   const { isAdmin, slug } = actorScope(req);

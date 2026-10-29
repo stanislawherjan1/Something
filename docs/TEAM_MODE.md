@@ -8,8 +8,8 @@ people by email, make them admins or members, and everyone signs in with
 their own Google account.
 
 From then on there are two spaces side by side. **Shared** holds the files,
-the task board and the memory the whole team works from. **Yours** holds your
-own files and your own memory, which no teammate can read, and which the
+the team's tasks and the memory the whole team works from. **Yours** holds your
+own files, your own tasks and your own memory, which no teammate can read, and which the
 coworker never reads on someone else's behalf — on the server each person's
 work even runs under a separate system account, so one person's commands
 cannot touch another's files. Admins manage the roster; they cannot look
@@ -398,17 +398,69 @@ shows everyone's profile pictures.
 
 ---
 
-## 7. Tasks — assignment
+## 7. Tasks — two lists, one board
 
-The task board (`Backlog / In Progress / Done`) is **shared team work** — every
-member sees and edits the same board. A task's `owner` records **who's
-responsible**, set to a teammate's roster **slug** (the board renders their
-profile picture). The AI resolves a name to a slug the same way it resolves a
-reminder recipient; the asker is the default owner.
+The Tasks screen (`Backlog / In Progress / Done`) shows two lists at once. The
+**team board** (`scope: shared`, `.tasks.json` at the project root) is shared
+team work: every member sees and edits it. A person's **own list**
+(`scope: user:<slug>`, `.team/users/<slug>/tasks.json`) is theirs alone: it is
+a file in their private tree, owned by their turn user like their chats and
+routines, so no other member's turn can open it, and the API returns it only to
+them — an admin included. Another person's own task is "not found" to anyone
+else (404, never 403, which would confirm the id).
+
+Where a new task goes: a person's own chat (a DM on any surface, the web chat)
+puts it on **their own list** unless they want it on the team board, assign it
+to someone else, or leave it unowned on purpose; a group or channel puts it on
+the **team board** (a room has no own list); a caller with no identity, the
+team board. A person moves their own task to the team board and takes back a
+team task they own or created; an unowned team task is claimed (`owner`) in the
+same call rather than taken quietly. Nobody can move anyone else's task into or
+out of a private list. On the Tasks screen an own task sits in its column like
+any other, assigned to its person; the list and the board do not say who sees
+a task. A task opened (a click on its title or card) shows everything: the
+column as a menu to move it, who does it, the description in full, priority,
+deadline, visibility ("Only you" / "Whole team", with the switch that puts an
+own task on the team board), when it was added and the memory fact it came
+from. "Show only my tasks" in the header narrows the screen to the tasks
+assigned to the person, whoever sees them. A drag changes a task's column,
+never its list. Taking a team task back to one's own list is done through the
+bot.
+
+A task's `owner` records **who's responsible**, set to a teammate's roster
+**slug** (the board renders their profile picture). The AI resolves a name to
+a slug the same way it resolves a reminder recipient; the asker is the default
+owner, and an own task's owner is always its person — giving it to someone
+moves it to the team board.
 
 **Assigning a task does NOT notify the teammate** — it only records ownership.
 If they should be pinged, that's a relay or a `set_reminder` with `recipient`,
-separate from the board. (See [the task board section in ARCHITECTURE](ARCHITECTURE.md) for the store + MCP.)
+separate from the board.
+
+Asked in a room ("anything on my list?"), the person's own list is answered the
+way their own memory is: the group brain's `ask_my_memory` runs a one-shot turn
+as them, outside the room, with their open own tasks in its prompt beside their
+profile and memory; only its few sentences reach the room, and only the asker
+can ask about their own list — another person's is never asked from a room.
+That one-shot only reads: told to do something ("add this to my list") it
+answers `REQUEST`, the room turn is told nothing was done, the task goes on the
+team board as every room task does, and the person hears in one sentence that
+their own list is theirs in a DM.
+
+Memory and the two lists: a task and the fact it came from point at each other
+(see [MEMORY.md](MEMORY.md)); a fact's pointer carries the task's list and a
+private task's title only inside its person's memory, and a reader resolves the
+pointer only into a list they may read. A finished own task closes only the
+person's own facts, never a shared one — a team fact marked "done on the task
+board" with no task anyone else can see would say what was done, and by whom.
+
+Writing a private file is refused unless the person's tree is already theirs
+(`lib/private-tree.js`): a directory workspace-api made itself in
+`.team/users/` would belong to the workspace group that every turn is in. The
+bot then hears that the list is not ready and never falls back to the team
+board. Switching a solo workspace to a team moves the solo board onto the
+admin's own list (the way the owner's memory moves), after their slot exists;
+an existing team's board stays shared as it is.
 
 The owner only shows on the board in team mode; a solo workspace hides it (the
 field is kept, and shows again when team mode is switched on).
