@@ -22,6 +22,11 @@ keys to your services. Nothing is sent through anyone else's servers to work.
   team is there. In a group or a channel it answers from what the team shares;
   your own private things are said there only when you ask for them yourself,
   and codes and passwords never are: those come to you directly.
+- **Your AI agent.** Connecting Claude Code or Codex through
+  Context MCP is your decision, taken in your browser where you see what it
+  may do. It reads as you and nothing of anyone else's, every read shows on
+  your Changes, passwords and codes in memory never reach it, and you
+  disconnect it on the same page.
 - **Nothing goes out without your yes.** Sending an email, posting, or changing
   something in another service happens only after you say so; until then the
   coworker suggests it or prepares it.
@@ -1053,6 +1058,102 @@ The DENYs above are real prompt-injection-style attempts caught by the proxy in 
 - [ide-template/workspace-api/lib/integrations/crypto.js](../ide-template/workspace-api/lib/integrations/crypto.js)
 - [ide-template/workspace-api/lib/integrations/runtime.js](../ide-template/workspace-api/lib/integrations/runtime.js) (writeFiles + env injection)
 - [ide-template/workspace-api/lib/setup.js](../ide-template/workspace-api/lib/setup.js) (`hydrateClaudeCredentials`, `hydrateBotIntegrationsEnv`)
+
+### 19d. Context MCP — AI agents as inbound clients
+
+The feature itself, for people and operators: [CONTEXT_MCP.md](CONTEXT_MCP.md).
+
+A person's AI agent (Claude Code, Codex, any MCP client) connects to `POST /mcp`
+and reads the workspace as that person. What holds it:
+
+- **Where the authorization server lives.** In auth-service
+  (`auth-service/agents.js`), not workspace-api: workspace-api decrypts every
+  integration key and has no anonymous POST surface, and nginx's `auth_request`
+  gate is what keeps it that way. auth-service already does Google sign-in,
+  holds `SESSION_SECRET`, mounts the roster, and has direct internet for the
+  one outbound call this needs (a client's metadata document, HTTPS only, public
+  addresses only after DNS and the connection pinned to the checked address so
+  a changing DNS answer cannot point it inside, no redirects, 16 KB, 5 s,
+  cached; a failure says nothing of the network to the caller).
+- **The gate.** nginx asks `/auth/verify-agent` for every `/mcp` request; the
+  answer carries `X-IDE-User`, the grant id, the scopes and the client's name,
+  plus `X-IDE-Agent-Sig`: an HMAC over all of them with a one-minute expiry,
+  under a key derived from the session secret (`agentGateKey`), so the secret
+  that signs sign-in sessions signs nothing else. workspace-api (`lib/mcp/identity.js`) verifies it, so a
+  process inside the container that reaches port 3001 cannot forge an agent's
+  identity the way it could set `X-IDE-User`. A session JWT is not an agent
+  grant: `/mcp` refuses it. Origin is checked against the workspace's domain
+  (DNS rebinding). GET and DELETE answer 405; nothing is kept between requests.
+- **Tokens.** OAuth 2.1 with PKCE S256 only, public clients only, and
+  loopback redirect URIs only (any port, RFC 8252), for registration and for a
+  metadata document alike (a document's other URIs are ignored): an agent runs
+  on the person's computer. A redirect to a website would let anyone register
+  a client named "Claude Code" that sends the code to their own server and
+  phish a teammate into clicking Allow — and such a client would not ask
+  anyone before writing. The `resource`
+  indicator binding tokens to this endpoint, single-use codes (5 min), opaque
+  access tokens (1 h) and rotating refresh tokens (30 days, sliding) stored
+  hashed under `/var/auth-store`; a spent refresh token presented again revokes
+  the grant. A grant ends with the person: every use re-checks the roster and
+  `sessionsBefore` ("sign out everywhere"); the page and `POST /oauth/revoke`
+  (RFC 7009, what `claude mcp logout` calls) end it by hand. An admin sees the
+  team's inventory (who connected what, when — never what was read) and may
+  revoke a teammate's grant as a security act.
+- **Scope.** The same viewer as the Memory screen (`lib/viewer.js`): shared
+  memory, the person's own, the rooms they belong to; the board and their own
+  list; the shared files — and the person's private things (their private
+  memory, their own task list, their folder) only with `read:private`, a box on
+  the consent page that is off by default: the first live session read a
+  private rates file and a private note on pay while building a public page.
+  Their cards (profile, preferences) and their own standing rules are private
+  memory too and come only with the same box; without it the agent has the
+  team's rules. Privacy by path, no admin exception.
+  Memory, other people's trees and hidden paths (`HARD_HIDDEN`) are not files
+  here; traversal is refused by `resolveSafePath`.
+- **What leaves.** The consent page says it plainly: what the agent reads
+  leaves the workspace into that tool on the person's computer. So the surface
+  is narrower than the person's own chat: facts only, never a conversation's
+  lines or a notetaker's transcript (other people's words stay out of an agent
+  with a shell), and a fact shaped like a credential is held back
+  (`looksLikeSecret` in `lib/mcp/context.js`: a shape test — password, PIN,
+  door code, key, token, login with a secret — no model). The same test holds
+  back a line of a shared file that looks like a credential (read, search hit,
+  index line), with a note, and an answer of the ask tool, after the model's
+  own SECRET rule. Every answer is
+  wrapped as data, never instructions, and every read is an `agent_read` event
+  on the person's Changes.
+- **Anonymous endpoints.** Registration, token and metadata fetch are
+  rate-limited (the Google limiter); a dynamically registered client is
+  persisted only after its first successful consent; a body that cannot be
+  parsed answers 400.
+- **Only what was allowed.** The agent's tool list is its consent: a write
+  tool exists only with its `write:*` scope, the ask tool only with `ask` and
+  `read:private`; a read-only grant sees reads alone.
+- **Writes.** Every write tool carries `requiresUserInteraction` and
+  `readOnlyHint: false`. The question before a write is the client's to ask:
+  the server cannot see a person. Claude Code asks every time — checked: an
+  allow rule for the server's tools does not skip it, `-p` and
+  `--permission-prompt-tool` cannot answer it, so a non-interactive run cannot
+  write. Codex (its editor extension) asked before each write in a live
+  check too; any other client follows its own approval settings. What the server
+  holds whatever the client does: the scopes the person ticked, the budgets
+  below, the credential refusal, and an `agent_write` event on their Changes
+  for every write; a write whose text looks like a
+  credential is refused; tasks and notes go through the person's own routes
+  over loopback with a turn token issued for them and revoked after, so no
+  rule is re-implemented; files are bounded (own folder or an existing shared
+  folder, text only, 1 MB, never memory, dot-folders, skills, another tree, a
+  hidden or locked path; overwrite needs the current hash, the previous
+  version is kept). An agent's memory writes are held to plain facts in the
+  engine (`by: agent:*`). Budgets per grant: 120 requests a minute at the
+  endpoint, 20 writes a minute and 200 a day, five questions an hour. MCP
+  elicitation is not used: the endpoint is stateless, and a server-initiated
+  request has no stream to come back on.
+- **Asking the assistant.** `ask_<bot>` runs a one-shot turn as the person
+  with memory reads only and no built-in tools, refuses requests to act, and
+  exists only with both `ask` and `read:private`, since the turn reads their
+  private memory. It is read-only, so it carries no per-call prompt: the
+  consent covers it, as it covers `search_memory`.
 
 ### 19c. Operator runbook — verifying isolation works
 

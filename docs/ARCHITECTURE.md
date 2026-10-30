@@ -540,6 +540,45 @@ once (`channel:ts`); events sent while the socket was down are lost and the gap
 is recorded (`listener.lost` on `GET /api/integrations`), never hidden. The
 primary admin's Slack DM is a turn like anyone's: the tmux brain is Telegram's.
 
+## Context MCP (coding agents)
+
+The workspace as an MCP server: a person's Claude Code, Codex or Cursor
+connects to `POST /mcp` (Streamable HTTP, protocol 2025-11-25, stateless) and
+reads the workspace as that person.
+
+```
+coding agent ──POST /mcp (Bearer)──▶ Caddy ──▶ nginx ──auth_request──▶ auth-service /auth/verify-agent
+                                               │                          (token → person, scopes, HMAC sig)
+                                               └──X-IDE-User + X-IDE-Agent-*──▶ workspace-api routes/mcp.js
+                                                                                 lib/mcp/identity.js (verify sig)
+                                                                                 lib/viewer.js (the person's scopes)
+                                                                                 lib/mcp/server.js (SDK, tools, resources)
+                                                                                 lib/mcp/context.js (cards, facts, tasks, files)
+OAuth: /.well-known/oauth-* , /oauth/authorize|token|register|revoke, /auth/agents/* ──▶ auth-service agents.js
+       consent page: /app/connect?req=… (SPA)      grants: /var/auth-store (auth-service volume)
+```
+
+- **auth-service** is the OAuth 2.1 authorization server (`agents.js`):
+  discovery documents, Client ID Metadata Documents (fetched HTTPS-only from
+  public addresses) with dynamic registration as the fallback, PKCE, the
+  consent API the SPA's consent page uses, opaque rotating tokens stored hashed
+  on its own volume, revocation, and the gate `verify-agent` that nginx calls.
+- **nginx** routes `/.well-known/oauth-*` (GET only) and `/oauth/*` to
+  auth-service without a session, and `/mcp` to workspace-api only after
+  `auth_request /auth/verify-agent` — with the cookie and the bearer stripped
+  and the verified identity forwarded, signed.
+- **workspace-api** serves the MCP protocol with the official SDK, one stateless
+  server per request, for the person the signature names; tools and resources
+  call the same libraries the web routes call, through `lib/viewer.js` (the one
+  viewer the Memory screen uses too). Reads only in this step; every read is a
+  ledger event on the person's Changes.
+- **Frontend**: the consent page (`components/ConsentPage.jsx`, rendered by the
+  app for `/app/connect`) and the Context MCP page
+  (`views/CodingAgentsView.jsx`): connect (one command per client) and the
+  connections, with the team's inventory for an admin.
+
+See `docs/CONTEXT_MCP.md` (the whole of it) and `docs/SECURITY.md` §19d.
+
 ## Telegram Bot Architecture
 
 ### Process Model

@@ -47,6 +47,7 @@ import meRouter            from './routes/me.js';
 import remindersRouter     from './routes/reminders.js';
 import miniappsRouter      from './routes/miniapps.js';
 import tasksRouter         from './routes/tasks.js';
+import mcpRouter           from './routes/mcp.js';
 import onboardingRouter    from './routes/onboarding.js';
 import docsCommentsLoginRouter, { attachVncUpgradeHandler, ensureBrowserOnBoot } from './routes/docs-comments-login.js';
 import * as team from './lib/team.js';
@@ -125,6 +126,9 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// The MCP endpoint for coding agents: outside /api, gated by auth-service
+// through nginx (routes/mcp.js); nothing of the session reaches it.
+app.use(mcpRouter());
 app.use('/api', healthRouter());
 app.use('/api', chatRouter());
 app.use('/api', filesRouter());

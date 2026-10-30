@@ -86,7 +86,7 @@ this browser" bar, or after 10 minutes without an action; the chat then says why
 
 ## Install and update
 
-The workspace's **Browser agent** page (sidebar) shows how it works and, under the
+The workspace's **Browser agent** page (the last tile in AI Settings) shows how it works and, under the
 illustration, the install steps: **Download** → unzip on the Desktop and keep the folder →
 open `chrome://extensions` → Developer mode → **Load unpacked** → choose the folder → pin
 it, open it, enter the workspace address.

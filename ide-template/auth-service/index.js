@@ -7,6 +7,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { OAuth2Client } = require('google-auth-library');
 const whitelist = require('./whitelist');
+const { mountAgents } = require('./agents');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -120,6 +121,18 @@ const authLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many authentication attempts, please try again later.' },
+});
+
+// Coding agents get a counter of their own: a team behind one office IP
+// registers clients and refreshes tokens every hour, and that traffic must
+// never use up the attempts people need to sign in. Wider, since what these
+// endpoints take (codes, refresh tokens, PKCE verifiers) cannot be guessed.
+const agentLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: Number(process.env.AGENT_AUTH_LIMIT) || 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'too many requests from this address; try again in a few minutes' },
 });
 
 // Validate a `returnTo` value before storing it in the OAuth state. Must be a
@@ -363,6 +376,17 @@ app.get('/auth/verify', (req, res) => {
     }
 });
 
+// ── Coding agents (the MCP endpoint's authorization server) ──────────────────
+// /.well-known/oauth-*, /oauth/*, /auth/verify-agent, /auth/agents — see agents.js.
+mountAgents(app, {
+    appUrl: APP_URL,
+    sessionCookie: SESSION_COOKIE,
+    sessionSecret: SESSION_SECRET,
+    verifySessionToken,
+    whitelist,
+    limiter: agentLimiter,
+});
+
 // ── DELETE /auth/session ──────────────────────────────────────────────────────
 app.delete('/auth/session', (_req, res) => {
     res.clearCookie(SESSION_COOKIE);
@@ -377,8 +401,13 @@ app.get('/auth/health', (_req, res) => res.json({ ok: true }));
 // default HTML stack-trace page (which leaks file paths + Node version).
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {
-    console.error('[auth-service/unhandled]', err.stack || err.message);
     if (res.headersSent) return;
+    // A body the parser could not read (bad JSON, too large) is the caller's
+    // mistake, not ours: 400 with a word, and no stack in the log.
+    if (err && (err.type === 'entity.parse.failed' || err.type === 'entity.too.large' || err.status === 400 || err.status === 413)) {
+        return res.status(err.status === 413 ? 413 : 400).json({ error: 'invalid_request', error_description: 'the request body could not be read' });
+    }
+    console.error('[auth-service/unhandled]', err.stack || err.message);
     res.status(500).json({ error: 'internal server error' });
 });
 

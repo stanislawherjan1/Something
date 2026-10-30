@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   ChevronRight, Hexagon, KanbanSquare, Images,
-  AppWindow, Repeat, UsersRound, Inbox, Search,
+  Repeat, UsersRound, Inbox, Search, Cable,
   FilePlus, FolderPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -264,9 +264,9 @@ export default function Sidebar({
             leaves the browser agent out: its extension needs a real workspace. */}
         {!IS_DEMO && (
         <NavRow
-          icon={AppWindow} label="Browser agent" collapsed={collapsed}
-          active={selected?.type === 'browser-agent'}
-          onClick={() => onSelect({ path: '.claude/browser-agent', type: 'browser-agent' })}
+          icon={Cable} label="Context MCP" collapsed={collapsed}
+          active={selected?.type === 'coding-agents'}
+          onClick={() => onSelect({ path: '.claude/coding-agents', type: 'coding-agents' })}
           badge={<span className="shrink-0 rounded-full bg-violet-500/12 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Beta</span>}
         />
         )}

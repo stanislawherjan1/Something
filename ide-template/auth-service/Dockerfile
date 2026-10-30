@@ -4,6 +4,6 @@ COPY package.json ./
 # TODO: no package-lock.json yet; add one and switch to `npm ci --omit=dev`
 # (deploy.sh already ships the lockfile once it exists).
 RUN npm install --production
-COPY index.js whitelist.js ./
+COPY index.js whitelist.js agents.js ./
 EXPOSE 3002
 CMD ["node", "index.js"]

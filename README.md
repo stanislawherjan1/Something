@@ -103,6 +103,7 @@ Your coworker is one mind you reach wherever you already work. Same name, same m
 - **Telegram**: message them like any contact, or add them to a team group. There they follow the conversation, chime in when they can genuinely help, and stay quiet otherwise.
 - **Web chat**: a full workspace alongside your files, skills, and dashboards. Each conversation is its own thread, so a dozen lines of work can run in parallel without blurring together.
 - **Chrome side panel**: the same chat beside any tab. It sees the page you're on, and with your go-ahead clicks and types in it for you ([below](#browser)).
+- **Your AI agent**: Claude Code or Codex on your computer can ask your coworker and work from what it knows ([below](#context-mcp)).
 
 It's all connected. What you said on Telegram or Slack is there when you open the web chat, and the other way round. Each thread stays its own conversation, but your coworker keeps cross-surface awareness: it knows what recently happened on the other channel and draws on it when it helps.
 
@@ -216,6 +217,27 @@ You connect each one from the Integrations screen, no redeploy, no `.env` editin
 
 <br/>
 
+<a id="context-mcp"></a>
+
+## Inside your AI agent
+
+<p align="center">
+  <img src="assets/readme/context-mcp.png" alt="A terminal with Claude Code and Codex tabs: asked to add pricing to a landing page, the agent asks the coworker and gets the company's price list back; the coworker's portrait sits on the terminal's corner" width="820" />
+</p>
+
+<br/>
+
+Work with Claude Code or Codex? Open **Context MCP** in the workspace, paste one command, click **Allow** in your browser, and that agent knows the company the way you do, in one project or all of them. Your coworker shows up in it under its own name: *"ask Aria who approves discounts"*.
+
+- **It works from what's true, not from a guess.** Ask for a pricing section and it uses your real price list and your rules; ask what's due and it checks the board. The company, the team, what was agreed with clients, the shared files: one call away.
+- **It reads as you, and no further.** Your private memory, your own tasks and your folder only if you tick them when you connect. Passwords, PINs and keys never reach it, from memory or from a file.
+- **It writes back, and asks you first.** It can add a task, save a note, file a summary of the session in your memory or save a file, and your agent asks before every one. The summary lands in your memory with the agent's logo, and your coworker knows it in your chats.
+- **You can see and stop all of it.** Every read and write shows on Memory → Changes, and one click disconnects the agent. An admin sees which agents the team has connected, never what they read.
+
+It's standard OAuth and MCP, served by your own workspace: nothing goes through anyone else's servers. Full details in **[docs/CONTEXT_MCP.md](docs/CONTEXT_MCP.md)**.
+
+<br/>
+
 <a id="browser"></a>
 
 ## Right next to your browser
@@ -226,7 +248,7 @@ You connect each one from the Integrations screen, no redeploy, no `.env` editin
 
 <br/>
 
-Install the Chrome extension from the workspace's **Browser agent** page and your coworker sits in the side panel, beside whatever you're looking at. It's the same chat, with the same memory and conversations, and it knows which page you're on.
+Install the Chrome extension from the workspace's **Browser agent** page (in AI Settings) and your coworker sits in the side panel, beside whatever you're looking at. It's the same chat, with the same memory and conversations, and it knows which page you're on.
 
 - **It looks by itself.** Ask *"which of these orders are late?"* and it reads the page or takes a screenshot on its own. No copy-pasting, no "can you send me a screenshot".
 - **It works in the page when you let it.** Flip the **Act** switch and it clicks, types, picks from dropdowns and scrolls for you: filling in a form, searching a site, working through a multi-step flow. You watch a cursor move as it goes, and it stops the moment you switch Act off.
@@ -235,6 +257,7 @@ Install the Chrome extension from the workspace's **Browser agent** page and you
 It is fenced in code, not in the prompt: it stays on the site you're on, never touches password, one-time-code or card fields, refuses password managers, and while it can act on a page it has no way to send anything out. What a web page says is treated as content, never as an instruction. Full details in **[docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md)**.
 
 <br/>
+
 
 ## Self-hosted, end-to-end
 
@@ -269,6 +292,7 @@ Beginner walkthrough in [docs/QUICK_START.md](docs/QUICK_START.md). End-to-end m
 - [SKILLS.md](docs/SKILLS.md), reusable Claude playbooks + dashboard editor
 - [MEMORY.md](docs/MEMORY.md), how memory works: conversations kept whole, one fact per thing, topics, privacy, the nightly run, moving an older workspace over
 - [ROUTINES.md](docs/ROUTINES.md), routines, the morning planner, and reminders and how they fire
+- [CONTEXT_MCP.md](docs/CONTEXT_MCP.md), connecting Claude Code or Codex to the workspace: what it reads, what it writes, how it is kept safe
 - [BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md), the Chrome side panel: Look, Act, the hand-off to integrations, every limit and where it is enforced
 - [TEAM_MODE.md](docs/TEAM_MODE.md), collaborative workspaces: roster & roles, Shared vs Personal files/memory, per-recipient reminders, task assignment, cross-surface relay
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md), system design and data flows (with a glossary up top)

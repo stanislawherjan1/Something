@@ -22,6 +22,20 @@ feeds the coworker's memory: each night it reads the day's meetings, notes and
 transcripts, and remembers what was said the way it remembers a conversation.
 The switch for that sits on the service's card and under Memory → Sources.
 
+The connection also works the other way round: **Context MCP** (in the
+sidebar, under Browser agent) connects the AI agent you use — Claude Code or
+Codex — to the workspace. One command, a sign-in in your browser
+where you see what the agent may do, and from then on, in every project, that
+agent knows the company: what it is, its rules, who you are, the team, what was
+agreed with clients, the team's tasks and shared files — your private memory,
+your own task list and your folder only if you tick it when you connect. It reads as you — what you
+see here, nothing of anyone else's — every read shows on Memory → Changes, and
+you disconnect it on the same page. Passwords and codes — in memory or in a
+shared file — never reach it. It can also add a task, save a note, file a summary of the session
+in your memory or save a file — each time asking you first — and, if you allow
+it, ask your assistant a question the way you would. How to connect and what
+it can see and do: [CONTEXT_MCP.md](CONTEXT_MCP.md).
+
 Once a service is connected the coworker uses it when a conversation or a
 routine calls for it: "what's on my calendar tomorrow", "pull the notes from
 today's call", "create a task for Ola". Connecting a service also adds a
@@ -438,6 +452,22 @@ integration wipes all seven `mcpServers` entries in one go.
 - `format: "shell-env"` — POSIX-source-able env file, used by Telegram (`bot.sh` sources it before reading `$TELEGRAM_BOT_TOKEN`).
 - `format: "email-accounts"` — multi-account → builds `[{id, host, port, secure, user, pass}, ...]` from per-item flat fields, applies provider preset for Gmail / Zoho EU / Zoho US.
 - `format: "storage-state"` — validates the JSON shape (cookies[] required, origins[] optional) and writes the Playwright-compatible storageState file the MCP can pass to `browser.newContext({ storageState })`. Paired with the `storage-state-json` field type. Per-integration cookie-domain allowlist in `workspace-api/lib/integrations/storage-state.js` filters out anything outside the integration's scope before encryption.
+
+## Context MCP — the workspace as an MCP server for AI agents
+
+Every other integration is outbound: the workspace is an MCP *client* of a
+service. Context MCP is the one inbound integration: the workspace is an MCP
+*server* at `/mcp`, and an AI agent on a person's computer (Claude Code,
+Codex) is its client, reading and — each write asked of the person — writing
+as that person. The whole of it — connecting, the OAuth server in
+auth-service, scopes, tools, safeguards, operations, tests — is in
+**[CONTEXT_MCP.md](CONTEXT_MCP.md)**.
+
+**Memory decision.** A session reaches memory only when the person asks for
+it: `log_session` files one record per project per day in their private scope
+(source `agent`) and one fact "Context MCP: <project> (<day>)", held to a plain
+fact by the engine (`by: agent:<client>`). Sessions never pass through
+sharing.
 
 ## Private per-operator integrations: `integrations.catalog.local.json`
 

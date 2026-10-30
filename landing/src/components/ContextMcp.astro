@@ -1,0 +1,35 @@
+---
+// Context MCP on the landing page, right under "Wherever you already talk…"
+// and built like it, mirrored: the picture in the same cream stage on the
+// left, the words on the right.
+import ContextFlow from './ContextFlow.astro';
+---
+<section id="ide">
+<div class="wrap ide">
+  <div class="ide-stage fade-up">
+    <div class="ide-fit"><ContextFlow single /></div>
+  </div>
+  <div class="ide-copy fade-up">
+    <h2 class="ide-title">…even in your favorite IDE.</h2>
+    <p class="lead">Claude Code and Codex start every project already knowing your business: real prices, house rules, who signs off on what. No more pasting the same context into every chat.</p>
+  </div>
+</div>
+</section>
+
+<style>
+  #ide { padding-top: 220px; padding-bottom: 120px; }
+  @media (max-width: 620px) { #ide { padding-top: 112px; padding-bottom: 64px; } }
+  .ide { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 56px; align-items: center; }
+  @media (max-width: 960px) { .ide { grid-template-columns: minmax(0, 1fr); gap: 28px; } .ide-copy { order: -1; } }
+  .ide-title { padding-right: 48px; font-size: clamp(26px, 3.4vw, 36px); line-height: 1.12; font-weight: 600; letter-spacing: -0.03em; color: var(--fg-90); text-wrap: balance; }
+  .ide-copy .lead { margin-top: 12px; }
+  .ide-stage { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10.4; border-radius: 8px; border: 1px solid var(--hair); overflow: hidden; background: color-mix(in oklab, var(--foreground) 2.5%, var(--background)); }
+  .ide-stage::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cpath d='M0 39.75h40M39.75 0v40' stroke='rgb(40,37,32)' stroke-opacity='.06' stroke-width='.5'/%3E%3Cpath d='M36.5 39.75h7M39.75 36.5v7M0 39.75h3.5M39.75 0v3.5' stroke='rgb(40,37,32)' stroke-opacity='.26' stroke-width='.5'/%3E%3C/svg%3E");
+    background-position: calc(50% + 20px) calc(50% + 20px);
+    -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
+            mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
+  }
+  .ide-fit { position: relative; width: 100%; padding: 0 7%; }
+</style>

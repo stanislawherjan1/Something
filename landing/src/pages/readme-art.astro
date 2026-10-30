@@ -8,6 +8,7 @@ import Routines from '../components/Routines.astro';
 import '../styles/mocks.css';
 import ChromeMock from '../components/mocks/ChromeMock.astro';
 import SlackMock from '../components/mocks/SlackMock.astro';
+import ContextFlow from '../components/ContextFlow.astro';
 import { svg } from '../lib/icons';
 
 // Team: collaborative mode on in the middle, the team around it — each person
@@ -179,6 +180,11 @@ const logos = ['shopify','notion','stripe','gworkspace','meta','google-ads','ga4
 
     <span class="label">assets/readme/browser.png</span>
     <div class="slide s-mock"><ChromeMock /></div>
+
+    <span class="label">assets/readme/context-mcp.png</span>
+    <div class="slide">
+      <ContextFlow single />
+    </div>
   </div>
 </Base>
 

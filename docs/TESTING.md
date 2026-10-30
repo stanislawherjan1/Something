@@ -22,6 +22,22 @@ Prefer tests of behaviour over tests that grep the source. Tests that need the
 model (`claude -p`) use a stand-in runner (`configureRunner` in the memory
 modules), so CI never spends model usage.
 
+`scripts/e2e/mcp-eval/run.py` judges Context MCP from the agent's side: real
+headless Claude Code sessions (`claude -p`) connected to a deployment as
+different people with different consents, each given a task and graded on
+the tools it reached for and what its answer and the tool results contain or
+must not contain (another person's private memory, a credential, the
+person's private things without the box, an injected README, a write that a
+non-interactive run must not make). Scenarios name a deployment's people and
+data, so they live in `clients/<client>/mcp-eval.json` (local), shaped like
+`scenarios.example.json`. Every scenario is a model turn on the plan signed
+in to Claude Code on that machine; grants are revoked at the end.
+
+The coding-agent surface has two unit suites of its own: the authorization
+server end to end on a loopback port (`cd ide-template/auth-service && node
+agents.test.js`, needs its `node_modules`) and the `/mcp` endpoint through a
+real MCP client (`node lib/mcp.test.mjs` in workspace-api, part of `npm test`).
+
 ## End-to-end suites (`scripts/e2e/`)
 
 They need a deployment you are allowed to break: a **test deployment of your
@@ -92,6 +108,7 @@ suites one at a time, when a change touches what they cover.
 | `room-private` | A person's private things in a Slack sandbox room (`E2E_SLACK_ROOM`, posts for real): their private code never reaches the room (it goes to their DM), whoever asks, an injected "read the private files" gets nothing, another room's words are not read from here while this room's are; with someone from outside in the room (simulated) a visitor is not read the admin's board, and the admin's own task is said when they ask | ~8 | 10–15 min |
 | `tasks-memory` | A task and the memory fact behind it point at each other; the bot answers from the board; done on the board closes the fact; files written in a conversation are linked | ~12 | 10–15 min |
 | `tasks-private` | A member's own task: absent from the admin's board and 404 to their hands, the file in the member's private tree is their turn user's (0660, their priv group) and the admin's turn shell cannot open it; put on the team board it appears for the admin, taken back it is gone; a task for someone else goes to the team board. Needs a member on the roster | 0 | ~1 min |
+| `mcp-agent` | A coding agent connects headless as Claude Code would (the 401 challenge, discovery, dynamic registration, the consent page as the member through a minted session, PKCE, the token exchange, a refresh) and reads as the member: the context bundle, the own task, memory, files — never the admin's folder, the roster file or memory as a file; a session JWT is not an agent, GET is 405, the read is on the member's Changes; the admin's agent sees no own task of the member's and the team inventory without scopes; disconnect kills the token | 0 | ~1 min |
 | `conversation` | The company card reaches the turn; a preference asked to be kept is on the person's card when the turn ends; a new message stops the running reply cleanly (no "kill EPERM"); a reply says it is settled before its process exits | 4–5 | 3–5 min |
 | `memory-sight` | What the bot sees of memory: the person's own cards are answered from and followed, another person's are not, a note from an earlier conversation is found, a team rule an admin asks for reaches a member, routines and integrations are listed right (built-in abilities are not integrations) | ~10 | 5–8 min |
 | `planner` | The morning planner as the member on a light and a busy day: the plan it makes (printed in their local time), recurring for an hourly duty, something before a call, a spread day; planning again replaces the plan; nothing in the past, no two stand-alone messages close together unless one is timed | ~6 | 5–10 min |

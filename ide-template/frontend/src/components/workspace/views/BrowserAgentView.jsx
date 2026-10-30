@@ -28,7 +28,6 @@ export default function BrowserAgentView({ sidebarOpen }) {
         <div className="flex max-w-2xl flex-col gap-8 px-6 pb-12 pt-2">
           {/* How it works */}
           <section className="flex flex-col gap-3">
-            <SectionTitle>How it works</SectionTitle>
             <BrowserMock bot={bot} avatar={botAvatarUrl} />
             <div className="flex flex-col gap-1.5 text-[13px] leading-relaxed text-muted-foreground/85">
               <p>{bot} in Chrome&apos;s side panel, next to any page.</p>

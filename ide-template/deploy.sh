@@ -696,6 +696,7 @@ if [ "$DEPLOY_TARGET" = "all" ] || [ "$DEPLOY_TARGET" = "auth" ]; then
     ship auth-service/Dockerfile   "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
     ship auth-service/index.js     "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
     ship auth-service/whitelist.js "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
+    ship auth-service/agents.js    "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
     ship auth-service/package.json "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1
     if [ -f auth-service/package-lock.json ]; then
         ship auth-service/package-lock.json "$HETZNER_HOST:$REMOTE_PATH/auth-service/" || exit 1

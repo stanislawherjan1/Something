@@ -60,6 +60,7 @@ reaches the repo.
 | Deploy, update, server setup, troubleshooting | `docs/DEPLOY.md`, `docs/NEW_CLIENT.md` |
 | The installer / first-run path | `docs/QUICK_START.md`, `README.md` |
 | An integration or MCP server (new, changed, removed) | `docs/INTEGRATIONS.md` |
+| Context MCP: the `/mcp` endpoint, the agents' OAuth server, the page | `docs/CONTEXT_MCP.md` (and `docs/SECURITY.md` §19d) |
 | Memory: cards, engine, read/write paths | `docs/MEMORY.md` |
 | Skills, `global-claude.md` behaviour, the skill catalog | `docs/SKILLS.md` |
 | Team mode: roster, privacy, relay, reminders per user, group mode | `docs/TEAM_MODE.md` |

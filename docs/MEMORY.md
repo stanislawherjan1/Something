@@ -85,6 +85,14 @@ that it is not saved, never that it is.
 shared memory the team works from, and a private memory for each person. What
 you say in your own chat stays yours. The work facts it produced — a launch
 date, a client's pilot, a decision — may reach the team the way you chose on
+An AI agent connected through Context MCP reads your memory as you — as
+facts, never as a conversation's lines, your private memory only if you
+allowed it — and a password or a code kept in memory is never handed to it.
+Ask it to summarise a session and it files one note, "Context MCP: <project>
+(<day>)", in your private memory, with the agent's logo on it, which your
+assistant then knows in your chats. Each read and write shows under Changes.
+More in [CONTEXT_MCP.md](CONTEXT_MCP.md).
+
 Sharing (the people icon at the top right of Memory, beside Sources,
 Preferences & rules and Changes; a red dot means questions wait): they wait for
 your OK, cross by themselves, or never cross.

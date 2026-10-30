@@ -26,6 +26,7 @@ import SlackDashboard     from './views/SlackDashboard.jsx';
 import NotificationsView  from './views/NotificationsView.jsx';
 import SettingsView       from './views/SettingsView.jsx';
 import BrowserAgentView   from './views/BrowserAgentView.jsx';
+import CodingAgentsView   from './views/CodingAgentsView.jsx';
 
 // BlockNote is heavy (~500 KB gzip) — lazy-load so the initial bundle stays
 // lean. Only paid when the user actually opens a markdown file.
@@ -126,6 +127,7 @@ function ActiveView({ selected, fileEventNonce, onSelect, sidebarOpen }) {
   if (type === 'integrations')                           return <IntegrationsDashboard sidebarOpen={sidebarOpen} />;
   if (type === 'integration')                            return <IntegrationPage id={selected.path} sidebarOpen={sidebarOpen} />;
   if (type === 'browser-agent')                          return <BrowserAgentView sidebarOpen={sidebarOpen} />;
+  if (type === 'coding-agents')                          return <CodingAgentsView sidebarOpen={sidebarOpen} />;
   if (type === 'responsibilities')                       return <ResponsibilitiesDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'reminders')                              return <RemindersDashboard fileEventNonce={fileEventNonce} sidebarOpen={sidebarOpen} />;
   if (type === 'team')                                   return <TeamDashboard sidebarOpen={sidebarOpen} />;

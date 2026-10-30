@@ -43,6 +43,9 @@ jobs:
           cache-dependency-path: ide-template/workspace-api/package-lock.json
       - run: npm ci
       - run: npm test
+      # The coding agents' authorization server (auth-service/agents.js).
+      - run: npm install --no-audit --no-fund --prefix ../auth-service
+      - run: node ../auth-service/agents.test.js
       # Recurrence engine shared by reminder-mcp and the reminder monitor; no deps.
       - run: node ../apps/reminder-mcp/recur.test.mjs
       - run: node ../apps/reminder-mcp/room-target.test.mjs
