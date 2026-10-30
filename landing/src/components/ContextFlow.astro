@@ -1,0 +1,205 @@
+---
+// Context MCP, as one picture: Claude Code and Codex on either side, each
+// calling the coworker from one line of its session; the coworker in the
+// middle with the company's mark; the answer, green, in the line under the
+// call. Used by the landing page (scaled to its column) and the README art.
+// `single`: one terminal with a Claude Code / Codex switch (the landing page);
+// without it, both side by side (the README picture).
+const { single = false } = Astro.props;
+type Line = [string, string, string?];
+const agents: { side: string; client: string; logo: string; inv: boolean; lines: Line[] }[] = [
+  { side: 'l', client: 'Claude Code', logo: '/integrations/claude.svg', inv: false, lines: [
+    ['ask', 'Add our pricing tiers to the landing page'],
+    ['call', 'get_context', 'pricing'],
+    ['back', 'September price list · 8% off above 500'],
+    ['say', 'Building the pricing section.'],
+  ] },
+  { side: 'r', client: 'Codex', logo: '/integrations/openai.svg', inv: true, lines: [
+    ['ask', 'Build the product pages for our shop'],
+    ['call', 'search_files', 'products'],
+    ['back', 'Products/ · 12 mugs, prices and glazes'],
+    ['say', 'Building the shop from your catalog.'],
+  ] },
+];
+
+---
+<div class="cm-fit">
+  {single ? (
+    <div class="cm single">
+      <div class="cm-term l">
+        <div class="cm-bar">
+          <i></i><i></i><i></i>
+          {agents.map((a, i) => <button type="button" class={`cm-tab ${i === 0 ? 'on' : ''}`} data-i={i}><img class={a.inv ? 'inv' : ''} src={a.logo} alt="" />{a.client}</button>)}
+        </div>
+        {agents.map((a, i) => (
+          <div class="cm-body" data-i={i} hidden={i !== 0}>
+                {a.lines.map(([kind, text, note]) => (
+                  kind === 'ask' ? <p class="cm-ask"><b>&gt;</b>{text}</p>
+                  : kind === 'call' ? <p class="cm-call" data-wire="out"><span class="cm-dot"></span><b>Aria</b> · {text}<span class="cm-arg">("{note}")</span></p>
+                  : kind === 'back' ? <p class="cm-back" data-wire="in"><span>⎿</span>{text}</p>
+                  : <p class="cm-say"><span class="cm-dot on"></span>{text}</p>
+                ))}
+          </div>
+        ))}
+      </div>
+        <div class="cm-hub">
+          <div class="cm-portrait">
+            <span class="cm-face" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+            <span class="cm-org"><img src="/favicon.svg" alt="" /></span>
+          </div>
+          {!single && <b>Aria</b>}
+          {!single && <span class="cm-orgname">Saltmarsh Ceramics</span>}
+        </div>
+    </div>
+  ) : (
+    <div class="cm">
+      <svg class="cm-wires" aria-hidden="true">
+        {agents.map(a => <path class={`out ${a.side}`} />)}
+        {agents.map(a => <circle class={`end ${a.side} t`} r="4" />)}
+        {agents.map(a => <circle class={`end ${a.side} h`} r="4" />)}
+      </svg>
+      {agents.filter(a => a.side === 'l').map(a => (
+        <div class={`cm-term ${a.side}`}>
+          <div class="cm-bar">
+            <i></i><i></i><i></i>
+            <span class="cm-tab on"><img class={a.inv ? 'inv' : ''} src={a.logo} alt="" />{a.client}</span>
+          </div>
+          <div class="cm-body">
+              {a.lines.map(([kind, text, note]) => (
+                kind === 'ask' ? <p class="cm-ask"><b>&gt;</b>{text}</p>
+                : kind === 'call' ? <p class="cm-call" data-wire="out"><span class="cm-dot"></span><b>Aria</b> · {text}<span class="cm-arg">("{note}")</span></p>
+                : kind === 'back' ? <p class="cm-back" data-wire="in"><span>⎿</span>{text}</p>
+                : <p class="cm-say"><span class="cm-dot on"></span>{text}</p>
+              ))}
+          </div>
+        </div>
+      ))}
+        <div class="cm-hub">
+          <div class="cm-portrait">
+            <span class="cm-face" data-halftone data-image="/avatars/1.png" data-mode="dark" data-center data-plain data-paper data-step="1.7" data-scale="1" data-seed="bot"></span>
+            <span class="cm-org"><img src="/favicon.svg" alt="" /></span>
+          </div>
+          {!single && <b>Aria</b>}
+          {!single && <span class="cm-orgname">Saltmarsh Ceramics</span>}
+        </div>
+      {agents.filter(a => a.side === 'r').map(a => (
+        <div class={`cm-term ${a.side}`}>
+          <div class="cm-bar">
+            <i></i><i></i><i></i>
+            <span class="cm-tab on"><img class={a.inv ? 'inv' : ''} src={a.logo} alt="" />{a.client}</span>
+          </div>
+          <div class="cm-body">
+              {a.lines.map(([kind, text, note]) => (
+                kind === 'ask' ? <p class="cm-ask"><b>&gt;</b>{text}</p>
+                : kind === 'call' ? <p class="cm-call" data-wire="out"><span class="cm-dot"></span><b>Aria</b> · {text}<span class="cm-arg">("{note}")</span></p>
+                : kind === 'back' ? <p class="cm-back" data-wire="in"><span>⎿</span>{text}</p>
+                : <p class="cm-say"><span class="cm-dot on"></span>{text}</p>
+              ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+<script>
+  // One wire from the line where each agent calls the coworker to the
+  // coworker, measured in the picture's own pixels (it may be scaled), and
+  // the picture scaled to its column.
+  function wire(cm: HTMLElement) {
+    const box = cm.getBoundingClientRect();
+    const k = box.width / cm.offsetWidth || 1;
+    const r = (el: Element) => { const b = el.getBoundingClientRect(); return { left: (b.left - box.left) / k, right: (b.right - box.left) / k, top: (b.top - box.top) / k, width: b.width / k, height: b.height / k }; };
+    const face = r(cm.querySelector('.cm-face')!);
+    const cx = face.left + face.width / 2, cy = face.top + face.width / 2, rad = face.width / 2 + 6;
+    for (const side of ['l', 'r']) {
+      const term = cm.querySelector(`.cm-term.${side}`);
+      if (!term) continue;
+      const t = r(term);
+      const call = r(term.querySelector('.cm-body:not([hidden]) [data-wire="out"]')!);
+      const y0 = call.top + call.height / 2;
+      const dir = side === 'l' ? 1 : -1;
+      const x0 = (side === 'l' ? t.right : t.left) + 6 * dir;
+      const x1 = cx - rad * dir;
+      const mid = (x0 + x1) / 2;
+      const below = cm.classList.contains('single');
+      // Side by side: across to the coworker. One terminal: out of its right
+      // edge and round, down into the coworker's right side.
+      const hx = below ? cx + rad : x1, bulge = Math.max(x0, hx) + 70;
+      const d = below ? `M${x0} ${y0} C${bulge} ${y0} ${bulge} ${cy} ${hx} ${cy}` : `M${x0} ${y0} C${mid} ${y0} ${mid} ${cy} ${x1} ${cy}`;
+      const path = cm.querySelector(`path.out.${side}`);
+      if (!path) continue;
+      path.setAttribute('d', d);
+      const tail = cm.querySelector(`circle.${side}.t`)!, head = cm.querySelector(`circle.${side}.h`)!;
+      tail.setAttribute('cx', String(x0)); tail.setAttribute('cy', String(y0));
+      head.setAttribute('cx', String(below ? hx : x1)); head.setAttribute('cy', String(cy));
+    }
+  }
+  function fit(box: HTMLElement) {
+    const cm = box.querySelector<HTMLElement>('.cm')!;
+    const k = Math.min(1, box.clientWidth / cm.offsetWidth);
+    cm.style.transform = `scale(${k})`;
+    box.style.height = `${cm.offsetHeight * k}px`;
+  }
+  document.querySelectorAll<HTMLElement>('.cm-fit').forEach((box) => {
+    const cm = box.querySelector<HTMLElement>('.cm')!;
+    const go = () => { fit(box); wire(cm); };
+    go();
+    document.fonts?.ready.then(go);
+    new ResizeObserver(go).observe(box);
+    // The one-terminal version: the tabs switch the session; the wire follows.
+    cm.querySelectorAll<HTMLButtonElement>('.cm-tab[data-i]').forEach((tab) => tab.addEventListener('click', () => {
+      cm.querySelectorAll('.cm-tab[data-i]').forEach((x) => x.classList.toggle('on', x === tab));
+      cm.querySelectorAll<HTMLElement>('.cm-body[data-i]').forEach((b) => { b.hidden = b.dataset.i !== tab.dataset.i; });
+      go();
+    }));
+  });
+</script>
+
+<style>
+  .cm-fit { position: relative; display: flex; justify-content: center; }
+  .cm { width: max-content; transform-origin: top center; }
+  .cm { position: relative; display: flex; align-items: center; justify-content: center; gap: 130px; }
+  .cm-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .cm-wires path { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 4 5; }
+  .cm-wires path.out { stroke: color-mix(in oklab, var(--foreground) 40%, transparent); stroke-width: 1.6; }
+  .cm-wires circle.end { fill: var(--card); stroke: color-mix(in oklab, var(--foreground) 45%, transparent); stroke-width: 1.5; }
+  .cm-term { position: relative; width: 410px; overflow: hidden; border-radius: 10px; background: #1c1b18; border: 1px solid #2c2a26; box-shadow: 0 30px 70px -28px rgba(0,0,0,.45); }
+  .cm-bar { display: flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-bottom: 1px solid #2c2a26; background: #23221e; }
+  .cm-bar i { width: 10px; height: 10px; border-radius: 99px; background: #3d3b36; }
+  .cm-tab { display: inline-flex; align-items: center; gap: 7px; height: 26px; margin-left: 12px; padding: 0 10px; border-radius: 6px; font: 500 12.5px var(--font); color: #f3f1ea; background: rgb(255 255 255 / .08); }
+  .cm-tab img { width: 14px; height: 14px; }
+  button.cm-tab { border: 0; cursor: pointer; color: #8d8a82; background: transparent; transition: background .15s, color .15s; }
+  button.cm-tab:hover { color: #d9d6ce; }
+  button.cm-tab.on { color: #f3f1ea; background: rgb(255 255 255 / .08); }
+  .cm-tab + .cm-tab { margin-left: 2px; }
+  /* One terminal: the coworker under it, the wire bending round the terminal's right edge. */
+  .cm.single { flex-direction: column; align-items: flex-end; gap: 0; padding: 0 28px 0 0; }
+  .cm.single .cm-hub { margin-top: -66px; margin-right: -28px; }
+  .cm.single .cm-term { width: 520px; }
+  .cm.single .cm-face { width: 132px; height: 132px; }
+  .cm.single .cm-portrait { margin-bottom: 0; }
+  .cm.single .cm-org { width: 38px; height: 38px; border-radius: 10px; right: 0; bottom: 0; }
+  .cm.single .cm-hub > b { font-size: 19px; }
+  .cm-body[hidden] { display: none; }
+  .cm-tab img.inv { filter: invert(1); opacity: .85; }
+  .cm-body { display: flex; flex-direction: column; gap: 11px; padding: 22px 22px 24px; font: 13px/1.55 var(--mono); color: #d9d6ce; }
+  .cm-body p { display: flex; align-items: baseline; gap: 9px; }
+  .cm-ask { padding: 8px 11px; border-radius: 6px; background: rgb(255 255 255 / .06); color: #f3f1ea; }
+  .cm-ask b { color: #8d8a82; font-weight: 500; }
+  .cm-dot { flex: none; width: 7px; height: 7px; border-radius: 99px; translate: 0 -1px; background: #6b6862; }
+  .cm-dot.on { background: #34d399; }
+  .cm-call b { font-weight: 600; color: #f3f1ea; }
+  .cm-arg { color: #8d8a82; }
+  .cm-back { padding-left: 16px; color: #6ee7b7; }
+  .cm-back span { flex: none; color: #8d8a82; }
+  .cm-say { color: #f3f1ea; }
+  .cm-hub { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; }
+  .cm-portrait { position: relative; margin-bottom: 22px; }
+  .cm-org { position: absolute; right: 4px; bottom: 4px; display: block; width: 44px; height: 44px; border-radius: 11px; overflow: hidden; box-shadow: 0 0 0 1px var(--hair), 0 10px 22px -10px rgba(0,0,0,.35); }
+  .cm-org img { display: block; width: 100%; height: 100%; }
+  .cm-orgname { margin-top: 4px; font-size: 14px; color: var(--muted-foreground); }
+  .cm-face { display: block; width: 176px; height: 176px; border-radius: 99px; overflow: hidden; background: #efede7; box-shadow: 0 0 0 1px var(--hair), 0 26px 52px -26px rgba(0,0,0,.4); }
+  .cm-hub > b { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+
+</style>

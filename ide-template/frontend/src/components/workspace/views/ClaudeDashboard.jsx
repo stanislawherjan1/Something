@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Hexagon, Check, Loader2,
   Bot, BookOpen, Key, X, CheckCircle2, AlertTriangle, ArrowRight,
-  Lock, Upload, Brain, Clock, Wrench, Compass, Unplug,
+  Lock, Upload, Brain, Clock, Wrench, Compass, Unplug, AppWindow,
 } from 'lucide-react';
+import { IS_DEMO } from '@/demo/flags.js';
 import { cn } from '@/lib/utils';
 import TileBanner from './TileBanner.jsx';
 import AvatarTile, { PRESET_AVATARS } from './AvatarTile.jsx';
@@ -211,6 +212,18 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
     activatedAt: slConnected ? (slIntegration?.activatedAt || null) : null,
   };
 
+  // The browser extension: moved here from the sidebar, last of the tiles.
+  const browserAgentTile = {
+    id: 'browser-agent',
+    logo: <TileBanner icon={AppWindow} seed="AppWindow" soft />,
+    label: 'Browser agent',
+    description: 'Your assistant in Chrome\'s side panel, beside any page.',
+    active: true,
+    alwaysOn: true,
+    credential: null,
+    activatedAt: null,
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <EditorHeader icon={Hexagon} title="AI Settings" sidebarOpen={sidebarOpen} />
@@ -273,6 +286,14 @@ export default function ClaudeDashboard({ fileEventNonce, sidebarOpen, onSelect 
                     canEdit={isAdmin}
                   />
                 </>
+              )}
+              {/* The public demo leaves the browser agent out: its extension needs a real workspace. */}
+              {!IS_DEMO && (
+                <SettingTile
+                  tile={browserAgentTile}
+                  onOpen={() => onSelect && onSelect({ path: '.claude/browser-agent', type: 'browser-agent' })}
+                  canEdit={isAdmin}
+                />
               )}
             </>
           )}

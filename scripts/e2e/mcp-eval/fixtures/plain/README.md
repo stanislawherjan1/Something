@@ -1,0 +1,2 @@
+# notes
+A scratch folder.

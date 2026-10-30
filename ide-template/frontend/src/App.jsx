@@ -15,6 +15,7 @@ import ExtensionChat from './components/workspace/ExtensionChat';
 import { isExtensionEmbed } from './lib/extensionEmbed';
 import { BrandingProvider, useBranding } from './components/workspace/identity';
 import SharedFileView from './components/SharedFileView.jsx';
+import ConsentPage from './components/ConsentPage.jsx';
 
 // Workspace is the default view. The legacy code-server iframe is still
 // reachable via ?view=legacy (linked from UserMenu → "Open legacy IDE")
@@ -22,6 +23,14 @@ import SharedFileView from './components/SharedFileView.jsx';
 const isLegacyView = () =>
   typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('view') === 'legacy';
+
+// A coding agent asked to connect (auth-service parks the request and sends
+// the person to /app/connect?req=…): the consent page, once signed in.
+const isConnectRoute = () => {
+  if (typeof window === 'undefined') return false;
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  return window.location.pathname.slice(base.length).replace(/\/$/, '') === '/connect';
+};
 
 import { useMobile } from './lib/useMobile';
 
@@ -105,6 +114,7 @@ function AppContent() {
     if (onboarding === 'real') return <DevRealOnboarding />;
     if (onboarding) return <OnboardingPreview option={onboarding} />;
     if (fake === 'login')   return <LoginPage />;
+    if (fake === 'connect') return <ConsentPage />;
     if (fake === 'denied')  return <AccessDenied />;
     if (fake === 'loading') return (
       <div className="fixed inset-0 flex items-center justify-center bg-background text-muted-foreground/70">
@@ -149,6 +159,10 @@ function AppContent() {
 
   if (!isAllowed) {
     return <AccessDenied />;
+  }
+
+  if (isConnectRoute()) {
+    return <ConsentPage />;
   }
 
   // Setup gate — show a spinner during the initial fetch, then the wizard

@@ -16,6 +16,9 @@ const ROOT = mkdtempSync(join(tmpdir(), 'gw-slack-'));
 process.env.PROJECT_DIR = ROOT;
 process.env.WSAPI_STORE_DIR = mkdtempSync(join(tmpdir(), 'gw-slack-store-'));
 process.env.SLACK_PROXY_URL = '';
+// No real model turn from a test: a machine with Claude Code installed would
+// start one on its owner's plan, and the resume check would time out on it.
+process.env.CLAUDE_BIN = '/nonexistent/claude';
 process.env.GROUP_WATCHER_QUIET_MS = '20';
 process.env.GROUP_WATCHER_MAX_WINDOW_MS = '40';
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([

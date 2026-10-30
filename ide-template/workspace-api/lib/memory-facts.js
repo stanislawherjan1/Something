@@ -379,8 +379,13 @@ export function apply(scope, decisions, { record = null, standing = 'said', by =
       return !!r && r.conv === conv && (!convSince || String(r.ts || '') >= convSince);
     };
     let di = -1;   // the candidate's position: plan() answers one decision per candidate, in order
+    // What a coding agent wrote (`by: agent:<client>`) is a plain fact, never
+    // a rule, a preference, a routine or a profile line: those come only from
+    // what the person said themselves.
+    const fromAgent = String(by || '').startsWith('agent:');
     for (let d of decisions) {
       di++;
+      if (fromAgent && d.fact && !['fact', 'status'].includes(d.fact.kind || 'fact')) d = { ...d, fact: { ...d.fact, kind: 'fact' } };
       // A remark on a fact that is only being added in this same batch has
       // nothing to attach to yet: it stands as a fact of its own.
       if (d.op === 'update' && pending(d.target)) d = { op: 'add', fact: d.fact };

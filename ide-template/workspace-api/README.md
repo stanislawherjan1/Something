@@ -50,6 +50,19 @@ Web chat is **per-session**: each conversation is its own thread with its own Cl
 | `DELETE /api/files/delete?path=` | Recursive delete; `resolveSafePath` + HARD_HIDDEN guards apply. |
 | `GET /api/files/watch` | Long-lived SSE stream of FS change events from chokidar (`add`/`change`/`unlink`/`addDir`/`unlinkDir`) plus payload-free `{ type: 'state', kind }` change notices (`branding` / `team` / `integrations`), batched in 100 ms. Private-tree events reach only their owner's streams. Heartbeat `: keep-alive` every 30 s so proxies don't close idle. |
 
+### Context MCP (coding agents)
+
+- `POST /mcp` — the MCP endpoint (Streamable HTTP, protocol 2025-11-25,
+  stateless; GET/DELETE answer 405). Mounted outside `/api`: nginx sends it
+  here only after auth-service verified the agent's bearer token
+  (`auth_request /auth/verify-agent`) and forwarded the person's identity
+  signed under the session secret (`X-IDE-User`, `X-IDE-Agent-Grant`,
+  `X-IDE-Agent-Scopes`, `X-IDE-Agent-Client`, `X-IDE-Agent-Sig`); without a
+  valid signature the answer is 401 with the OAuth challenge. `lib/mcp/` holds
+  the identity check, the server (tools, resources, the prompt) and the data
+  layer (`context.js`), all through `lib/viewer.js`. The OAuth endpoints
+  themselves live in auth-service (`agents.js`).
+
 ### Onboarding
 
 `routes/onboarding.js`, every route `requireActor`, `Cache-Control: no-store`, keyed by the caller's slug (solo: the one person is the admin). Writes are rate-limited (30/min/person; research starts 10/min, and at most **3 runs a day** per person). State lives in the store, never the project tree: `<store>/onboarding/company.json` and `<store>/onboarding/people/<slug>.json` (0600).
@@ -151,6 +164,18 @@ bin/turn-slots.mjs           # `reconcile`: every roster entry gets its turn slo
 Memory v4's endpoints are described in [docs/MEMORY.md](../../docs/MEMORY.md#how-it-works); all of
 them take the person from the session (the Memory screen) or from the turn token (the tools),
 and none has an admin exception.
+
+### `lib/viewer.js` and `lib/mcp/` — one person's view, served to an agent
+
+`viewerFor(email)` builds the view every person-facing surface uses (the
+Memory routes and the MCP endpoint): their own scope, every scope they may
+read, their rooms. `lib/mcp/identity.js` verifies the gate's signature,
+`lib/mcp/context.js` reads cards, facts (credentials held back), tasks and
+files as that viewer (`agentView`: the person's private things only with
+`read:private`), `lib/mcp/writes.js` makes the person's writes (tasks and
+notes through their own routes over loopback, files and session records
+directly), `lib/mcp/server.js` wraps them as MCP tools, resources and the
+`company-context` prompt.
 
 ### `lib/config.js` — visibility tiers
 

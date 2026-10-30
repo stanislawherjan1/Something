@@ -36,10 +36,14 @@ import { remember as engineRemember, retire as engineRetire } from '../lib/memor
 import { resolveTurnToken } from '../lib/turn-identity.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
 import { requireActor } from '../lib/auth.js';
+import { viewerFor } from '../lib/viewer.js';
 import { goingOnCard, settingsCard, routinesCard } from '../lib/claude.js';
 import * as facts from '../lib/memory-facts.js';
 import * as sources from '../lib/memory-sources.js';
 import * as integrationsCatalog from '../lib/integrations/catalog.js';
+
+/** The logo of the AI agent a Context MCP record came from, by the client's own name. */
+const agentLogo = (client) => /claude/i.test(client || '') ? '/integrations/claude.svg' : /codex|openai|chatgpt/i.test(client || '') ? '/integrations/openai.svg' : null;
 import { unsupportedDetails, splitNote } from '../lib/memory-router.js';
 import { routeSaid, gateFacts } from '../lib/memory-regate.js';
 import { primaryAdminSlug, memberGroupsOf, list as rosterList, getUser, getTeamMode } from '../lib/team.js';
@@ -103,14 +107,8 @@ function around(text, term, width = 700) {
 // ─── UI side: the signed-in person's own view ─────────────────────────────────
 
 /** The signed-in person as scopes. Solo: the one person is the primary admin. */
-function viewer(req) {
-  if (!req.actor) return null;
-  const u = getUser(req.actor);
-  const slug = u?.slug || (getTeamMode() ? null : primaryAdminSlug());
-  if (!slug || slug === 'default' || !SLUG_RE.test(slug)) return null;
-  const groups = memberGroupsOf(slug);
-  return { slug, own: `user:${slug}`, groups, read: ledger.readableScopes({ actor: slug, memberGroups: groups }), isAdmin: u?.role === 'admin', displayName: u?.displayName || null };
-}
+// One viewer for every surface that reads as a person (lib/viewer.js).
+function viewer(req) { return viewerFor(req.actor); }
 
 function withViewer(handler) {
   return async (req, res) => {
@@ -315,9 +313,12 @@ export default function memoryV4Router() {
         // A fact an integration stands behind — its own record, or one of its
         // sources (a chat-made "call with X" confirmed by the meeting's import)
         // — wears the service's icon after its title.
+        // A session an AI agent filed through Context MCP wears its client's logo the same way.
         integration: (() => {
           const imp = [r, ...(f.sources || []).map(id => recs.get(id))].find(x => x?.tags?.import)?.tags.import;
-          return imp ? { id: imp.integration, label: integrationsCatalog.get(imp.integration)?.label || imp.integration, logo: integrationsCatalog.get(imp.integration)?.logo || null, title: imp.title || null } : null;
+          if (imp) return { id: imp.integration, label: integrationsCatalog.get(imp.integration)?.label || imp.integration, logo: integrationsCatalog.get(imp.integration)?.logo || null, title: imp.title || null };
+          const ag = r.tags?.agent;
+          return ag ? { id: 'agent', label: ag.client || 'an AI agent', logo: agentLogo(ag.client), title: ag.project || null } : null;
         })(),
         mine: canManage(v, { scope: f.scope, origin: r.origin }), owned: isOwned(v, { scope: f.scope, origin: r.origin }),
         task: taskOf(f),

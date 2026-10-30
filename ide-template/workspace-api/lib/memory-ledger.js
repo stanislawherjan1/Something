@@ -25,7 +25,8 @@ import { atomicWrite } from './atomic-write.js';
 import { isGroupId } from './group-id.js';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
-const SOURCES = new Set(['web', 'telegram', 'slack', 'group', 'email', 'note', 'review', 'migration', 'integration']);
+// `agent`: a coding agent's session summary (Context MCP), written as the agent, in the person's own scope.
+const SOURCES = new Set(['web', 'telegram', 'slack', 'group', 'email', 'note', 'review', 'migration', 'integration', 'agent']);
 const MAX_TEXT = 12000;
 export const HIDE_GRACE_DAYS = 30;
 

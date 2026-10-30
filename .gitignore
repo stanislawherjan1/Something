@@ -49,3 +49,4 @@ demo-video/
 ide-template/models/*
 !ide-template/models/.keep
 .install-state
+scripts/e2e/mcp-eval/.runs/

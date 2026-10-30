@@ -196,7 +196,7 @@ export function Empty({ children }) {
 
 export const STATE_DOT = { active: 'bg-blue-600', paused: 'bg-background ring-2 ring-inset ring-blue-600', closed: 'bg-muted-foreground/30' };
 const SRC_ICON = { telegram: MessageCircle, web: Globe, group: Users, email: Mail, note: NotebookPen, review: ListChecks, migration: Archive };
-const SRC_LABEL = { telegram: 'Telegram conversation', web: 'web chat', group: 'team group', email: 'inbox check', note: 'saved note', review: 'daily review', migration: 'earlier memory', integration: 'meeting notes' };
+const SRC_LABEL = { telegram: 'Telegram conversation', web: 'web chat', group: 'team group', email: 'inbox check', note: 'saved note', review: 'daily review', migration: 'earlier memory', integration: 'meeting notes', agent: 'AI agent session' };
 
 /** The icon of the integration a fact came from, after its title. */
 function SourceIcon({ integration, className }) {

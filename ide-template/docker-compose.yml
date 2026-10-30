@@ -237,8 +237,12 @@ services:
       # .allowed-emails.json (managed via the workspace's Team dashboard).
       # Falls back to IDE_ALLOWED_EMAILS env when the file is missing.
       - project-data:/home/coder/project:ro
+      # Coding agents' grants (hashed tokens), see auth-service/agents.js. The
+      # only thing auth-service writes; survives redeploys like wsapi-store.
+      - auth-store:/var/auth-store
     environment:
       - NODE_ENV=production
+      - AUTH_STORE_DIR=/var/auth-store
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       # Browser extensions allowed to sign in (comma-separated ids). Unset = the
@@ -294,6 +298,7 @@ volumes:
   bot-logs:
   project-data:
   wsapi-store:
+  auth-store:
   # bot user's home — primarily /home/bot/.telegram/conversation.jsonl
   # for cross-deploy persistence of TG inbound/outbound history.
   bot-home:
