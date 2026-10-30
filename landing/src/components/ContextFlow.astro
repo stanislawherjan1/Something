@@ -157,7 +157,11 @@ const agents: { side: string; client: string; logo: string; inv: boolean; lines:
 </script>
 
 <style>
-  .cm-fit { position: relative; display: flex; justify-content: center; }
+  /* The picture keeps its own height: stretched to the box (whose height is
+     measured from the picture) it fed back into itself and, on a phone,
+     closed at zero with the terminal squeezed to its border. */
+  .cm-fit { position: relative; display: flex; justify-content: center; align-items: flex-start; min-width: 0; }
+  .cm-term, .cm-hub { flex-shrink: 0; }
   .cm { width: max-content; transform-origin: top center; }
   .cm { position: relative; display: flex; align-items: center; justify-content: center; gap: 130px; }
   .cm-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }

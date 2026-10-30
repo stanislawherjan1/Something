@@ -31,5 +31,6 @@ import ContextFlow from './ContextFlow.astro';
     -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
             mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
   }
-  .ide-fit { position: relative; width: 100%; padding: 0 7%; }
+  /* min-width 0: as a grid item it would grow to the picture's full width, and the picture would be scaled for a box wider than the stage. */
+  .ide-fit { position: relative; width: 100%; min-width: 0; padding: 0 7%; }
 </style>
