@@ -75,8 +75,9 @@ routine that needs it (only a team-only service sends them to an admin). A team
 connection is **read-only** or **read and write** — the admin chooses when
 connecting and can switch it on the service's page at any time: read-only
 means the coworker reads through it and never creates, sends or changes
-anything there, for anyone, until an admin allows it. Your own connection is
-always read and write — your account, your call. In a team group or channel the
+anything there, for anyone, until an admin allows it. A new team connection
+starts read-only. Your own connection is always read and write — your account,
+your call — and so is everything while you work alone, without team mode. In a team group or channel the
 coworker uses the team's connections; ask it there about your own account ("how many
 signups in my Supabase today?"), or ask for a change, and it does it as you, as in
 your own chat, and answers for the room, because you asked.
@@ -236,14 +237,17 @@ them with their `-mine` servers alone. Connections from before owners existed
 are the workspace's, owned by the primary admin (filled in at boot). Legacy
 MCPs that take credentials in their environment stay workspace-only.
 
-**Access.** A workspace connection carries `access`: `write` (the default,
-and what a connection from before has) or `read`. Read-only is enforced by
+**Access.** A workspace connection carries `access`: `write` (what a
+connection from before has, and the API's default) or `read` (what the
+integration page, the connect dialog and onboarding start a new one at). The
+level binds only in team mode: solo, the map below is written empty and the
+stored levels wait, and switching team mode rewrites it. Read-only is enforced by
 us, not the provider: `syncMcpServers` writes `.team/integration-access.json`
 (`{ "<server name>": "read" }`, group `workspace`), and the scope-guard hook
 refuses a write tool of such a server in every turn — the admin's and the
 brain's included — with a sentence that says an admin can allow changes on
 the service's page. Which tools are writes: a tool whose name says it
-changes something (create, update, delete, send, post, move, …), plus any the
+changes something (create, update, delete, send, post, move, append, replace, resume, …), plus any the
 catalog entry lists in `writeTools` — for tools that change something or spend
 money behind a harmless name (ElevenLabs' `creative_generate_speech`). The list
 only adds; it never lets a plainly named write through. A person's own connection is
@@ -939,7 +943,7 @@ The dashboard sits in the sidebar under **Integrations**.
 | **GA4** | MCP | `GA4_PROPERTY_ID`, `GA4_CREDENTIALS_JSON_CONTENT` | JSON paste; `ga4-mcp-server` (pip-installed in Dockerfile). |
 | **Vercel** | MCP (`vercel-mcp`) | `VERCEL_ACCESS_TOKEN`, `VERCEL_TEAM_ID` (opt) | Read-only client for the Vercel REST API (`api.vercel.com`, the only allowed host). Vercel's own hosted MCP (`mcp.vercel.com`) accepts OAuth only, from clients Vercel reviewed, so it cannot be used from here. Tools: `list_projects`, `get_project`, `list_deployments`, `get_deployment`, `get_build_logs`, `get_runtime_logs` (listens to Vercel's live stream for a few seconds, then stops), `list_domains`, `get_domain_config`. Secret-looking values are masked in log lines, results go through `wrapResult`, path arguments are URL-encoded. A token covers what its scope covers: create it for one team and put that team's ID in `VERCEL_TEAM_ID`. Tests: `node apps/vercel-mcp/vercel-mcp.test.mjs`. |
 | **Trello** | MCP | `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_BOARDS` (opt) | Boards/lists/cards via `api.trello.com/1`. `TRELLO_BOARDS` accepts URLs or short IDs, optionally with friendly names (`acme:URL,personal:URL`). Tools: read cards/lists (incl. label objects on `get_card`), comment, label, move between columns. |
-| **Google Workspace** | MCP bundle | `GDOCS_CLIENT_ID`, `GDOCS_CLIENT_SECRET`, `GDOCS_REFRESH_TOKEN`, plus workspace toggle `GWORKSPACE_ALLOW_WRITE` | Single tile + single OAuth refresh token unlock six MCPs at once: **Docs** (read/append/replace), **Sheets** (cells, ranges, append, update, create), **Calendar** (events list/CRUD), **Drive** (search/download/export/upload/share/trash, full comment lifecycle: **list_comments** with `quoted_text` + replies, **reply_comment**, **resolve_comment**, **delete_comment** — all over the Drive API; the only comment op NOT here is range-anchored *adding*, which lives in the separate Docs Comments integration), **Slides** (decks, slides, `replace_text`, plus writing: `list_text_boxes` → `set_text` / `insert_text` fill any shape by objectId, including the empty placeholders a new slide arrives with; `create_textbox`, `style_text`, `create_image` from a public URL, `set_slide_background`; `batch_update` sends raw Slides API Request objects for everything else — tables, bullets, transforms, reordering, chart embeds), **Tasks** (lists + items). Per-user OAuth (Web client + OAuth Playground); refresh token needs six scopes (documents/drive/spreadsheets/calendar/presentations/tasks). The workspace-level `GWORKSPACE_ALLOW_WRITE` toggle (Settings cog on the active tile) gates *every* write across the bundle — defaults **On**, flippable from the cog without re-pasting credentials. Activation auto-installs six skill playbooks (gdocs/gsheets/gcalendar/gdrive/gslides/gtasks) that share the integration's logo. |
+| **Google Workspace** | MCP bundle | `GDOCS_CLIENT_ID`, `GDOCS_CLIENT_SECRET`, `GDOCS_REFRESH_TOKEN`, plus workspace toggle `GWORKSPACE_ALLOW_WRITE` | Single tile + single OAuth refresh token unlock six MCPs at once: **Docs** (read/append/replace), **Sheets** (cells, ranges, append, update, create), **Calendar** (events list/CRUD, `add_meet` attaches a Google Meet room), **Drive** (search/download (up to 200 MB)/export/upload/share — `reader` unless asked otherwise/trash, full comment lifecycle: **list_comments** with `quoted_text` + replies, **reply_comment**, **resolve_comment**, **delete_comment** — all over the Drive API; the only comment op NOT here is range-anchored *adding*, which lives in the separate Docs Comments integration), **Slides** (decks, slides, `replace_text`, plus writing: `list_text_boxes` → `set_text` / `insert_text` fill any shape by objectId, including the empty placeholders a new slide arrives with; `create_textbox`, `style_text`, `create_image` from a public URL, `set_slide_background`; `batch_update` sends raw Slides API Request objects for everything else — tables, bullets, transforms, reordering, chart embeds), **Tasks** (lists + items). Per-user OAuth (Web client + OAuth Playground); refresh token needs six scopes (documents/drive/spreadsheets/calendar/presentations/tasks). The workspace-level `GWORKSPACE_ALLOW_WRITE` toggle (Settings cog on the active tile) gates *every* write across the bundle — defaults **On**, flippable from the cog without re-pasting credentials. Activation auto-installs six skill playbooks (gdocs/gsheets/gcalendar/gdrive/gslides/gtasks) that share the integration's logo. |
 | **Docs Comments** | MCP (`docs-comments-mcp`) | none in form — populated via "Connect to Google" embedded noVNC | Drives a logged-in chromium against Google Docs to drop inline comments at **anchored text ranges** — the one comment op the Drive API can't do. One tool: `add_comment`. Reply / resolve / delete / list of *existing* comments is handled over the Drive API by the **Google Workspace** integration (`mcp__gdrive__*`), not here. Activated via the `docs-comments-browser-login` field type (see "Interactive browser login" above); session persists in `/var/wsapi-store/docs-comments-profile/`. First-class, shipped to every client. |
 | **X (Twitter)** | MCP | `TWITTERAPI_IO_KEY` | Read-only tier via [twitterapi.io](https://twitterapi.io) — no X account credentials required. Tools: get tweet, user profile, mentions, search. |
 

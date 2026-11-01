@@ -1,6 +1,6 @@
 ---
 name: gsheets
-description: How to use the Google Sheets MCP — search Drive for sheets, read ranges or whole tabs, append rows, update cells, create new spreadsheets. Triggers on phrases like "spreadsheet", "google sheet", "arkusz", "spreadsheet URL pasted in chat", "add a row to my tracker", "wyciągnij dane z arkusza", "stwórz arkusz". Reads always available; appends/updates/creates need the workspace write toggle.
+description: How to use the Google Sheets MCP — search Drive for sheets, read ranges or whole tabs, append rows, update cells, create new spreadsheets. Triggers on phrases like "spreadsheet", "google sheet", "spreadsheet URL pasted in chat", "add a row to my tracker", "create a sheet". Reads always available; appends/updates/creates need the workspace write toggle.
 requires: google-workspace
 allowed-tools: mcp__gsheets__list_spreadsheets, mcp__gsheets__read_range, mcp__gsheets__read_sheet, mcp__gsheets__append_rows, mcp__gsheets__update_range, mcp__gsheets__create_spreadsheet
 ---

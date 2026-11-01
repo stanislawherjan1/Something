@@ -264,7 +264,7 @@ async function main() {
           const entry = cat.find(e => e.mcp?.name === base || (e.mcp?.services || []).some(x => x.name === base));
           if (Array.isArray(entry?.writeTools)) writeTools = entry.writeTools;
         } catch { /* no catalog here: the name decides */ }
-        const WRITE_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark)([_-]|$)/i;
+        const WRITE_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark|save|append|replace|style|resolve|resume|pause|enable|disable|grant|revoke|approve|void|capture|fulfill|duplicate|copy|attach|clear|reset|unpublish|unarchive|unassign|unshare|unlink|unschedule|unmark|unsubscribe|unlock|unpin|unfollow|unlike|unblock|unmute)([_-]|$)/i;
         const isWrite = WRITE_RE.test(tool) || !!writeTools?.includes(tool);
         if (isWrite) {
           process.stderr.write(

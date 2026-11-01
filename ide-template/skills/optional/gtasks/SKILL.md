@@ -1,6 +1,6 @@
 ---
 name: gtasks
-description: How to use the Google Tasks MCP — list task lists, list tasks (with show_completed toggle), create/update/delete items, mark complete or uncomplete. Triggers on "google tasks", "to-do list", "moja lista zadań", "add to my tasks", "co mam dziś do zrobienia".
+description: How to use the Google Tasks MCP — list task lists, list tasks (with show_completed toggle), create/update/delete items, mark complete or uncomplete. Triggers on "google tasks", "to-do list", "add to my tasks".
 requires: google-workspace
 allowed-tools: mcp__gtasks__list_task_lists, mcp__gtasks__list_tasks, mcp__gtasks__create_task, mcp__gtasks__update_task, mcp__gtasks__delete_task
 ---

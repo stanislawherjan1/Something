@@ -232,7 +232,11 @@ export function addItem(key, fields) {
   const entry = state[key];
   if (!entry) throw new Error(`${key} is not active`);
   const items = entry.items || [];
-  items.push({ fields: buildEncryptedItem(key, fields || {}) });
+  // A setting shared by every account (EMAIL_ALLOW_SEND) comes along from the
+  // accounts already there: the page sends a new account's own fields only.
+  const first = items.length ? decryptFor(key)[0] || {} : {};
+  const shared = Object.fromEntries((cat.fields || []).filter(f => f.globalForMulti && first[f.name] != null).map(f => [f.name, first[f.name]]));
+  items.push({ fields: buildEncryptedItem(key, { ...shared, ...(fields || {}) }) });
   entry.items = items;
   state[key] = entry;
   writeAll(state);

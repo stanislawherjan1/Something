@@ -8,6 +8,8 @@
  *   GDOCS_CLIENT_ID      — user's own OAuth client (per-integration)
  *   GDOCS_CLIENT_SECRET  — paired secret
  *   GDOCS_REFRESH_TOKEN  — refresh token issued via OAuth Playground
+ *   GWORKSPACE_ALLOW_WRITE — "yes" | "no" (default no). Gates create_doc,
+ *                          append_to_doc, replace_in_doc.
  *
  * ─────────────────────────────────────────────
  * Tools:
@@ -40,6 +42,7 @@ await loadCredentials();
 const CLIENT_ID     = process.env.GDOCS_CLIENT_ID;
 const CLIENT_SECRET = process.env.GDOCS_CLIENT_SECRET;
 const REFRESH_TOKEN = process.env.GDOCS_REFRESH_TOKEN;
+const WRITES_OK     = String(process.env.GWORKSPACE_ALLOW_WRITE || '').toLowerCase() === 'yes';
 
 const DRIVE_BASE = 'https://www.googleapis.com/drive/v3';
 const DOCS_BASE  = 'https://docs.googleapis.com/v1';
@@ -55,6 +58,16 @@ const client = createGoogleApiClient({
   clientSecret: CLIENT_SECRET,
   refreshToken: REFRESH_TOKEN,
 });
+
+function requireWrite() {
+  if (!WRITES_OK) {
+    throw new Error(
+      'Docs write access is disabled in this workspace. ' +
+      'Open Integrations → Google Workspace → Settings (gear) and set ' +
+      '"Allow bot to modify your Google Workspace data" to Yes.',
+    );
+  }
+}
 
 // Thin compat shim — keep the existing api(method, url, { query, body }) shape
 // so the handlers below don't need rewriting.
@@ -224,7 +237,7 @@ const TOOLS = [
   },
   {
     name: 'create_doc',
-    description: 'Create a new Google Doc with the given title and optional initial body text.',
+    description: 'Create a new Google Doc with the given title and optional initial body text. Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
       required: ['title'],
@@ -236,7 +249,7 @@ const TOOLS = [
   },
   {
     name: 'append_to_doc',
-    description: 'Append text to the end of an existing Google Doc.',
+    description: 'Append text to the end of an existing Google Doc. Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
       required: ['doc_id', 'text'],
@@ -250,7 +263,7 @@ const TOOLS = [
     name: 'replace_in_doc',
     description:
       'Find every occurrence of a string and replace it. Idempotent: returns 0 replacements ' +
-      'if the string is not found. Case-sensitive by default.',
+      'if the string is not found. Case-sensitive by default. Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
       required: ['doc_id', 'find', 'replace'],
@@ -331,6 +344,7 @@ async function handleReadDoc({ doc_id }) {
 }
 
 async function handleCreateDoc({ title, content }) {
+  requireWrite();
   const created = await api('POST', `${DOCS_BASE}/documents`, { body: { title } });
   if (content && content.length > 0) {
     await api('POST', `${DOCS_BASE}/documents/${created.documentId}:batchUpdate`, {
@@ -347,6 +361,7 @@ async function handleCreateDoc({ title, content }) {
 }
 
 async function handleAppendToDoc({ doc_id, text }) {
+  requireWrite();
   const doc = await api('GET', `${DOCS_BASE}/documents/${encodeURIComponent(doc_id)}`, {
     query: { fields: 'body(content(endIndex))' },
   });
@@ -366,6 +381,7 @@ async function handleAppendToDoc({ doc_id, text }) {
 }
 
 async function handleReplaceInDoc({ doc_id, find, replace, match_case = true }) {
+  requireWrite();
   const data = await api('POST', `${DOCS_BASE}/documents/${encodeURIComponent(doc_id)}:batchUpdate`, {
     body: {
       requests: [{
