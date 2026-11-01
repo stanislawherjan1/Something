@@ -190,13 +190,16 @@ export function migrateFromLegacy() {
   // skills for every active integration. Runs on every startup (not just
   // post-migration) so a new optional skill that ships in a later release
   // for an already-active integration also lands in the project on the
-  // first restart that has it. installOptionalSkill / applyFiles are
-  // idempotent — re-running for an already-set-up integration is a no-op.
+  // first restart that has it, and a skill the release changed replaces the
+  // copy made earlier (unless it was edited here). A person's own connections
+  // get theirs too. installOptionalSkill / applyFiles are idempotent.
   for (const entry of catalog.listAll()) {
     if (store.isActive(entry.id)) {
       try { runtime.applyFiles(entry.id); } catch {}
-      try { runtime.installOptionalSkill(entry.id); } catch {}
     }
+  }
+  for (const key of store.activeIds()) {
+    try { runtime.installOptionalSkill(key); } catch {}
   }
   try { runtime.syncMcpServers(); } catch {}
 

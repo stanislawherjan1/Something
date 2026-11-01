@@ -749,23 +749,40 @@ ssh "$HETZNER_HOST" "
     done
     cp -f .deploy-manifest.json .deploy-manifest.previous.json 2>/dev/null || true
 " || echo -e "${YELLOW}  could not tag the current images as :previous — rollback will not be available for this deploy${NC}"
-# Room for the build. Measured on a 38 GB host (2026-10-14): a full rebuild
-# (--fresh) holds, at its peak, the running image, a build cache the size of
-# the image and the new image compressed AND unpacked — about four times the
-# image's compressed size; a cached build adds only the layers that changed.
-# A stale build cache or an unused image generation is the difference between
-# a build that lands and one that dies at "no space left on device" after
-# forty minutes. So: measure, free what is unused if short, and stop before
-# the build when it still would not fit.
+# Room for the build. What a build adds, at its peak: the new image's layers
+# unpacked AND, on the containerd image store, their compressed blobs beside
+# them; a full rebuild (--fresh, or a build with no cache left) also holds a
+# build cache the size of the unpacked image. A cached build is counted at the
+# whole footprint, an upper bound: which layers it rebuilds is not known before
+# it runs. `docker image inspect .Size` is the compressed size alone on the
+# containerd store (1.5 GB of a 6.15 GB image on the canary, 2026-11-01) —
+# counting only that passed a host with 6 GB free that the build then filled
+# at "no space left on device".
+# So: measure the real footprint, free what is unused if short — old build
+# cache first, all of it only when that is not enough, the :previous
+# generation last — and stop before the build when it still would not fit.
 ssh "$HETZNER_HOST" bash -s -- "$IDE_NAME" "$FRESH" <<'REMOTE' || exit 1
 IMAGE="$1-code-server:latest"
-size=$(docker image inspect --format '{{.Size}}' "$IMAGE" 2>/dev/null || echo 3000000000)
-if [ "$2" = 1 ]; then need_kb=$(( 4 * size / 1024 + 3 * 1024 * 1024 )); else need_kb=$(( size / 1024 + 3 * 1024 * 1024 )); fi
+packed=$(docker image inspect --format '{{.Size}}' "$IMAGE" 2>/dev/null || echo 0)
+unpacked=$(docker history --human=false --format '{{.Size}}' "$IMAGE" 2>/dev/null | awk '{s+=$1} END {print s+0}')
+if docker info --format '{{json .DriverStatus}}' 2>/dev/null | grep -q containerd.snapshotter; then footprint=$((packed + unpacked)); else footprint=$unpacked; fi
+[ "$footprint" -gt 0 ] || { footprint=7000000000; unpacked=5000000000; }
+cached_kb=$(( footprint / 1024 + 2 * 1024 * 1024 ))
+full_kb=$(( (footprint + unpacked) / 1024 + 2 * 1024 * 1024 ))
+if [ "$2" = 1 ]; then need_kb=$full_kb; else need_kb=$cached_kb; fi
 free_kb=$(df -k / | awk 'NR==2 {print $4}')
 if [ "$free_kb" -lt "$need_kb" ]; then
     echo "  disk: $((free_kb / 1024 / 1024)) GB free, about $((need_kb / 1024 / 1024)) GB needed - freeing what is unused"
-    docker builder prune -af >/dev/null 2>&1 || true
     docker image prune -f >/dev/null 2>&1 || true
+    docker builder prune -f --filter 'until=240h' >/dev/null 2>&1 || true
+    free_kb=$(df -k / | awk 'NR==2 {print $4}')
+fi
+if [ "$free_kb" -lt "$need_kb" ]; then
+    # Without its cache the build rebuilds every layer, so it then needs the
+    # room of a full rebuild.
+    echo "  disk: clearing the build cache (this build rebuilds every layer)"
+    docker builder prune -af >/dev/null 2>&1 || true
+    need_kb=$full_kb
     free_kb=$(df -k / | awk 'NR==2 {print $4}')
 fi
 if [ "$free_kb" -lt "$need_kb" ]; then
@@ -778,10 +795,10 @@ if [ "$free_kb" -lt "$need_kb" ]; then
     free_kb=$(df -k / | awk 'NR==2 {print $4}')
 fi
 if [ "$free_kb" -lt "$need_kb" ]; then
-    echo "  disk: still $((free_kb / 1024 / 1024)) GB free - not enough for the build. Free space on the host (docker system df; old images, journal) and run the deploy again." >&2
+    echo "  disk: still $((free_kb / 1024 / 1024)) GB free, about $((need_kb / 1024 / 1024)) GB needed - not enough for the build. Free space on the host (docker system df; old images, journal) and run the deploy again." >&2
     exit 1
 fi
-echo "  disk: $((free_kb / 1024 / 1024)) GB free for the build"
+echo "  disk: $((free_kb / 1024 / 1024)) GB free for the build (about $((need_kb / 1024 / 1024)) GB needed)"
 REMOTE
 NO_CACHE=""; [ "$FRESH" = 1 ] && NO_CACHE="--no-cache" && echo -e "${CYAN}  --fresh: every layer is rebuilt${NC}"
 ssh "$HETZNER_HOST" "cd '$REMOTE_PATH' && docker compose build $NO_CACHE $BUILD_TARGETS" || exit 1

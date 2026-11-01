@@ -1882,95 +1882,10 @@ pm2 start /home/coder/ecosystem.config.js --only workspace-api \
     2>&1 || echo "[entrypoint] WARNING: workspace-api failed to start"
 echo "[entrypoint] workspace-api started (serves /api/* including the wizard)."
 
-# Optional-skill install — run AFTER workspace-api boots so its migration
-# logic has had a chance to populate ~/.claude.json's mcpServers with the
-# user's integrations. We sleep a few seconds to let that finish before
-# scanning. Idempotent: skips skills already in ~/.claude/skills/, so
-# user edits and manual deletes survive container restarts.
-(
-    sleep 6
-    if [ -d /opt/ide/skills/optional ] && [ -f /home/coder/.claude.json ]; then
-        python3 <<'PYEOF' || echo "[entrypoint] WARNING: optional skill deploy failed"
-import json, os, shutil, subprocess, sys
-opt_dir = '/opt/ide/skills/optional'
-# Bundle 6: single location for ALL skills. Default + optional + user-created
-# all live here, distinguished by `source:` frontmatter (system / integration:<name> / project).
-dest_root = '/home/coder/project/.claude/skills'
-stamp_script = '/opt/ide/scripts/stamp-skill-frontmatter.sh'
-os.makedirs(dest_root, exist_ok=True)
-try:
-    with open('/home/coder/.claude.json') as f:
-        active = set((json.load(f).get('mcpServers') or {}).keys())
-except Exception as e:
-    print(f'[entrypoint] could not read .claude.json: {e}', file=sys.stderr)
-    sys.exit(0)
-
-def parse_requires(skill_md_path):
-    try:
-        with open(skill_md_path) as f: text = f.read()
-        parts = text.split('---', 2)
-        if len(parts) < 3: return []
-        for line in parts[1].splitlines():
-            if line.startswith('requires:'):
-                val = line.split(':', 1)[1].strip()
-                if val.startswith('['):
-                    return [v.strip().strip('"\'') for v in val.strip('[]').split(',') if v.strip()]
-                return [val.strip('"\'')]
-    except Exception:
-        return []
-    return []
-
-def stamp_dir(skill_dir, source_val):
-    """Stamp source/editable/managed_by via the shared script."""
-    if not os.path.exists(stamp_script): return
-    try:
-        subprocess.run([stamp_script, skill_dir, source_val, 'false', 'ide-template'],
-                       check=False, capture_output=True, text=True, timeout=10)
-    except Exception:
-        pass  # stamp failures are non-fatal — skill still deployed
-
-# Wipe stale integration skills first (preserve user-stamped `source: project`).
-# Re-stages from scratch so deactivating an integration removes its skill cleanly.
-for entry in os.listdir(dest_root):
-    skill_path = os.path.join(dest_root, entry)
-    skill_md = os.path.join(skill_path, 'SKILL.md')
-    if not os.path.isdir(skill_path) or not os.path.exists(skill_md): continue
-    try:
-        with open(skill_md) as f: head = f.read(2000)
-    except Exception:
-        continue
-    # If source: integration:* — wipe (we'll re-stage if still active)
-    if 'source: integration:' in head:
-        shutil.rmtree(skill_path, ignore_errors=True)
-
-installed = []
-for root, dirs, files in os.walk(opt_dir):
-    if 'SKILL.md' not in files: continue
-    requires = parse_requires(os.path.join(root, 'SKILL.md'))
-    if not requires: continue
-    if not any(r in active for r in requires): continue
-    skill_name = os.path.basename(root)
-    dest = os.path.join(dest_root, skill_name)
-    if os.path.exists(dest): continue  # idempotent: skip if already there (user might have forked)
-    shutil.copytree(root, dest)
-    # Stamp source=integration:<first-requirement> (the MCP that gates it)
-    primary_req = requires[0]
-    stamp_dir(dest, f'integration:{primary_req}')
-    installed.append(skill_name)
-
-# Match ownership pattern from default-skill deploy
-try:
-    subprocess.run(['chown', '-R', 'coder:workspace', dest_root], check=False, capture_output=True)
-except Exception:
-    pass
-
-if installed:
-    print(f'[entrypoint] Optional skills deployed: {", ".join(sorted(installed))}')
-else:
-    print(f'[entrypoint] Optional skills: none to install (active={sorted(active)})')
-PYEOF
-    fi
-) &
+# Integration skills are workspace-api's: its startup pass copies the skills
+# of every active connection and refreshes copies still as shipped
+# (lib/integrations/runtime.js installOptionalSkill). The system-skill step
+# above wipes the copies an earlier release stamped `source: integration:*`.
 
 # Stage 2: bot + reminder-monitor — need Claude auth. Three ways to satisfy
 # (in order of how Phase 3 evolved):
