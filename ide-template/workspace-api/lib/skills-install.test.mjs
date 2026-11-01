@@ -70,6 +70,15 @@ writeFileSync(join(OPT, 'mine', 'SKILL.md'), '---\nname: mine\nrequires: email\n
 installOptionalSkill('email-imap@ann');
 ok("a person's copy takes the new release", own().includes('mcp__email-mine__send v2'));
 
+// An integration of several servers (Google Workspace has no single mcp.name):
+// a person's own key still matches by its id, and every server is renamed.
+mkdirSync(join(OPT, 'gcal-test'), { recursive: true });
+writeFileSync(join(OPT, 'gcal-test', 'SKILL.md'), '---\nname: gcal-test\nrequires: google-workspace\n---\nmcp__gcalendar__create_event, mcp__gdocs__read_doc\n');
+const gws = installOptionalSkill('google-workspace@ann');
+const gcal = () => readFileSync(join(process.env.PROJECT_DIR, 'users', 'ann', '.skills', 'gcal-test', 'SKILL.md'), 'utf8');
+ok("a person's own multi-server connection installs its skill", gws.includes('gcal-test'));
+ok('…naming each of their own servers', gcal().includes('mcp__gcalendar-mine__create_event') && gcal().includes('mcp__gdocs-mine__read_doc'));
+
 rmSync(ROOT, { recursive: true, force: true });
 console.log(`skills-install: ${fail ? 'FAILED' : 'ok'}`);
 process.exit(fail ? 1 : 0);

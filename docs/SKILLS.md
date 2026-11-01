@@ -51,7 +51,8 @@ refuses a member's. `GET /api/skills` lists the team's (`scope: team`, `editable
 or in solo) and the caller's own (`scope: personal`), with `teamMode` and `canEditTeam`;
 `/api/skills/raw?origin=personal` reads the caller's own. An integration's optional skill is
 installed by the connection's reach — a personal connection's into the owner's `.skills`, its
-`mcp__<server>__` tool names rewritten to `mcp__<server>-mine__` (`personaliseSkill`).
+`mcp__<server>__` tool names rewritten to `mcp__<server>-mine__` (`personaliseSkill`) — every
+service's, for an integration of several servers such as Google Workspace.
 
 **Integration skills follow releases.** workspace-api installs them on activation and on every
 startup, for the team's connections and each person's own (`installOptionalSkill`; the entrypoint

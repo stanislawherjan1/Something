@@ -386,10 +386,12 @@ function discoverOptionalSkills(optDir) {
  */
 /**
  * A copied skill made a person's own: its tool names point at their server
- * (`mcp__trello__x` → `mcp__trello-mine__x`), and its files take the private
- * tree's modes (dirs 2770, files 0660) so their turn reads them.
+ * (`mcp__trello__x` → `mcp__trello-mine__x`; `servers` is one name or the
+ * list of an integration's services), and its files take the private tree's
+ * modes (dirs 2770, files 0660) so their turn reads them.
  */
-export function personaliseSkill(dir, server) {
+export function personaliseSkill(dir, servers) {
+  const names = [].concat(servers || []).filter(Boolean);
   const walk = (p) => {
     const st = statSync(p);
     if (st.isDirectory()) {
@@ -397,10 +399,13 @@ export function personaliseSkill(dir, server) {
       for (const name of readdirSync(p)) walk(join(p, name));
       return;
     }
-    if (server && /\.(md|txt|json|ya?ml)$/i.test(p)) {
+    if (names.length && /\.(md|txt|json|ya?ml)$/i.test(p)) {
       const text = readFileSync(p, 'utf8');
-      const esc = server.replace(/[-.*+?^$()|[\]\\{}]/g, (c) => `\\${c}`);
-      const next = text.replace(new RegExp(`mcp__${esc}__`, 'g'), `mcp__${server}-mine__`);
+      let next = text;
+      for (const server of names) {
+        const esc = server.replace(/[-.*+?^$()|[\]\\{}]/g, (c) => `\\${c}`);
+        next = next.replace(new RegExp(`mcp__${esc}__`, 'g'), `mcp__${server}-mine__`);
+      }
       if (next !== text) writeFileSync(p, next);
     }
     try { chmodSync(p, 0o660); } catch { /* dev */ }
@@ -447,7 +452,7 @@ function sourceOf(dir) {
 
 /**
  * Put one optional skill at `dest`, or bring an earlier copy up to date.
- * `personal` is the owner's server name for a person's own copy (see
+ * `personal` is the owner's server name(s) for a person's own copy (see
  * personaliseSkill), null for the team's. Returns true when the skill was
  * copied or replaced.
  */
@@ -504,17 +509,20 @@ export function installOptionalSkill(id) {
   // their turns load), naming their own server (`<name>-mine`).
   const owner = catalog.slugOf(id);
   const destRoot = owner ? join(projectDir, 'users', owner, '.skills') : join(projectDir, '.claude', 'skills');
-  const server = catalog.get(id)?.mcp?.name;
+  const mcp = catalog.get(id)?.mcp || {};
+  // One server, or several for an integration of services (Google Workspace).
+  const servers = mcp.name ? [mcp.name] : (mcp.services || []).map(s => s.name);
   const installed = [];
 
   // A skill's `requires:` may name the catalog id (email-imap, ga4, meta-ads) or
-  // the MCP server's name (email, analytics, meta); either installs it.
-  const names = new Set([id, catalog.get(id)?.mcp?.name].filter(Boolean));
+  // the MCP server's name (email, analytics, meta); either installs it. A
+  // person's own key (`google-workspace@ann`) matches by its integration id.
+  const names = new Set([catalog.baseId(id), mcp.name].filter(Boolean));
   const skills = discoverOptionalSkills(optDir);
   for (const skill of skills) {
     if (!skill.requires.some(r => names.has(r))) continue;
     try {
-      if (placeSkill(skill.src, join(destRoot, skill.name), id, owner ? server || '' : null)) installed.push(skill.name);
+      if (placeSkill(skill.src, join(destRoot, skill.name), id, owner ? servers : null)) installed.push(skill.name);
     } catch (err) {
       process.stderr.write(`[integrations-runtime] failed to install ${skill.name}: ${err.message}\n`);
     }
