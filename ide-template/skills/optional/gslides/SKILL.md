@@ -1,8 +1,8 @@
 ---
 name: gslides
-description: How to use the Google Slides MCP — list presentations, get full deck contents, read individual slides, create new presentations, add/delete slides, find/replace text across the deck. Triggers on "slides", "deck", "presentation", "prezentacja", "zmień tekst na slajdach", "create a deck about X".
+description: How to use the Google Slides MCP — list presentations, get full deck contents, read individual slides, create new presentations, add/delete slides, find/replace text across the deck. Also fills and styles slides: text in any shape, new text boxes, images, backgrounds, raw Slides API requests.
 requires: google-workspace
-allowed-tools: mcp__gslides__list_presentations, mcp__gslides__get_presentation, mcp__gslides__read_slide, mcp__gslides__create_presentation, mcp__gslides__add_slide, mcp__gslides__delete_slide, mcp__gslides__replace_text
+allowed-tools: mcp__gslides__list_presentations, mcp__gslides__get_presentation, mcp__gslides__read_slide, mcp__gslides__create_presentation, mcp__gslides__add_slide, mcp__gslides__delete_slide, mcp__gslides__replace_text, mcp__gslides__list_text_boxes, mcp__gslides__set_text, mcp__gslides__insert_text, mcp__gslides__create_textbox, mcp__gslides__style_text, mcp__gslides__create_image, mcp__gslides__set_slide_background, mcp__gslides__batch_update
 ---
 
 # Google Slides Protocol
@@ -40,6 +40,17 @@ Returns the new slide's objectId.
 `replace_text { presentation_id, find, replace, match_case?, page_object_ids? }` — replaces every occurrence across the deck (or a specific list of slides). Returns the number of replacements.
 
 Useful for: rebranding decks (`Old Co → New Co`), updating dates, fixing typos. **Confirm before destructive replace** — it touches every match.
+
+## Filling and styling slides
+
+A slide added from a layout arrives with **empty placeholders**, and `replace_text` cannot see empty text. To fill one:
+
+1. `list_text_boxes { presentation_id, slide_object_id? }` — every shape that holds text, with its `objectId`, placeholder role (TITLE, BODY…) and current text.
+2. `set_text { presentation_id, object_id, text }` replaces all text in that shape; `insert_text` adds without clearing (omit `insertion_index` to append).
+
+For anything the layout has no place for, `create_textbox` (points from the top-left; a 16:9 slide is 720 × 405). `style_text` sets colour, size, font, bold/italic/underline and alignment on a range or the whole shape. `create_image` places an image from a **public** URL; `set_slide_background` takes a hex colour. `batch_update` sends raw Slides API requests for the rest (tables, bullets, moving or reordering) — use it only when no tool above does the job.
+
+All of these change the deck: say what you're about to change before you do it, unless the person just asked for exactly that.
 
 ## Defensive defaults
 

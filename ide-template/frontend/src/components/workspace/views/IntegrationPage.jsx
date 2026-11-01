@@ -125,11 +125,12 @@ function Section({ title, right, children }) {
 function ConnectionCard({ integration, reach, solo = false, detail, canManage, onChanged, toast, stepVars, botName }) {
   const [saving, setSaving] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [write, setWrite] = useState(true);
+  // A new team connection starts read-only: the admin turns writing on.
+  const [write, setWrite] = useState(false);
   const connected = !!detail;
   // Under the banner: Settings and How to set it up as tabs (the Memory screen's bar).
   const [tab, setTab] = useState('settings');
-  const writeNow = connected ? (detail.access || 'write') === 'write' : write;
+  const writeNow = connected ? (detail.access || 'write') === 'write' : (solo || write);
   const q = reach === 'personal' ? '?reach=personal' : `?access=${writeNow ? 'write' : 'read'}`;
   const base = `/api/integrations/${encodeURIComponent(integration.id)}`;
   const oauth = isRemoteMcpOauth(integration);

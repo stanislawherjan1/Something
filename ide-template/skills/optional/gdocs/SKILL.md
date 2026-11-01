@@ -1,8 +1,8 @@
 ---
 name: gdocs
-description: How to use the Google Docs MCP — search Drive, read doc bodies, create new docs, append text, find/replace. Triggers on phrases like "google docs", "the doc", "moje docsy", "summarise the meeting notes", "draft a doc", "stwórz dokument", a docs.google.com URL pasted in chat. Read-mostly by default; create/append/replace require explicit user intent.
+description: How to use the Google Docs MCP — search Drive, read doc bodies, create new docs, append text, find/replace. Triggers on phrases like "google docs", "the doc", "summarise the meeting notes", "draft a doc", a docs.google.com URL pasted in chat. Read-mostly by default; create/append/replace require explicit user intent.
 requires: google-workspace
-allowed-tools: mcp__gdocs__search_docs, mcp__gdocs__list_recent_docs, mcp__gdocs__read_doc, mcp__gdocs__create_doc, mcp__gdocs__append_to_doc, mcp__gdocs__replace_in_doc
+allowed-tools: mcp__gdocs__search_docs, mcp__gdocs__list_recent_docs, mcp__gdocs__read_doc, mcp__gdocs__create_doc, mcp__gdocs__append_to_doc, mcp__gdocs__replace_in_doc, mcp__gdocs__list_doc_revisions
 ---
 
 # Google Docs Protocol
@@ -44,6 +44,10 @@ Common pattern: meeting note dumps. User says "add my standup notes to the team 
 ## Find / replace
 
 `replace_in_doc { doc_id, find, replace, match_case? }` replaces every occurrence. Idempotent: returns 0 occurrences if `find` isn't there. Confirm before destructive replacements ("rename Project Alpha → Project Beta everywhere?").
+
+## Edit history
+
+`list_doc_revisions { doc_id, limit? }` — who changed the doc and when, newest first. For "who edited this" or "what did it look like on Monday", list revisions, then export the one you need with `mcp__gdrive__export_doc_revision`.
 
 ## Don't
 

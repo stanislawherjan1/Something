@@ -117,8 +117,8 @@ export function createGoogleApiClient({ clientId, clientSecret, refreshToken }) 
         /insufficient.*scope|ACCESS_TOKEN_SCOPE_INSUFFICIENT/i.test(text);
       const hint = isScopeError
         ? '\n\nHint: your Google refresh token is missing the scope this API needs. ' +
-          'Open Integrations → Google Docs → Remove, then Activate again ' +
-          '(re-runs OAuth Playground with the full Workspace scope set).'
+          'Open Integrations → Google Workspace, disconnect it and connect again ' +
+          'with a refresh token made for the full Workspace scope set.'
         : '';
       const apiErr = new Error(`Google API ${method} ${u.pathname} → ${res.status}: ${text}${hint}`);
       // Attach the HTTP status so callers can branch on it (e.g. 404 → "not

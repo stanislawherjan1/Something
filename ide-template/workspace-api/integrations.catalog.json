@@ -1718,13 +1718,13 @@
           "sheets.googleapis.com",
           "slides.googleapis.com",
           "tasks.googleapis.com",
-          "gmail.googleapis.com",
+          "docs.google.com",
           "www.googleapis.com",
           "oauth2.googleapis.com",
           "*.googleusercontent.com"
         ]
       },
-      "tagline": "Gmail, Drive, Calendar"
+      "tagline": "Docs, Sheets, Drive, Calendar"
     },
     {
       "id": "docs-comments",

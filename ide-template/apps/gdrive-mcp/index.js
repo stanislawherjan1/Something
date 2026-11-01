@@ -70,6 +70,7 @@ const REFRESH_TOKEN = process.env.GDOCS_REFRESH_TOKEN;
 const WRITES_OK     = String(process.env.GWORKSPACE_ALLOW_WRITE || '').toLowerCase() === 'yes';
 
 const DRIVE_BASE  = 'https://www.googleapis.com/drive/v3';
+const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
 const UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
 const FILE_FIELDS =
@@ -245,7 +246,7 @@ const TOOLS = [
   {
     name: 'share_file',
     description:
-      'Grant a permission on a file. Default: writer access for the given email, no notification email sent. ' +
+      'Grant a permission on a file. Default: reader access for the given email, no notification email sent. ' +
       'Requires write permission (workspace-level toggle).',
     inputSchema: {
       type: 'object',
@@ -256,7 +257,7 @@ const TOOLS = [
         role: {
           type: 'string',
           enum: ['reader', 'commenter', 'writer'],
-          default: 'writer',
+          default: 'reader',
         },
         send_notification: {
           type: 'boolean',
@@ -362,10 +363,13 @@ const TOOLS = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+// A Drive name may hold "/" (and so "../"): only its last part names the
+// local file, which stays inside the temp dir.
 function tmpPath(name) {
   const dir = join(tmpdir(), 'gdrive-mcp');
   mkdirSync(dir, { recursive: true });
-  return join(dir, `${randomBytes(6).toString('hex')}-${name}`);
+  const safe = basename(String(name || 'file').replace(/[\\/]/g, '_')).replace(/^\.+/, '') || 'file';
+  return join(dir, `${randomBytes(6).toString('hex')}-${safe}`);
 }
 
 const EXT_TO_MIME = {
@@ -431,6 +435,10 @@ async function handleDownloadFile({ file_id }) {
       `"${meta.name}" is a Google-native file (${meta.mimeType}). ` +
       `Use export_doc_file with a target mime_type like application/pdf instead.`,
     );
+  }
+  // The whole file is held in memory before it is written.
+  if (Number(meta.size) > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`"${meta.name}" is ${Math.round(Number(meta.size) / 1048576)} MB; downloads stop at ${MAX_DOWNLOAD_BYTES / 1048576} MB. Share its Drive link instead.`);
   }
   const buf = await api.getRaw(`${DRIVE_BASE}/files/${encodeURIComponent(file_id)}`, {
     query: { alt: 'media', supportsAllDrives: 'true' },
@@ -615,7 +623,7 @@ async function handleMoveFile({ file_id, new_parent_id }) {
   return compactFile(updated);
 }
 
-async function handleShareFile({ file_id, email, role = 'writer', send_notification = false }) {
+async function handleShareFile({ file_id, email, role = 'reader', send_notification = false }) {
   requireWrite();
   const data = await api.post(
     `${DRIVE_BASE}/files/${encodeURIComponent(file_id)}/permissions`,

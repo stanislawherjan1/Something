@@ -101,6 +101,12 @@ ok('a write tool of a read-only server is refused', mcp('mcp__notion__notion-cre
 ok('...for an admin\'s turn and the brain too', mcp('mcp__notion__notion-create-pages', { IDE_ACTOR_IS_ADMIN: '1' }) === 2 && mcp('mcp__notion__notion-create-pages', { IDE_ACTOR_SLUG: '', IDE_ACTOR_IS_ADMIN: '1' }) === 2);
 ok('a server that is read and write is untouched', mcp('mcp__linear__create_issue') === 0);
 ok('a person\'s own connection of the same service is theirs to write', mcp('mcp__notion-mine__notion-create-pages') === 0);
+// Writes named by other verbs: appending to a doc, replacing its text,
+// restarting an ad campaign's spend, taking a product off the shop.
+writeFileSync(join(ROOT, '.team', 'integration-access.json'), JSON.stringify({ gdocs: 'read', gsheets: 'read', gslides: 'read', meta: 'read', shopify: 'read' }));
+ok('a write by another verb is refused too', mcp('mcp__gdocs__append_to_doc') === 2 && mcp('mcp__gdocs__replace_in_doc') === 2 && mcp('mcp__gsheets__append_rows') === 2
+  && mcp('mcp__gslides__style_text') === 2 && mcp('mcp__meta__resume_campaign') === 2 && mcp('mcp__shopify__unpublish_product') === 2);
+ok('...while their reads pass', mcp('mcp__gdocs__read_doc') === 0 && mcp('mcp__gsheets__read_range') === 0 && mcp('mcp__meta__get_campaigns') === 0 && mcp('mcp__shopify__list_unread_orders') === 0);
 // The catalog's writeTools add to the name rule: ElevenLabs' credit-spending
 // tools have harmless names, and its plainly named writes stay refused.
 writeFileSync(join(ROOT, '.team', 'integration-access.json'), JSON.stringify({ elevenlabs: 'read' }));

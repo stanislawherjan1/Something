@@ -1,6 +1,6 @@
 ---
 name: gcalendar
-description: How to use the Google Calendar MCP — list calendars, list events in a range, get/create/update/delete events. Triggers on "calendar", "kalendarz", "umów spotkanie", "schedule a meeting", "check my schedule", "what's on Tuesday", "anuluj spotkanie". Reads always available; create/update/delete need the workspace write toggle.
+description: How to use the Google Calendar MCP — list calendars, list events in a range, get/create/update/delete events. Also adds a Google Meet link to an event. Reads always available; create/update/delete need the workspace write toggle.
 requires: google-workspace
 allowed-tools: mcp__gcalendar__list_calendars, mcp__gcalendar__list_events, mcp__gcalendar__get_event, mcp__gcalendar__create_event, mcp__gcalendar__update_event, mcp__gcalendar__delete_event
 ---
@@ -33,10 +33,12 @@ Recurring events come back already expanded into individual instances (`singleEv
   "start": { "dateTime": "2026-05-09T14:00:00+02:00", "timeZone": "Europe/Warsaw" },
   "end":   { "dateTime": "2026-05-09T14:30:00+02:00", "timeZone": "Europe/Warsaw" },
   "description": "Weekly check-in",
-  "location": "Google Meet",
+  "add_meet": true,
   "attendees": [{ "email": "anna@acme.com", "display_name": "Anna" }]
 }
 ```
+
+**Google Meet:** pass `add_meet: true` and Google creates the room; the link comes back as `meet_link`. Never write "Google Meet" into `location` instead: that is just text, with no link. If `meet_status` is `"pending"`, call `get_event` a moment later for the link. To add Meet to an existing event, `update_event { event_id, add_meet: true }` (an event that already has a room keeps it); `add_meet: false` removes it.
 
 For all-day events use `start.date` / `end.date` (YYYY-MM-DD) — and **end is exclusive** (a one-day event on May 9 has `end.date = "2026-05-10"`).
 
@@ -45,6 +47,7 @@ For all-day events use `start.date` / `end.date` (YYYY-MM-DD) — and **end is e
 > Going to add to **primary**:
 > - **1:1 with Anna** · Tue 9 May 14:00–14:30 (Europe/Warsaw)
 > - Description: Weekly check-in
+> - Google Meet link
 > - Attendees: anna@acme.com (will be notified)
 > Confirm?
 

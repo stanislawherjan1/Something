@@ -26,6 +26,7 @@ import { mergePersonalToWorkspace, countPersonalFiles } from '../lib/file-scope.
 import { restoreDefaultMemory, migrateDefaultMemory } from '../lib/memory-loader.js';
 import { avatarUrl } from '../lib/user-avatars.js';
 import { syncTelegramAllowedIds, syncTelegramGroups } from '../lib/integrations/telegram-sync.js';
+import { writeAccessMap } from '../lib/integrations/runtime.js';
 import { listUnregistered } from '../lib/integrations/group-watcher.js';
 import * as slackChannels from '../lib/integrations/slack-channels.js';
 import { pendingUsers as slackPendingUsers, forgetPending as slackForgetPending } from '../lib/integrations/slack-listener.js';
@@ -127,6 +128,8 @@ export default function teamRouter() {
     }
     const wasTeam = team.getTeamMode();
     const teamMode = team.setTeamMode(enabled, req.actor);
+    // Read-only team connections bind only in team mode.
+    if (teamMode !== wasTeam) writeAccessMap();
     // Switched on: the owner's trees must be theirs before anything of theirs
     // is written into them (the board below) — not at the next boot.
     if (teamMode && !wasTeam) {

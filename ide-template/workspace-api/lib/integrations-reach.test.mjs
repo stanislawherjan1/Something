@@ -6,7 +6,7 @@
  * bridge token's owner check and the night importer's list per person.
  * Run: node lib/integrations-reach.test.mjs
  */
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -156,6 +156,13 @@ r = await call('stan@example.test', 'GET', '/integrations/email-imap');
 ok('the page lists the accounts, the address in clear, the password masked', r.body.workspace?.items?.length === 2 && r.body.workspace.items[1].fields.find(f => f.name === 'EMAIL_USER')?.value === 'sam@example.test' && r.body.workspace.items[1].fields.find(f => f.name === 'EMAIL_PASS')?.summary && !JSON.stringify(r.body).includes('password-two'), r.body.workspace);
 r = await call('stan@example.test', 'PATCH', '/integrations/email-imap/items/1', { fields: { EMAIL_PASS: 'password-three-xyz' } });
 ok('one account\'s password is changed in place', r.status === 200 && store.decryptFor('email-imap')[1].EMAIL_PASS === 'password-three-xyz' && store.decryptFor('email-imap')[1].EMAIL_USER === 'sam@example.test');
+// The page adds an account with its own fields only: "allow sending" is the
+// connection's, so the new account takes the one the others have.
+store.update('email-imap', { globalFields: { EMAIL_ALLOW_SEND: 'yes' } });
+r = await call('stan@example.test', 'POST', '/integrations/email-imap/items', { fields: { EMAIL_PROVIDER: 'zoho', EMAIL_HOST: 'imap.zoho.eu', EMAIL_PORT: '993', EMAIL_USER: 'kim@example.test', EMAIL_PASS: 'password-four-xyz' } });
+ok('an account added later sends like the others', r.status === 200 && store.decryptFor('email-imap')[2].EMAIL_ALLOW_SEND === 'yes', store.decryptFor('email-imap')[2]);
+await call('stan@example.test', 'DELETE', '/integrations/email-imap/items/2');
+store.update('email-imap', { globalFields: { EMAIL_ALLOW_SEND: 'false' } });
 r = await call('stan@example.test', 'DELETE', '/integrations/email-imap/items/0');
 ok('an account is removed, the other stays', r.status === 200 && store.decryptFor('email-imap').length === 1 && store.decryptFor('email-imap')[0].EMAIL_USER === 'sam@example.test');
 r = await call('stan@example.test', 'DELETE', '/integrations/email-imap/items/0');
@@ -176,6 +183,14 @@ ok('an admin makes the team\'s connection read-only, without a reconnect or a re
 ok('...the list and the page say so', (await call('ann@example.test', 'GET', '/integrations')).body.integrations.find(i => i.id === 'trello').access === 'read' && (await call('stan@example.test', 'GET', '/integrations/trello')).body.workspace.access === 'read');
 const accessMap = JSON.parse(readFileSync(join(ROOT, '.team', 'integration-access.json'), 'utf8'));
 ok('...and the hook\'s map names its server', accessMap.trello === 'read' && !accessMap['trello-mine'], accessMap);
+// Solo, the one person writes through every connection; the level waits for team mode.
+const readMap = () => JSON.parse(readFileSync(join(ROOT, '.team', 'integration-access.json'), 'utf8'));
+writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: false }));
+runtime.writeAccessMap();
+ok('solo, nothing is read-only', Object.keys(readMap()).length === 0 && store.accessOf('trello') === 'read');
+rmSync(join(ROOT, '.team-config.json'));
+runtime.writeAccessMap();
+ok('...and back in team mode the team\'s level binds again', readMap().trello === 'read');
 r = await call('ann@example.test', 'PATCH', '/integrations/trello?reach=personal', { access: 'read' });
 ok('a person\'s own connection is always read and write', r.status === 400);
 store.activate('linear', { fields: { OAUTH_TOKENS: '{"access_token":"l"}' } }, { owner: 'stan', reach: 'workspace', access: 'read' });

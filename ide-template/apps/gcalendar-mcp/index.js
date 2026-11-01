@@ -16,7 +16,7 @@
  *   list_calendars   — every calendar in the user's CalendarList
  *   list_events      — events in a date range, single-event expansion of recurring
  *   get_event        — one event by id
- *   create_event     — events.insert (sendUpdates configurable)
+ *   create_event     — events.insert (sendUpdates configurable); add_meet attaches a Google Meet room
  *   update_event     — events.patch (sparse, never nulls unspecified fields)
  *   delete_event     — events.delete (HTTP 204, no body)
  * ─────────────────────────────────────────────
@@ -25,6 +25,7 @@
 import { Server }               from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { randomUUID } from 'node:crypto';
 import { createGoogleApiClient } from '../_shared/google-oauth.js';
 import { loadCredentials } from '../_shared/broker-client.js';
 
@@ -93,6 +94,10 @@ function compactEvent(ev) {
     creator:      ev.creator?.email,
     html_link:    ev.htmlLink,
     hangout_link: ev.hangoutLink,
+    meet_link:    ev.conferenceData?.entryPoints?.find(p => p.entryPointType === 'video')?.uri || ev.hangoutLink,
+    // "pending" right after add_meet means Google is still creating the room;
+    // get_event a moment later returns the link.
+    meet_status:  ev.conferenceData?.createRequest?.status?.statusCode,
     updated:      ev.updated,
   };
 }
@@ -181,6 +186,10 @@ const TOOLS = [
           items: { type: 'string' },
           description: 'RRULE/EXRULE/RDATE/EXDATE strings, e.g. ["RRULE:FREQ=WEEKLY;BYDAY=MO"]. timeZone required in start/end.',
         },
+        add_meet: {
+          type: 'boolean',
+          description: 'Attach a new Google Meet link to the event. The link comes back as `meet_link`.',
+        },
         send_updates: {
           type: 'string',
           enum: ['all', 'externalOnly', 'none'],
@@ -208,6 +217,7 @@ const TOOLS = [
         end:         { type: 'object' },
         attendees:   { type: 'array' },
         recurrence:  { type: 'array' },
+        add_meet:    { type: 'boolean', description: 'true attaches a Google Meet link if the event has none; false removes the existing one.' },
         send_updates: {
           type: 'string',
           enum: ['all', 'externalOnly', 'none'],
@@ -289,22 +299,38 @@ function mapAttendees(arr) {
   })).filter(a => a.email);
 }
 
-async function handleCreateEvent({ calendar_id = 'primary', send_updates = 'none', attendees, ...rest }) {
+// A Meet room is asked for, not set: Google creates it from a createRequest,
+// and only reads conferenceData at all when the call carries
+// conferenceDataVersion=1.
+function meetRequest() {
+  return { createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: 'hangoutsMeet' } } };
+}
+
+async function handleCreateEvent({ calendar_id = 'primary', send_updates = 'none', attendees, add_meet, ...rest }) {
   requireWrite();
   const body = { ...rest };
   if (attendees) body.attendees = mapAttendees(attendees);
+  if (add_meet) body.conferenceData = meetRequest();
   const ev = await api.post(`${calPath(calendar_id)}/events`, body, {
     query: { sendUpdates: send_updates, conferenceDataVersion: '1' },
   });
   return compactEvent(ev);
 }
 
-async function handleUpdateEvent({ calendar_id = 'primary', event_id, send_updates = 'none', attendees, ...rest }) {
+async function handleUpdateEvent({ calendar_id = 'primary', event_id, send_updates = 'none', attendees, add_meet, ...rest }) {
   requireWrite();
   const body = { ...rest };
   if (attendees) body.attendees = mapAttendees(attendees);
+  if (add_meet === false) body.conferenceData = null;
+  if (add_meet === true) {
+    // Keep an existing room rather than replacing the link people already have.
+    const cur = await api.get(`${calPath(calendar_id)}/events/${encodeURIComponent(event_id)}`, {
+      query: { fields: 'conferenceData,hangoutLink' },
+    });
+    if (!cur?.conferenceData && !cur?.hangoutLink) body.conferenceData = meetRequest();
+  }
   const ev = await api.patch(`${calPath(calendar_id)}/events/${encodeURIComponent(event_id)}`, body, {
-    query: { sendUpdates: send_updates },
+    query: { sendUpdates: send_updates, conferenceDataVersion: '1' },
   });
   return compactEvent(ev);
 }

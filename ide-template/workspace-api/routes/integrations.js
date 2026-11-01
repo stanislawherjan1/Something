@@ -702,8 +702,11 @@ export default function integrationsRouter() {
     try { updatedNames = store.update(key, body); }
     catch (err) { return res.status(400).json({ error: err.message }); }
     // A workspace change restarts the bot (its config or files changed); a
-    // person's own connection reaches their turns on the next turn.
-    const after = await afterChange(key, { skill: false, forceRestart: target.reach === 'workspace' });
+    // person's own connection reaches their turns on the next turn — except
+    // the operator's, whose servers the long-lived brain also runs.
+    let operator = null;
+    try { operator = team.primaryAdminSlug(); } catch { /* no roster */ }
+    const after = await afterChange(key, { skill: false, forceRestart: target.reach === 'workspace' || target.owner === operator });
     if (after.error) return res.status(500).json({ error: after.error });
     res.json({
       ok: true,

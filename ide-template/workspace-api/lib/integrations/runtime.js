@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, chmodSy
 import { dirname, join } from 'node:path';
 import * as catalog from './catalog.js';
 import * as store from './store.js';
-import { primaryAdminSlug } from '../team.js';
+import { primaryAdminSlug, getTeamMode } from '../team.js';
 import { issueGrant, grantIntegration } from './broker.js';
 
 // Phase-2 broker isolation. MCPs no longer get plaintext credentials in
@@ -300,10 +300,12 @@ export function syncMcpServers() {
 // Which servers are read-only for the team — `.team/integration-access.json`,
 // `{ "<server name>": "read" }`, group `workspace` 0664 so every turn's
 // scope-guard hook reads it and refuses the write tools of those servers.
+// Solo, the one person is the whole team and writes like on their own
+// connection: the map stays empty and the stored levels wait for team mode.
 const ACCESS_FILE = () => join(process.env.PROJECT_DIR || '/home/coder/project', '.team', 'integration-access.json');
 export function writeAccessMap() {
   try {
-    const map = store.readOnlyServers((key) => Object.keys(serverEntriesFor(key, {})));
+    const map = getTeamMode() ? store.readOnlyServers((key) => Object.keys(serverEntriesFor(key, {}))) : {};
     const f = ACCESS_FILE();
     mkdirSync(dirname(f), { recursive: true });
     writeFileSync(`${f}.tmp`, JSON.stringify(map, null, 2), { mode: 0o664 });
