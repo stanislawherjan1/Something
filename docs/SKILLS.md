@@ -22,6 +22,9 @@ them. A service you connect for yourself brings its skill to Yours; one
 connected for the team brings it to Team. In a group conversation no new
 skills are made. A workspace without a team has one list.
 
+A service's skill is kept up to date with each new version of Something. If
+you changed it yourself, your version is kept as it is.
+
 ---
 
 Skills are instruction files that tell Claude how to handle specific tasks. Unlike MCP servers (which provide tools), skills provide **behavioral guidelines** — rules, workflows, and constraints that shape how Claude acts when a particular topic comes up.
@@ -49,6 +52,15 @@ or in solo) and the caller's own (`scope: personal`), with `teamMode` and `canEd
 `/api/skills/raw?origin=personal` reads the caller's own. An integration's optional skill is
 installed by the connection's reach — a personal connection's into the owner's `.skills`, its
 `mcp__<server>__` tool names rewritten to `mcp__<server>-mine__` (`personaliseSkill`).
+
+**Integration skills follow releases.** workspace-api installs them on activation and on every
+startup, for the team's connections and each person's own (`installOptionalSkill`; the entrypoint
+no longer copies them). Each copy carries `.shipped.json` — the connection key and a hash of what
+was copied. A copy that still matches its hash is replaced when the image ships a newer version; an
+edited copy, or a `source: project` skill of the same name, is left alone. A copy from before
+copies were tracked is replaced and the old one moved to `.skills-replaced/<name>-<time>` beside the
+skills folder (`.claude/.skills-replaced/`, `users/<slug>/.skills-replaced/`). Disconnecting an
+integration leaves its skill in place.
 
 Skills can exist in two locations — Claude checks both:
 
@@ -165,7 +177,7 @@ ide-template/skills/
 
 **INDEX.md autogen at boot.** Entrypoint walks both skill trees, parses each `SKILL.md` frontmatter, and writes a one-line-per-skill `~/project/.claude/skills/INDEX.md`. The model uses `cat INDEX.md | grep -i <keyword>` to verify skill existence before claiming absence (per the **Before claiming absence** rule in global-claude.md). Eliminates "I don't have a skill for X" hallucinations.
 
-**Every integration has a skill.** An optional skill is installed when its `requires:` names an active integration — by its catalog id (`email-imap`, `ga4`, `meta-ads`) or by its MCP server's name (`email`, `analytics`, `meta`); both installers accept either. Each integration skill lists the server's real tools (from the vendor's docs or source), marks what sends, pays, publishes or deletes, and says which routines rely on it. A routine written by the bot may start with an emoji or an icon name in braces (`{bell}`); a known emoji is mapped to an icon.
+**Every integration has a skill.** An optional skill is installed when its `requires:` names an active integration — by its catalog id (`email-imap`, `ga4`, `meta-ads`) or by its MCP server's name (`email`, `analytics`, `meta`); either installs it. Each integration skill lists the server's real tools (from the vendor's docs or source), marks what sends, pays, publishes or deletes, and says which routines rely on it. A routine written by the bot may start with an emoji or an icon name in braces (`{bell}`); a known emoji is mapped to an icon.
 
 **Progressive disclosure via `references/`.** Per Anthropic Skills spec, larger skills (>~100 lines) split static reference content into `references/<topic>.md` files loaded on-demand. Currently applied to: `skill-authoring/references/{yaml-fields, anti-patterns, checklist, examples/*}`, `capability-tour/references/{mcp-defaults, gap-handling}`, `file-placement/references/decision-tree.md`, `project-backup/references/rules.md`, `reminders/references/{delivery, set-params}`, `repo-audit/references/{bash-commands, exclusions}`, `security/references/coverage-status.md`, `task-management/references/{reminder-rules, templates}`, `routines/references/catalog.md` (generated from `workspace-api/routines.catalog.json` by `lib/routines-reference.js`; a test fails when it is stale).
 

@@ -19,7 +19,8 @@
  * restart because it doesn't re-read its config mid-session.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, chmodSync, chownSync, cpSync, readdirSync, statSync, renameSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, chmodSync, chownSync, cpSync, readdirSync, statSync, renameSync, copyFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import * as catalog from './catalog.js';
 import * as store from './store.js';
@@ -373,8 +374,11 @@ function discoverOptionalSkills(optDir) {
  * user customises, deletes, or evolves over time, so they live in the
  * project where edits stick + sync to Drive on legacy clients.
  *
- * Idempotent: if the destination already exists, we leave it alone — user
- * edits and manual deletes survive. Removing the integration does NOT
+ * Runs on activation and on every startup: a copy still as shipped is
+ * replaced when the image carries a newer version; an edited copy, or a
+ * `source: project` skill of the same name, is left alone. A copy from before
+ * copies were tracked is replaced, the old one moved to `.skills-replaced/`
+ * beside the skills folder. Removing the integration does NOT
  * uninstall the skill (the user might still want the playbook as a
  * reference, and skills can survive a re-activate).
  *
@@ -404,6 +408,92 @@ export function personaliseSkill(dir, server) {
   walk(dir);
 }
 
+// An installed integration skill carries `.shipped.json`: the connection that
+// put it there and a hash of what was copied. A copy that still hashes the
+// same is ours, refreshed when the image ships a newer one; one that differs
+// was edited here and is left alone.
+const SHIPPED = '.shipped.json';
+
+function treeHash(dir) {
+  const h = createHash('sha256');
+  const walk = (p, rel) => {
+    for (const name of readdirSync(p).sort()) {
+      if (!rel && name === SHIPPED) continue;
+      const full = join(p, name);
+      const r = rel ? `${rel}/${name}` : name;
+      if (statSync(full).isDirectory()) walk(full, r);
+      else h.update(`${r}\0`).update(readFileSync(full)).update('\0');
+    }
+  };
+  walk(dir, '');
+  return h.digest('hex');
+}
+
+function readShipped(dir) {
+  try { return JSON.parse(readFileSync(join(dir, SHIPPED), 'utf8')); } catch { return null; }
+}
+
+function writeShipped(dir, key, hash, privateTree) {
+  const p = join(dir, SHIPPED);
+  writeFileSync(p, JSON.stringify({ key, hash }) + '\n');
+  if (privateTree) { try { chmodSync(p, 0o660); } catch { /* dev */ } }
+}
+
+// The frontmatter `source:` of an installed copy, '' when unstamped.
+function sourceOf(dir) {
+  try { return (readFileSync(join(dir, 'SKILL.md'), 'utf8').split('---')[1] || '').match(/^source:\s*(\S+)/m)?.[1] || ''; }
+  catch { return ''; }
+}
+
+/**
+ * Put one optional skill at `dest`, or bring an earlier copy up to date.
+ * `personal` is the owner's server name for a person's own copy (see
+ * personaliseSkill), null for the team's. Returns true when the skill was
+ * copied or replaced.
+ */
+function placeSkill(src, dest, key, personal) {
+  let backup = false;
+  if (existsSync(dest)) {
+    const shipped = readShipped(dest);
+    const source = sourceOf(dest);
+    if (shipped) {
+      if (shipped.hash !== treeHash(dest)) return false;   // edited here — keep
+    } else if (source === 'project') {
+      return false;                                        // a person's own skill of that name
+    } else if (!source.startsWith('integration:')) {
+      // Copied before copies were tracked: an old release or an edit, no way
+      // to tell. Replaced, with the old copy kept next to the skills folder.
+      backup = true;
+    }
+  }
+
+  const stage = join(dirname(dest), `.${dest.split('/').pop()}.staging`);
+  rmSync(stage, { recursive: true, force: true });
+  mkdirSync(dirname(stage), { recursive: true });
+  cpSync(src, stage, { recursive: true });
+  if (personal != null) personaliseSkill(stage, personal);
+  const hash = treeHash(stage);
+
+  if (existsSync(dest) && treeHash(dest) === hash) {
+    rmSync(stage, { recursive: true, force: true });
+    if (readShipped(dest)?.hash !== hash) writeShipped(dest, key, hash, personal != null);
+    return false;
+  }
+  if (existsSync(dest)) {
+    if (backup) {
+      const keep = join(dirname(dirname(dest)), '.skills-replaced', `${dest.split('/').pop()}-${Date.now()}`);
+      mkdirSync(dirname(keep), { recursive: true });
+      renameSync(dest, keep);
+      process.stderr.write(`[integrations-runtime] ${dest}: an untracked copy was replaced; the old one is in ${keep}\n`);
+    } else {
+      rmSync(dest, { recursive: true, force: true });
+    }
+  }
+  renameSync(stage, dest);
+  writeShipped(dest, key, hash, personal != null);
+  return true;
+}
+
 export function installOptionalSkill(id) {
   const optDir = process.env.OPTIONAL_SKILLS_DIR || '/opt/ide/skills/optional';
   if (!existsSync(optDir)) return [];
@@ -418,21 +508,13 @@ export function installOptionalSkill(id) {
   const installed = [];
 
   // A skill's `requires:` may name the catalog id (email-imap, ga4, meta-ads) or
-  // the MCP server's name (email, analytics, meta) — the boot-time installer
-  // matches the latter, this one was matching only the former, so a skill
-  // written either way was missed by one path or the other.
+  // the MCP server's name (email, analytics, meta); either installs it.
   const names = new Set([id, catalog.get(id)?.mcp?.name].filter(Boolean));
   const skills = discoverOptionalSkills(optDir);
   for (const skill of skills) {
     if (!skill.requires.some(r => names.has(r))) continue;
-    const dest = join(destRoot, skill.name);
-    if (existsSync(dest)) continue;   // never overwrite — respect user edits
-
     try {
-      mkdirSync(dirname(dest), { recursive: true });
-      cpSync(skill.src, dest, { recursive: true });
-      if (owner) personaliseSkill(dest, server);
-      installed.push(skill.name);
+      if (placeSkill(skill.src, join(destRoot, skill.name), id, owner ? server || '' : null)) installed.push(skill.name);
     } catch (err) {
       process.stderr.write(`[integrations-runtime] failed to install ${skill.name}: ${err.message}\n`);
     }

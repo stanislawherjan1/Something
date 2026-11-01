@@ -470,10 +470,17 @@ with the running image and only the layers whose files changed are rebuilt —
 minutes, not forty of them, and a few hundred MB of disk, not a second copy of
 the image. `./deploy.sh --fresh` rebuilds every layer (a base-package refresh,
 or a layer you suspect is stale); at its peak that holds the running image, a
-full build cache and the new image compressed and unpacked — about four times
-the image's compressed size — so deploy.sh measures free space first, frees what
-is unused, drops the `:previous` generation if it must, and stops before the
-build when it still would not fit.
+full build cache and the new image compressed and unpacked.
+
+So deploy.sh measures free space before the build. It counts the image's real
+footprint — its layers unpacked (`docker history`) plus, on the containerd
+image store, the compressed blobs kept beside them; `docker image inspect`
+reports only the compressed part there, about a quarter of it. A cached build
+needs that footprint plus 2 GB, a full rebuild the footprint plus the unpacked
+size plus 2 GB. When short it frees, in order: dangling images and build cache
+older than ten days, then all build cache (the build then rebuilds every layer
+and needs the full-rebuild room), then the `:previous` generation (no rollback
+for that deploy). It stops before the build when it still would not fit.
 
 Host upkeep that keeps this working: `bin/ensure-server.sh` schedules a weekly
 prune of build cache nobody used for ten days (plus a journal cap), and every
