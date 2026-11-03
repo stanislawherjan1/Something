@@ -50,9 +50,26 @@ const before = sends.length;
 script = [{ text: '[[SILENT]]', sessionId: 'S2' }];
 r = await answerMemberDm(ann, 'ok', { runTurn, send });
 ok('a silent reply is not sent', !r.delivered && sends.length === before);
+// A reaction marker is done and removed; a silent line after it is still silence.
+const reactions = [];
+const react = async (e) => { reactions.push(e); return { ok: true }; };
+script = [{ text: '[[REACT 🫡]]\n[[SILENT]]', sessionId: 'S2' }];
+r = await answerMemberDm(ann, 'thanks!', { runTurn, send, react });
+ok('[[REACT e]] reacts on the message and nothing is sent', r.reason === 'reaction' && reactions[0] === '🫡' && sends.length === before, { r, reactions, last: sends.at(-1) });
+script = [{ text: '[[REACT 👀]]\nOn it, give me a minute.', sessionId: 'S2' }];
+r = await answerMemberDm(ann, 'can you check?', { runTurn, send, react });
+ok('a reaction beside text: both, and the marker is gone from the text', reactions[1] === '👀' && sends.at(-1).text === 'On it, give me a minute.', sends.at(-1));
+script = [{ text: 'Noted.\n[[SEND]]\n[[SILENT]]', sessionId: 'S2' }];
+const b2 = sends.length;
+r = await answerMemberDm(ann, 'noted?', { runTurn, send, react });
+ok('a silent line anywhere means silence; stray markers never reach the chat', !r.delivered && sends.length === b2, r);
+script = [{ text: '[[REACT 👍]] thanks', sessionId: 'S2' }];
+r = await answerMemberDm(ann, 'k', { runTurn, send });
+ok('with no way to react, the marker is just dropped', sends.at(-1).text === 'thanks' && !/REACT/.test(sends.at(-1).text));
+const b3 = sends.length;
 script = [{ text: 'Done, I told them.', sessionId: 'S2', sentItself: true }];
 r = await answerMemberDm(ann, 'tell stan hi', { runTurn, send });
-ok('a reply the model already sent itself is not sent again', r.delivered && sends.length === before);
+ok('a reply the model already sent itself is not sent again', r.delivered && sends.length === b3);
 
 const web = listSessions('ann').find(s => s.title === 'Telegram');
 ok('the exchange is recorded in the member\'s web history', !!web && readUndelivered('ann', web.id, 0).messages.filter(m => m.role === 'assistant').length >= 2);

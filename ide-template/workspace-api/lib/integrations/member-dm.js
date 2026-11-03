@@ -28,7 +28,12 @@ import { isUsageLimit, limitNotice, noticeLang, noticeResetsAt, resetInstant } f
 import { effectiveTimezone } from '../team.js';
 import { resolve as resolveBranding } from '../branding.js';
 
-const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
+// `[[SILENT]]` anywhere on a line of its own (the model puts a reaction marker
+// first at times); `[[REACT e]]` is done and removed; any other marker that
+// survives is stripped — a line like "[[SEND]]" is not a message.
+const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]`{0,3}\s*$/im;
+const REACT_RE = /`{0,3}\[\[\s*REACT\s+([^\]\s]+)\s*\]\]`{0,3}/gi;
+const STRAY_MARKER_RE = /^\s*`{0,3}\[\[\s*[A-Z_]+[^\]]*\]\]`{0,3}\s*$/gim;
 const RESUME_LOST_RE = /no conversation found|not found|exited with code 1\b/i;
 
 // What each surface is called in the person's web history, and how a reply
@@ -128,7 +133,13 @@ export async function answerMemberDm(member, body, deps = {}) {
   // Files the reply hands over ([[SEND_FILE …]]): a path the person cannot
   // open from Slack or Telegram is no answer, so the file itself goes, first.
   const files = [];
-  let text = String(r.text || '').replace(FILE_RE, (_, p) => { if (files.length < MAX_FILES) files.push(String(p).trim()); return ''; }).trim();
+  let text = String(r.text || '').replace(FILE_RE, (_, p) => { if (files.length < MAX_FILES) files.push(String(p).trim()); return ''; });
+  // A reaction on the person's message, when the surface can (Telegram): done, not said.
+  let reaction = null;
+  text = text.replace(REACT_RE, (_, e) => { reaction = reaction || e; return ''; });
+  const silent = SILENT_RE.test(text);
+  text = text.replace(SILENT_RE, '').replace(STRAY_MARKER_RE, '').trim();
+  if (reaction && deps.react) { try { await deps.react(reaction); } catch (err) { process.stderr.write(`[member-dm] ${slug}: reaction failed: ${err.message}\n`); } }
   if (r.error && !text && !files.length) {
     // A spent plan is said, as on the web: the person's language and clock,
     // once per reset (every message after it would otherwise get the same line).
@@ -149,7 +160,8 @@ export async function answerMemberDm(member, body, deps = {}) {
     return { delivered: false, reason: 'error' };
   }
   if (r.sentItself) return { delivered: true, reason: 'sent by the model' };
-  if ((!text && !files.length) || SILENT_RE.test(text)) return { delivered: false, reason: 'silent' };
+  if (!text && !files.length) return { delivered: !!reaction, reason: reaction ? 'reaction' : 'silent' };
+  if (silent && !files.length) return { delivered: !!reaction, reason: reaction ? 'reaction' : 'silent' };
 
   let sentFiles = 0;
   for (const p of files) {

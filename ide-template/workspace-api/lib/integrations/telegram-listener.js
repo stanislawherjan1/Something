@@ -213,7 +213,7 @@ export function createDispatcher(deps = {}) {
     d.typing(chatId, 'typing').catch?.(() => {});
     const typingCap = setTimeout(() => clearInterval(typing), TYPING_MAX_MS);
 
-    const memberDmDeps = { surface: 'telegram', target: chatId, send: d.send, sendFile: (target, f) => d.sendFile(target, f.abs, { logKind: 'dm' }) };
+    const memberDmDeps = { surface: 'telegram', target: chatId, send: d.send, sendFile: (target, f) => d.sendFile(target, f.abs, { logKind: 'dm' }), react: (emoji) => d.react(chatId, m.message_id, emoji) };
     const r = await d.routeInbound({ chat_id: chatId, text: body, message_id: m.message_id, reply_to_message_id: m.reply_to_message?.message_id ?? null }, { memberDmDeps });
     const done = r?.done || Promise.resolve(r);
     done.then((out) => {
