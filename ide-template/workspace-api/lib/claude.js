@@ -856,6 +856,8 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
         }
         return;
       }
+      // A long tool call's heartbeat (CLI >= 2.1.3xx): the turn is alive, nothing to show.
+      if (evt.type === 'tool_progress') return;
       if (!debugStream && evt.type && evt.type !== 'system' && evt.type !== 'assistant') {
         process.stderr.write(`[claude/unknown-top] type=${evt.type} keys=${Object.keys(evt).join(',')}\n`);
       }
