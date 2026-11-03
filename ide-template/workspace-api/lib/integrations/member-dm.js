@@ -77,6 +77,8 @@ function saveSession(slug, surface, sessionId) {
 function clearSession(slug, surface) {
   try { unlinkSync(sessionFile(slug, surface)); } catch { /* already gone */ }
 }
+/** The person starts over (Telegram's /restart): the next message opens a new session. */
+export function resetSurfaceSession(slug, surface) { clearSession(slug, surfaceOf(surface)); }
 
 // The member's "Telegram" / "Slack" chat in their web history: found, or made once.
 function webSessionFor(slug, surface) {

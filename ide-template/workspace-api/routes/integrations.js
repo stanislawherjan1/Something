@@ -32,6 +32,8 @@ import { avatarUrl } from '../lib/user-avatars.js';
 import { publish as notify } from '../lib/notify.js';
 import { flushAllWaiting } from '../lib/routines-add.js';
 import * as slackListener from '../lib/integrations/slack-listener.js';
+import * as telegramListener from '../lib/integrations/telegram-listener.js';
+import { wsapiTransport } from '../lib/integrations/telegram-transport.js';
 import * as slackApi from '../lib/integrations/slack-api.js';
 import { resolve as resolveBranding } from '../lib/branding.js';
 
@@ -155,6 +157,10 @@ async function afterChange(key, { files = true, skill = true, forceRestart = fal
   // The Slack socket lives in this process: it follows the store, no restart.
   if (key === 'slack') {
     try { slackListener.reconcile(); } catch (err) { process.stderr.write(`[integrations] slack listener: ${err.message}\n`); }
+  }
+  // So does the Telegram poll, when workspace-api is the transport.
+  if (key === 'telegram') {
+    try { telegramListener.reconcile(); } catch (err) { process.stderr.write(`[integrations] telegram listener: ${err.message}\n`); }
   }
   return { restarting, restartFailed: restarting && !restartOk };
 }
@@ -304,6 +310,8 @@ export default function integrationsRouter() {
         // The Slack socket: up or not, since when, what it missed — and whether
         // the app still has to be installed (no bot token yet) and can be from here.
         ...(entry.process === 'slack-listener' && s?.active ? { listener: slackListener.status(), ...(admin ? { install: slackInstallState() } : {}) } : {}),
+        // The Telegram poll, when workspace-api reads Telegram itself.
+        ...(entry.process === 'telegram-bot' && s?.active && wsapiTransport() ? { listener: telegramListener.status() } : {}),
       };
     });
     // no-store so the dashboard's post-OAuth refetch always sees the freshly

@@ -111,11 +111,16 @@ OP_SLUG=""   # operator slug (team mode); fetched lazily once wsapi is reachable
 
 # Resolve the operator slug from wsapi (team mode). Empty in solo or until wsapi
 # is up — called lazily in the poll loop until it resolves.
+# Also learns which process reads Telegram (TG_TRANSPORT=plugin|wsapi): with
+# workspace-api as the transport there is no tmux brain, and every operator
+# frame is a headless turn whose outcome workspace-api delivers.
+TG_TRANSPORT=""
 fetch_op_slug() {
     command -v curl >/dev/null 2>&1 || return 0
     local j
     j=$(curl -sS --max-time 5 --fail "http://localhost:${WSAPI_PORT}/api/internal/operator-identity" 2>/dev/null || true)
     OP_SLUG=$(printf '%s' "$j" | grep -oE '"slug":"[a-z0-9-]+"' | head -1 | sed -E 's/.*:"//; s/"//')
+    TG_TRANSPORT=$(printf '%s' "$j" | grep -oE '"transport":"[a-z]+"' | head -1 | sed -E 's/.*:"//; s/"//')
 }
 
 # Is the operator a recipient of this reminder? Their own copy is brain-
@@ -148,13 +153,17 @@ leg_done() {
 #
 # Success is a 202 carrying `started`; solo mode answers 200 with skipped:'solo'
 # and must NOT count, or a solo box would think the duty ran.
+# $2 (a channel) asks workspace-api to DELIVER the turn's outcome to the
+# operator on that surface, as it does for a teammate's planner run; without it
+# the turn's text reaches nobody unless the model sends it itself.
 invoke_turn_operator() {
-    local frame="$1" resp status payload
+    local frame="$1" deliver="${2:-}" resp status payload
     command -v curl >/dev/null 2>&1 || return 1
     [ -z "$OP_SLUG" ] && return 1
     local json
-    json=$(ACTOR="$OP_SLUG" MSG="$frame" node - << 'NODE'
-process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process.env.MSG }));
+    json=$(ACTOR="$OP_SLUG" MSG="$frame" DELIVER="$deliver" node - << 'NODE'
+const d = process.env.DELIVER ? { deliver: { channel: process.env.DELIVER, title: 'Reminder' } } : {};
+process.stdout.write(JSON.stringify({ actor: process.env.ACTOR, message: process.env.MSG, ...d }));
 NODE
 ) || return 1
     resp=$(curl -sS -m 8 -w '\n%{http_code}' -X POST \
@@ -189,6 +198,24 @@ fire_operator() {
     # in global-claude.md). Everything else fires as a normal [REMINDER].
     local frame="REMINDER"
     [ "$urgency" = "ambient" ] && frame="AMBIENT"
+    # workspace-api reads Telegram itself: there is no tmux brain, and the
+    # operator is a person like any other — the frame runs as a headless turn
+    # as them, and its outcome is delivered on the reminder's channel. An
+    # internal trigger ([PLAN_DAY_TRIGGER]…) is work, not a message: no delivery.
+    [ -z "$OP_SLUG" ] && fetch_op_slug
+    if [ "$TG_TRANSPORT" = "wsapi" ]; then
+        local deliver="$channel"
+        case "$message" in \[[A-Z_]*\]*) deliver="" ;; esac
+        [ "$channel" = "web" ] && deliver=""
+        if invoke_turn_operator "[${frame} channel=${channel} | ${message}]" "$deliver"; then
+            log "Operator frame ran as a headless turn (wsapi transport, channel=${channel} urgency=${urgency})"
+            FIRE_PATH="invoke-turn"
+            return 0
+        fi
+        log "Operator frame: no headless turn available (wsapi transport) — staying silent: ${message:0:60}"
+        FIRE_PATH="undelivered-no-brain"
+        return 1
+    fi
     # Slack is not a surface the tmux brain has (no Slack tool there). A
     # Slack-bound reminder runs as a headless turn, which delivers its result
     # through web_send_message with channel=slack — the operator is a person

@@ -704,6 +704,19 @@ get_order(id: 'x"){ maliciousField } query Exfil{ shop{ name }}'
 **Result**: Input treated as opaque value, never parsed as GraphQL syntax
 
 
+### 14b. Telegram read from workspace-api (`TELEGRAM_TRANSPORT=wsapi`)
+
+With workspace-api as the transport (`lib/integrations/telegram-listener.js`)
+nothing new listens: the poll is one outbound request held open, like the Slack
+socket, with no SDK and no new inbound route. The bot token is read from the
+encrypted store per call; the plugin's plaintext copies (`channels/telegram/.env`,
+`integrations.env`) are still written for the `plugin` transport and go when it
+does. Every DM runs as the person's own turn in their slot uid — the operator's
+included — so the fence is the one every turn has; a stranger's message starts
+no turn. The three loopback routes the plugin called (`telegram-inbound`,
+`group-message`, `group-joined`) are not used on this path: the listener calls
+the same functions in process, so there is no inbound message to forge.
+
 ### 15. Process List Token Exposure (Telegram Bot)
 
 **Attack**: Any user with shell access reads `ps aux` and captures the Telegram bot token from the process command line

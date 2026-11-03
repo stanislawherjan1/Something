@@ -24,6 +24,7 @@ import { PROJECT_DIR } from '../config.js';
 import * as store from './store.js';
 import * as runtime from './runtime.js';
 import { telegramAllowedIds, list as teamList, primaryAdminSlug } from '../team.js';
+import { wsapiTransport } from './telegram-transport.js';
 import { listSessions } from '../sessions.js';
 import { appendToSession, readUndelivered } from '../chatHistory.js';
 
@@ -37,6 +38,14 @@ const TELEGRAM_LOG_PATH = process.env.TELEGRAM_LOG_PATH || '/home/bot/.telegram/
 // Append an outbound relay to the Telegram conversation log so the bot's brain
 // (recent_messages / next snapshot) knows what it relayed there. Best-effort —
 // missing file / perms are non-fatal (the web thread is still the record).
+/** An inbound DM, as the plugin's log wrote it (lib/integrations/telegram-listener.js logs here). */
+export function logTelegramInbound({ chat_id, message_id, user, text, kind = 'text' } = {}) {
+  try {
+    const entry = { ts: new Date().toISOString(), direction: 'inbound', chat_id: String(chat_id), message_id: message_id != null ? String(message_id) : null, user: user || null, kind, text: String(text == null ? '' : text) };
+    appendFileSync(TELEGRAM_LOG_PATH, JSON.stringify(entry) + '\n', 'utf8');
+  } catch { /* non-fatal */ }
+}
+
 function logTelegramOutbound(chatId, text, messageId) {
   try {
     const entry = {
@@ -79,7 +88,8 @@ export async function syncTelegramAllowedIds() {
     // silently drops non-catalog names → "no recognised fields" → sync dead.
     store.updateInternal('telegram', { TELEGRAM_ALLOWED_IDS: joined });
     runtime.applyFiles('telegram');           // → {home}/.{bot}/integrations.env
-    const restartOk = await runtime.restartBot();
+    // The listener reads the roster live; only the plugin needs a restart to re-seed its allow-list.
+    const restartOk = wsapiTransport() ? true : await runtime.restartBot();
     return { ok: true, count: ids.length, restartOk };
   } catch (err) {
     process.stderr.write(`[telegram-sync] allowed-ids sync failed: ${err.message}\n`);
@@ -125,6 +135,7 @@ export function reconcileTelegramAllowedIdsAtBoot() {
  */
 export async function syncTelegramGroups() {
   if (!telegramActive()) return { skipped: 'telegram not active' };
+  if (wsapiTransport()) return { ok: true, skipped: 'wsapi transport: no access.json to re-seed' };
   try {
     const restartOk = await runtime.restartBot();
     return { ok: true, restartOk };
@@ -179,6 +190,7 @@ export async function getChatAdministrators(chatId) {
  * messages, and delete only within 48 hours, so both failures are reported
  * plainly rather than swallowed.
  */
+export async function telegramCall(method, payload) { return telegramApi(method, payload); }
 async function telegramApi(method, payload) {
   if (!telegramActive()) return { ok: false, error: 'telegram not active' };
   let token = null;
@@ -222,41 +234,82 @@ export async function deleteTelegramMessage(chatId, messageId) {
   return telegramApi('deleteMessage', { chat_id: String(chatId).trim(), message_id: Number(messageId) });
 }
 
+/**
+ * Plain-text hygiene (the plugin's outbound transformer, Patch 4, moved
+ * here): the model tends to emit Markdown and em dashes; Telegram shows the
+ * Markdown as literal characters and em-dash-heavy text reads as
+ * machine-generated. Every plain send goes through this.
+ */
+export function stripTgMd(s) {
+  if (typeof s !== 'string') return s;
+  return s
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '$1 ($2)')
+    .replace(/\s*\u2014\s*/g, ' - ')
+    .replace(/ -- /g, ' - ');
+}
+
+export const TELEGRAM_TEXT_MAX = 4096;
+/** A long reply in pieces Telegram accepts: at a paragraph, else a line, else a word, else a hard cut. */
+export function splitTelegram(text, max = TELEGRAM_TEXT_MAX) {
+  const out = [];
+  let rest = String(text || '');
+  while (rest.length > max) {
+    let cut = -1;
+    for (const sep of ['\n\n', '\n', ' ']) {
+      const i = rest.lastIndexOf(sep, max);
+      if (i >= Math.floor(max / 4)) { cut = i; break; }
+    }
+    if (cut < 0) cut = max;
+    out.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest.trim()) out.push(rest);
+  return out;
+}
+
 export async function sendTelegramMessage(chatId, text, { logKind } = {}) {
   if (!telegramActive()) return { ok: false, error: 'telegram not active' };
   const id = String(chatId == null ? '' : chatId).trim();
   if (!/^-?\d{4,20}$/.test(id)) return { ok: false, error: 'invalid chat id' };
-  const body = String(text == null ? '' : text).trim();
+  const body = stripTgMd(String(text == null ? '' : text)).trim();
   if (!body) return { ok: false, error: 'empty text' };
 
   let token = null;
   try { token = store.decryptFor('telegram')?.TELEGRAM_BOT_TOKEN || null; } catch { token = null; }
   if (!token) return { ok: false, error: 'no bot token' };
 
-  try {
-    const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: id, text: body, disable_web_page_preview: true }),
-    });
-    const json = await resp.json().catch(() => ({}));
-    if (!resp.ok || !json.ok) {
-      return { ok: false, error: `telegram ${resp.status}: ${JSON.stringify(json).slice(0, 180)}` };
+  let messageId = null;
+  for (const piece of splitTelegram(body)) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: id, text: piece, disable_web_page_preview: true }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok || !json.ok) {
+        return { ok: false, error: `telegram ${resp.status}: ${JSON.stringify(json).slice(0, 180)}`, ...(messageId != null ? { messageId, partial: true } : {}) };
+      }
+      messageId = json.result?.message_id;
+      // Record it in the bot's Telegram conversation log so its brain knows what
+      // it relayed there. EXCEPTION — a group-mode send (logKind:'group') must
+      // NEVER touch the operator's DM conversation log: recent-snapshot.js
+      // renders that log into the admin's PRIVATE RECENT_TELEGRAM with no
+      // chat_id filter, so a group answer (and the untrusted group text it
+      // echoes) would laundry into the operator brain's high-trust prefix =
+      // cross-surface prompt-injection. The group's own audit sink
+      // (.group-watcher/<gid>.jsonl) is its record instead.
+      if (logKind !== 'group') logTelegramOutbound(id, piece, messageId);
+    } catch (err) {
+      return { ok: false, error: err.message };
     }
-    const messageId = json.result?.message_id;
-    // Record it in the bot's Telegram conversation log so its brain knows what
-    // it relayed there (this send bypasses the bot's own outbound transformer).
-    // EXCEPTION — a group-mode send (logKind:'group') must NEVER touch the
-    // operator's DM conversation log: recent-snapshot.js renders that log into
-    // the admin's PRIVATE RECENT_TELEGRAM with no chat_id filter, so a group
-    // answer (and the untrusted group text it echoes) would laundry into the
-    // operator brain's high-trust prefix = cross-surface prompt-injection. The
-    // group's own audit sink (.group-watcher/<gid>.jsonl) is its record instead.
-    if (logKind !== 'group') logTelegramOutbound(id, body, messageId);
-    return { ok: true, messageId };
-  } catch (err) {
-    return { ok: false, error: err.message };
   }
+  return { ok: true, messageId };
 }
 
 // Telegram Bot API hard limit for bot uploads is 50 MB.
@@ -405,9 +458,9 @@ export async function downloadTelegramFile(fileId) {
 // Dedup recently-processed inbound Telegram message ids (the bot middleware may
 // retry). Small bounded set — replay protection, not durable state.
 const _recentInbound = new Set();
-function _seenInbound(messageId) {
+function _seenInbound(messageId, chatId = '') {
   if (messageId == null) return false;
-  const key = String(messageId);
+  const key = `${chatId}:${messageId}`;
   if (_recentInbound.has(key)) return true;
   _recentInbound.add(key);
   if (_recentInbound.size > 1000) _recentInbound.delete(_recentInbound.values().next().value);
@@ -430,11 +483,11 @@ function _seenInbound(messageId) {
  *
  * Returns { ok, routed, reason?, session_id?, peers? }. Never throws.
  */
-export async function routeTelegramInbound({ chat_id, text, message_id, reply_to_message_id } = {}) {
+export async function routeTelegramInbound({ chat_id, text, message_id, reply_to_message_id } = {}, { memberDmDeps = undefined } = {}) {
   const cid = String(chat_id == null ? '' : chat_id).trim();
   const body = String(text == null ? '' : text).trim();
   if (!cid || !body) return { ok: true, routed: false, reason: 'empty' };
-  if (_seenInbound(message_id)) return { ok: true, routed: false, reason: 'duplicate' };
+  if (_seenInbound(message_id, cid)) return { ok: true, routed: false, reason: 'duplicate' };
 
   // Resolve the sender from their linked chat id — ANY teammate, not just admin.
   let sender = null;
@@ -450,9 +503,11 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   // Only the PRIMARY admin: the brain runs as them (their private memory, their
   // own connections and skills). Another admin is a person like any other — a
   // turn as them — or they would read the primary admin's private things.
+  // With workspace-api reading Telegram itself (TELEGRAM_TRANSPORT=wsapi)
+  // there is no brain: the operator's DM is a turn as them, like anyone's.
   let operator = null;
   try { operator = primaryAdminSlug(); } catch { operator = null; }
-  if (sender.slug === operator) return { ok: true, routed: false, reason: 'operator (brain handles)' };
+  if (sender.slug === operator && !wsapiTransport()) return { ok: true, routed: false, reason: 'operator (brain handles)' };
 
   // Only the sender's OWN relay sessions (leak-safe).
   let sessions;
@@ -465,9 +520,10 @@ export async function routeTelegramInbound({ chat_id, text, message_id, reply_to
   // member-dm.js), delivered back on Telegram. bot.sh is told it is handled,
   // so the operator's brain never sees it.
   const asMember = async () => {
-    try { (await import('./member-dm.js')).startMemberDm(sender, body); }
+    let done = null;
+    try { done = (await import('./member-dm.js')).startMemberDm(sender, body, memberDmDeps); }
     catch (err) { process.stderr.write(`[telegram-inbound] member turn for ${sender.slug} not started: ${err.message}\n`); }
-    return { ok: true, routed: true, reason: 'member turn' };
+    return { ok: true, routed: true, reason: 'member turn', done };
   };
   if (!sessions.length) return asMember();
 

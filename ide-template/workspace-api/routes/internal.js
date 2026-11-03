@@ -20,6 +20,8 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup, getDefaultTimezone, effectiveTimezone } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
+import { telegramTransport, wsapiTransport } from '../lib/integrations/telegram-transport.js';
+import { startMemberDm } from '../lib/integrations/member-dm.js';
 import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
@@ -215,7 +217,7 @@ export default function internalRouter() {
     try {
       const teamMode = getTeamMode();
       const slug = teamMode ? primaryAdminSlug() : null;
-      return res.json({ ok: true, teamMode, slug, isAdmin: !!slug });
+      return res.json({ ok: true, teamMode, slug, isAdmin: !!slug, transport: telegramTransport() });
     } catch (err) {
       process.stderr.write(`[internal] operator-identity failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
@@ -543,7 +545,16 @@ export default function internalRouter() {
       let tgMessageId = null;
       let framedToBrain = false;
 
-      if (isOperatorRelay) {
+      if (isOperatorRelay && wsapiTransport()) {
+        // No brain to type into: the frame is a message on the operator's own
+        // queue (member-dm), answered as them and delivered to their Telegram.
+        const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
+        const awaitMode = depth >= 2 ? 'none' : 'reply';
+        const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
+          + `thread=${kw(destId)} depth=${depth} await=${awaitMode} | ${kw(text)}]`;
+        try { startMemberDm(deliverTo, frame, { surface: 'telegram', target: deliverTo.telegramChatId }); tgSent = true; framedToBrain = true; }
+        catch (err) { process.stderr.write(`[internal] relay turn for the operator not started: ${err.message}\n`); }
+      } else if (isOperatorRelay) {
         // thread=<destId> is a stable key the brain uses to keep concurrent
         // relays distinct. The operator's own reply routes via the brain reading
         // the frame (routeTelegramInbound admin-skips), so it needs no
@@ -689,7 +700,7 @@ export default function internalRouter() {
         return;
       }
       addGroup({ chatId: cid, title, actor: 'auto' });
-      runtime.restartBot().catch(() => {});   // re-seed access.json (reply-into-group)
+      if (!wsapiTransport()) runtime.restartBot().catch(() => {});   // re-seed access.json (reply-into-group)
       injectBotFrame(`[GROUP chat_id=${cid} "${String(title || '').slice(0, 40)}" | auto-registered: ${by.displayName || by.slug} added me to this group, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
       process.stderr.write(`[group-joined] auto-registered ${cid} ("${title || ''}") via ${by.slug}\n`);
     } catch (err) { process.stderr.write(`[internal] group-joined failed: ${err.message}\n`); }

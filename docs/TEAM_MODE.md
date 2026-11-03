@@ -536,6 +536,37 @@ Telegram only when it is connected and they are linked.
 The chat id is private (redacted to non-admins/non-owners); the preferred
 surface is roster-level and visible.
 
+### Who reads Telegram — the transport (`TELEGRAM_TRANSPORT`)
+
+Two processes can read the bot's Telegram updates; the deployment's `.env`
+picks one (`docker-compose.yml` passes it to the container):
+
+- `plugin` (the default): the channel plugin inside the operator's tmux
+  session (`bot/bot.sh`, [ARCHITECTURE.md](ARCHITECTURE.md#telegram-bot-architecture)).
+  The operator's DM is that session's; a teammate's DM is a turn as them
+  (`lib/integrations/member-dm.js`), handed over by the plugin's middleware.
+- `wsapi`: workspace-api polls the Bot API itself
+  (`lib/integrations/telegram-listener.js`, the Slack listener's shape) and
+  there is no tmux brain at all. **Every DM is a turn as the person — the
+  operator's included** — with their own session (`--resume`, one queue per
+  person), "typing…" while it runs, photos and files fetched into
+  `.attachments/telegram-<slug>/` and named in the message, replies split at
+  4096 and stripped of Markdown, `[[SEND_FILE …]]` and `[[REACT …]]` honoured,
+  `/restart` starting the person's conversation over. Someone not on the
+  roster gets nothing (the operator's choice) and their chat id is kept in
+  `.team/telegram-pending.json` for an admin. Groups and the bot being added
+  to one go to the group watcher with the same payload the plugin built.
+  Reminders for the operator run as headless turns whose outcome
+  workspace-api delivers (`/internal/invoke-turn` with `deliver`); a relay to
+  the operator is a turn on their queue; the `[GROUP …]` awareness frames
+  have nowhere to go and are skipped. `bot.sh` learns the transport from
+  `/internal/operator-identity` and only keeps its PM2 app alive. Telegram
+  keeps undelivered updates for 24 hours and hands them out once, by
+  `update_id` (the offset in `.team/telegram-listener-state.json`), so a
+  restart loses nothing; a `409 Conflict` means another process polls the
+  same token (the plugin still on, an old container) — the listener backs
+  off and tells the admin after a minute.
+
 ---
 
 ## 10. Telegram group mode

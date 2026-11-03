@@ -12,6 +12,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { wsapiTransport } from './integrations/telegram-transport.js';
 
 const RUNNER = '/usr/local/bin/monitor-runner';
 const SCRIPT = '/opt/ide/bot-relay.sh';
@@ -20,6 +21,8 @@ export function injectBotFrame(literal, { timeoutMs = 2500 } = {}) {
   return new Promise((resolve) => {
     const text = String(literal == null ? '' : literal);
     if (!text.trim()) return resolve({ injected: false, code: -1, reason: 'empty' });
+    // No tmux brain when workspace-api reads Telegram itself: "offline", at once.
+    if (wsapiTransport()) return resolve({ injected: false, code: 2, reason: 'wsapi transport: no brain session' });
 
     let done = false;
     const finish = (r) => { if (!done) { done = true; resolve(r); } };

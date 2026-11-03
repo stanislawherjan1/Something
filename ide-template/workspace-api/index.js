@@ -68,7 +68,8 @@ import { writeAllowedHostsFile } from './lib/integrations/egress.js';
 import { rehydrateRuntimeFiles } from './lib/setup.js';
 import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-sync.js';
 import * as slackListener from './lib/integrations/slack-listener.js';
-import { resumeInterrupted } from './lib/integrations/group-watcher.js';
+import * as telegramListener from './lib/integrations/telegram-listener.js';
+import { resumeInterrupted, routeGroupMessage } from './lib/integrations/group-watcher.js';
 import * as slackChannels from './lib/integrations/slack-channels.js';
 import { startBroker } from './lib/integrations/broker.js';
 import { decryptFor, ensureOwners as ensureIntegrationOwners } from './lib/integrations/store.js';
@@ -212,6 +213,12 @@ if (cryptoReady()) {
   slackChannels.startSweep();
   try { if (slackListener.reconcile()) process.stdout.write('[workspace-api] slack: connecting\n'); }
   catch (err) { process.stderr.write(`[workspace-api] slack listener failed to start: ${err.message}\n`); }
+  // Telegram read from here when TELEGRAM_TRANSPORT=wsapi: every DM a turn as
+  // the person, groups through the watcher; otherwise the plugin in the bot's
+  // session reads it and this stays off.
+  telegramListener.setGroupHandler(routeGroupMessage);
+  try { if (telegramListener.reconcile()) process.stdout.write('[workspace-api] telegram: polling (wsapi transport)\n'); }
+  catch (err) { process.stderr.write(`[workspace-api] telegram listener failed to start: ${err.message}\n`); }
 }
 
 // Team mode: persist slug + displayName for any legacy team entries so each

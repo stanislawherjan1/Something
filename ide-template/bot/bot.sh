@@ -1393,6 +1393,16 @@ fi
 # canary). For TG-less clients, claude still runs in the tmux session
 # (web-channel-mcp + reminder-monitor's tmux send-keys give it I/O), it
 # just doesn't have the Telegram listener loop.
+# workspace-api as the Telegram transport (TELEGRAM_TRANSPORT=wsapi, told by
+# /internal/operator-identity): no channel plugin and no tmux brain — every
+# DM is a turn as the person inside workspace-api, reminders run as headless
+# turns, groups go through the watcher. This script then only keeps the PM2
+# app alive; the monitors are PM2 apps of their own.
+TG_TRANSPORT=$(curl -sS --max-time 5 --fail "http://localhost:${WSAPI_PORT:-3001}/api/internal/operator-identity" 2>/dev/null | grep -oE '"transport":"[a-z]+"' | head -1 | sed -E 's/.*:"//; s/"//')
+if [ "$TG_TRANSPORT" = "wsapi" ]; then
+    log "TELEGRAM_TRANSPORT=wsapi — workspace-api reads Telegram; no channel plugin, no tmux brain. Idling."
+    while true; do sleep 300; done
+fi
 CHANNELS_ARG=""
 if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
     CHANNELS_ARG="--channels plugin:telegram@claude-plugins-official"

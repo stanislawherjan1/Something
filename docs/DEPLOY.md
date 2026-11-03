@@ -67,6 +67,7 @@ defaults (`Workspace`/`bot`) are placeholders the user will replace.
 
 - `REMINDER_MIN_GAP_MINUTES` (default `45`) — the planner's pacing: a planner reminder that would reach a person on its own waits until this long after the last one reached them ([ROUTINES.md](ROUTINES.md)). Set it in the client `.env`; `docker-compose.yml` passes it to the container, where `bot/reminder-monitor.sh` reads it.
 
+- `TELEGRAM_TRANSPORT=plugin|wsapi` (default `plugin`) — who reads the bot's Telegram updates ([TEAM_MODE.md](TEAM_MODE.md#who-reads-telegram--the-transport-telegram_transport)): the channel plugin in the operator's tmux session, or workspace-api's own poll (no tmux brain; every DM a turn as the person). Set it in the client `.env`. Switching needs a deploy (or a container restart); never run both — Telegram serves one poller per token.
 - `MEMORY_V4=off|shadow|read|on` (default `shadow`) — memory v4 ([MEMORY.md](MEMORY.md#how-it-works)). A fresh workspace is born on the new memory at first boot (the entrypoint stamps it; no migration runs, no upgrade bar). A workspace with an older memory stays on `shadow`: conversations are filed into the new memory in the background and admins see the upgrade bar; the move from that bar switches it for good. `off` is the kill switch and always wins. `read` is for testing on the canary.
 
 ### Runtime secrets (Claude / Shopify / Meta / GA4 / Telegram / …)
