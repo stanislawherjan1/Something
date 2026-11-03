@@ -44,7 +44,7 @@ const ti = await import('./turn-identity.js');
     return { shared: /between us/i.test(line) ? '' : line, private: /between us/i.test(line) ? line : '', ask: '', ask_question: '' };
   }
   // The meeting pass (an import): one summary, the people from "With:".
-  if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }], upcoming: [] };
+  if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }] };
   if (schema?.properties?.notes) {
     const m = String(user).match(/(call|meeting) with Kamil on (\d+) October/i);
     if (m) return { notes: [{ title: `Kamil ${m[2]} October`, text: `A ${m[1]} with Kamil on ${m[2]} October.`, kind: 'status', about: 'meeting', when: `2026-10-${m[2].padStart(2, '0')}`, whenFrom: `on ${m[2]} October`, dayStated: true, subject: 'Kamil', evidence: m[0], names: [] }], rules: [], entities: [] };

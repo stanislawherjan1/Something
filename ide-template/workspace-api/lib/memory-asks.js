@@ -84,8 +84,8 @@ export function listAsks(slug, { status = null } = {}) {
 }
 
 /**
- * The owner decides. 'share' copies the excerpt into shared memory (with its
- * origin, so the owner is not shown it twice); 'keep' just closes the question.
+ * The owner decides. 'share' moves the fact into shared memory (in their
+ * name; their private copy is hidden as moved); 'keep' just closes the question.
  */
 export async function resolveAsk(slug, id, decision, by, { rememberSubject = false, name = null } = {}) {
   const ask = listAsks(slug).find(a => a.id === id);

@@ -453,7 +453,8 @@ export async function consolidateSource(src, { state, now = Date.now() }) {
               if (got.fresh && !got.fresh[fi]) continue;
               const d = sharing.decide({ mode: gate.mode, fact: f, routed, rules: gate.rules, decided: gate.decided });
               if (d.outcome === 'team') {
-                const out = await sharing.fileTeamFact(src.owner, f, { ts: c.ts, conv: src.conv, source: source, name: src.name, by: source });
+                // The fact moves: the shared copy is it from now on, the private one is put away.
+                const out = await sharing.fileTeamFact(src.owner, f, { ts: c.ts, conv: src.conv, source: source, name: src.name, by: source, privateId: got.linkable?.[fi] || null });
                 if (out.recordId) { result.shared++; sharedIds.push(out.recordId); }
               } else if (d.outcome === 'ask') {
                 addAsk(src.owner, { text: f.text, question: routed.askQuestion || '', conv: src.conv, ts: c.ts, source: source, fact: f, reason: d.reason, key: sharing.factKey(f) });

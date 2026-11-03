@@ -121,5 +121,31 @@ ok('...nor on a preference', S.decide({ mode: 'auto', fact: { ...work, kind: 'pr
 ok('...nor when the model left the concern unsaid', S.decide({ mode: 'auto', fact: { ...work, concerns: undefined }, routed: none }).outcome === 'private');
 ok('without the flag nothing changes: no router mark, private', S.decide({ mode: 'auto', fact: { ...work, teamNeeds: undefined }, routed: none }).outcome === 'private');
 
+// ─── a fact has one home: sharing moves it, withdraw brings it back ──────────
+{
+  const mine = { title: 'Harbor Glaze restock', text: 'Harbor Glaze ships the glaze restock on 20 October.', kind: 'fact', evidence: 'ships the glaze restock on 20 October', subject: 'Harbor Glaze', concerns: 'a company or project', entities: [{ name: 'Harbor Glaze', kind: 'company' }] };
+  const rec = await L.append({ scope: 'user:ann', source: 'web', ts: '2026-10-10T09:00:00Z', conv: 'web:ann:s2', speaker: 'Ann', text: 'Harbor Glaze ships the glaze restock on 20 October.' });
+  const got = await F.remember('user:ann', [mine], { record: rec.id, ts: '2026-10-10T09:00:00Z', entities: mine.entities, by: 'web', standing: 'said', conv: 'web:ann:s2' });
+  const privId = got.ids[0];
+  ok('(home) the fact is Ann\'s own first', !!privId && F.current(['user:ann']).some(f => f.id === privId), got);
+  const out = await S.fileTeamFact('ann', mine, { ts: '2026-10-10T09:00:00Z', conv: 'web:ann:s2', source: 'web', name: 'Ann', privateId: privId });
+  const twin = F.get('user:ann', privId);
+  ok('(home) sharing moves it: the private copy is hidden as shared', out.movedId === privId && twin.hidden && twin.hiddenWhy === 'shared', twin);
+  ok('(home) Ann sees it once — the shared one', !F.current(['user:ann']).some(f => f.id === privId) && F.current(['shared']).some(f => /glaze restock/.test(f.text)), F.current(['user:ann', 'shared']).map(f => [f.scope, f.text]));
+  ok('(home) the purge leaves a fact hidden by sharing alone', (await F.purgeHidden(['user:ann'], { now: Date.parse('2027-01-01T00:00:00Z') })) === 0 && F.get('user:ann', privId)?.hidden === true);
+  const shared = F.current(['shared']).find(f => /glaze restock/.test(f.text));
+  const back = await S.restorePrivate('ann', shared, { by: 'ann' });
+  ok('(home) taken back from the team, the private copy comes out again', back === privId && F.current(['user:ann']).some(f => f.id === privId), F.get('user:ann', privId));
+  const again = await S.hidePrivateAgain('ann', shared, { by: 'ann' });
+  ok('(home) shared again, it goes back under the shared one', again === privId && F.get('user:ann', privId).hidden && F.get('user:ann', privId).hiddenWhy === 'shared');
+  // No id known (a question answered "share"): the twin is found by its text.
+  const other = { title: 'Harbor Glaze credit terms', text: 'Harbor Glaze moved Ann to 30-day terms.', kind: 'fact', evidence: 'moved us to 30-day terms', subject: 'Harbor Glaze', concerns: 'a company or project', entities: [{ name: 'Harbor Glaze', kind: 'company' }] };
+  const rec2 = await L.append({ scope: 'user:ann', source: 'web', ts: '2026-10-11T09:00:00Z', conv: 'web:ann:s3', speaker: 'Ann', text: 'Harbor Glaze moved us to 30-day terms.' });
+  const got2 = await F.remember('user:ann', [other], { record: rec2.id, ts: '2026-10-11T09:00:00Z', entities: other.entities, by: 'web', standing: 'said', conv: 'web:ann:s3' });
+  const out2 = await S.fileTeamFact('ann', other, { ts: '2026-10-11T09:00:00Z', source: 'web', name: 'Ann' });
+  ok('(home) with no id given, the private twin is found by its text and put away', out2.movedId === got2.ids[0] && F.get('user:ann', got2.ids[0]).hiddenWhy === 'shared', out2);
+  ok('(home) a fact never held privately moves nothing', (await S.fileTeamFact('ann', { ...other, title: 'Unrelated', text: 'Nothing like this was ever noted.', evidence: 'x' }, { ts: '2026-10-11T10:00:00Z', source: 'web', name: 'Ann' })).movedId === null);
+}
+
 console.log(`memory-sharing: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

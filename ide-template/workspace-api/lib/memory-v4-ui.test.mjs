@@ -348,7 +348,7 @@ ok('(e) ...and can be removed', !r.body.rules.some(x => x.text === 'No meetings 
   await stan('POST', '/sources/granola', { on: true });
   // A meeting imported for Stan: its facts wear Granola's icon; See source opens the notes.
   LLM.configureRunner(async ({ user, schema }) => schema?.properties?.summary
-    ? { with: ['Marta Zielak'], title: 'Kick-off', summary: 'Vellmark Logistics starts the warehouse pilot on 4 November.', names: [{ name: 'Marta Zielak', kind: 'person' }, { name: 'Vellmark Logistics', kind: 'company' }], upcoming: [] }
+    ? { with: ['Marta Zielak'], title: 'Kick-off', summary: 'Vellmark Logistics starts the warehouse pilot on 4 November.', names: [{ name: 'Marta Zielak', kind: 'person' }, { name: 'Vellmark Logistics', kind: 'company' }] }
     : { items: [], decisions: [], notes: [], rules: [], entities: [], known_mentioned: [] });
   const S = await import('./memory-sources.js');
   const imp = await S.importItem({ actor: 'stan', name: 'Stan', integration: 'granola', item: 'g-1', title: 'Vellmark kick-off', at: '2026-10-05T09:00:00Z', participants: ['Marta Zielak'], summary: 'Vellmark Logistics starts the warehouse pilot on 4 November.' });

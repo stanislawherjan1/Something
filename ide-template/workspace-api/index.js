@@ -56,6 +56,7 @@ import { migrateDefaultMemory } from './lib/memory-loader.js';
 import { writeRecentSnapshot } from './lib/recent-snapshot.js';
 import { reindexAll, pruneEngineStore } from './lib/memory-engine.js';
 import { migrateToEngine } from './lib/memory-migrate.js';
+import { tidyOnce as memoryTidyOnce } from './lib/memory-tidy-once.js';
 import { autoApply as migrateAutoApply } from './lib/migrate.js';
 import { startMaintenance as startMemoryMaintenance } from './lib/memory-maintenance.js';
 import { startImports as startMemoryImports } from './lib/memory-sources.js';
@@ -316,6 +317,16 @@ try {
   if (r && r.migrated) process.stdout.write(`[workspace-api] memory v3 migration: ${r.summary}\n`);
 } catch (err) {
   process.stderr.write(`[workspace-api] memory migration failed: ${err.message}\n`);
+}
+
+// One-off tidy of what earlier rules left in the facts: the follow-ups filed
+// beside a meeting's summary, and the private copies of facts that moved to
+// the team. Idempotent; a marker in memory/_engine/ once done.
+try {
+  const t = memoryTidyOnce();
+  if (t.ran) process.stdout.write(`[workspace-api] memory tidy: ${t.summary}\n`);
+} catch (err) {
+  process.stderr.write(`[workspace-api] memory tidy failed: ${err.message}\n`);
 }
 
 // Versioned migrations (migrations/NNNN-*.mjs, lib/migrate.js). Structural ones

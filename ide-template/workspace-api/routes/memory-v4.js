@@ -26,7 +26,7 @@ import { search, timeline , tokens, near } from '../lib/memory-search.js';
 import { renderResults } from '../lib/memory-recall.js';
 import { listAsks, resolveAsk, listRules, clearRule, mentionedAt } from '../lib/memory-asks.js';
 import { setSharing } from '../lib/team.js';
-import { modeOf as sharingModeOf, concernsAPerson } from '../lib/memory-sharing.js';
+import { modeOf as sharingModeOf, concernsAPerson, restorePrivate, hidePrivateAgain } from '../lib/memory-sharing.js';
 import { readRoutines, writeRoutines } from '../lib/routines-store.js';
 import { routinesOwner } from '../lib/memory-v4-writes.js';
 import * as routinesCatalog from '../lib/routines-catalog.js';
@@ -574,7 +574,8 @@ export default function memoryV4Router() {
   }));
 
   // A fact the person shared, taken back: hidden from the team; its record
-  // too when nothing else of it is left. Their private copy is untouched.
+  // too when nothing else of it is left. Their private copy, put away when
+  // the fact moved, comes out again (lib/memory-sharing.js).
   router.post('/memory/v4/shared/:id/withdraw', requireActor, withViewer(async (req, res, v) => {
     const id = String(req.params.id);
     const f = facts.all('shared').find(x => x.id === id);
@@ -582,8 +583,9 @@ export default function memoryV4Router() {
     if (!f || !rec || rec.origin !== v.own) return res.status(404).json({ ok: false, error: 'not a fact you shared' });
     await facts.hide('shared', id, v.slug, { why: 'made private' });
     if (!facts.forRecord('shared', rec.id).length) await ledger.hide('shared', rec.id, v.slug);
-    ledger.logEvent({ op: 'hide', scope: 'shared', ids: [rec.id], by: v.slug, facts: [id] });
-    return res.json({ ok: true });
+    const back = await restorePrivate(v.slug, f, { by: v.slug });
+    ledger.logEvent({ op: 'hide', scope: 'shared', ids: [rec.id], by: v.slug, facts: [id], ...(back ? { restored: back } : {}) });
+    return res.json({ ok: true, restored: back });
   }));
   router.post('/memory/v4/shared/:id/restore', requireActor, withViewer(async (req, res, v) => {
     const id = String(req.params.id);
@@ -592,6 +594,7 @@ export default function memoryV4Router() {
     if (!f || !rec || rec.origin !== v.own) return res.status(404).json({ ok: false, error: 'not a fact you shared' });
     await facts.unhide('shared', id, v.slug);
     if (rec.hidden) await ledger.unhide('shared', rec.id, v.slug);
+    await hidePrivateAgain(v.slug, f, { by: v.slug });
     return res.json({ ok: true });
   }));
   router.post('/memory/v4/asks/:id', requireActor, withViewer(async (req, res, v) => {

@@ -97,6 +97,7 @@ const sharedRecs = L.read({ scopes: ['shared'] });
 // the line itself; the private lines and the borderline one stay out.
 ok('(a) exactly the team-relevant fact is shared, as a fact', sharedRecs.length === 1 && sharedRecs[0].text === 'Quarry launch date. The Quarry launch moved to October 3.' && sharedRecs[0].tags?.sharedFact === true, sharedRecs.map(r => r.text));
 ok('(a) ...and the team\'s facts hold it with its subject', FS.all('shared').length === 1 && FS.all('shared')[0].subject === 'Quarry' && FS.all('shared')[0].record === sharedRecs[0].id, FS.all('shared'));
+ok('(a) the fact moved: its private copy is put away as shared, so the owner sees it once', FS.all('user:stan').some(f => /Quarry launch moved/.test(f.text) && f.hidden && f.hiddenWhy === 'shared') && !FS.current(['user:stan']).some(f => /Quarry launch moved/.test(f.text)), FS.all('user:stan').map(f => [f.text, f.hidden, f.hiddenWhy]));
 ok('(a) the conversation\'s lines never reach shared memory', !/Stan: The Quarry/.test(scopeText('shared')) && !/my own raise/.test(scopeText('shared')));
 ok('(a) an invented line never reaches shared memory', !/whole team agreed/.test(scopeText('shared')));
 ok('(a) the shared fact names its origin', sharedRecs[0]?.origin === 'user:stan' && sharedRecs[0]?.speaker === 'Stan');
@@ -111,8 +112,8 @@ ok('(a) a model\'s question in the ask field is not an ask', rq.text === '' && r
 const rv = R.verbatimLines('Stan: both ways work, UI and API.', 'Stan: both ways work, UI and API.\nBot: Noted.');
 ok('(a) ...a verbatim ask still is', rv.text === 'Stan: both ways work, UI and API.');
 ok('(a) ...and is not shared by waiting', !/Harbor/.test(scopeText('shared')));
-const notes = FS.current(['user:stan']);
-ok('(a) a note with verbatim evidence is kept', notes.some(n => /October 3/.test(n.text)));
+const notes = FS.current(['user:stan', 'shared']);
+ok('(a) a note with verbatim evidence is kept (it moved to the team; see above)', notes.some(n => /October 3/.test(n.text)));
 ok('(a) a note whose evidence is not in the conversation is dropped', !notes.some(n => /got a raise/.test(n.text)));
 ok('(a) a stated rule is kept on the record', stanRecs.some(r => (r.tags?.rules || []).includes('Keep salary topics out of shared memory.')));
 

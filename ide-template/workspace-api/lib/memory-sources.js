@@ -32,7 +32,7 @@ import { join } from 'node:path';
 import * as ledger from './memory-ledger.js';
 import * as facts from './memory-facts.js';
 import * as router from './memory-router.js';
-import { knownNames, knownKinds } from './memory-views.js';
+import { knownNames } from './memory-views.js';
 import * as catalog from './integrations/catalog.js';
 import * as store from './integrations/store.js';
 import { isUsable } from './integrations/store.js';
@@ -206,11 +206,11 @@ export async function importItem({ actor, name = 'The person', integration, conn
   // One meeting, one pass, one fact: the service's notes and the transcript
   // read together, the summary as the fact's description — twenty-six parts
   // read one by one once gave eleven facts from one hour, each meaningless
-  // outside the call. The fact sits on the notes record (or the first part);
-  // what is coming up (a dated follow-up, a deadline) is pinned to the part
-  // that holds its words, so "See source" opens the right place.
+  // outside the call. The fact sits on the notes record (or the first part).
+  // Nothing is filed beside it: the dated follow-ups once pinned to the parts
+  // were a sentence each, out of context — what follows from the meeting is
+  // in the summary, with its date.
   const known = knownNames([scope, 'shared']);
-  const kinds = knownKinds([scope, 'shared']);
   const body = (w) => w.text.replace(/^[\s\S]*?\n(?:Notes|Transcript[^:\n]*):\n/, '');
   const notesRec = work.find(w => w.kind === 'notes');
   const parts = work.filter(w => w.kind === 'transcript');
@@ -221,17 +221,12 @@ export async function importItem({ actor, name = 'The person', integration, conn
   // not the next UTC day; a chat-made "call at 17:00" keys with it).
   const tz = effectiveTimezone(actor) || 'UTC';
   const local = (() => { try { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ts)).map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`; } catch { return ts.slice(0, 16); } })();
-  try { m = await router.meeting({ name, ts, when: local, text: whole, participants: people, known, kinds, exclude: [entry.label, entry.id], note: !!note, noteTitle: String(title || '').trim() }); } catch (e) { out.errors.push(`meeting: ${e.message}`); }
+  try { m = await router.meeting({ name, ts, when: local, text: whole, participants: people, known, exclude: [entry.label, entry.id], note: !!note, noteTitle: String(title || '').trim() }); } catch (e) { out.errors.push(`meeting: ${e.message}`); }
   if (m) {
     for (const w of work) got.set(w.id, { notes: [], entities: m.entities || [] });
     const home = notesRec || parts[0];
     // A note is the person's own words — said, not found.
     got.get(home.id).notes.push({ ...m.fact, standing: note || !notesRec ? 'said' : 'found' });
-    for (const x of m.upcoming) {
-      const at = parts.find(w => router.isVerbatim(x.evidence, body(w), 6) || router.isNearVerbatim(x.evidence, body(w))) || (notesRec && (router.isVerbatim(x.evidence, body(notesRec), 6) || router.isNearVerbatim(x.evidence, body(notesRec))) ? notesRec : null) || home;
-      got.get(at.id).notes.push({ ...x, standing: at.kind === 'transcript' ? 'said' : 'found' });
-    }
-    out.dropped += m.dropped || 0;
   }
   // The facts, in the record's order, against what memory holds.
   for (const w of work) {

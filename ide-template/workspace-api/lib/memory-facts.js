@@ -513,7 +513,9 @@ export async function purgeHidden(scopes, { now = Date.now() } = {}) {
   const cutoff = now - ledger.HIDE_GRACE_DAYS * 86400_000;
   let n = 0;
   for (const scope of scopes) {
-    const stale = all(scope).filter(f => f.hidden && f.hiddenAt && Date.parse(f.hiddenAt) < cutoff).map(f => f.id);
+    // A fact hidden because it was shared is not thrown away: it is the
+    // private copy a withdraw brings back.
+    const stale = all(scope).filter(f => f.hidden && f.hiddenWhy !== 'shared' && f.hiddenAt && Date.parse(f.hiddenAt) < cutoff).map(f => f.id);
     if (stale.length) n += (await erase(scope, stale)).erased;
     n += (await sweepOrphans(scope)).erased;
   }
