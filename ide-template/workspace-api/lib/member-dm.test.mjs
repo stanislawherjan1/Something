@@ -13,6 +13,7 @@ const ROOT = mkdtempSync(join(tmpdir(), 'member-dm-'));
 process.env.PROJECT_DIR = ROOT;
 process.env.WSAPI_STORE_DIR = mkdtempSync(join(tmpdir(), 'member-dm-store-'));
 process.env.MEMBER_DM_QUIET_MS = '40';   // the burst window, short for the test
+process.env.MEMBER_DM_RETRY_MS = '10';
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
   { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z' },
   { email: 'ann@example.test', role: 'member', slug: 'ann', displayName: 'Ann', telegramChatId: '2220002', addedAt: '2026-09-01T00:00:00Z' },
@@ -67,6 +68,15 @@ ok('a silent line anywhere means silence; stray markers never reach the chat', !
 script = [{ text: '[[REACT 👍]] thanks', sessionId: 'S2' }];
 r = await answerMemberDm(ann, 'k', { runTurn, send });
 ok('with no way to react, the marker is just dropped', sends.at(-1).text === 'thanks' && !/REACT/.test(sends.at(-1).text));
+// A passing fault on the model's side is tried once more; a real failure is not.
+script = [{ text: '', sessionId: 'S2', error: 'claude: API Error: 500 Internal server error. This is a server-side issue, usually temporary' }, { text: 'Back again.', sessionId: 'S2' }];
+const turnsBefore = turns.length;
+r = await answerMemberDm(ann, 'still there?', { runTurn, send });
+ok('a 500 from the model is retried once and the second answer is delivered', turns.length === turnsBefore + 2 && r.delivered && sends.at(-1).text === 'Back again.', { r, n: turns.length - turnsBefore });
+script = [{ text: '', sessionId: 'S2', error: 'claude exited with code 2 :: something else broke' }];
+const t2 = turns.length;
+r = await answerMemberDm(ann, 'and now?', { runTurn, send });
+ok('another error is not retried', turns.length === t2 + 1 && r.reason === 'error', { r, n: turns.length - t2 });
 const b3 = sends.length;
 script = [{ text: 'Done, I told them.', sessionId: 'S2', sentItself: true }];
 r = await answerMemberDm(ann, 'tell stan hi', { runTurn, send });

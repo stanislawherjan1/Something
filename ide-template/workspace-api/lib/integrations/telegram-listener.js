@@ -221,7 +221,8 @@ export function createDispatcher(deps = {}) {
     const done = r?.done || Promise.resolve(r);
     done.then((out) => {
       clearInterval(typing); clearTimeout(typingCap);
-      if (out && out.reason === 'error') d.react(chatId, m.message_id, '⚠').catch?.(() => {});
+      // A failed turn leaves a mark the person can see; ⚠ is not in Telegram's reaction set.
+      if (out && out.reason === 'error') d.react(chatId, m.message_id, '🤷').catch?.(() => {});
     }).catch(() => { clearInterval(typing); clearTimeout(typingCap); });
     return { did: r?.routed ? 'routed' : 'ignored', why: r?.reason, slug: member.slug, body, done };
   }

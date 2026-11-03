@@ -35,6 +35,11 @@ const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]`{0,3}\s*$/im;
 const REACT_RE = /`{0,3}\[\[\s*REACT\s+([^\]\s]+)\s*\]\]`{0,3}/gi;
 const STRAY_MARKER_RE = /^\s*`{0,3}\[\[\s*[A-Z_]+[^\]]*\]\]`{0,3}\s*$/gim;
 const RESUME_LOST_RE = /no conversation found|not found|exited with code 1\b/i;
+// A passing fault on the model's side ("API Error: 500 Internal server error …
+// usually temporary", an overloaded 529, a 502/503 at the edge): the turn is
+// tried once more after a moment before the person is left without an answer.
+const TRANSIENT_RE = /API Error: (?:5\d\d|529)\b|internal server error|overloaded|temporar/i;
+const RETRY_AFTER_MS = Number(process.env.MEMBER_DM_RETRY_MS ?? 4000);
 
 // What each surface is called in the person's web history, and how a reply
 // there should read.
@@ -129,6 +134,11 @@ export async function answerMemberDm(member, body, deps = {}) {
 
   let sessionId = loadSession(slug, surface);
   let r = await runTurn({ member, body, sessionId, surface });
+  if (r.error && !r.text && TRANSIENT_RE.test(String(r.error)) && !isUsageLimit(r.error)) {
+    process.stderr.write(`[member-dm] ${slug}: transient model error, trying once more: ${String(r.error).slice(0, 120)}\n`);
+    await new Promise(res => setTimeout(res, RETRY_AFTER_MS));
+    r = await runTurn({ member, body, sessionId, surface });
+  }
   if (r.error && sessionId && RESUME_LOST_RE.test(String(r.error))) {
     // The saved session is gone (the CLI's store was cleaned, a redeploy):
     // start afresh once rather than failing every message from now on.
