@@ -42,8 +42,9 @@ const SURFACES = {
   telegram: {
     title: 'Telegram',
     note: '[SURFACE] This message came in over Telegram, from the person you are talking to. ' +
-      'Your final reply is delivered to them on Telegram by the system — write it as a plain Telegram message ' +
-      '(short, no Markdown tables, no headings), and do not call web_send_message to reach THIS person; ' +
+      'Your final reply is delivered to them on Telegram by the system — write it as a plain Telegram message: ' +
+      'a few lines, the way a colleague writes in a messenger; longer only when they ask for detail or the thing needs it. ' +
+      'No Markdown tables, no headings. Do not call web_send_message to reach THIS person; ' +
       'that tool is for OTHER teammates only. If there is nothing to say, reply [[SILENT]].' +
       ' To hand them a file — one you wrote for them, or one they asked for — put `[[SEND_FILE <workspace-relative path>]]` on its own line; the system attaches it and strips the marker. When you write a file for them, attach it in the same reply and still say where it lives: they cannot open the workspace from here.',
   },
