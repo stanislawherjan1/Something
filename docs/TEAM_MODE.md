@@ -549,7 +549,9 @@ picks one (`docker-compose.yml` passes it to the container):
   (`lib/integrations/telegram-listener.js`, the Slack listener's shape) and
   there is no tmux brain at all. **Every DM is a turn as the person — the
   operator's included** — with their own session (`--resume`, one queue per
-  person), "typing…" while it runs, photos and files fetched into
+  person; a burst of messages is one turn: a message waits a short quiet
+  window for the next, what arrives during a turn joins the turn after it —
+  `member-dm.js`, `MEMBER_DM_QUIET_MS`, 2.5 s), "typing…" while it runs, photos and files fetched into
   `.attachments/telegram-<slug>/` and named in the message, replies split at
   4096 and stripped of Markdown, `[[SEND_FILE …]]` and `[[REACT …]]` honoured,
   `/restart` starting the person's conversation over. Someone not on the

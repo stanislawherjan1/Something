@@ -98,8 +98,15 @@ function webSessionFor(slug, surface) {
 // The reset each person was last told about, per surface — said once, not on every message.
 const limitTold = new Map();
 
-// One turn per member at a time, in the order the messages arrived.
+// One turn per member at a time, in the order the messages arrived — and a
+// burst of messages is one turn: people write in several short messages
+// (a thought, a photo, "and one more thing"), and answering each on its own
+// gave four replies to four lines. A message waits a short quiet window for
+// the next, and what arrives while a turn runs joins the turn after it.
 const chains = new Map();
+const QUIET_MS = Number(process.env.MEMBER_DM_QUIET_MS ?? 2500);
+const MAX_BURST = 8;
+const bursts = new Map();   // `${slug}:${surface}` → { items: [{ body, deps, resolve }], timer, busy }
 
 /**
  * Run one turn for the member and deliver the reply. `deps` are injectable
@@ -188,14 +195,40 @@ export async function answerMemberDm(member, body, deps = {}) {
   return { delivered: ok, reason: ok ? surface : 'send failed' };
 }
 
-/** Queue a member's DM behind their previous one and return at once. */
+/**
+ * Queue a member's DM: it joins the burst for that person and surface, and
+ * the burst runs as one turn behind their previous one. Resolves with that
+ * turn's outcome for every message in it.
+ */
 export function startMemberDm(member, body, deps) {
-  const prev = chains.get(member.slug) || Promise.resolve();
-  const next = prev.then(() => answerMemberDm(member, body, deps)).catch((err) => {
-    process.stderr.write(`[member-dm] ${member.slug}: ${err.message}\n`);
+  const surface = surfaceOf(deps?.surface);
+  const key = `${member.slug}:${surface}`;
+  return new Promise((resolve) => {
+    let b = bursts.get(key);
+    if (!b) { b = { items: [], timer: null, busy: false }; bursts.set(key, b); }
+    b.items.push({ body, deps, resolve });
+    clearTimeout(b.timer); b.timer = null;
+    const flush = () => {
+      b.timer = null;
+      if (b.busy || !b.items.length) return;
+      const items = b.items.splice(0);
+      b.busy = true;
+      const prev = chains.get(member.slug) || Promise.resolve();
+      const next = prev
+        .then(() => answerMemberDm(member, items.map(i => i.body).join('\n\n'), items[items.length - 1].deps))
+        .catch((err) => { process.stderr.write(`[member-dm] ${member.slug}: ${err.message}\n`); return { delivered: false, reason: 'error' }; })
+        .then((r) => {
+          for (const i of items) i.resolve(r);
+          b.busy = false;
+          // What arrived during the turn is the next turn, now.
+          if (b.items.length) flush();
+        });
+      chains.set(member.slug, next);
+    };
+    if (b.items.length >= MAX_BURST) flush();
+    else if (QUIET_MS > 0) b.timer = setTimeout(flush, QUIET_MS);
+    else flush();
   });
-  chains.set(member.slug, next);
-  return next;
 }
 
 function defaultRunTurn({ member, body, sessionId, surface }) {

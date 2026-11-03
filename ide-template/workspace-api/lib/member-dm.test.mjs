@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 const ROOT = mkdtempSync(join(tmpdir(), 'member-dm-'));
 process.env.PROJECT_DIR = ROOT;
 process.env.WSAPI_STORE_DIR = mkdtempSync(join(tmpdir(), 'member-dm-store-'));
+process.env.MEMBER_DM_QUIET_MS = '40';   // the burst window, short for the test
 writeFileSync(join(ROOT, '.allowed-emails.json'), JSON.stringify([
   { email: 'stan@example.test', role: 'admin', slug: 'stan', displayName: 'Stan', telegramChatId: '1110001', addedAt: '2026-09-01T00:00:00Z' },
   { email: 'ann@example.test', role: 'member', slug: 'ann', displayName: 'Ann', telegramChatId: '2220002', addedAt: '2026-09-01T00:00:00Z' },
@@ -74,11 +75,19 @@ ok('a reply the model already sent itself is not sent again', r.delivered && sen
 const web = listSessions('ann').find(s => s.title === 'Telegram');
 ok('the exchange is recorded in the member\'s web history', !!web && readUndelivered('ann', web.id, 0).messages.filter(m => m.role === 'assistant').length >= 2);
 
-// in order
+// a burst is one turn; what arrives during a turn is the next turn, in order
 let order = [];
-const slowTurn = async (p) => { await new Promise(r => setTimeout(r, p.body === 'first' ? 30 : 1)); order.push(p.body); return { text: p.body, sessionId: 'S2' }; };
-await Promise.all([startMemberDm(ann, 'first', { runTurn: slowTurn, send }), startMemberDm(ann, 'second', { runTurn: slowTurn, send })]);
-ok('two messages from one person are answered in order', order.join(',') === 'first,second', order);
+const slowTurn = async (p) => { await new Promise(r => setTimeout(r, 120)); order.push(p.body); return { text: `re: ${p.body}`, sessionId: 'S2' }; };
+const sendsBefore = sends.length;
+const burst = await Promise.all([startMemberDm(ann, 'first', { runTurn: slowTurn, send }), startMemberDm(ann, 'second', { runTurn: slowTurn, send })]);
+ok('two messages sent together are one turn, in order, with one reply', order.length === 1 && order[0] === 'first\n\nsecond' && sends.length === sendsBefore + 1 && burst.every(r => r.delivered), { order, burst });
+order = [];
+const p1 = startMemberDm(ann, 'one', { runTurn: slowTurn, send });
+await new Promise(r => setTimeout(r, 70));          // the turn for "one" is running
+const p2 = startMemberDm(ann, 'two', { runTurn: slowTurn, send });
+const p3 = startMemberDm(ann, 'three', { runTurn: slowTurn, send });
+await Promise.all([p1, p2, p3]);
+ok('messages that arrive during a turn wait and become the next turn together', order.join(' | ') === 'one | two\n\nthree', order);
 
 // the Slack surface: its own session, its own web chat, the reply into the Slack conversation
 const slackSends = [];
