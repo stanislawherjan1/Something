@@ -560,7 +560,7 @@ picks one (`docker-compose.yml` passes it to the container):
   workspace-api delivers (`/internal/invoke-turn` with `deliver`); a relay to
   the operator is a turn on their queue; the `[GROUP …]` awareness frames
   have nowhere to go and are skipped. `bot.sh` learns the transport from
-  `/internal/operator-identity` and only keeps its PM2 app alive. Telegram
+  `/internal/operator-identity` and only keeps its PM2 app alive. With `WARM_TURNS=1` ([DEPLOY.md](DEPLOY.md)) a conversation's process stays open between messages — the operator's always, others while `WARM_MAX` allows — so the next reply skips the spawn and the MCP startup. Telegram
   keeps undelivered updates for 24 hours and hands them out once, by
   `update_id` (the offset in `.team/telegram-listener-state.json`), so a
   restart loses nothing; a `409 Conflict` means another process polls the

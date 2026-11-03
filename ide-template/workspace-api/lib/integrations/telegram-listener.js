@@ -32,6 +32,7 @@ import { wsapiTransport } from './telegram-transport.js';
 import { userByChatId, isAllowedGroup, addGroup } from '../team.js';
 import { saveAttachments } from '../attachments.js';
 import { resetSurfaceSession } from './member-dm.js';
+import { endWarm } from '../claude.js';
 
 const ID = 'telegram';
 const POLL_TIMEOUT_S = 50;
@@ -160,7 +161,7 @@ export function createDispatcher(deps = {}) {
     routeInbound: tg.routeTelegramInbound, send: tg.sendTelegramMessage, sendFile: tg.sendGroupDocument,
     typing: tg.sendChatAction, react: tg.reactTelegramMessage, download: tg.downloadTelegramFile,
     admins: tg.getChatAdministrators, logInbound: tg.logTelegramInbound,
-    saveAttachments, resetSession: resetSurfaceSession, notePending,
+    saveAttachments, resetSession: resetSurfaceSession, endWarm, notePending,
     onGroup: null, ackReaction: () => String(process.env.TELEGRAM_ACK_REACTION || '').trim(),
     log: (s) => process.stderr.write(`[telegram] ${s}\n`), ...deps,
   };
@@ -198,8 +199,10 @@ export function createDispatcher(deps = {}) {
     const text = String(m.text ?? m.caption ?? '').trim();
     try { d.logInbound({ chat_id: chatId, message_id: m.message_id, user: from.username || from.first_name || null, text }); } catch { /* record only */ }
     if (RESTART_RE.test(text)) {
-      // The conversation starts over: the next message opens a new session.
+      // The conversation starts over: the next message opens a new session,
+      // and a process kept warm on the old one goes.
       d.resetSession(member.slug, 'telegram');
+      try { d.endWarm(`${member.slug}:telegram`, 'restart'); } catch { /* none warm */ }
       await d.send(chatId, 'Starting over — the next message begins a fresh conversation.');
       return { did: 'restart', slug: member.slug };
     }

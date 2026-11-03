@@ -587,7 +587,10 @@ with the channel plugin as its Telegram ear. With `wsapi` none of it runs:
 `lib/integrations/telegram-listener.js` polls the Bot API from workspace-api,
 every DM is a `member-dm` turn as the person (the operator too), groups go
 through the watcher, reminders through `/internal/invoke-turn`, and `bot.sh`
-idles. That is the path meant to replace this one (the plugin needs a pinned
+idles. `WARM_TURNS=1` keeps a conversation's `claude -p --input-format
+stream-json` process open between messages (the warm registry in
+`lib/claude.js`: a parser per turn, one process per conversation, capped by
+`WARM_MAX`, ended by idle, age, a session change or an error). That is the path meant to replace this one (the plugin needs a pinned
 CLI and sixteen regex patches at every boot); it is on the canary first.
 
 ### Process Model

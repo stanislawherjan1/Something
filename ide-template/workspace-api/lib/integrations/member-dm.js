@@ -218,6 +218,8 @@ function defaultRunTurn({ member, body, sessionId, surface }) {
         actorIsAdmin: member.role === 'admin',
         teammates: [],
         sessionId: sessionId || undefined,
+        // The conversation's process may stay open between messages (WARM_TURNS).
+        warmKey: `${member.slug}:${surfaceOf(surface)}`,
         systemNote: SURFACES[surfaceOf(surface)].note,
         onText: (t) => { out += t; },
         onToolStart: () => {

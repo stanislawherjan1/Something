@@ -172,6 +172,12 @@ services:
       # empty = the bootstrap settings' model. The group gate and memory jobs
       # pick their own, cheaper models.
       - IDE_WEB_MODEL=${IDE_WEB_MODEL:-}
+      # Warm conversations (docs/DEPLOY.md): a person's CLI process stays open
+      # between messages. Off by default; one warm process is ~2 GB.
+      - WARM_TURNS=${WARM_TURNS:-}
+      - WARM_MAX=${WARM_MAX:-}
+      - WARM_IDLE_MS=${WARM_IDLE_MS:-}
+      - WARM_MAX_AGE_MS=${WARM_MAX_AGE_MS:-}
       - REMINDER_MIN_GAP_MINUTES=${REMINDER_MIN_GAP_MINUTES:-45}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
