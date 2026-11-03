@@ -198,7 +198,12 @@ RUN chown root:root /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/l
 # (settings.json "model") until the durable fix lands. Durable fix =
 # plugin-side: register the channel before poller takeover; then the
 # newest CLIs (agent teams, workflows, Opus 4.8) are safe again.
-RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code@2.1.150 && \
+# The pin holds for the `plugin` Telegram transport only. A deployment on
+# TELEGRAM_TRANSPORT=wsapi (docs/TEAM_MODE.md) runs no channel plugin and may
+# take a current CLI — Opus 5.5 needs >= 2.1.280 — by setting
+# CLAUDE_CODE_VERSION in its .env (docker-compose.yml passes it as a build arg).
+ARG CLAUDE_CODE_VERSION=2.1.150
+RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
     mkdir -p /home/coder/.npm-global && \
     npm install -g pm2@7.0.4 --prefix /home/coder/.npm-global --ignore-scripts && \
     chown -R coder:coder /home/coder/.npm-global

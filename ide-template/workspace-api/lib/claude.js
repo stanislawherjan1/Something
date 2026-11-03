@@ -542,6 +542,9 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Rules for this kind of turn (the browser panel's, from routes/chat.js) go
   // into the system prompt: in the user's message a page could pose as them,
   // and the model rightly distrusted a rule that changed mid-conversation there.
+  // Which model this is: asked, the model guesses ("Sonnet 4.6" on Sonnet 5)
+  // unless told. One line, from the same setting the turn is launched with.
+  if (turnModel()) systemParts.push(`[MODEL] You are running on the Claude model "${turnModel()}". When asked which model you are, say that; never guess another.`);
   if (systemNote) systemParts.push(String(systemNote));
   if (systemParts.length) args.push('--append-system-prompt', systemParts.join('\n\n'));
 

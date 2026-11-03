@@ -61,6 +61,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # The Claude Code CLI in the image (see the Dockerfile): pinned for the
+        # plugin Telegram transport; a wsapi deployment sets a current version.
+        - CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-2.1.150}
     container_name: ${IDE_NAME:-template-ide}
     restart: unless-stopped
     stop_grace_period: 30s
@@ -164,6 +168,10 @@ services:
       # Who reads Telegram: the channel plugin in the bot's session (plugin) or
       # workspace-api's own poll (wsapi, docs/TEAM_MODE.md).
       - TELEGRAM_TRANSPORT=${TELEGRAM_TRANSPORT:-plugin}
+      # The model every turn runs on (web, Telegram, Slack, groups, reminders);
+      # empty = the bootstrap settings' model. The group gate and memory jobs
+      # pick their own, cheaper models.
+      - IDE_WEB_MODEL=${IDE_WEB_MODEL:-}
       - REMINDER_MIN_GAP_MINUTES=${REMINDER_MIN_GAP_MINUTES:-45}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ADMIN_CHAT_ID=${TELEGRAM_ADMIN_CHAT_ID:-}
