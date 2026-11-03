@@ -79,6 +79,11 @@ r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=slac
 ok('a Slack-bound frame may run headlessly in solo mode', r.status === 202 || (r.status === 200 && !r.body.skipped), r);
 r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=web | x]' }, asBot);
 ok('...other frames are still the brain\'s in solo', r.body.skipped === 'solo');
+// With workspace-api as the Telegram transport there is no brain in solo either: the frame runs here.
+process.env.TELEGRAM_TRANSPORT = 'wsapi';
+r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=telegram | x]' }, asBot);
+ok('under the wsapi transport a solo operator\'s frame runs headlessly', r.status === 202 && r.body.started === 'stan', r.body);
+delete process.env.TELEGRAM_TRANSPORT;
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true }));
 
 // relay

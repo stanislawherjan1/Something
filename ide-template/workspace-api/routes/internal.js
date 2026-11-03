@@ -350,8 +350,10 @@ export default function internalRouter() {
     const { actor, message, deliver } = req.body || {};
     try {
       // Solo mode has one brain, the tmux one — except for Slack, which that
-      // brain cannot reach: a Slack-bound frame runs headlessly here too.
-      if (!getTeamMode() && !/\bchannel=slack\b/.test(String(message || ''))) return res.json({ ok: true, skipped: 'solo' });
+      // brain cannot reach: a Slack-bound frame runs headlessly here too. With
+      // workspace-api as the Telegram transport there is no tmux brain in solo
+      // either: the one person's frames run here, as them.
+      if (!getTeamMode() && !wsapiTransport() && !/\bchannel=slack\b/.test(String(message || ''))) return res.json({ ok: true, skipped: 'solo' });
       if (typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ ok: false, error: 'message required' });
       }
