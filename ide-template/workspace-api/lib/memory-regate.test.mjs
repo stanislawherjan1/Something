@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 
 const ROOT = mkdtempSync(join(tmpdir(), 'mem-regate-'));
 process.env.PROJECT_DIR = ROOT;
+process.env.MEMORY_NOTE_SYNC = '1';   // this suite pins the sharing decision in the request itself
 process.env.BOT_TURN_ID_HASH_FILE = join(ROOT, 'bot-turn-id.sha256');
 writeFileSync(process.env.BOT_TURN_ID_HASH_FILE, createHash('sha256').update('bot-token-for-tests-0123456789').digest('hex'));
 

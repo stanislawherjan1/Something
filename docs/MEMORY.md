@@ -410,7 +410,18 @@ fields came back — names and lengths only, never what was said.
   records join the block whatever the ranking said — a dozen old pages matching
   the words crowded out the one record that answered.
 - **Tools** (offered only with `read`/`on`): `memory_search`, `memory_timeline`,
-  `memory_note` (private by default, shared only when asked; a note in a
+  `memory_note` (private by default, shared only when asked. **Saved at once,
+  refined after**: while the person waits no model is asked — the note is
+  filed whole, in their words, with a key-and-text dedupe only, and the tool
+  answers `refining: true`; then, in the background (`refineNote`), the passes
+  below run: a detail the person never said hides the record and its fact
+  again, with a `note-refused` line in Changes; a note about several things is
+  split into one fact per thing on the same record; one piece lends the fact
+  its title, kind and day; the sharing gate runs. Four model calls in a row
+  once held a Telegram reply for three minutes while the model was slow.
+  `MEMORY_NOTE_SYNC=1`, or `sync: true` on the request, keeps every pass in
+  the request, as the tests that pin them expect; `MEMORY_NOTE_DEBUG=1` logs
+  each refinement. A note in a
   person's own memory then goes through the same sharing gate as a filed
   conversation — the router reads the person's words, each new fact goes to
   the team, to a question or stays by their mode, and the answer carries
