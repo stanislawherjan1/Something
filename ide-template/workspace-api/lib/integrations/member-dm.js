@@ -108,9 +108,11 @@ const limitTold = new Map();
 // burst of messages is one turn: people write in several short messages
 // (a thought, a photo, "and one more thing"), and answering each on its own
 // gave four replies to four lines. A message waits a short quiet window for
-// the next, and what arrives while a turn runs joins the turn after it.
+// the next, and what arrives while a turn runs joins the turn after it. Four
+// seconds: a question and its follow-up came three seconds apart and were
+// two turns with two and a half.
 const chains = new Map();
-const QUIET_MS = Number(process.env.MEMBER_DM_QUIET_MS ?? 2500);
+const QUIET_MS = Number(process.env.MEMBER_DM_QUIET_MS ?? 4000);
 const MAX_BURST = 8;
 const bursts = new Map();   // `${slug}:${surface}` → { items: [{ body, deps, resolve }], timer, busy }
 
