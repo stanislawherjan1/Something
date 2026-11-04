@@ -37,6 +37,8 @@ import * as sharing from './memory-sharing.js';
 import { knownNames, knownKinds, dismissedNames } from './memory-views.js';
 import { getTeamMode, isAllowedGroup, dmOwnerSlug, primaryAdminSlug, list as rosterList } from './team.js';
 import { isGroupId } from './group-id.js';
+import { wsapiTransport } from './integrations/telegram-transport.js';
+import { listSessions } from './sessions.js';
 
 const num = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) ? v : d; };
 const IDLE_MS      = num('MEMORY_V4_IDLE_SECONDS', 900) * 1000;
@@ -154,7 +156,13 @@ export function listSources() {
       if (!owner) continue;
       const dir = join(usersRoot, u.name, 'chats');
       let files; try { files = readdirSync(dir).filter(f => f.endsWith('.jsonl')); } catch { continue; }
+      // With workspace-api reading Telegram itself, the Telegram log below holds
+      // every DM (the plugin's used to miss a teammate's); the "Telegram" chat
+      // in a person's web history mirrors it for reading and is not filed twice.
+      let mirrors = new Set();
+      if (wsapiTransport()) { try { mirrors = new Set(listSessions(u.name, { archived: true }).filter(x => x.title === 'Telegram').map(x => `${x.id}.jsonl`)); } catch { /* no history */ } }
       for (const f of files) {
+        if (mirrors.has(f)) continue;
         const path = join(dir, f);
         let st; try { st = statSync(path); } catch { continue; }
         out.push({ id: `web:${u.name}:${f}`, kind: 'web', path, mtime: st.mtimeMs, owner, scope: `user:${owner}`, name: personName(owner), conv: `web:${f.replace(/\.jsonl$/, '')}` });

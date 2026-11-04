@@ -39,6 +39,22 @@ const factsOf = (scope, recId) => FS.all(scope).filter(f => f.record === recId |
 const A = await import('./memory-asks.js');
 const LLM = await import('./memory-llm.js');
 
+// With workspace-api reading Telegram itself, a person's "Telegram" web chat is a mirror of the log, not a second source.
+{
+  const S = await import('./sessions.js');
+  const H = await import('./chatHistory.js');
+  const mirror = S.createSession('stan', { title: 'Telegram' });
+  H.appendToSession('stan', mirror.id, { role: 'user', text: 'hello from Telegram', kind: 'telegram' });
+  const other = S.createSession('stan', { title: 'A web chat' });
+  H.appendToSession('stan', other.id, { role: 'user', text: 'hello from the web', kind: 'web' });
+  const ids = () => C.listSources().map(s => s.id);
+  ok('under the plugin transport the Telegram mirror chat is a source like any web chat', ids().includes(`web:stan:${mirror.id}.jsonl`) && ids().includes(`web:stan:${other.id}.jsonl`), ids());
+  process.env.TELEGRAM_TRANSPORT = 'wsapi';
+  ok('under the wsapi transport it is left out (the Telegram log is the record), other chats stay', !ids().includes(`web:stan:${mirror.id}.jsonl`) && ids().includes(`web:stan:${other.id}.jsonl`), ids());
+  delete process.env.TELEGRAM_TRANSPORT;
+  for (const id of [mirror.id, other.id]) { try { (await import('node:fs')).rmSync(join(ROOT, '.team', 'users', 'stan', 'chats', `${id}.jsonl`)); } catch { /* gone */ } }
+}
+
 // ─── the fake model ──────────────────────────────────────────────────────────
 const calls = [];
 let routerFails = false;
