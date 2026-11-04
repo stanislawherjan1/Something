@@ -642,8 +642,12 @@ What's NOT in the block (Phase-2 invariant):
 - No `API_KEY` / `CLIENT_SECRET` / `TOKEN` plaintext. Credentials are
   decrypted on-demand by the MCP at startup via the broker UDS. The
   nonce in `env` is the only thing claude needs to give the MCP for it
-  to fetch its own creds — and the nonce is single-use within a 24h TTL
-  bound to one integration id.
+  to fetch its own creds — and the nonce lives 24 h, bound to one
+  integration id. A config keeps a nonce only while it has at least an
+  hour left (`runtime.js`), and a turn's own config is copied from the
+  bot's *after* that pass (`runClaudeTurn`), so an MCP never starts on a
+  nonce about to expire — the first turn past the 24 h mark once did, and
+  lost every brokered server for that turn.
 
 This is why `~/.claude.json` is safe to log, snapshot, or paste into a
 bug report — even leaked, the nonces in it are useless without access

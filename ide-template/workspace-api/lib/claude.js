@@ -410,6 +410,23 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // tasks API) is the only task list a turn has.
   const CLI_TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
   const blocked = ['AskUserQuestion', ...CLI_TODO_TOOLS, ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
+  // Make sure the broker grants in CLAUDE_CONFIG_PATH (=/home/bot/.claude.json)
+  // are ones this process holds before spawning. The grants live in this
+  // process's memory, so after a restart of workspace-api the file still
+  // names the previous process's and every brokered MCP would fail to load
+  // its credentials and register no tools (seen 2026-06-03 as "only 5 MCPs").
+  // The pass keeps a grant that is still good and rewrites the file only when
+  // something changed, so for most turns it is a read. It runs BEFORE this
+  // turn's own config is written from that file: a turn whose file was copied
+  // first carried the nonces of the day before, expired by the time its MCPs
+  // claimed them, and every brokered server failed for that one turn
+  // (seen 2026-11-04: the inbox check lost mail, calendar and Drive).
+  //
+  // Failure here is non-fatal — claude still spawns with whatever the file
+  // holds. We log + continue. Safe to call from concurrent turns.
+  try { syncMcpServers(); }
+  catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
+
   // A page turn — started from the browser panel with the page shared, Look
   // or Act — reads a web page, and a page can carry injected instructions. So
   // it holds nothing a page could turn against the user: no built-in tools at
@@ -550,19 +567,6 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
 
   if (sessionId) args.push('--resume', sessionId);
 
-  // Make sure the broker grants in CLAUDE_CONFIG_PATH (=/home/bot/.claude.json)
-  // are ones this process holds before spawning. The grants live in this
-  // process's memory, so after a restart of workspace-api the file still
-  // names the previous process's and every brokered MCP would fail to load
-  // its credentials and register no tools (seen 2026-06-03 as "only 5 MCPs").
-  // The pass keeps a grant that is still good and rewrites the file only when
-  // something changed, so for most turns it is a read.
-  //
-  // Failure here is non-fatal — claude still spawns with whatever the file
-  // holds. We log + continue. Safe to call from concurrent turns.
-  try { syncMcpServers(); }
-  catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
-
   // Inject the stored OAuth token if it exists and isn't already in env.
   // This covers the self-service wizard path: token saved via /api/setup/token,
   // decrypted on-demand here so it never has to sit in process.env at boot.
@@ -573,6 +577,14 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // home, but a web turn runs under wsapi's home, which has no settings file;
   // the env var holds whatever the home.
   childEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
+  // The CLI's "silent turn reminder": after a few tool calls without text it
+  // tells the model the user hasn't heard from it and asks for a word on what
+  // it is doing. Nobody is reading a headless turn, and that word became a
+  // Telegram message ("Nothing to send this time…") from a run that had
+  // nothing to say. The gate is switched off; the text is replaced as well, for
+  // a CLI that keeps the reminder on regardless.
+  childEnv.CLAUDE_CODE_SILENT_TURN_REMINDER = '';
+  childEnv.CLAUDE_CODE_SILENT_TURN_REMINDER_TEXT = 'Automatic timer, not a person: nobody is waiting for a status line, so do not write one. Carry on with the work; when it is done, close the turn as the rules for this turn say.';
   if (!childEnv.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
     try { childEnv.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); }
     catch (err) { process.stderr.write(`[claude] token decrypt failed: ${err.message}\n`); }
