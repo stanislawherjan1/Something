@@ -370,7 +370,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, warmKey = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, warmKey = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted = null }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -622,7 +622,7 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // the MCP startup again. Only a plain person's turn (no page, no restricted
   // tool set, no group), keyed by the caller (`<slug>:<surface>`).
   const useWarm = warmOn() && !!warmKey && !pageTurn && !Array.isArray(onlyMcp) && !groupContext;
-  const callbacks = { onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled };
+  const callbacks = { onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted };
   if (useWarm) {
     const w = warm.get(warmKey);
     // Reused only for the session it is on: a caller with no session id is
@@ -634,9 +634,10 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
       try { unlinkSync(mcpFile); } catch { /* already gone */ }
       clearTimeout(w.idleTimer);
       w.busy = true; w.lastUsedAt = Date.now();
-      w.current = makeTurnParser({ ...callbacks, actor, groupContext, sessionId: w.sessionId, warm: true, kill: () => { try { w.proc.kill('SIGTERM'); } catch { /* gone */ } }, onTurnEnd: (r) => warmTurnEnded(warmKey, w, r) });
+      const parser = makeTurnParser({ ...callbacks, actor, groupContext, sessionId: w.sessionId, warm: true, kill: () => { try { w.proc.kill('SIGTERM'); } catch { /* gone */ } }, onTurnEnd: (r) => warmTurnEnded(warmKey, w, r) });
+      w.current = parser;
       feedMessage(w.proc, w.turnId, true);
-      return w.proc;
+      return turnHandle(w.proc, parser, true);
     }
     // A process on another session (the person started over): it goes, a fresh one comes.
     if (w) endWarm(warmKey, 'session changed');
@@ -723,6 +724,27 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     parser.close(code, signal);
   });
 
+  return turnHandle(proc, parser, !!w);
+}
+
+/**
+ * What a caller holds while a turn runs: the process (to kill on a client
+ * abort, as before), `turnInfo()` and `interruptTurn()`. Interrupting a warm
+ * turn is a control request down its stdin — the process stays, the session
+ * keeps what was said, the next message continues it; a one-turn process is
+ * ended instead, and the next message resumes the session.
+ */
+function turnHandle(proc, parser, warm) {
+  proc.turnInfo = () => parser.info();
+  proc.interruptTurn = () => {
+    if (!parser.beginInterrupt()) return false;
+    if (warm) {
+      try { proc.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: `int-${Date.now()}`, request: { subtype: 'interrupt' } })}\n`); } catch { /* gone */ }
+    } else {
+      try { proc.kill('SIGTERM'); } catch { /* gone */ }
+    }
+    return true;
+  };
   return proc;
 }
 
@@ -734,9 +756,14 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
  * for every message, a one-turn process has one for its life. In warm mode the
  * turn is over at the `result` event (the process stays); otherwise at exit.
  */
-function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, actor, groupContext, sessionId, warm = false, kill, onTurnEnd = null }) {
+function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted = null, actor, groupContext, sessionId, warm = false, kill, onTurnEnd = null }) {
   let buffer = '';
   let capturedSessionId = sessionId || null;
+  // Set by interruptTurn: the turn's end is then "interrupted", not an error,
+  // and a warm process stays. The names of the tools the turn started, for
+  // the caller to judge whether an interruption would lose something.
+  let interrupting = false;
+  const toolsStarted = [];
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
@@ -802,6 +829,9 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
     finished = true;
     clearTimeout(idleTimer);
     if (limitRejectedAt) { onError(limitError()); onTurnEnd?.({ error: true }); return; }
+    // An interruption the caller asked for: the turn is over, the process is
+    // fine, and the caller hears it as such (the session keeps what was said).
+    if (interrupting) { if (onInterrupted) onInterrupted(); else onError('interrupted'); onTurnEnd?.({ error: false, sessionId: capturedSessionId }); return; }
     if (evt.is_error) { onError(`claude: ${String(evt.result || evt.subtype || 'error').slice(0, 600)}`); onTurnEnd?.({ error: true }); return; }
     if (!settled) { settled = true; try { onSettled?.(); } catch { /* the caller's own bug */ } }
     onDone({ sessionId: capturedSessionId });
@@ -858,6 +888,8 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
       }
       // A long tool call's heartbeat (CLI >= 2.1.3xx): the turn is alive, nothing to show.
       if (evt.type === 'tool_progress') return;
+      // The answer to a control request (an interruption): nothing to do with it.
+      if (evt.type === 'control_response') return;
       if (!debugStream && evt.type && evt.type !== 'system' && evt.type !== 'assistant') {
         process.stderr.write(`[claude/unknown-top] type=${evt.type} keys=${Object.keys(evt).join(',')}\n`);
       }
@@ -895,6 +927,7 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
     // Tool invocation — surface as a chip in the UI.
     if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
       toolNamesById.set(ev.content_block.id, ev.content_block.name);
+      toolsStarted.push(ev.content_block.name);
       if (onToolInput) toolInputs.set(ev.index, { id: ev.content_block.id, name: ev.content_block.name, json: '' });
       onToolStart?.({ id: ev.content_block.id, name: ev.content_block.name });
       return;
@@ -932,6 +965,8 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
       clearTimeout(idleTimer);
       if (finished) return;
       finished = true;
+      // Killed on the caller's request: interrupted, not failed.
+      if (interrupting) return onInterrupted ? onInterrupted() : onError('interrupted');
       if (code === 0 && !limitRejectedAt) return onDone({ sessionId: capturedSessionId });
       // A spent plan is not a crash and must not read like one. The wording
       // keeps "usage limit reached" because group-watcher matches that phrase
@@ -940,8 +975,19 @@ function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, 
       onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
         + (stderrTail.trim() ? ` :: ${stderrTail.trim().slice(-600)}` : ''));
     },
+    /** The turn so far: over, and which tools it started (for the caller's interrupt decision). */
+    info() { return { finished, tools: toolsStarted.slice() }; },
+    /** Mark the turn as being interrupted on the caller's request. Returns false once it is over. */
+    beginInterrupt() { if (finished) return false; interrupting = true; return true; },
   };
 }
+
+// A tool that changes something outside the turn: a reply, a file, a record.
+// Interrupting a turn past such a call could lose or double an effect; a
+// turn that has only read may be stopped and started over. The verbs are the
+// read-only fence's (hooks/scope-guard.mjs).
+const SIDE_EFFECT_TOOL_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark|save|append|replace|style|resolve|resume|pause|enable|disable|grant|revoke|approve|void|capture|fulfill|duplicate|copy|attach|clear|reset|note)([_-]|$)|^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/i;
+export const startedSideEffect = (tools) => (tools || []).some(t => SIDE_EFFECT_TOOL_RE.test(String(t)));
 
 // ─── warm processes ───────────────────────────────────────────────────────────
 //

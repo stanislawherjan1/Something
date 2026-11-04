@@ -551,7 +551,7 @@ picks one (`docker-compose.yml` passes it to the container):
   operator's included** — with their own session (`--resume`, one queue per
   person; a burst of messages is one turn: a message waits a short quiet
   window for the next, what arrives during a turn joins the turn after it —
-  `member-dm.js`, `MEMBER_DM_QUIET_MS`, 4 s), "typing…" while it runs, photos and files fetched into
+  `member-dm.js`, `MEMBER_DM_QUIET_MS`, 4 s; and like a colleague who sees another message come in while writing: a message that arrives while the turn still thinks or writes — no tool with an effect outside the turn has run, `startedSideEffect` in `lib/claude.js` — stops that turn (`interruptTurn`: a control request down a warm process's stdin, the end of a one-turn process) and the next turn is told it is a continuation and answers everything once; one that arrives while such a tool runs, or after the reply went out, is put as a follow-up — add what it changes, do not say it all again, `[[SILENT]]` if it is covered), "typing…" while it runs, photos and files fetched into
   `.attachments/telegram-<slug>/` and named in the message, replies split at
   4096 and stripped of Markdown, `[[SEND_FILE …]]` and `[[REACT …]]` honoured,
   `/restart` starting the person's conversation over. Someone not on the

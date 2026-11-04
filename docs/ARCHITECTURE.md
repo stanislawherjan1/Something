@@ -590,7 +590,7 @@ through the watcher, reminders through `/internal/invoke-turn`, and `bot.sh`
 idles. `WARM_TURNS=1` keeps a conversation's `claude -p --input-format
 stream-json` process open between messages (the warm registry in
 `lib/claude.js`: a parser per turn, one process per conversation, capped by
-`WARM_MAX`, ended by idle, age, a session change or an error). That is the path meant to replace this one (the plugin needs a pinned
+`WARM_MAX`, ended by idle, age, a session change or an error; a turn in flight can be interrupted for a newer message — `interruptTurn` on the handle `runClaudeTurn` returns). That is the path meant to replace this one (the plugin needs a pinned
 CLI and sixteen regex patches at every boot); it is on the canary first.
 
 ### Process Model

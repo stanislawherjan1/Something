@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_DIR } from '../config.js';
-import { runClaudeTurn } from '../claude.js';
+import { runClaudeTurn, startedSideEffect } from '../claude.js';
 import { createSession, listSessions } from '../sessions.js';
 import { appendToSession } from '../chatHistory.js';
 import { confinedFile } from './channel-adapter.js';
@@ -123,9 +123,17 @@ const bursts = new Map();   // `${slug}:${surface}` → { items: [{ body, deps, 
  * 'slack'; `target` is where the reply goes (the Telegram chat id by default,
  * a Slack conversation id for Slack).
  */
+// What the model is told when a message had to wait: it came while an
+// answer was being written (that answer was stopped and never sent), or
+// right after one went out — then only what it adds is wanted.
+const CONTINUED = (body) => `[CONTINUED] They wrote more while you were answering — that answer was stopped and nothing of it reached them:\n\n${body}\n\nAnswer once, in one reply, covering what they asked before and this.`;
+const FOLLOW_UP = (body) => `[FOLLOW-UP] Sent right after your last reply went out:\n\n${body}\n\nAdd only what this changes or adds; do not repeat your last reply. If it is already covered, reply [[SILENT]].`;
+
 export async function answerMemberDm(member, body, deps = {}) {
   const surface = surfaceOf(deps.surface);
   const runTurn = deps.runTurn || defaultRunTurn;
+  // `frame`: how the message is put to the model when it had to wait (above).
+  const message = deps.frame === 'continued' ? CONTINUED(body) : deps.frame === 'followup' ? FOLLOW_UP(body) : body;
   const send = deps.send || (async (chatId, text) => (await import('./telegram-sync.js')).sendTelegramMessage(chatId, text));
   // A file: Telegram's document send by default; Slack passes its upload.
   const sendFile = deps.sendFile || (async (chatId, f) => (await import('./telegram-sync.js')).sendGroupDocument(chatId, f.abs, { logKind: 'dm' }));
@@ -135,18 +143,23 @@ export async function answerMemberDm(member, body, deps = {}) {
   try { appendToSession(slug, webId, { role: 'user', text: body, kind: surface }); } catch { /* record only */ }
 
   let sessionId = loadSession(slug, surface);
-  let r = await runTurn({ member, body, sessionId, surface });
+  const run = (sid) => { const t = runTurn({ member, body: message, sessionId: sid, surface }); deps.onTurn?.(t); return t; };
+  let r = await run(sessionId);
+  // Stopped on request (a newer message is folded into the next turn): nothing is sent.
+  if (r.interrupted) return { delivered: false, reason: 'interrupted', interrupted: true };
   if (r.error && !r.text && TRANSIENT_RE.test(String(r.error)) && !isUsageLimit(r.error)) {
     process.stderr.write(`[member-dm] ${slug}: transient model error, trying once more: ${String(r.error).slice(0, 120)}\n`);
     await new Promise(res => setTimeout(res, RETRY_AFTER_MS));
-    r = await runTurn({ member, body, sessionId, surface });
+    r = await run(sessionId);
+    if (r.interrupted) return { delivered: false, reason: 'interrupted', interrupted: true };
   }
   if (r.error && sessionId && RESUME_LOST_RE.test(String(r.error))) {
     // The saved session is gone (the CLI's store was cleaned, a redeploy):
     // start afresh once rather than failing every message from now on.
     clearSession(slug, surface);
     sessionId = null;
-    r = await runTurn({ member, body, sessionId: null, surface });
+    r = await run(null);
+    if (r.interrupted) return { delivered: false, reason: 'interrupted', interrupted: true };
   }
   if (r.sessionId && r.sessionId !== sessionId) saveSession(slug, surface, r.sessionId);
 
@@ -212,32 +225,55 @@ export async function answerMemberDm(member, body, deps = {}) {
  * Queue a member's DM: it joins the burst for that person and surface, and
  * the burst runs as one turn behind their previous one. Resolves with that
  * turn's outcome for every message in it.
+ *
+ * Like a colleague who sees another message come in while writing: a
+ * message that arrives while the turn is still thinking or writing (no tool
+ * with an effect outside the turn has run) stops that turn, and the next one
+ * answers everything at once; one that arrives while such a tool runs, or
+ * after the reply went out, is put as a follow-up — add what it changes,
+ * do not say it all again.
  */
 export function startMemberDm(member, body, deps) {
   const surface = surfaceOf(deps?.surface);
   const key = `${member.slug}:${surface}`;
   return new Promise((resolve) => {
     let b = bursts.get(key);
-    if (!b) { b = { items: [], timer: null, busy: false }; bursts.set(key, b); }
+    if (!b) { b = { items: [], timer: null, busy: false, turn: null, interrupted: false }; bursts.set(key, b); }
     b.items.push({ body, deps, resolve });
     clearTimeout(b.timer); b.timer = null;
     const flush = () => {
       b.timer = null;
       if (b.busy || !b.items.length) return;
       const items = b.items.splice(0);
+      const frame = b.interrupted ? 'continued' : b.afterReply ? 'followup' : null;
+      b.interrupted = false; b.afterReply = false;
       b.busy = true;
       const prev = chains.get(member.slug) || Promise.resolve();
       const next = prev
-        .then(() => answerMemberDm(member, items.map(i => i.body).join('\n\n'), items[items.length - 1].deps))
+        .then(() => answerMemberDm(member, items.map(i => i.body).join('\n\n'), { ...items[items.length - 1].deps, frame, onTurn: (t) => { b.turn = t; } }))
         .catch((err) => { process.stderr.write(`[member-dm] ${member.slug}: ${err.message}\n`); return { delivered: false, reason: 'error' }; })
         .then((r) => {
           for (const i of items) i.resolve(r);
-          b.busy = false;
-          // What arrived during the turn is the next turn, now.
-          if (b.items.length) flush();
+          b.busy = false; b.turn = null;
+          if (r?.interrupted) {
+            // The turn was stopped for what came meanwhile: that runs now, as a continuation.
+            b.interrupted = true;
+            flush();
+          } else if (b.items.length) {
+            // What arrived during the turn is the next turn, now — as a follow-up to the reply.
+            b.afterReply = true;
+            flush();
+          }
         });
       chains.set(member.slug, next);
     };
+    if (b.busy) {
+      // A turn is running: stop it when nothing of consequence has happened
+      // yet, so one reply covers both messages.
+      const t = b.turn;
+      if (t && typeof t.interrupt === 'function') { try { t.interrupt(); } catch { /* the turn ends on its own */ } }
+      return;
+    }
     if (b.items.length >= MAX_BURST) flush();
     else if (QUIET_MS > 0) b.timer = setTimeout(flush, QUIET_MS);
     else flush();
@@ -245,17 +281,18 @@ export function startMemberDm(member, body, deps) {
 }
 
 function defaultRunTurn({ member, body, sessionId, surface }) {
-  return new Promise((resolve) => {
+  let proc = null;
+  const promise = new Promise((resolve) => {
     let out = '', lastSegment = '', sentItself = false, error = null, done = false;
-    const finish = (sid) => {
+    const finish = (sid, interrupted = false) => {
       if (done) return;
       done = true;
       // The closing text after the last tool call is the answer; what came
       // between tool calls is narration ("Checking…"), not for the person.
-      resolve({ text: (out.trim() ? out : lastSegment).trim(), sessionId: sid || null, error, sentItself });
+      resolve(interrupted ? { interrupted: true, text: '', sessionId: sid || null } : { text: (out.trim() ? out : lastSegment).trim(), sessionId: sid || null, error, sentItself });
     };
     try {
-      runClaudeTurn({
+      proc = runClaudeTurn({
         message: body,
         actor: member.slug,
         actorName: member.displayName || member.slug,
@@ -284,7 +321,17 @@ function defaultRunTurn({ member, body, sessionId, surface }) {
         // A non-zero exit reports through onError only (no onDone follows).
         onError: (e) => { error = e; finish(null); },
         onDone: ({ sessionId: sid } = {}) => finish(sid),
+        onInterrupted: () => finish(sessionId || null, true),
       });
     } catch (err) { error = err; finish(null); }
   });
+  // Stop the turn for a newer message — only while nothing with an effect
+  // outside the turn has run; past that the message waits as a follow-up.
+  promise.interrupt = () => {
+    if (!proc?.interruptTurn || !proc.turnInfo) return false;
+    const info = proc.turnInfo();
+    if (info.finished || startedSideEffect(info.tools)) return false;
+    return proc.interruptTurn();
+  };
+  return promise;
 }

@@ -28,19 +28,32 @@ const ri = process.argv.indexOf('--resume');
 const sid = ri > 0 ? process.argv[ri + 1] : 'S-' + process.pid;
 appendFileSync(${JSON.stringify(SPAWNS)}, process.pid + ' ' + (streamIn ? 'stream' : 'once') + ' ' + sid + '\\n');
 let buf = '';
+let slow = null;
 const answer = (text) => {
   const say = (s) => process.stdout.write(JSON.stringify({ type: 'stream_event', session_id: sid, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: s } } }) + '\\n');
   process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init', session_id: sid }) + '\\n');
   if (/fail/.test(text)) { process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error', is_error: true, session_id: sid, result: 'boom' }) + '\\n'); return; }
+  if (/slowly/.test(text)) {
+    // Thinking for a while: an interrupt control request ends it as the CLI does.
+    say('thinking');
+    slow = setTimeout(() => { slow = null; say(' done'); process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', session_id: sid, result: '' }) + '\\n'); }, 1500);
+    return;
+  }
   say('pid ' + process.pid + ' says: ' + text.slice(-20));
   process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', session_id: sid, result: '' }) + '\\n');
+};
+const control = (req) => {
+  if (req?.request?.subtype === 'interrupt') {
+    process.stdout.write(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: req.request_id, response: {} } }) + '\\n');
+    if (slow) { clearTimeout(slow); slow = null; process.stdout.write(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sid, result: '' }) + '\\n'); }
+  }
 };
 process.stdin.on('data', (d) => {
   buf += d;
   if (!streamIn) return;
-  let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!line.trim()) continue; try { answer(JSON.parse(line).message.content); } catch {} }
+  let i; while ((i = buf.indexOf('\\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); if (!line.trim()) continue; try { const o = JSON.parse(line); if (o.type === 'control_request') control(o); else answer(o.message.content); } catch {} }
 });
-process.stdin.on('end', () => { if (!streamIn) answer(buf); process.exit(0); });
+process.stdin.on('end', () => { if (!streamIn) { if (/slowly/.test(buf)) { const t = setInterval(() => {}, 1000); setTimeout(() => { clearInterval(t); answer(buf); process.exit(0); }, 1500); return; } answer(buf); } process.exit(0); });
 `);
 chmodSync(FAKE, 0o755);
 process.env.CLAUDE_BIN = FAKE;
@@ -90,6 +103,32 @@ let r6 = await turn({ actor: 'tom', warmKey: 'tom:telegram', message: 'cold agai
 await sleep(100);
 ok('with WARM_TURNS off every turn is its own process', spawns().length === before + 1 && /once/.test(spawns().at(-1)) && r6.proc.exitCode !== null && /cold again/.test(r6.text), { spawns: spawns().slice(-2) });
 process.env.WARM_TURNS = '1';
+
+// An interruption: a warm turn is cut short by a control request, the process stays, the next message continues.
+{
+  let interrupted = 0;
+  const t1 = (() => { let text = ''; let proc; const p = new Promise((resolve) => { proc = runClaudeTurn({ actor: 'tom', warmKey: 'tom:telegram', message: 'answer slowly please', onText: (t) => { text += t; }, onToolStart() {}, onToolEnd() {}, onImage() {}, onError: (e) => resolve({ error: String(e), text }), onDone: (r) => resolve({ ...r, text }), onInterrupted: () => { interrupted++; resolve({ interrupted: true, text }); } }); }); p.proc = () => proc; return p; })();
+  await sleep(300);
+  const info = t1.proc().turnInfo();
+  ok('a running turn reports it is not over and what tools it started', info.finished === false && Array.isArray(info.tools) && info.tools.length === 0, info);
+  ok('interruptTurn on a warm turn is accepted', t1.proc().interruptTurn() === true);
+  const r1 = await t1;
+  ok('…the turn ends as interrupted, with the text so far', r1.interrupted === true && interrupted === 1 && /thinking/.test(r1.text) && !/done/.test(r1.text), r1);
+  ok('…and the process stays warm', warmStatus().length === 1 && warmStatus()[0].busy === false && t1.proc().exitCode === null, warmStatus());
+  const r2 = await turn({ actor: 'tom', warmKey: 'tom:telegram', sessionId: warmStatus()[0].sessionId, message: 'and now?' });
+  ok('the next message continues in the same process', /says: and now\?/.test(r2.text) && r2.proc.pid === t1.proc().pid, r2.text);
+  ok('interrupting a finished turn is refused', t1.proc().interruptTurn() === false);
+}
+// An interruption of a one-turn (cold) process: it is ended, and reported as interrupted.
+{
+  delete process.env.WARM_TURNS;
+  let cold; const p = new Promise((resolve) => { cold = runClaudeTurn({ actor: 'ann', message: 'answer slowly please', onText() {}, onToolStart() {}, onToolEnd() {}, onImage() {}, onError: (e) => resolve({ error: String(e) }), onDone: (r) => resolve(r), onInterrupted: () => resolve({ interrupted: true }) }); });
+  await sleep(300);
+  ok('a cold turn can be interrupted too', cold.interruptTurn() === true);
+  const r = await p;
+  ok('…it is reported as interrupted, not as a crash', r.interrupted === true, r);
+  process.env.WARM_TURNS = '1';
+}
 
 // endWarm, for a /restart or shutdown.
 await turn({ actor: 'tom', warmKey: 'tom:telegram', message: 'one more' });

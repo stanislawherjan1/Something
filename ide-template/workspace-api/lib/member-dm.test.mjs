@@ -97,7 +97,39 @@ await new Promise(r => setTimeout(r, 70));          // the turn for "one" is run
 const p2 = startMemberDm(ann, 'two', { runTurn: slowTurn, send });
 const p3 = startMemberDm(ann, 'three', { runTurn: slowTurn, send });
 await Promise.all([p1, p2, p3]);
-ok('messages that arrive during a turn wait and become the next turn together', order.join(' | ') === 'one | two\n\nthree', order);
+ok('messages that arrive during a turn wait and become the next turn together, as a follow-up', order.length === 2 && order[0] === 'one' && /^\[FOLLOW-UP\]/.test(order[1]) && /two\n\nthree/.test(order[1]), order);
+
+// like a colleague: a message while the turn still thinks stops it, and one reply covers both;
+// one while a tool with an effect runs waits and comes as a follow-up
+{
+  const log = [];
+  // A fake turn that can be interrupted while "thinking" (no tools), unless told it started a side effect.
+  const thinkingTurn = (opts = {}) => (p) => {
+    let done = false, stop = null;
+    const pr = new Promise((resolve) => {
+      log.push(`start:${p.body.slice(0, 40).replace(/\n/g, ' ')}`);
+      const t = setTimeout(() => { done = true; resolve({ text: `re: ${p.body.slice(0, 20)}`, sessionId: 'S2' }); }, 150);
+      stop = () => { if (done || opts.sideEffect) return false; clearTimeout(t); done = true; log.push('interrupted'); resolve({ interrupted: true, text: '', sessionId: 'S2' }); return true; };
+    });
+    pr.interrupt = () => stop();
+    return pr;
+  };
+  const before = sends.length;
+  const run = thinkingTurn();
+  const a1 = startMemberDm(ann, 'what is the plan for Friday?', { runTurn: run, send });
+  await new Promise(r => setTimeout(r, 60));          // past the window: the turn is thinking
+  const a2 = startMemberDm(ann, 'and Saturday?', { runTurn: run, send });
+  await Promise.all([a1, a2]);
+  ok('a message while the turn thinks stops it and one turn answers both, as a continuation', log.length === 3 && log[0] === 'start:what is the plan for Friday?' && log[1] === 'interrupted' && /^start:\[CONTINUED\]/.test(log[2]), log);
+  ok('…the stopped turn sent nothing, the continuation did', sends.length === before + 1 && /CONTINUED/.test(sends.at(-1).text), sends.at(-1));
+  log.length = 0;
+  const busy = thinkingTurn({ sideEffect: true });
+  const c1 = startMemberDm(ann, 'send the deck to Tom', { runTurn: busy, send });
+  await new Promise(r => setTimeout(r, 60));
+  const c2 = startMemberDm(ann, 'and cc Ola', { runTurn: busy, send });
+  await Promise.all([c1, c2]);
+  ok('a message while a tool with an effect runs waits, then comes as a follow-up', log.length === 2 && log[0] === 'start:send the deck to Tom' && /^start:\[FOLLOW-UP\]/.test(log[1]), log);
+}
 
 // the Slack surface: its own session, its own web chat, the reply into the Slack conversation
 const slackSends = [];
