@@ -32,7 +32,8 @@ let buf = '';
 process.stdin.on('data', (d) => { buf += d; });
 process.stdin.on('end', () => {
   const out = (event) => process.stdout.write(JSON.stringify({ type: 'stream_event', session_id: 'fake', event }) + '\\n');
-  const closing = (buf.match(/CLOSING:(.*)$/ms) || [, 'Done.'])[1].trim().replace(/\\\\n/g, '\\n');
+  // The route appends a note on what becomes of the reply; the closing text ends before it.
+  const closing = (buf.match(/CLOSING:(.*?)(?: \\[This run is headless|$)/ms) || [, 'Done.'])[1].trim().replace(/\\\\n/g, '\\n');
   out({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
   out({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Checking the calendar and the inbox first.' } });
   out({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 't1', name: 'mcp__workspace-api__memory_search', input: {} } });

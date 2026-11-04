@@ -375,8 +375,14 @@ export default function internalRouter() {
       // between tool calls is narration ("Checking the calendar…"), not for the person.
       let reply = '', lastSegment = '';
       let sentItself = false;
+      // The run is told what becomes of its reply: a model that was asked to
+      // "send nothing" once closed with "Nothing to send this time…" in prose,
+      // and prose is a message. The marker is the only silence there is.
+      const outcomeNote = wantDeliver
+        ? ' [This run is headless: your closing text is sent to them word for word as a message from you, so write it to them, in their language. When there is nothing to tell them, your whole reply is [[SILENT]]; a note that there is nothing to send is a message too, and the wrong one.]'
+        : '';
       runClaudeTurn({
-        message: message.trim(),
+        message: message.trim() + outcomeNote,
         actor: m.slug,
         actorName: m.displayName || m.slug,
         actorIsAdmin: false,

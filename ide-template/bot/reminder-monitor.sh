@@ -660,7 +660,7 @@ reminders = reminders.map(r => {
     // infers it. Only for repeats: a one-shot has no previous run to speak of.
     const lastRun = r.recur ? Date.parse(r.settledAt || '') : NaN;
     if (Number.isFinite(lastRun) && lastRun > 0 && lastRun < now) {
-        wire += ` [Only report what is new since ${new Date(lastRun).toISOString()} — everything before that you have already reported, so do not repeat it. If nothing is new, say nothing.]`;
+        wire += ` [Only report what is new since ${new Date(lastRun).toISOString()} — everything before that you have already reported, so do not repeat it. If nothing is new, send nothing: your whole reply is [[SILENT]].]`;
     }
     // Channel hint travels with the wire message via a tab separator —
     // bash splits on it below. Default 'all' covers legacy reminders that
