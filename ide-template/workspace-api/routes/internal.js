@@ -74,15 +74,22 @@ function findPairedSession(recipientSlug, senderSlug) {
 // Deliver the final reply of an executed reminder run to the person it ran for
 // (see /internal/invoke-turn). The message is the bot's own words, so it is
 // sent as-is — never wrapped in the reminder's title or instruction text.
-const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
+// `[[SILENT]]` anywhere on a line of its own is silence — the model puts it
+// last, after saying why ("the brief already went out this morning"), and
+// that reasoning once reached the person as a message. No marker survives
+// into what is sent.
+const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]`{0,3}\s*$/im;
+const STRAY_MARKER_RE = /^\s*`{0,3}\[\[\s*[A-Z_]+[^\]]*\]\]`{0,3}\s*$/gim;
 async function deliverRunOutcome(member, deliver, reply, sentItself) {
-  const text = String(reply || '').trim();
+  const raw = String(reply || '');
+  const silent = SILENT_RE.test(raw);
+  const text = raw.replace(SILENT_RE, '').replace(STRAY_MARKER_RE, '').trim();
   if (sentItself) {
     process.stderr.write(`[invoke-turn] ${member.slug}: outcome sent by the model itself\n`);
     recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'sent-itself' });
     return;
   }
-  if (!text || SILENT_RE.test(text)) {
+  if (!text || silent) {
     process.stderr.write(`[invoke-turn] ${member.slug}: nothing to report (silent)\n`);
     recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'silent' });
     return;
@@ -364,7 +371,9 @@ export default function internalRouter() {
       const m = resolveMember(actor);
       if (!m) return res.status(400).json({ ok: false, error: 'unknown actor' });
       const wantDeliver = !!(deliver && typeof deliver === 'object');
-      let reply = '';
+      // The closing text after the last tool call is the outcome; what came
+      // between tool calls is narration ("Checking the calendar…"), not for the person.
+      let reply = '', lastSegment = '';
       let sentItself = false;
       runClaudeTurn({
         message: message.trim(),
@@ -374,13 +383,15 @@ export default function internalRouter() {
         onText: (t) => { if (wantDeliver) reply += t; },
         onToolStart: (info) => {
           if (wantDeliver && /web_send_message/.test(String(info?.name || ''))) sentItself = true;
+          if (reply.trim()) lastSegment = reply;
+          reply = '';
         },
         onToolEnd: () => {}, onImage: () => {},
         onError: (e) => process.stderr.write(`[invoke-turn] ${m.slug}: ${String(e).slice(0, 200)}\n`),
         onDone: () => {
           process.stderr.write(`[invoke-turn] ${m.slug}: done\n`);
           if (!wantDeliver) return;
-          deliverRunOutcome(m, deliver, reply, sentItself).catch((err) =>
+          deliverRunOutcome(m, deliver, reply.trim() ? reply : lastSegment, sentItself).catch((err) =>
             process.stderr.write(`[invoke-turn] ${m.slug}: delivery failed: ${err.message}\n`));
         },
       });
