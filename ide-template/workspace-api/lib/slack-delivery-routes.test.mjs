@@ -83,7 +83,12 @@ ok('...other frames are still the brain\'s in solo', r.body.skipped === 'solo');
 process.env.TELEGRAM_TRANSPORT = 'wsapi';
 r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=telegram | x]' }, asBot);
 ok('under the wsapi transport a solo operator\'s frame runs headlessly', r.status === 202 && r.body.started === 'stan', r.body);
+// …and the monitor learns whose frames they are: the one person's slug, even in solo (the brain still keys on teamMode).
+let id = await (await fetch(base + '/operator-identity')).json();
+ok('operator-identity names the solo operator under the wsapi transport', id.teamMode === false && id.slug === 'stan' && id.transport === 'wsapi', id);
 delete process.env.TELEGRAM_TRANSPORT;
+id = await (await fetch(base + '/operator-identity')).json();
+ok('…and not under the plugin transport (the tmux brain is the one person)', id.teamMode === false && id.slug === null && id.transport === 'plugin', id);
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true }));
 
 // relay

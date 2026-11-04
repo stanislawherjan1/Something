@@ -216,7 +216,11 @@ export default function internalRouter() {
   router.get('/internal/operator-identity', loopbackOnly, (_req, res) => {
     try {
       const teamMode = getTeamMode();
-      const slug = teamMode ? primaryAdminSlug() : null;
+      // With workspace-api as the Telegram transport the one person of a solo
+      // workspace is a turn like anyone's, so the monitor needs their slug
+      // too; bot.sh still keys on teamMode for the brain's own identity.
+      let slug = teamMode ? primaryAdminSlug() : null;
+      if (!slug && wsapiTransport()) { const s = primaryAdminSlug(); slug = s && s !== 'default' ? s : null; }
       return res.json({ ok: true, teamMode, slug, isAdmin: !!slug, transport: telegramTransport() });
     } catch (err) {
       process.stderr.write(`[internal] operator-identity failed: ${err.message}\n`);
