@@ -44,6 +44,10 @@ instructions are an admin's to set.
 
 Each person links their own Telegram, so a message from you is from you; on
 Slack it knows you by the email you sign in with, so there is nothing to link.
+Write to it the way you would write to a colleague, on Telegram and on Slack
+alike: a few short messages in a row get one answer, and if you add something
+while it is still thinking, it takes that into account instead of answering
+twice.
 An admin sets the coworker up once on Telegram and on Slack, and it is the
 whole team's from then on. Add it to a team group on Telegram, or invite it to
 a Slack channel (an admin approves each channel once), and it listens there as
