@@ -935,7 +935,7 @@ The dashboard sits in the sidebar under **Integrations**.
 | **Gemini Image** | MCP | `GEMINI_API_KEY` | Imagen 3 + Gemini 2.0 Flash. Output → `project/generated/`. |
 | **Seedream (BytePlus)** | MCP | `BYTEPLUS_API_KEY` | Seedream 4.5 + Seededit. Output shared with Gemini. |
 | **SignWell** | MCP | `SIGNWELL_API_KEY` | E-signature API. Tools: `send_document` (PDF + recipients → draft or send), `get_document`, `list_documents`, `send_reminder`, `get_completed_pdf`. |
-| **Telegram** | PM2 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `TELEGRAM_ALLOWED_IDS` (opt) | Long-running bot. Activate triggers `pm2 restart <bot>` (~5 s). `bot.sh` sources `$HOME/.<bot>/integrations.env` written via `format: shell-env`. |
+| **Telegram** | PM2 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `TELEGRAM_ALLOWED_IDS` (opt) | Long-running bot. Activate triggers `pm2 restart <bot>` (~5 s). `bot.sh` sources `$HOME/.<bot>/integrations.env` written via `format: shell-env`. With `TELEGRAM_TRANSPORT=wsapi` workspace-api polls the Bot API itself instead (`lib/integrations/telegram-listener.js`; the tile shows the poll's status as `listener`, like Slack's) and the token is read from the store per call. |
 | **Shopify** | MCP | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `SHOPIFY_APP_NAME` (opt, default `aria-mcp`) | OAuth Client Credentials Grant inside `shopify-mcp`. |
 | **Meta Ads** | MCP | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID/IG/BUSINESS` (opt) | System User token, doesn't expire. |
 | **Google Ads** | MCP | `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_LOGIN_CUSTOMER_ID`, `GOOGLE_ADS_REFRESH_TOKEN` (opt) | `GOOGLE_CLIENT_ID/SECRET` inherited from container env. |

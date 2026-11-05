@@ -20,6 +20,8 @@ import { appendToSession } from '../lib/chatHistory.js';
 import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGroup, userByChatId, setPreferences, memberGroupsOf, getGroup, getDefaultTimezone, effectiveTimezone } from '../lib/team.js';
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
+import { telegramTransport, wsapiTransport } from '../lib/integrations/telegram-transport.js';
+import { startMemberDm } from '../lib/integrations/member-dm.js';
 import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
@@ -72,15 +74,22 @@ function findPairedSession(recipientSlug, senderSlug) {
 // Deliver the final reply of an executed reminder run to the person it ran for
 // (see /internal/invoke-turn). The message is the bot's own words, so it is
 // sent as-is — never wrapped in the reminder's title or instruction text.
-const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]/i;
+// `[[SILENT]]` anywhere on a line of its own is silence — the model puts it
+// last, after saying why ("the brief already went out this morning"), and
+// that reasoning once reached the person as a message. No marker survives
+// into what is sent.
+const SILENT_RE = /^\s*`{0,3}\s*\[\[\s*SILENT\s*\]\]`{0,3}\s*$/im;
+const STRAY_MARKER_RE = /^\s*`{0,3}\[\[\s*[A-Z_]+[^\]]*\]\]`{0,3}\s*$/gim;
 async function deliverRunOutcome(member, deliver, reply, sentItself) {
-  const text = String(reply || '').trim();
+  const raw = String(reply || '');
+  const silent = SILENT_RE.test(raw);
+  const text = raw.replace(SILENT_RE, '').replace(STRAY_MARKER_RE, '').trim();
   if (sentItself) {
     process.stderr.write(`[invoke-turn] ${member.slug}: outcome sent by the model itself\n`);
     recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'sent-itself' });
     return;
   }
-  if (!text || SILENT_RE.test(text)) {
+  if (!text || silent) {
     process.stderr.write(`[invoke-turn] ${member.slug}: nothing to report (silent)\n`);
     recordOutcome({ id: deliver.id, slug: member.slug, outcome: 'silent' });
     return;
@@ -214,8 +223,12 @@ export default function internalRouter() {
   router.get('/internal/operator-identity', loopbackOnly, (_req, res) => {
     try {
       const teamMode = getTeamMode();
-      const slug = teamMode ? primaryAdminSlug() : null;
-      return res.json({ ok: true, teamMode, slug, isAdmin: !!slug });
+      // With workspace-api as the Telegram transport the one person of a solo
+      // workspace is a turn like anyone's, so the monitor needs their slug
+      // too; bot.sh still keys on teamMode for the brain's own identity.
+      let slug = teamMode ? primaryAdminSlug() : null;
+      if (!slug && wsapiTransport()) { const s = primaryAdminSlug(); slug = s && s !== 'default' ? s : null; }
+      return res.json({ ok: true, teamMode, slug, isAdmin: !!slug, transport: telegramTransport() });
     } catch (err) {
       process.stderr.write(`[internal] operator-identity failed: ${err.message}\n`);
       return res.status(500).json({ ok: false, error: err.message });
@@ -348,31 +361,43 @@ export default function internalRouter() {
     const { actor, message, deliver } = req.body || {};
     try {
       // Solo mode has one brain, the tmux one — except for Slack, which that
-      // brain cannot reach: a Slack-bound frame runs headlessly here too.
-      if (!getTeamMode() && !/\bchannel=slack\b/.test(String(message || ''))) return res.json({ ok: true, skipped: 'solo' });
+      // brain cannot reach: a Slack-bound frame runs headlessly here too. With
+      // workspace-api as the Telegram transport there is no tmux brain in solo
+      // either: the one person's frames run here, as them.
+      if (!getTeamMode() && !wsapiTransport() && !/\bchannel=slack\b/.test(String(message || ''))) return res.json({ ok: true, skipped: 'solo' });
       if (typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({ ok: false, error: 'message required' });
       }
       const m = resolveMember(actor);
       if (!m) return res.status(400).json({ ok: false, error: 'unknown actor' });
       const wantDeliver = !!(deliver && typeof deliver === 'object');
-      let reply = '';
+      // The closing text after the last tool call is the outcome; what came
+      // between tool calls is narration ("Checking the calendar…"), not for the person.
+      let reply = '', lastSegment = '';
       let sentItself = false;
+      // The run is told what becomes of its reply: a model that was asked to
+      // "send nothing" once closed with "Nothing to send this time…" in prose,
+      // and prose is a message. The marker is the only silence there is.
+      const outcomeNote = wantDeliver
+        ? ' [This run is headless: your closing text is sent to them word for word as a message from you, so write it to them, in their language. When there is nothing to tell them, your whole reply is [[SILENT]]; a note that there is nothing to send is a message too, and the wrong one.]'
+        : '';
       runClaudeTurn({
-        message: message.trim(),
+        message: message.trim() + outcomeNote,
         actor: m.slug,
         actorName: m.displayName || m.slug,
         actorIsAdmin: false,
         onText: (t) => { if (wantDeliver) reply += t; },
         onToolStart: (info) => {
           if (wantDeliver && /web_send_message/.test(String(info?.name || ''))) sentItself = true;
+          if (reply.trim()) lastSegment = reply;
+          reply = '';
         },
         onToolEnd: () => {}, onImage: () => {},
         onError: (e) => process.stderr.write(`[invoke-turn] ${m.slug}: ${String(e).slice(0, 200)}\n`),
         onDone: () => {
           process.stderr.write(`[invoke-turn] ${m.slug}: done\n`);
           if (!wantDeliver) return;
-          deliverRunOutcome(m, deliver, reply, sentItself).catch((err) =>
+          deliverRunOutcome(m, deliver, reply.trim() ? reply : lastSegment, sentItself).catch((err) =>
             process.stderr.write(`[invoke-turn] ${m.slug}: delivery failed: ${err.message}\n`));
         },
       });
@@ -543,7 +568,16 @@ export default function internalRouter() {
       let tgMessageId = null;
       let framedToBrain = false;
 
-      if (isOperatorRelay) {
+      if (isOperatorRelay && wsapiTransport()) {
+        // No brain to type into: the frame is a message on the operator's own
+        // queue (member-dm), answered as them and delivered to their Telegram.
+        const kw   = (v) => String(v == null ? '' : v).replace(/[\n\r|\]]/g, ' ').trim();
+        const awaitMode = depth >= 2 ? 'none' : 'reply';
+        const frame = `[RELAY from=${kw(sender.slug)} name=${kw(sender.displayName || sender.slug)} `
+          + `thread=${kw(destId)} depth=${depth} await=${awaitMode} | ${kw(text)}]`;
+        try { startMemberDm(deliverTo, frame, { surface: 'telegram', target: deliverTo.telegramChatId }); tgSent = true; framedToBrain = true; }
+        catch (err) { process.stderr.write(`[internal] relay turn for the operator not started: ${err.message}\n`); }
+      } else if (isOperatorRelay) {
         // thread=<destId> is a stable key the brain uses to keep concurrent
         // relays distinct. The operator's own reply routes via the brain reading
         // the frame (routeTelegramInbound admin-skips), so it needs no
@@ -689,7 +723,7 @@ export default function internalRouter() {
         return;
       }
       addGroup({ chatId: cid, title, actor: 'auto' });
-      runtime.restartBot().catch(() => {});   // re-seed access.json (reply-into-group)
+      if (!wsapiTransport()) runtime.restartBot().catch(() => {});   // re-seed access.json (reply-into-group)
       injectBotFrame(`[GROUP chat_id=${cid} "${String(title || '').slice(0, 40)}" | auto-registered: ${by.displayName || by.slug} added me to this group, so I'm now active here]`.replace(/\s+/g, ' ')).catch(() => {});
       process.stderr.write(`[group-joined] auto-registered ${cid} ("${title || ''}") via ${by.slug}\n`);
     } catch (err) { process.stderr.write(`[internal] group-joined failed: ${err.message}\n`); }

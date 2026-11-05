@@ -21,6 +21,12 @@
  * What crosses is the FACT (its title and sentence), never the excerpt of the
  * conversation it came from: the team learns what was concluded, not what was
  * said. The fact keeps its evidence quote, which is what grounds it.
+ *
+ * A fact has one home. Sharing moves it: the shared copy is the fact from
+ * then on, and the private one is hidden with the reason `shared` — the
+ * person saw the same fact twice, with and without the Shared mark. Taking
+ * it back (withdraw) brings the private one out again; a fact hidden for
+ * this reason is never purged, so that always works.
  */
 import * as ledger from './memory-ledger.js';
 import * as facts from './memory-facts.js';
@@ -98,12 +104,30 @@ export function decide({ mode = 'ask', fact, routed, rules = [], decided = new M
   return { outcome: 'team', reason: fact?.subject ? `about ${fact.subject}` : 'about the work' };
 }
 
+export const WHY_SHARED = 'shared';
+
+const sameText = (a, b) => squash(a) === squash(b);
+
+/**
+ * The person's own fact that a shared one stands for: the same text, or the
+ * same key (kind, day, subject). `hidden` looks among the ones put away by
+ * sharing — for bringing one back.
+ */
+export function privateTwin(slug, fact, { hidden = false } = {}) {
+  const scope = `user:${slug}`;
+  const key = facts.keyOf(fact);
+  return facts.all(scope).find(f => (hidden ? f.hidden && f.hiddenWhy === WHY_SHARED : !f.hidden) && !f.retired && !f.replacedBy
+    && (sameText(f.text, fact.text) || (key && facts.sameKey(facts.keyOf(f), key)))) || null;
+}
+
 /**
  * File a fact into the team's memory in the person's name: one shared record
  * carrying the fact's text (so "See source" for the team opens the fact, not
- * the conversation), with the fact remembered on it. Returns { recordId, ids }.
+ * the conversation), with the fact remembered on it. The person's own copy
+ * (`privateId`, or the twin found by text or key) is hidden as moved.
+ * Returns { recordId, ids, movedId }.
  */
-export async function fileTeamFact(slug, fact, { ts, conv = null, source = 'note', name = null, by = null } = {}) {
+export async function fileTeamFact(slug, fact, { ts, conv = null, source = 'note', name = null, by = null, privateId = null } = {}) {
   const text = [fact.title ? `${fact.title}.` : null, fact.text].filter(Boolean).join(' ');
   const r = await ledger.append({
     scope: 'shared', source, ts: ts || new Date().toISOString(), conv, speaker: name || slug, text,
@@ -115,5 +139,28 @@ export async function fileTeamFact(slug, fact, { ts, conv = null, source = 'note
     expires: fact.expires || null, ...(fact.subject ? { subject: fact.subject } : {}), ...(fact.concerns ? { concerns: fact.concerns } : {}),
     ...(fact.entities?.length ? { entities: fact.entities } : {}), evidence: fact.evidence || '' };
   const got = await facts.remember('shared', [note], { record: r.id, ts: r.ts || ts, entities: fact.entities || [], by: by || source, standing: 'said', conv });
-  return { recordId: r.id, ids: got.ids || [] };
+  const scope = `user:${slug}`;
+  const twin = (privateId && facts.get(scope, privateId)) || privateTwin(slug, fact);
+  let movedId = null;
+  if (twin && !twin.hidden) {
+    await facts.hide(scope, twin.id, by || source, { why: WHY_SHARED, ts: r.ts || ts });
+    movedId = twin.id;
+  }
+  return { recordId: r.id, ids: got.ids || [], movedId };
+}
+
+/** A fact taken back from the team: its private copy comes out again. Returns the id, or null. */
+export async function restorePrivate(slug, fact, { by = null } = {}) {
+  const twin = privateTwin(slug, fact, { hidden: true });
+  if (!twin) return null;
+  await facts.unhide(`user:${slug}`, twin.id, by || slug);
+  return twin.id;
+}
+
+/** A fact shared again after a withdraw: its private copy goes back under the shared one. */
+export async function hidePrivateAgain(slug, fact, { by = null } = {}) {
+  const twin = privateTwin(slug, fact);
+  if (!twin) return null;
+  await facts.hide(`user:${slug}`, twin.id, by || slug, { why: WHY_SHARED });
+  return twin.id;
 }

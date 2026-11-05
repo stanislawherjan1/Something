@@ -56,6 +56,7 @@ import { migrateDefaultMemory } from './lib/memory-loader.js';
 import { writeRecentSnapshot } from './lib/recent-snapshot.js';
 import { reindexAll, pruneEngineStore } from './lib/memory-engine.js';
 import { migrateToEngine } from './lib/memory-migrate.js';
+import { tidyOnce as memoryTidyOnce } from './lib/memory-tidy-once.js';
 import { autoApply as migrateAutoApply } from './lib/migrate.js';
 import { startMaintenance as startMemoryMaintenance } from './lib/memory-maintenance.js';
 import { startImports as startMemoryImports } from './lib/memory-sources.js';
@@ -67,7 +68,8 @@ import { writeAllowedHostsFile } from './lib/integrations/egress.js';
 import { rehydrateRuntimeFiles } from './lib/setup.js';
 import { reconcileTelegramAllowedIdsAtBoot } from './lib/integrations/telegram-sync.js';
 import * as slackListener from './lib/integrations/slack-listener.js';
-import { resumeInterrupted } from './lib/integrations/group-watcher.js';
+import * as telegramListener from './lib/integrations/telegram-listener.js';
+import { resumeInterrupted, routeGroupMessage } from './lib/integrations/group-watcher.js';
 import * as slackChannels from './lib/integrations/slack-channels.js';
 import { startBroker } from './lib/integrations/broker.js';
 import { decryptFor, ensureOwners as ensureIntegrationOwners } from './lib/integrations/store.js';
@@ -211,6 +213,12 @@ if (cryptoReady()) {
   slackChannels.startSweep();
   try { if (slackListener.reconcile()) process.stdout.write('[workspace-api] slack: connecting\n'); }
   catch (err) { process.stderr.write(`[workspace-api] slack listener failed to start: ${err.message}\n`); }
+  // Telegram read from here when TELEGRAM_TRANSPORT=wsapi: every DM a turn as
+  // the person, groups through the watcher; otherwise the plugin in the bot's
+  // session reads it and this stays off.
+  telegramListener.setGroupHandler(routeGroupMessage);
+  try { if (telegramListener.reconcile()) process.stdout.write('[workspace-api] telegram: polling (wsapi transport)\n'); }
+  catch (err) { process.stderr.write(`[workspace-api] telegram listener failed to start: ${err.message}\n`); }
 }
 
 // Team mode: persist slug + displayName for any legacy team entries so each
@@ -316,6 +324,16 @@ try {
   if (r && r.migrated) process.stdout.write(`[workspace-api] memory v3 migration: ${r.summary}\n`);
 } catch (err) {
   process.stderr.write(`[workspace-api] memory migration failed: ${err.message}\n`);
+}
+
+// One-off tidy of what earlier rules left in the facts: the follow-ups filed
+// beside a meeting's summary, and the private copies of facts that moved to
+// the team. Idempotent; a marker in memory/_engine/ once done.
+try {
+  const t = memoryTidyOnce();
+  if (t.ran) process.stdout.write(`[workspace-api] memory tidy: ${t.summary}\n`);
+} catch (err) {
+  process.stderr.write(`[workspace-api] memory tidy failed: ${err.message}\n`);
 }
 
 // Versioned migrations (migrations/NNNN-*.mjs, lib/migrate.js). Structural ones

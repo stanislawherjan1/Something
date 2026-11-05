@@ -704,6 +704,19 @@ get_order(id: 'x"){ maliciousField } query Exfil{ shop{ name }}'
 **Result**: Input treated as opaque value, never parsed as GraphQL syntax
 
 
+### 14b. Telegram read from workspace-api (`TELEGRAM_TRANSPORT=wsapi`)
+
+With workspace-api as the transport (`lib/integrations/telegram-listener.js`)
+nothing new listens: the poll is one outbound request held open, like the Slack
+socket, with no SDK and no new inbound route. The bot token is read from the
+encrypted store per call; the plugin's plaintext copies (`channels/telegram/.env`,
+`integrations.env`) are still written for the `plugin` transport and go when it
+does. Every DM runs as the person's own turn in their slot uid — the operator's
+included — so the fence is the one every turn has; a stranger's message starts
+no turn. The three loopback routes the plugin called (`telegram-inbound`,
+`group-message`, `group-joined`) are not used on this path: the listener calls
+the same functions in process, so there is no inbound message to forge.
+
 ### 15. Process List Token Exposure (Telegram Bot)
 
 **Attack**: Any user with shell access reads `ps aux` and captures the Telegram bot token from the process command line
@@ -946,7 +959,7 @@ In-process broker inside `workspace-api`:
 - UDS at `/var/wsapi-store/run/broker.sock`, mode `srw-rw---- group=wsapi-broker`.
 - Line-of-JSON protocol: `{op:"get", integrationId, nonce}` → `{ok:true, fields|items}`.
 - `runtime.js` issues a 32-byte random nonce per MCP spawn, registered for that integration only. MCP at uid 1002 calls broker over UDS, gets fields, populates `process.env`, then immediately deletes `BROKER_NONCE` from `process.env` to narrow the cross-mcp `/proc` theft window.
-- Grants are **multi-use within a 24-hour TTL** — required because Claude lazy-spawns MCPs and re-spawns after crashes with the same nonce. The original "single-use, 30-second TTL" design (still in the audit doc) was tightened on paper but loose in practice — every broker-mediated MCP was failing silently. The 24h multi-use grant binds to `integrationId` so a sibling MCP that scraped a nonce from `/proc` can only impersonate the same integration's MCP — sibling-of-different-integration impersonation remains an accepted residual risk (audit re-evaluation 2026-05-11: uid isolation is the load-bearing control, not nonce uniqueness).
+- Grants are **multi-use within a 24-hour TTL** — required because Claude lazy-spawns MCPs and re-spawns after crashes with the same nonce. The original "single-use, 30-second TTL" design (still in the audit doc) was tightened on paper but loose in practice — every broker-mediated MCP was failing silently. The 24h multi-use grant binds to `integrationId` so a sibling MCP that scraped a nonce from `/proc` can only impersonate the same integration's MCP — sibling-of-different-integration impersonation remains an accepted residual risk (audit re-evaluation 2026-05-11: uid isolation is the load-bearing control, not nonce uniqueness). A config reuses a grant only while it has at least an hour to run, and a turn's config is written after that re-mint pass, so no MCP starts on a grant that expires before it claims it.
 
 #### Setuid wrappers
 

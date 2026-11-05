@@ -125,7 +125,7 @@ ok('a failed-then-retried repeat keeps its grid', r.file[0].due === hourly.due &
 // the watermark: a repeat is told what it has already reported
 r = claimRun([{ ...hourly, settledAt: '2026-01-01T09:00:05.000Z' }]);
 ok('a repeat is told what it has already reported', /Only report what is new since 2026-01-01T09:00:05\.000Z/.test(r.wire[0][3]), r.wire[0][3]);
-ok('...and nothing new means silence', /If nothing is new, say nothing/.test(r.wire[0][3]));
+ok('...and nothing new means the silence marker, not prose', /If nothing is new, send nothing: your whole reply is \[\[SILENT\]\]/.test(r.wire[0][3]), r.wire[0][3]);
 r = claimRun([{ ...hourly, settledAt: '2026-01-01T09:00:05.000Z', lastAttemptAt: '2026-01-01T09:30:00.000Z' }]);
 ok('the boundary is the last SETTLE, not the last attempt', /since 2026-01-01T09:00:05/.test(r.wire[0][3]));
 r = claimRun([{ id: 'o', status: 'pending', title: 'once', due: anchor.toISOString(), settledAt: '2026-01-01T09:00:05.000Z' }]);

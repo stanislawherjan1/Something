@@ -136,7 +136,7 @@ workspace-api/
 │   ├── setup.js             # first-run wizard state + encrypted Claude token
 │   ├── watcher.js           # chokidar + SSE pub/sub (subscribe(res), publishState(kind), batched broadcasts)
 │   ├── atomic-write.js      # write-tmp-then-rename helper
-│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine; member-dm (a teammate's Telegram/Slack DM as a turn as them) · slack-api (the Web API, no SDK) · slack-listener (one Socket Mode socket, what each event becomes) · slack-channels (channel requests, approval, the audience check) · channel-adapter (what the group watcher does to a Telegram group or a Slack channel)
+│   └── integrations/        # broker · catalog · crypto · egress · runtime · store — the integration engine; member-dm (a teammate's Telegram/Slack DM as a turn as them) · slack-api (the Web API, no SDK) · slack-listener (one Socket Mode socket, what each event becomes) · telegram-listener (the Bot API poll when `TELEGRAM_TRANSPORT=wsapi`: every DM a turn as the person, groups to the watcher) · telegram-transport (the flag) · slack-channels (channel requests, approval, the audience check) · channel-adapter (what the group watcher does to a Telegram group or a Slack channel)
 └── routes/
     ├── health.js            # GET /api/health
     ├── chat.js              # the /api/chat group (turn + sessions, history, reset, stop, forward)

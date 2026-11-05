@@ -123,9 +123,11 @@ setInterval(() => {
  */
 export function issueGrant(integrationId) {
   const nonce = randomBytes(32).toString('base64url');
+  // The TTL is overridable for tests only (a grant that is about to expire).
+  const ttl = Number(process.env.BROKER_NONCE_TTL_MS) || NONCE_TTL_MS;
   grants.set(nonce, {
     integrationId,
-    expiresAt: Date.now() + NONCE_TTL_MS,
+    expiresAt: Date.now() + ttl,
   });
   saveGrants();
   return nonce;
@@ -133,10 +135,13 @@ export function issueGrant(integrationId) {
 
 /** The integration a live grant was issued for, or null when the nonce is
  * unknown or expired. Lets the config sync keep a nonce that is still good
- * instead of minting a new one on every pass. */
-export function grantIntegration(nonce) {
+ * instead of minting a new one on every pass. `minLeftMs` asks for a grant
+ * with at least that long to run: a nonce written into a config now is
+ * claimed by an MCP seconds to minutes later, and a warm session's MCPs
+ * reclaim it after a crash, so one on the edge of its TTL is not "good". */
+export function grantIntegration(nonce, minLeftMs = 0) {
   const grant = typeof nonce === 'string' ? grants.get(nonce) : null;
-  if (!grant || grant.expiresAt < Date.now()) return null;
+  if (!grant || grant.expiresAt - Date.now() < Math.max(0, minLeftMs)) return null;
   return grant.integrationId;
 }
 

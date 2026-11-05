@@ -26,7 +26,7 @@ import { search, timeline , tokens, near } from '../lib/memory-search.js';
 import { renderResults } from '../lib/memory-recall.js';
 import { listAsks, resolveAsk, listRules, clearRule, mentionedAt } from '../lib/memory-asks.js';
 import { setSharing } from '../lib/team.js';
-import { modeOf as sharingModeOf, concernsAPerson } from '../lib/memory-sharing.js';
+import { modeOf as sharingModeOf, concernsAPerson, restorePrivate, hidePrivateAgain } from '../lib/memory-sharing.js';
 import { readRoutines, writeRoutines } from '../lib/routines-store.js';
 import { routinesOwner } from '../lib/memory-v4-writes.js';
 import * as routinesCatalog from '../lib/routines-catalog.js';
@@ -88,6 +88,73 @@ function wordsFrom(text, said) {
   const have = new Set(words(said));
   const mine = words(text);
   return mine.length ? mine.filter((w) => have.has(w)).length / mine.length : 0;
+}
+
+// A note is written while the person waits: no model then (MEMORY_NOTE_SYNC=1
+// or `sync: true` keeps the model passes in the request, for the tests).
+const noteSync = (req) => process.env.MEMORY_NOTE_SYNC === '1' || req.body?.sync === true;
+const refinements = new Set();
+function trackRefinement(p) {
+  const q = p.catch((err) => process.stderr.write(`[memory-v4/note] refinement failed: ${err.message}\n`)).finally(() => refinements.delete(q));
+  refinements.add(q);
+  return q;
+}
+/** Every note refinement still running (tests wait on it). */
+export function waitNoteRefinements() { return Promise.all([...refinements]); }
+
+/**
+ * What a note still gets after it was filed, in the background: a detail the
+ * person never said and memory does not know refuses it (the facts and the
+ * record are hidden, Changes says why); a note about several things becomes
+ * one fact per thing, each worded as it stands now; one piece lends the
+ * fact its title and date; and in a team the sharing gate runs.
+ */
+async function refineNote({ scope, who, speaker, text, said, vouched, knownNames, recordId, factIds, gated }) {
+  const [unsupported, split] = await Promise.all([
+    unsupportedDetails({ text, said, known: knownNames, person: speaker }).catch(() => []),
+    splitNote({ name: speaker, said, text, known: knownNames, max: 6 }).catch(() => null),
+  ]);
+  const saidLower = said.toLowerCase();
+  const unknown = unsupported.filter(n => !vouched.includes(n.toLowerCase()) && !saidLower.includes(n.toLowerCase()));
+  const dbg = (m) => { if (process.env.MEMORY_NOTE_DEBUG === '1') process.stderr.write(`[memory-v4/note] ${recordId}: ${m}\n`); };
+  dbg(`unsupported=${JSON.stringify(unknown)} split=${split ? `${(split.notes || []).length} notes, ${(split.rejected || []).length} rejected` : 'none'} gated=${gated}`);
+  if (unknown.length) {
+    for (const id of factIds) await facts.hide(scope, id, 'note', { why: `not in the person's words: ${unknown.join(', ')}` });
+    await ledger.hide(scope, recordId, who.actor || 'note');
+    ledger.logEvent({ op: 'note-refused', scope, ids: [recordId], by: who.actor || null, why: unknown.join(', '), facts: factIds });
+    return { refused: unknown };
+  }
+  let pieces = split?.notes || [];
+  if (split && !pieces.length && wordsFrom(text, said) >= 0.6) pieces = [{ text, kind: 'fact', evidence: said }];
+  let ids = factIds;
+  if (pieces.length >= 2) {
+    // One fact per thing, on the same record; the whole-note fact gives way.
+    const plan = await facts.plan(scope, pieces, { entities: split?.entities || [] });
+    const got = await facts.apply(scope, plan, { record: recordId, standing: 'note', by: 'note' });
+    for (const id of factIds) if (!got.ids.includes(id)) await facts.hide(scope, id, 'note', { why: 'split into parts' });
+    ids = got.ids;
+    if (split?.entities?.length) await ledger.rewriteMeta(scope, (r) => (r.id === recordId ? { tags: { ...(r.tags || {}), entities: split.entities } } : null), 'note-entities');
+  } else if (pieces.length === 1 && factIds.length === 1) {
+    // The one fact, with what the pass read from the words: a title, its kind, its day, its subject.
+    const p = pieces[0];
+    const patch = {};
+    for (const k of ['title', 'kind', 'about', 'when', 'whenFrom', 'expires', 'subject', 'concerns']) if (p[k] != null && p[k] !== '') patch[k] = p[k];
+    if (p.entities?.length) patch.entities = p.entities;
+    if (Object.keys(patch).length) await facts.amend(scope, factIds[0], patch);
+  }
+  if (gated) {
+    const routed = await routeSaid({ name: speaker, said });
+    dbg(`routed=${routed ? JSON.stringify(routed).slice(0, 160) : 'null'} pieces=${pieces.length}`);
+    if (routed) {
+      // The gate reads whom a fact concerns — the split's reading of it; a
+      // fact filed whole (no split) carries none and is asked about, never shared.
+      const fresh = pieces.length ? pieces.map(pc => ({ ...pc, evidence: pc.evidence || said })) : ids.map(id => facts.get(scope, id)).filter(f => f && !f.hidden);
+      const gate = await gateFacts(who.actor, fresh, { routed, said, name: speaker });
+      dbg(`gate: shared=${gate.shared} asked=${gate.asked} fresh=${JSON.stringify(fresh.map(f => ({ t: f.text?.slice(0, 40), c: f.concerns, e: f.evidence?.slice(0, 30) })))}`);
+      await ledger.rewriteMeta(scope, (r) => { if (r.id !== recordId || !r.tags?.ungated) return null; const { ungated: _u, ...rest } = r.tags; return { tags: rest }; }, 'note-gated');
+    }
+  }
+  return { ids };
 }
 
 function nameOf(slug) {
@@ -574,7 +641,8 @@ export default function memoryV4Router() {
   }));
 
   // A fact the person shared, taken back: hidden from the team; its record
-  // too when nothing else of it is left. Their private copy is untouched.
+  // too when nothing else of it is left. Their private copy, put away when
+  // the fact moved, comes out again (lib/memory-sharing.js).
   router.post('/memory/v4/shared/:id/withdraw', requireActor, withViewer(async (req, res, v) => {
     const id = String(req.params.id);
     const f = facts.all('shared').find(x => x.id === id);
@@ -582,8 +650,9 @@ export default function memoryV4Router() {
     if (!f || !rec || rec.origin !== v.own) return res.status(404).json({ ok: false, error: 'not a fact you shared' });
     await facts.hide('shared', id, v.slug, { why: 'made private' });
     if (!facts.forRecord('shared', rec.id).length) await ledger.hide('shared', rec.id, v.slug);
-    ledger.logEvent({ op: 'hide', scope: 'shared', ids: [rec.id], by: v.slug, facts: [id] });
-    return res.json({ ok: true });
+    const back = await restorePrivate(v.slug, f, { by: v.slug });
+    ledger.logEvent({ op: 'hide', scope: 'shared', ids: [rec.id], by: v.slug, facts: [id], ...(back ? { restored: back } : {}) });
+    return res.json({ ok: true, restored: back });
   }));
   router.post('/memory/v4/shared/:id/restore', requireActor, withViewer(async (req, res, v) => {
     const id = String(req.params.id);
@@ -592,6 +661,7 @@ export default function memoryV4Router() {
     if (!f || !rec || rec.origin !== v.own) return res.status(404).json({ ok: false, error: 'not a fact you shared' });
     await facts.unhide('shared', id, v.slug);
     if (rec.hidden) await ledger.unhide('shared', rec.id, v.slug);
+    await hidePrivateAgain(v.slug, f, { by: v.slug });
     return res.json({ ok: true });
   }));
   router.post('/memory/v4/asks/:id', requireActor, withViewer(async (req, res, v) => {
@@ -933,6 +1003,41 @@ export default function memoryV4Router() {
     const vouched = (Array.isArray(req.body?.confirmNames) ? req.body.confirmNames : []).map(v => String(v).toLowerCase());
     const knownNames = views.knownNames([who.write, 'shared']);
     const speaker = who.actor ? nameOf(who.actor) : 'The person';
+    // The person's words are the record; what memory takes from them is
+    // written to the facts store against that record.
+    const gated = getTeamMode() && !who.group && who.actor && scope === `user:${who.actor}`;
+    const kind = scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private';
+
+    if (!noteSync(req)) {
+      // No model while the person waits. The note is filed at once, whole, in
+      // their words — then, in the background, the same passes as before:
+      // a detail the person never said refuses it (the record is hidden and
+      // Changes says so), a note about several things is split into one fact
+      // per thing, the sharing gate runs. Four model calls in a row once held
+      // a Telegram reply for three minutes while the model was slow; a note
+      // is the person's words, and those can be kept without asking a model.
+      const cands = [{ text, kind: 'fact', evidence: said }];
+      const plan = await facts.plan(scope, cands, { model: false });
+      if (!plan.some(d => ['add', 'replace', 'update'].includes(d.op))) {
+        const known = plan.filter(d => d.op === 'confirm').map(d => d.target);
+        if (known.length) await facts.apply(scope, plan, { standing: 'note', by: 'note' });
+        return res.json({ ok: true, already: true, repeats: known.map(k => k.title || k.text), leftOut: 0 });
+      }
+      const r = await ledger.append({
+        scope, source: 'note', text: said === text ? text : `${text}\n\n(said: ${said})`,
+        ...(gated ? { tags: { ungated: true } } : {}),
+        speaker: who.actor ? nameOf(who.actor) : null,
+        origin: scope === 'shared' ? who.write : null,
+      });
+      if (!r.ok) return res.json({ ok: false, error: r.skipped === 'tombstoned' ? 'this was erased by its owner and cannot be saved again' : 'not saved' });
+      const got = await facts.apply(scope, plan, { record: r.id, standing: 'note', by: 'note', single: true });
+      ledger.logEvent({ op: 'note', scope, ids: [r.id], by: who.actor || null, ...(got.titles.length ? { titles: got.titles } : {}), ...(got.updated.length ? { updated: got.updated } : {}), ...(got.superseded.length ? { superseded: got.superseded } : {}) });
+      trackRefinement(refineNote({ scope, who, speaker, text, said, vouched, knownNames, recordId: r.id, factIds: got.ids, gated }));
+      return res.json({ ok: true, id: got.ids[0] || r.id, scope: kind, replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: text, titles: [text], repeats: got.repeats, leftOut: 0, refining: true });
+    }
+
+    // The synchronous path (MEMORY_NOTE_SYNC=1, or `sync: true`): the model
+    // passes before the answer, as the tests that pin them expect.
     // Two model calls, side by side: what the note adds that the person did
     // not say, and the note split into one entry per thing, each worded as it
     // stands now and grounded in the person's words — a paragraph about six
@@ -971,17 +1076,12 @@ export default function memoryV4Router() {
     // A note in a person's own memory goes through the same gate as a filed
     // conversation (lib/memory-sharing.js): the router reads the person's
     // words, then each new fact goes to the team, to a question, or stays —
-    // by their mode, their rules and earlier answers. A fact the bot noted
-    // during the turn once never crossed, because only the night's pass asked.
-    // The router is asked before the record is written: when it does not
-    // answer, the record is tagged `ungated` and the night's pass judges it
-    // (lib/memory-regate.js) — it used to stay private with nobody told.
+    // by their mode, their rules and earlier answers. The router is asked
+    // before the record is written: when it does not answer, the record is
+    // tagged `ungated` and the night's pass judges it (lib/memory-regate.js).
     const fresh = plan.filter(d => d.fact && ['add', 'replace', 'update'].includes(d.op)).map(d => d.fact);
-    const gated = fresh.length > 0 && getTeamMode() && !who.group && who.actor && scope === `user:${who.actor}`;
-    const routed = gated ? await routeSaid({ name: speaker, said }) : null;
-    const tags = { ...(split?.entities?.length ? { entities: split.entities } : {}), ...(gated && !routed ? { ungated: true } : {}) };
-    // The person's words are the record (source "note"); what memory takes
-    // from them is written to the facts store against that record.
+    const routed = gated && fresh.length ? await routeSaid({ name: speaker, said }) : null;
+    const tags = { ...(split?.entities?.length ? { entities: split.entities } : {}), ...(gated && fresh.length && !routed ? { ungated: true } : {}) };
     const r = await ledger.append({
       scope, source: 'note', text: said === text ? text : `${text}\n\n(said: ${said})`,
       ...(Object.keys(tags).length ? { tags } : {}),
@@ -992,8 +1092,8 @@ export default function memoryV4Router() {
     const got = await facts.apply(scope, plan, { record: r.id, standing: 'note', by: 'note', single: cands.length === 1 });
     ledger.logEvent({ op: 'note', scope, ids: [r.id], by: who.actor || null, ...(got.titles.length ? { titles: got.titles } : {}), ...(got.updated.length ? { updated: got.updated } : {}), ...(got.superseded.length ? { superseded: got.superseded } : {}) });
     const titles = plan.filter(d => d.fact && (d.op === 'add' || d.op === 'replace')).map(d => d.fact.title || d.fact.text);
-    const { shared, asked } = gated ? await gateFacts(who.actor, fresh, { routed, said, name: speaker }) : { shared: 0, asked: 0 };
-    return res.json({ ok: true, id: got.ids[0] || r.id, scope: scope === 'shared' ? 'team' : scope.startsWith('group:') ? 'group' : 'private', replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length, ...(shared ? { shared } : {}), ...(asked ? { asked } : {}), ...(gated && !routed ? { ungated: true } : {}) });
+    const { shared, asked } = gated && fresh.length ? await gateFacts(who.actor, fresh, { routed, said, name: speaker }) : { shared: 0, asked: 0 };
+    return res.json({ ok: true, id: got.ids[0] || r.id, scope: kind, replaced: got.replaced, superseded: got.superseded, updated: got.updated, saved: titles[0] || got.updated[0] || text, titles: titles.length ? titles : got.updated, repeats: got.repeats, leftOut: leftOut.length, ...(shared ? { shared } : {}), ...(asked ? { asked } : {}), ...(gated && fresh.length && !routed ? { ungated: true } : {}) });
   });
 
   // A verified member's own memory, asked from a team room — the one bridge

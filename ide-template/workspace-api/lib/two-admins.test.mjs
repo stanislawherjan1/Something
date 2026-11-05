@@ -17,6 +17,8 @@ process.env.WSAPI_STORE_DIR = STORE;
 process.env.INTEGRATIONS_KEY_PATH = join(STORE, 'key');
 writeFileSync(process.env.INTEGRATIONS_KEY_PATH, '78'.repeat(32));
 process.env.MEMORY_V4 = 'on';
+// The plugin transport: the operator's DM belongs to the tmux brain there.
+process.env.TELEGRAM_TRANSPORT = 'plugin';
 process.env.BOT_CLAUDE_CONFIG = join(STORE, 'bot-claude.json');
 process.env.CLAUDE_CONFIG_PATH = process.env.BOT_CLAUDE_CONFIG;
 process.env.TURN_RUN_DIR = join(STORE, 'turns');

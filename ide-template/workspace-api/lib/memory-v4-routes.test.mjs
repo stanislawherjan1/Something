@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 
 const ROOT = mkdtempSync(join(tmpdir(), 'mem-v4-routes-'));
 process.env.PROJECT_DIR = ROOT;
+process.env.MEMORY_NOTE_SYNC = '1';   // the model passes before the answer, as the cases below pin them; the fast path has its own block at the end
 process.env.BOT_TURN_ID_HASH_FILE = join(ROOT, 'bot-turn-id.sha256');
 const BOT_TOKEN = 'bot-token-for-tests-0123456789';
 writeFileSync(process.env.BOT_TURN_ID_HASH_FILE, createHash('sha256').update(BOT_TOKEN).digest('hex'));
@@ -44,7 +45,7 @@ const ti = await import('./turn-identity.js');
     return { shared: /between us/i.test(line) ? '' : line, private: /between us/i.test(line) ? line : '', ask: '', ask_question: '' };
   }
   // The meeting pass (an import): one summary, the people from "With:".
-  if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }], upcoming: [] };
+  if (schema?.properties?.summary) return { with: ['Marek'], title: 'Orion sync', summary: 'Orion wants SSO by March.', names: [{ name: 'Marek', kind: 'person' }] };
   if (schema?.properties?.notes) {
     const m = String(user).match(/(call|meeting) with Kamil on (\d+) October/i);
     if (m) return { notes: [{ title: `Kamil ${m[2]} October`, text: `A ${m[1]} with Kamil on ${m[2]} October.`, kind: 'status', about: 'meeting', when: `2026-10-${m[2].padStart(2, '0')}`, whenFrom: `on ${m[2]} October`, dayStated: true, subject: 'Kamil', evidence: m[0], names: [] }], rules: [], entities: [] };
@@ -304,6 +305,38 @@ T.touchGroupMeta('-100777', { privateAnswers: 'off' });
 r = await call('POST', '/mine/connections', { token: ti.issueTurnToken({ actor: 'kasia', group: true, groupId: '-100777' }), body: { question: 'x' } });
 ok('(z2) the room\'s switch off covers their accounts too', r.body.off === true && !r.body.answer, r.body);
 T.touchGroupMeta('-100777', { privateAnswers: 'team' });
+
+// ─── the fast path: a note is filed at once, the model passes run after ─────
+{
+  delete process.env.MEMORY_NOTE_SYNC;
+  const { waitNoteRefinements } = await import('../routes/memory-v4.js');
+  const t0 = Date.now();
+  r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Kasia keeps the office plants on Fridays.', said: 'I keep the office plants on Fridays.' } });
+  ok('(fast) a note is saved at once, in the person\'s words, before any model pass', r.status === 200 && r.body.ok && r.body.refining === true && r.body.saved === 'Kasia keeps the office plants on Fridays.', r.body);
+  const rec = L.read({ scopes: ['user:kasia'] }).find(x => /office plants/.test(x.text));
+  ok('(fast) …the record and its fact exist already', !!rec && FS.current(['user:kasia']).some(f => /office plants/.test(f.text)));
+  await waitNoteRefinements();
+  ok('(fast) …and the refinement leaves a plain note as it is', FS.current(['user:kasia']).some(f => /office plants/.test(f.text)) && !L.read({ scopes: ['user:kasia'], includeHidden: true }).find(x => x.id === rec.id)?.hidden);
+  // A detail the person never said: saved first, refused in the background, with a trace.
+  r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Krzysztof is the new treasurer.', said: 'We had a long meeting today.' } });
+  ok('(fast) an unsupported detail is not refused up front', r.status === 200 && r.body.ok && r.body.refining === true, r.body);
+  await waitNoteRefinements();
+  const bad = L.read({ scopes: ['user:kasia'], includeHidden: true }).find(x => /Krzysztof is the new treasurer/.test(x.text));
+  ok('(fast) …but refused afterwards: the record is hidden and its fact with it', !!bad && bad.hidden === true && !FS.current(['user:kasia']).some(f => /Krzysztof is the new treasurer/.test(f.text)), bad);
+  ok('(fast) …and Changes says why', L.readEvents().some(e => e.op === 'note-refused' && e.scope === 'user:kasia' && /Krzysztof/.test(e.why)));
+  // A note about two things becomes two facts in the background.
+  r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'The printer stands on the second floor. The coffee machine needs descaling.', said: 'The printer stands on the second floor and the coffee machine needs descaling.' } });
+  await waitNoteRefinements();
+  const parts = FS.current(['user:kasia']).filter(f => /printer stands on the second floor|coffee machine needs descaling/.test(f.text));
+  ok('(fast) a note about two things is split into two facts after the fact', parts.length === 2 && !FS.current(['user:kasia']).some(f => /second floor\. The coffee/.test(f.text)), parts.map(f => f.text));
+  // The sharing gate runs in the background too (Kasia shares automatically).
+  T.setSharing('kasia@example.test', 'auto');
+  r = await call('POST', '/note', { token: kasiaTurn, body: { text: 'Vellmark pays the pilot in two instalments.', said: 'Vellmark pays the pilot in two instalments.' } });
+  ok('(fast) a work fact is saved at once with no sharing decision yet', r.status === 200 && r.body.ok && !r.body.shared);
+  await waitNoteRefinements();
+  ok('(fast) …and reaches the team once the gate has run', L.read({ scopes: ['shared'] }).some(x => x.tags?.sharedFact && /two instalments/.test(x.text)));
+  ok('(fast) the whole block took no model time up front', Date.now() - t0 < 60_000);
+}
 
 server.close();
 console.log(`memory-v4-routes: ${pass} passed, ${fail} failed`);

@@ -186,19 +186,18 @@ RUN chown root:root /usr/local/bin/wsapi-runner /usr/local/bin/mcp-runner /usr/l
 # pm2 stays with --ignore-scripts (no postinstall it needs).
 # NOTE: claude-code ≥2.1.200 requires node >=22 — LAYER 1's nodesource
 # pin (setup_22.x) and this version move together.
-# PINNED to 2.1.150 (2026-07-14) — newest version WITHOUT the channel
-# killer. CLI ≥2.1.152 SIGINT-kills type-less MCP servers (= channel
-# plugins) on connection close; with the ~5s channel-registration
-# deadline and Telegram poller-takeover latency (409 window) the channel
-# intermittently death-loops and dies (observed 2×/day on 2.1.207 on
-# heavy turns; the bot.sh plugin-watchdog auto-healed each in ~90s, but
-# a mid-flight turn is still lost). Boundary 2.1.150→2.1.152 found by
-# binary diff of the npm platform packages. NOTE: 2.1.150 predates the
-# 2.1.156 Opus 4.8 thinking-block fix — pin bot models to Sonnet-family
-# (settings.json "model") until the durable fix lands. Durable fix =
-# plugin-side: register the channel before poller takeover; then the
-# newest CLIs (agent teams, workflows, Opus 4.8) are safe again.
-RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code@2.1.150 && \
+# 2.1.311 by default (2026-11-05): Opus 5.5 needs >= 2.1.280. Telegram is
+# read by workspace-api (TELEGRAM_TRANSPORT=wsapi, the default), which runs
+# no channel plugin, so the old pin no longer holds anyone back.
+# The pin's history: 2.1.150 (2026-07-14) was the newest version WITHOUT the
+# channel killer. CLI >=2.1.152 SIGINT-kills type-less MCP servers (= channel
+# plugins) on connection close, and with the ~5s channel-registration deadline
+# the channel intermittently death-loops and dies. A deployment that still
+# sets TELEGRAM_TRANSPORT=plugin must set CLAUDE_CODE_VERSION=2.1.150 in its
+# .env too (docker-compose.yml passes it as a build arg), and keep a
+# Sonnet-family model: 2.1.150 predates the Opus 5.5 support.
+ARG CLAUDE_CODE_VERSION=2.1.311
+RUN --mount=type=cache,target=/root/.npm npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} && \
     mkdir -p /home/coder/.npm-global && \
     npm install -g pm2@7.0.4 --prefix /home/coder/.npm-global --ignore-scripts && \
     chown -R coder:coder /home/coder/.npm-global

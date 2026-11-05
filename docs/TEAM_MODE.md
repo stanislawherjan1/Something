@@ -44,6 +44,10 @@ instructions are an admin's to set.
 
 Each person links their own Telegram, so a message from you is from you; on
 Slack it knows you by the email you sign in with, so there is nothing to link.
+Write to it the way you would write to a colleague, on Telegram and on Slack
+alike: a few short messages in a row get one answer, and if you add something
+while it is still thinking, it takes that into account instead of answering
+twice.
 An admin sets the coworker up once on Telegram and on Slack, and it is the
 whole team's from then on. Add it to a team group on Telegram, or invite it to
 a Slack channel (an admin approves each channel once), and it listens there as
@@ -535,6 +539,40 @@ Telegram only when it is connected and they are linked.
 
 The chat id is private (redacted to non-admins/non-owners); the preferred
 surface is roster-level and visible.
+
+### Who reads Telegram — the transport (`TELEGRAM_TRANSPORT`)
+
+Two processes can read the bot's Telegram updates; the deployment's `.env`
+picks one (`docker-compose.yml` passes it to the container):
+
+- `plugin` (only when set, with `CLAUDE_CODE_VERSION=2.1.150`: newer CLIs
+  kill the plugin): the channel plugin inside the operator's tmux
+  session (`bot/bot.sh`, [ARCHITECTURE.md](ARCHITECTURE.md#telegram-bot-architecture)).
+  The operator's DM is that session's; a teammate's DM is a turn as them
+  (`lib/integrations/member-dm.js`), handed over by the plugin's middleware.
+- `wsapi` (the default): workspace-api polls the Bot API itself
+  (`lib/integrations/telegram-listener.js`, the Slack listener's shape) and
+  there is no tmux brain at all. **Every DM is a turn as the person — the
+  operator's included** — with their own session (`--resume`, one queue per
+  person; a burst of messages is one turn: a message waits a short quiet
+  window for the next, what arrives during a turn joins the turn after it —
+  `member-dm.js`, `MEMBER_DM_QUIET_MS`, 4 s; and like a colleague who sees another message come in while writing: a message that arrives while the turn still thinks or writes — no tool with an effect outside the turn has run, `startedSideEffect` in `lib/claude.js` — stops that turn (`interruptTurn`: a control request down a warm process's stdin, the end of a one-turn process) and the next turn is told it is a continuation and answers everything once; one that arrives while such a tool runs, or after the reply went out, is put as a follow-up — add what it changes, do not say it all again, `[[SILENT]]` if it is covered), "typing…" while it runs, photos and files fetched into
+  `.attachments/telegram-<slug>/` and named in the message, replies split at
+  4096 and stripped of Markdown, `[[SEND_FILE …]]` and `[[REACT …]]` honoured,
+  `/restart` starting the person's conversation over. Someone not on the
+  roster gets nothing (the operator's choice) and their chat id is kept in
+  `.team/telegram-pending.json` for an admin. Groups and the bot being added
+  to one go to the group watcher with the same payload the plugin built.
+  Reminders for the operator run as headless turns whose outcome
+  workspace-api delivers (`/internal/invoke-turn` with `deliver`); a relay to
+  the operator is a turn on their queue; the `[GROUP …]` awareness frames
+  have nowhere to go and are skipped. `bot.sh` learns the transport from
+  `/internal/operator-identity` and only keeps its PM2 app alive. With `WARM_TURNS=1` ([DEPLOY.md](DEPLOY.md)) a conversation's process stays open between messages — the operator's always, others while `WARM_MAX` allows — so the next reply skips the spawn and the MCP startup. Telegram
+  keeps undelivered updates for 24 hours and hands them out once, by
+  `update_id` (the offset in `.team/telegram-listener-state.json`), so a
+  restart loses nothing; a `409 Conflict` means another process polls the
+  same token (the plugin still on, an old container) — the listener backs
+  off and tells the admin after a minute.
 
 ---
 

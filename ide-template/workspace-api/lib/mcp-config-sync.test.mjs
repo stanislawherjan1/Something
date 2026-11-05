@@ -55,6 +55,18 @@ r = runtime.syncMcpServers();
 const fresh = read().mcpServers.grok.env.BROKER_NONCE;
 ok('a grant this process does not know is replaced', r.changed === true && fresh !== 'from-a-previous-process' && broker.grantIntegration(fresh) === 'grok');
 
+// A grant with less than an hour to run is not kept either: the MCPs that
+// claim it start seconds to minutes after the config is written.
+process.env.BROKER_NONCE_TTL_MS = String(30 * 60 * 1000);
+const short = broker.issueGrant('grok');
+delete process.env.BROKER_NONCE_TTL_MS;
+cfg = read(); cfg.mcpServers.grok.env.BROKER_NONCE = short; writeFileSync(CFG, JSON.stringify(cfg));
+r = runtime.syncMcpServers();
+const longer = read().mcpServers.grok.env.BROKER_NONCE;
+ok('a grant about to expire is replaced', r.changed === true && longer !== short && broker.grantIntegration(longer, 60 * 60 * 1000) === 'grok', { short: broker.grantIntegration(short), longer });
+r = runtime.syncMcpServers();
+ok('...and the fresh one is kept on the next pass', r.changed === false && read().mcpServers.grok.env.BROKER_NONCE === longer);
+
 store.activate('granola', { fields: { OAUTH_TOKENS: '{"access_token":"a","refresh_token":"r","expires_at":1}' } });
 r = runtime.syncMcpServers();
 const g = read().mcpServers.granola;

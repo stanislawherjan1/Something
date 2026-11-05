@@ -581,6 +581,19 @@ See `docs/CONTEXT_MCP.md` (the whole of it) and `docs/SECURITY.md` §19d.
 
 ## Telegram Bot Architecture
 
+Two transports exist (`TELEGRAM_TRANSPORT`, [TEAM_MODE.md §9](TEAM_MODE.md#who-reads-telegram--the-transport-telegram_transport)).
+What follows describes `plugin`, which a deployment now has to choose (with the
+2.1.150 CLI): the operator's brain in tmux with the channel plugin as its
+Telegram ear. With `wsapi`, the default, none of it runs:
+`lib/integrations/telegram-listener.js` polls the Bot API from workspace-api,
+every DM is a `member-dm` turn as the person (the operator too), groups go
+through the watcher, reminders through `/internal/invoke-turn`, and `bot.sh`
+idles. `WARM_TURNS=1` keeps a conversation's `claude -p --input-format
+stream-json` process open between messages (the warm registry in
+`lib/claude.js`: a parser per turn, one process per conversation, capped by
+`WARM_MAX`, ended by idle, age, a session change or an error; a turn in flight can be interrupted for a newer message — `interruptTurn` on the handle `runClaudeTurn` returns). That is the path meant to replace this one (the plugin needs a pinned
+CLI and sixteen regex patches at every boot); it is on the canary first.
+
 ### Process Model
 
 ```
@@ -630,8 +643,12 @@ What's NOT in the block (Phase-2 invariant):
 - No `API_KEY` / `CLIENT_SECRET` / `TOKEN` plaintext. Credentials are
   decrypted on-demand by the MCP at startup via the broker UDS. The
   nonce in `env` is the only thing claude needs to give the MCP for it
-  to fetch its own creds — and the nonce is single-use within a 24h TTL
-  bound to one integration id.
+  to fetch its own creds — and the nonce lives 24 h, bound to one
+  integration id. A config keeps a nonce only while it has at least an
+  hour left (`runtime.js`), and a turn's own config is copied from the
+  bot's *after* that pass (`runClaudeTurn`), so an MCP never starts on a
+  nonce about to expire — the first turn past the 24 h mark once did, and
+  lost every brokered server for that turn.
 
 This is why `~/.claude.json` is safe to log, snapshot, or paste into a
 bug report — even leaked, the nonces in it are useless without access

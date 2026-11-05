@@ -370,7 +370,7 @@ function turnModel() {
 const ACT_EFFORT = process.env.IDE_ACT_EFFORT || 'medium';
 
 
-export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled }) {
+export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', message, sessionId, webSessionId, relayThread, actor, actorName, actorIsAdmin, teammates, excludeIds: callerExcludeIds, groupContext, groupId = null, groupOnly = false, recallQuery = null, recallHistory = [], disallowedTools, onlyMcp = null, warmKey = null, onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted = null }) {
   const args = [
     '-p',
     '--dangerously-skip-permissions',
@@ -410,6 +410,23 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // tasks API) is the only task list a turn has.
   const CLI_TODO_TOOLS = ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
   const blocked = ['AskUserQuestion', ...CLI_TODO_TOOLS, ...(Array.isArray(disallowedTools) ? disallowedTools : [])];
+  // Make sure the broker grants in CLAUDE_CONFIG_PATH (=/home/bot/.claude.json)
+  // are ones this process holds before spawning. The grants live in this
+  // process's memory, so after a restart of workspace-api the file still
+  // names the previous process's and every brokered MCP would fail to load
+  // its credentials and register no tools (seen 2026-06-03 as "only 5 MCPs").
+  // The pass keeps a grant that is still good and rewrites the file only when
+  // something changed, so for most turns it is a read. It runs BEFORE this
+  // turn's own config is written from that file: a turn whose file was copied
+  // first carried the nonces of the day before, expired by the time its MCPs
+  // claimed them, and every brokered server failed for that one turn
+  // (seen 2026-11-04: the inbox check lost mail, calendar and Drive).
+  //
+  // Failure here is non-fatal — claude still spawns with whatever the file
+  // holds. We log + continue. Safe to call from concurrent turns.
+  try { syncMcpServers(); }
+  catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
+
   // A page turn — started from the browser panel with the page shared, Look
   // or Act — reads a web page, and a page can carry injected instructions. So
   // it holds nothing a page could turn against the user: no built-in tools at
@@ -542,23 +559,13 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // Rules for this kind of turn (the browser panel's, from routes/chat.js) go
   // into the system prompt: in the user's message a page could pose as them,
   // and the model rightly distrusted a rule that changed mid-conversation there.
+  // Which model this is: asked, the model guesses ("Sonnet 4.6" on Sonnet 5)
+  // unless told. One line, from the same setting the turn is launched with.
+  if (turnModel()) systemParts.push(`[MODEL] You are running on the Claude model "${turnModel()}". When asked which model you are, say that; never guess another.`);
   if (systemNote) systemParts.push(String(systemNote));
   if (systemParts.length) args.push('--append-system-prompt', systemParts.join('\n\n'));
 
   if (sessionId) args.push('--resume', sessionId);
-
-  // Make sure the broker grants in CLAUDE_CONFIG_PATH (=/home/bot/.claude.json)
-  // are ones this process holds before spawning. The grants live in this
-  // process's memory, so after a restart of workspace-api the file still
-  // names the previous process's and every brokered MCP would fail to load
-  // its credentials and register no tools (seen 2026-06-03 as "only 5 MCPs").
-  // The pass keeps a grant that is still good and rewrites the file only when
-  // something changed, so for most turns it is a read.
-  //
-  // Failure here is non-fatal — claude still spawns with whatever the file
-  // holds. We log + continue. Safe to call from concurrent turns.
-  try { syncMcpServers(); }
-  catch (err) { process.stderr.write(`[claude/sync-mcps] ${err.message}\n`); }
 
   // Inject the stored OAuth token if it exists and isn't already in env.
   // This covers the self-service wizard path: token saved via /api/setup/token,
@@ -570,6 +577,14 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // home, but a web turn runs under wsapi's home, which has no settings file;
   // the env var holds whatever the home.
   childEnv.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
+  // The CLI's "silent turn reminder": after a few tool calls without text it
+  // tells the model the user hasn't heard from it and asks for a word on what
+  // it is doing. Nobody is reading a headless turn, and that word became a
+  // Telegram message ("Nothing to send this time…") from a run that had
+  // nothing to say. The gate is switched off; the text is replaced as well, for
+  // a CLI that keeps the reminder on regardless.
+  childEnv.CLAUDE_CODE_SILENT_TURN_REMINDER = '';
+  childEnv.CLAUDE_CODE_SILENT_TURN_REMINDER_TEXT = 'Automatic timer, not a person: nobody is waiting for a status line, so do not write one. Carry on with the work; when it is done, close the turn as the rules for this turn say.';
   if (!childEnv.CLAUDE_CODE_OAUTH_TOKEN && hasClaudeToken()) {
     try { childEnv.CLAUDE_CODE_OAUTH_TOKEN = readClaudeToken(); }
     catch (err) { process.stderr.write(`[claude] token decrypt failed: ${err.message}\n`); }
@@ -612,6 +627,35 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     childEnv.ENABLE_TOOL_SEARCH = 'false';
   }
 
+  // ─── warm sessions ─────────────────────────────────────────────────────────
+  // A conversation's CLI process may stay open between messages
+  // (WARM_TURNS=1, lib/claude.js warm registry below): the next message goes
+  // down its stdin as a stream-json user turn instead of paying the spawn and
+  // the MCP startup again. Only a plain person's turn (no page, no restricted
+  // tool set, no group), keyed by the caller (`<slug>:<surface>`).
+  const useWarm = warmOn() && !!warmKey && !pageTurn && !Array.isArray(onlyMcp) && !groupContext;
+  const callbacks = { onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted };
+  if (useWarm) {
+    const w = warm.get(warmKey);
+    // Reused only for the session it is on: a caller with no session id is
+    // starting a conversation (or starting over), and gets a fresh process.
+    if (w && !w.busy && w.proc.exitCode === null && sessionId && w.sessionId === sessionId) {
+      // The process is on this session already: this turn's own token and
+      // config file are not needed — the process keeps the ones it was born with.
+      revokeTurnToken(turnId);
+      try { unlinkSync(mcpFile); } catch { /* already gone */ }
+      clearTimeout(w.idleTimer);
+      w.busy = true; w.lastUsedAt = Date.now();
+      const parser = makeTurnParser({ ...callbacks, actor, groupContext, sessionId: w.sessionId, warm: true, kill: () => { try { w.proc.kill('SIGTERM'); } catch { /* gone */ } }, onTurnEnd: (r) => warmTurnEnded(warmKey, w, r) });
+      w.current = parser;
+      feedMessage(w.proc, w.turnId, true);
+      return turnHandle(w.proc, parser, true);
+    }
+    // A process on another session (the person started over): it goes, a fresh one comes.
+    if (w) endWarm(warmKey, 'session changed');
+    args.push('--input-format', 'stream-json');
+  }
+
   // Every turn runs with the server's own secrets left out (turnEnv) and, in
   // the container, as the turn user (turnCommand).
   const cmd = turnCommand(args, slot);
@@ -620,6 +664,13 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     env: turnEnv(childEnv),
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  proc.stdin.on('error', () => { /* the CLI died first — its exit is reported below */ });
+  // Registered as warm when there is room (the operator's conversation always
+  // has room; another's is warm only while the cap allows). Not registered,
+  // the process is an ordinary one-turn process, stream-json input or not.
+  const w = useWarm ? registerWarm(warmKey, { proc, turnId, mcpFile, sessionId: sessionId || null, slot }) : null;
+  const parser = makeTurnParser({ ...callbacks, actor, groupContext, sessionId, warm: !!w, kill: () => { try { proc.kill('SIGTERM'); } catch { /* gone */ } }, onTurnEnd: w ? (r) => warmTurnEnded(warmKey, w, r) : null });
+  if (w) w.current = parser;
 
   // Memory v4 (MEMORY_V4=read|on): the most relevant past excerpts go in FRONT
   // of the message — the user message, not the system prompt, which would void
@@ -627,35 +678,109 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
   // (and gives up after 3 s), so stdin is written when the search answers,
   // within the recall budget (lib/memory-recall.js). Group turns read
   // shared + that group only; page turns get nothing (lib/memory-recall.js).
-  proc.stdin.on('error', () => { /* the CLI died first — its exit is reported below */ });
-  (async () => {
-    let recall = { block: null };
-    try {
-      const me = actor && actor !== 'default' ? actor : primaryAdminSlug();
-      recall = await buildRecallBlock({
-        actor: groupContext ? null : me,
-        groupId: groupContext ? groupId : null,
-        groupOnly: !!(groupContext && groupOnly),
-        memberGroups: groupContext ? [] : memberGroupsOf(me),
-        pageTurn,
-        sessionKey: webSessionId || sessionId || null,
-        message: recallQuery ?? message,   // the person's own words when the caller wrapped them
-        history: recallHistory,
-        ...(groupContext ? {} : { budgetMs: PERSON_BUDGET_MS }),
-      });
-      try { setTurnRecall(turnId, recall?.ids || []); } catch { /* best effort */ }
-    } catch (err) {
-      process.stderr.write(`[claude/recall] ${err.message}\n`);
-    }
-    try { proc.stdin.write(withRecall(recall.block, message)); proc.stdin.end(); } catch { /* gone */ }
-  })();
+  function feedMessage(target, tokenForRecall, asStreamJson, keepOpen = asStreamJson) {
+    (async () => {
+      let recall = { block: null };
+      try {
+        const me = actor && actor !== 'default' ? actor : primaryAdminSlug();
+        recall = await buildRecallBlock({
+          actor: groupContext ? null : me,
+          groupId: groupContext ? groupId : null,
+          groupOnly: !!(groupContext && groupOnly),
+          memberGroups: groupContext ? [] : memberGroupsOf(me),
+          pageTurn,
+          sessionKey: webSessionId || sessionId || null,
+          message: recallQuery ?? message,   // the person's own words when the caller wrapped them
+          history: recallHistory,
+          ...(groupContext ? {} : { budgetMs: PERSON_BUDGET_MS }),
+        });
+        try { setTurnRecall(tokenForRecall, recall?.ids || []); } catch { /* best effort */ }
+      } catch (err) {
+        process.stderr.write(`[claude/recall] ${err.message}\n`);
+      }
+      const text = withRecall(recall.block, message);
+      try {
+        if (asStreamJson) target.stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`);
+        else target.stdin.write(text);
+        // A one-turn process gets its one message and EOF; a warm one stays open.
+        if (!keepOpen) target.stdin.end();
+      } catch { /* gone */ }
+    })();
+  }
+  feedMessage(proc, turnId, useWarm, !!w);
 
+  // Decoded by the stream, so a multi-byte character split across two
+  // chunks (an accented letter, an emoji on a 64 KB boundary) stays whole.
+  proc.stdout.setEncoding('utf8');
+  proc.stderr.setEncoding('utf8');
+  proc.stdout.on('data', (chunk) => { (w ? w.current : parser)?.feed(chunk); });
+  proc.stderr.on('data', (chunk) => {
+    const text = chunk.toString('utf8');
+    (w ? w.current : parser)?.stderr(text);
+    process.stderr.write(`[claude] ${text}`);
+  });
+
+  proc.on('error', (err) => { revokeTurnToken(turnId); onError(`spawn failed: ${err.message}`); });
+
+  proc.on('close', (code, signal) => {
+    revokeTurnToken(turnId);
+    try { unlinkSync(mcpFile); } catch { /* already gone */ }
+    if (w) {
+      clearTimeout(w.idleTimer);
+      if (warm.get(warmKey) === w) warm.delete(warmKey);
+      // A turn in flight when the process went: reported as the cold path would.
+      const cur = w.current; w.current = null; w.busy = false;
+      cur?.close(code, signal);
+      return;
+    }
+    parser.close(code, signal);
+  });
+
+  return turnHandle(proc, parser, !!w);
+}
+
+/**
+ * What a caller holds while a turn runs: the process (to kill on a client
+ * abort, as before), `turnInfo()` and `interruptTurn()`. Interrupting a warm
+ * turn is a control request down its stdin — the process stays, the session
+ * keeps what was said, the next message continues it; a one-turn process is
+ * ended instead, and the next message resumes the session.
+ */
+function turnHandle(proc, parser, warm) {
+  proc.turnInfo = () => parser.info();
+  proc.interruptTurn = () => {
+    if (!parser.beginInterrupt()) return false;
+    if (warm) {
+      try { proc.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: `int-${Date.now()}`, request: { subtype: 'interrupt' } })}\n`); } catch { /* gone */ }
+    } else {
+      try { proc.kill('SIGTERM'); } catch { /* gone */ }
+    }
+    return true;
+  };
+  return proc;
+}
+
+// ─── the stream of one turn ───────────────────────────────────────────────────
+
+/**
+ * What a turn's stdout turns into: text to the caller, tool chips, images, the
+ * session id, the result. One parser per turn; a warm process gets a new one
+ * for every message, a one-turn process has one for its life. In warm mode the
+ * turn is over at the `result` event (the process stays); otherwise at exit.
+ */
+function makeTurnParser({ onText, onToolStart, onToolEnd, onToolInput, onImage, onError, onDone, onSettled, onInterrupted = null, actor, groupContext, sessionId, warm = false, kill, onTurnEnd = null }) {
   let buffer = '';
   let capturedSessionId = sessionId || null;
+  // Set by interruptTurn: the turn's end is then "interrupted", not an error,
+  // and a warm process stays. The names of the tools the turn started, for
+  // the caller to judge whether an interruption would lose something.
+  let interrupting = false;
+  const toolsStarted = [];
   // Track whether any text has been sent this turn so we can inject a
   // paragraph break when a second text block starts (e.g. after a tool call).
   let hasStartedText = false;
   let settled = false;
+  let finished = false;
   // `resetsAt` from the first rejection of this turn, or true when the CLI
   // rejected without one. Read on close: a spent plan makes claude exit
   // non-zero, and the generic "exited with code 1 :: <stderr>" is what a
@@ -673,10 +798,12 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     const name = toolNamesById.get(toolUseId);
     return name !== 'Read' && name !== 'mcp__workspace-api__tab_screenshot';
   };
+  // Keep the tail of claude's own stderr. Without it a failed turn reached the
+  // caller as a bare "exited with code 1", so every non-zero exit had to be
+  // GUESSED at. Bounded, and never shown to a user raw: callers parse it.
+  let stderrTail = '';
 
   // Set CLAUDE_DEBUG_STREAM=1 in env to log every parsed event to PM2 stderr.
-  // Useful to discover SDK event types we may be ignoring (permission prompts,
-  // trust requests, MCP-side approvals, etc.).
   const debugStream = process.env.CLAUDE_DEBUG_STREAM === '1';
 
   // A turn that stops producing anything for this long is ended: a hung CLI
@@ -688,219 +815,253 @@ export function runClaudeTurn({ tabToken, actTurn = false, systemNote = '', mess
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       process.stderr.write(`[claude] ${actor || 'default'}: no output for ${Math.round(IDLE_MAX_MS / 60000)} min — ending the turn\n`);
-      try { proc.kill('SIGTERM'); } catch { /* gone */ }
+      kill?.();
     }, IDLE_MAX_MS);
     idleTimer.unref?.();
   };
   armIdle();
-  // Decoded by the stream, so a multi-byte character split across two
-  // chunks (an accented letter, an emoji on a 64 KB boundary) stays whole.
-  proc.stdout.setEncoding('utf8');
-  proc.stderr.setEncoding('utf8');
 
-  proc.stdout.on('data', (chunk) => {
-    armIdle();
-    buffer += chunk.toString('utf8');
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let evt;
-      try { evt = JSON.parse(line); }
-      catch (err) {
-        process.stderr.write(`[claude] parse error: ${err.message}\n`);
-        continue;
-      }
+  const limitError = () => {
+    let who = '';
+    try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
+    // The reader's clock: the person's own zone (their Settings), else the
+    // workspace's — never the server's UTC. A room's turn names the zone,
+    // since the room is read across zones. The instant rides along in a tag
+    // so a surface that re-says it in another language keeps the hour
+    // (member-dm, group-watcher); the web chat strips the tag.
+    const secs = limitRejectedAt === true ? null : limitRejectedAt;
+    let tz = null;
+    try { tz = actor && actor !== 'default' && actor !== 'team' ? effectiveTimezone(actor) : getDefaultTimezone(); } catch { tz = null; }
+    return limitNotice(secs, who, { tz, zoneLabel: !!groupContext }) + (secs ? ` [resets=${secs}]` : '');
+  };
+  // In warm mode the turn ends on `result`: the caller hears onDone (or
+  // onError) now, and the process is free for the next message.
+  const endWarmTurn = (evt) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(idleTimer);
+    if (limitRejectedAt) { onError(limitError()); onTurnEnd?.({ error: true }); return; }
+    // An interruption the caller asked for: the turn is over, the process is
+    // fine, and the caller hears it as such (the session keeps what was said).
+    if (interrupting) { if (onInterrupted) onInterrupted(); else onError('interrupted'); onTurnEnd?.({ error: false, sessionId: capturedSessionId }); return; }
+    if (evt.is_error) { onError(`claude: ${String(evt.result || evt.subtype || 'error').slice(0, 600)}`); onTurnEnd?.({ error: true }); return; }
+    if (!settled) { settled = true; try { onSettled?.(); } catch { /* the caller's own bug */ } }
+    onDone({ sessionId: capturedSessionId });
+    onTurnEnd?.({ error: false, sessionId: capturedSessionId });
+  };
 
-      if (debugStream) {
-        // Trim noisy text_delta payloads to keep logs readable.
-        const trimmed = JSON.parse(JSON.stringify(evt));
-        if (trimmed?.event?.delta?.text && trimmed.event.delta.text.length > 60) {
-          trimmed.event.delta.text = trimmed.event.delta.text.slice(0, 60) + '…';
+  function handle(evt) {
+    // Capture session_id from any event that carries it.
+    if (!capturedSessionId && evt.session_id) capturedSessionId = evt.session_id;
+
+    // Tool results land as a TOP-LEVEL `user` envelope (not inside
+    // stream_event) — flip the chip from running to done/error here.
+    // If the tool returned image blocks (e.g. Playwright screenshot),
+    // forward each one to onImage so the chat can render it inline.
+    if (evt.type === 'user' && Array.isArray(evt.message?.content)) {
+      for (const block of evt.message.content) {
+        if (block?.type === 'tool_result') {
+          onToolEnd?.({ id: block.tool_use_id, ok: !block.is_error, error: block.is_error ? extractText(block.content) : null });
+          if (shouldForwardImage(block.tool_use_id)) for (const img of extractImages(block.content)) onImage?.(img);
         }
-        process.stderr.write(`[claude/stream] ${JSON.stringify(trimmed)}\n`);
       }
+      return;
+    }
 
-      // Capture session_id from any event that carries it.
-      if (!capturedSessionId && evt.session_id) capturedSessionId = evt.session_id;
-
-      // Tool results land as a TOP-LEVEL `user` envelope (not inside
-      // stream_event) — flip the chip from running to done/error here.
-      // If the tool returned image blocks (e.g. Playwright screenshot),
-      // forward each one to onImage so the chat can render it inline.
-      if (evt.type === 'user' && Array.isArray(evt.message?.content)) {
-        for (const block of evt.message.content) {
-          if (block?.type === 'tool_result') {
-            onToolEnd?.({
-              id:    block.tool_use_id,
-              ok:    !block.is_error,
-              error: block.is_error ? extractText(block.content) : null,
-            });
-            if (shouldForwardImage(block.tool_use_id)) {
-              for (const img of extractImages(block.content)) {
-                onImage?.(img);
-              }
-            }
-          }
-        }
-        continue;
-      }
-
+    if (evt.type === 'result') {
+      if (warm) return endWarmTurn(evt);
       // The reply is complete: the CLI reports the turn's result before it
       // shuts its MCP servers down and exits, which can take seconds. A caller
       // that shows "still thinking" until onDone can drop it here; onDone
       // still comes on exit, so nothing that needs the process gone moves.
-      if (evt.type === 'result' && !evt.is_error && !limitRejectedAt && !settled) {
+      if (!evt.is_error && !limitRejectedAt && !settled) {
         settled = true;
         try { onSettled?.(); } catch { /* the caller's own bug, not the turn's */ }
-        continue;
       }
-
-      if (evt.type !== 'stream_event') {
-        // Permissions are handled declaratively via ~/.claude/settings.json
-        // (`permissions.allow` lists trusted tools like `mcp__*`, `Read`,
-        // `Bash`, `Edit`, etc.) — that's the secure path. Don't blanket-
-        // approve permission_request events here: doing so would bypass the
-        // settings allow-list and let any tool through, which defeats the
-        // point of having one. If a permission_request arrives, log it so
-        // we know which tool needs to be added to the allow-list.
-        if (evt.type === 'permission_request' || (evt.request_id && evt.tool_name)) {
-          process.stderr.write(`[claude/permission-blocked] tool=${evt.tool_name || '?'} — add to settings.json permissions.allow if intended\n`);
-          continue;
-        }
-        // The plan is spent. The CLI reports this as a structured event and no
-        // longer prints it into the reply, so usage-limit.js's regexes — which
-        // read the output — stopped seeing it, the turn produced no text, and
-        // the bot simply went quiet. The reset time was in this event the whole
-        // time, being discarded one line below as an unknown type.
-        //
-        // `status` distinguishes a real rejection from a warning; only a
-        // rejection means nothing will come back.
-        if (evt.type === 'rate_limit_event') {
-          const info = evt.rate_limit_info || {};
-          if (info.status === 'rejected' && !limitRejectedAt) {
-            limitRejectedAt = info.resetsAt || true;
-            process.stderr.write(`[claude/rate-limit] ${info.rateLimitType || 'limit'} rejected, resets ${info.resetsAt || '?'}\n`);
-          }
-          continue;
-        }
-        if (!debugStream && evt.type && evt.type !== 'system' && evt.type !== 'assistant' && evt.type !== 'result') {
-          process.stderr.write(`[claude/unknown-top] type=${evt.type} keys=${Object.keys(evt).join(',')}\n`);
-        }
-        continue;
-      }
-      const ev = evt.event;
-
-      // New text block starting — inject a paragraph separator if text has
-      // already been sent (happens after tool calls or thinking blocks).
-      if (ev?.type === 'content_block_start' && ev.content_block?.type === 'text') {
-        if (hasStartedText) onText('\n\n');
-        continue;
-      }
-
-      // Text deltas — append to assistant bubble.
-      if (
-        ev?.type === 'content_block_delta' &&
-        ev.delta?.type === 'text_delta' &&
-        typeof ev.delta.text === 'string'
-      ) {
-        hasStartedText = true;
-        onText(ev.delta.text);
-        continue;
-      }
-
-      // A call's arguments stream in after its start; collected per block and
-      // handed over whole (a DM turn tells a relay to someone else from a
-      // message to the person asking by the recipient it names).
-      if (ev?.type === 'content_block_delta' && ev.delta?.type === 'input_json_delta' && toolInputs.has(ev.index)) {
-        toolInputs.get(ev.index).json += String(ev.delta.partial_json || '');
-        continue;
-      }
-      if (ev?.type === 'content_block_stop' && toolInputs.has(ev.index)) {
-        const t = toolInputs.get(ev.index);
-        toolInputs.delete(ev.index);
-        let input = {};
-        try { input = t.json ? JSON.parse(t.json) : {}; } catch { input = {}; }
-        try { onToolInput?.({ id: t.id, name: t.name, input }); } catch { /* the caller's problem */ }
-        continue;
-      }
-
-      // Tool invocation — surface as a chip in the UI.
-      if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
-        toolNamesById.set(ev.content_block.id, ev.content_block.name);
-        if (onToolInput) toolInputs.set(ev.index, { id: ev.content_block.id, name: ev.content_block.name, json: '' });
-        onToolStart?.({
-          id:   ev.content_block.id,
-          name: ev.content_block.name,
-        });
-        continue;
-      }
-
-      // Tool result — chip flips to ✓ or ⚠.
-      if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_result') {
-        onToolEnd?.({
-          id:    ev.content_block.tool_use_id,
-          ok:    !ev.content_block.is_error,
-          error: ev.content_block.is_error ? extractText(ev.content_block.content) : null,
-        });
-        if (shouldForwardImage(ev.content_block.tool_use_id)) {
-          for (const img of extractImages(ev.content_block.content)) {
-            onImage?.(img);
-          }
-        }
-        continue;
-      }
-    }
-  });
-
-  // Keep the tail of claude's own stderr. Without it a failed turn reached the
-  // caller as a bare "exited with code 1", so every non-zero exit had to be
-  // GUESSED at — the group brain reported plain crashes to the chat as "usage
-  // limit exhausted", and the reset time the CLI actually prints was thrown
-  // away. Bounded, and never shown to a user raw: callers parse it.
-  let stderrTail = '';
-  proc.stderr.on('data', (chunk) => {
-    const text = chunk.toString('utf8');
-    stderrTail = (stderrTail + text).slice(-STDERR_TAIL_MAX);
-    process.stderr.write(`[claude] ${text}`);
-  });
-
-  proc.on('error', (err) => { revokeTurnToken(turnId); onError(`spawn failed: ${err.message}`); });
-
-  proc.on('close', (code, signal) => {
-    clearTimeout(idleTimer);
-    revokeTurnToken(turnId);
-    try { unlinkSync(mcpFile); } catch { /* already gone */ }
-    if (code === 0) return onDone({ sessionId: capturedSessionId });
-
-    // A spent plan is not a crash and must not read like one. The turn failed
-    // because there is no quota left, and the CLI told us so in a
-    // rate_limit_event along with when it returns — so that is the error, in
-    // place of "exited with code 1" plus a stderr dump. One message, and the
-    // one thing the reader wants to know.
-    //
-    // The wording keeps "usage limit reached" because group-watcher matches
-    // that phrase (usage-limit.js isUsageLimit) to announce once and then stay
-    // quiet rather than repeating every retry.
-    if (limitRejectedAt) {
-      let who = '';
-      try { const b = resolveBranding(); who = b.botDisplayName || b.botName || ''; } catch { /* unnamed is fine */ }
-      // The reader's clock: the person's own zone (their Settings), else the
-      // workspace's — never the server's UTC. A room's turn names the zone,
-      // since the room is read across zones. The instant rides along in a tag
-      // so a surface that re-says it in another language keeps the hour
-      // (member-dm, group-watcher); the web chat strips the tag.
-      const secs = limitRejectedAt === true ? null : limitRejectedAt;
-      let tz = null;
-      try { tz = actor && actor !== 'default' && actor !== 'team' ? effectiveTimezone(actor) : getDefaultTimezone(); } catch { tz = null; }
-      return onError(limitNotice(secs, who, { tz, zoneLabel: !!groupContext }) + (secs ? ` [resets=${secs}]` : ''));
+      return;
     }
 
-    onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
-      + (stderrTail.trim() ? ` :: ${stderrTail.trim().slice(-600)}` : ''));
-  });
+    if (evt.type !== 'stream_event') {
+      // Permissions are handled declaratively via ~/.claude/settings.json;
+      // a permission_request here is logged, never blanket-approved.
+      if (evt.type === 'permission_request' || (evt.request_id && evt.tool_name)) {
+        process.stderr.write(`[claude/permission-blocked] tool=${evt.tool_name || '?'} — add to settings.json permissions.allow if intended\n`);
+        return;
+      }
+      // The plan is spent: the CLI reports it as a structured event (the reset
+      // time is in it); `status` tells a rejection from a warning.
+      if (evt.type === 'rate_limit_event') {
+        const info = evt.rate_limit_info || {};
+        if (info.status === 'rejected' && !limitRejectedAt) {
+          limitRejectedAt = info.resetsAt || true;
+          process.stderr.write(`[claude/rate-limit] ${info.rateLimitType || 'limit'} rejected, resets ${info.resetsAt || '?'}\n`);
+        }
+        return;
+      }
+      // A long tool call's heartbeat (CLI >= 2.1.3xx): the turn is alive, nothing to show.
+      if (evt.type === 'tool_progress') return;
+      // The answer to a control request (an interruption): nothing to do with it.
+      if (evt.type === 'control_response') return;
+      if (!debugStream && evt.type && evt.type !== 'system' && evt.type !== 'assistant') {
+        process.stderr.write(`[claude/unknown-top] type=${evt.type} keys=${Object.keys(evt).join(',')}\n`);
+      }
+      return;
+    }
+    const ev = evt.event;
 
-  return proc;
+    // New text block starting — inject a paragraph separator if text has
+    // already been sent (happens after tool calls or thinking blocks).
+    if (ev?.type === 'content_block_start' && ev.content_block?.type === 'text') {
+      if (hasStartedText) onText('\n\n');
+      return;
+    }
+    // Text deltas — append to assistant bubble.
+    if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && typeof ev.delta.text === 'string') {
+      hasStartedText = true;
+      onText(ev.delta.text);
+      return;
+    }
+    // A call's arguments stream in after its start; collected per block and
+    // handed over whole (a DM turn tells a relay to someone else from a
+    // message to the person asking by the recipient it names).
+    if (ev?.type === 'content_block_delta' && ev.delta?.type === 'input_json_delta' && toolInputs.has(ev.index)) {
+      toolInputs.get(ev.index).json += String(ev.delta.partial_json || '');
+      return;
+    }
+    if (ev?.type === 'content_block_stop' && toolInputs.has(ev.index)) {
+      const t = toolInputs.get(ev.index);
+      toolInputs.delete(ev.index);
+      let input = {};
+      try { input = t.json ? JSON.parse(t.json) : {}; } catch { input = {}; }
+      try { onToolInput?.({ id: t.id, name: t.name, input }); } catch { /* the caller's problem */ }
+      return;
+    }
+    // Tool invocation — surface as a chip in the UI.
+    if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
+      toolNamesById.set(ev.content_block.id, ev.content_block.name);
+      toolsStarted.push(ev.content_block.name);
+      if (onToolInput) toolInputs.set(ev.index, { id: ev.content_block.id, name: ev.content_block.name, json: '' });
+      onToolStart?.({ id: ev.content_block.id, name: ev.content_block.name });
+      return;
+    }
+    // Tool result — chip flips to ✓ or ⚠.
+    if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_result') {
+      onToolEnd?.({ id: ev.content_block.tool_use_id, ok: !ev.content_block.is_error, error: ev.content_block.is_error ? extractText(ev.content_block.content) : null });
+      if (shouldForwardImage(ev.content_block.tool_use_id)) for (const img of extractImages(ev.content_block.content)) onImage?.(img);
+    }
+  }
+
+  return {
+    feed(chunk) {
+      armIdle();
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let evt;
+        try { evt = JSON.parse(line); }
+        catch (err) { process.stderr.write(`[claude] parse error: ${err.message}\n`); continue; }
+        if (debugStream) {
+          // Trim noisy text_delta payloads to keep logs readable.
+          const trimmed = JSON.parse(JSON.stringify(evt));
+          if (trimmed?.event?.delta?.text && trimmed.event.delta.text.length > 60) trimmed.event.delta.text = trimmed.event.delta.text.slice(0, 60) + '…';
+          process.stderr.write(`[claude/stream] ${JSON.stringify(trimmed)}\n`);
+        }
+        handle(evt);
+      }
+    },
+    stderr(text) { stderrTail = (stderrTail + text).slice(-STDERR_TAIL_MAX); },
+    /** The process is gone: the one-turn path reports here; a warm turn only when it was still in flight. */
+    close(code, signal) {
+      clearTimeout(idleTimer);
+      if (finished) return;
+      finished = true;
+      // Killed on the caller's request: interrupted, not failed.
+      if (interrupting) return onInterrupted ? onInterrupted() : onError('interrupted');
+      if (code === 0 && !limitRejectedAt) return onDone({ sessionId: capturedSessionId });
+      // A spent plan is not a crash and must not read like one. The wording
+      // keeps "usage limit reached" because group-watcher matches that phrase
+      // (usage-limit.js isUsageLimit) to announce once and then stay quiet.
+      if (limitRejectedAt) return onError(limitError());
+      onError(`claude exited with code ${code}${signal ? `, signal ${signal}` : ''}`
+        + (stderrTail.trim() ? ` :: ${stderrTail.trim().slice(-600)}` : ''));
+    },
+    /** The turn so far: over, and which tools it started (for the caller's interrupt decision). */
+    info() { return { finished, tools: toolsStarted.slice() }; },
+    /** Mark the turn as being interrupted on the caller's request. Returns false once it is over. */
+    beginInterrupt() { if (finished) return false; interrupting = true; return true; },
+  };
+}
+
+// A tool that changes something outside the turn: a reply, a file, a record.
+// Interrupting a turn past such a call could lose or double an effect; a
+// turn that has only read may be stopped and started over. The verbs are the
+// read-only fence's (hooks/scope-guard.mjs).
+const SIDE_EFFECT_TOOL_RE = /(^|[_-])(create|update|delete|remove|send|post|write|move|rename|archive|add|set|put|patch|upload|publish|share|insert|edit|reply|invite|assign|complete|close|cancel|merge|trash|restore|import|sync|schedule|book|pay|refund|charge|transfer|mark|save|append|replace|style|resolve|resume|pause|enable|disable|grant|revoke|approve|void|capture|fulfill|duplicate|copy|attach|clear|reset|note)([_-]|$)|^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/i;
+export const startedSideEffect = (tools) => (tools || []).some(t => SIDE_EFFECT_TOOL_RE.test(String(t)));
+
+// ─── warm processes ───────────────────────────────────────────────────────────
+//
+// A conversation's process kept open between messages (WARM_TURNS=1): the
+// next message goes down its stdin as a stream-json user turn, so an active
+// conversation pays the spawn and the ~22 MCP servers once, not per message
+// (measured on the canary: 1.5–2 s for the next reply instead of 6–19 s).
+// What a process holds for its life: its system prompt (the memory prefix as
+// it was at the start), its tool set, its turn token, its session. It ends
+// after WARM_IDLE_MS without a message, at WARM_MAX_AGE_MS of age (so the
+// prefix is never older than that), when the session changes (a /restart),
+// on an error, or at the cap: WARM_MAX processes live at once, the operator's
+// conversation always among them (another's is evicted for it), others only
+// while there is room. One warm session is ~2 GB with the full MCP set, so the
+// default cap is 1 — the operator — on a 4 GB host.
+const warm = new Map();   // key → { proc, turnId, mcpFile, sessionId, slot, busy, current, startedAt, lastUsedAt, idleTimer }
+const warmOn = () => process.env.WARM_TURNS === '1';
+const warmMax = () => Math.max(1, Number(process.env.WARM_MAX) || 1);
+const warmIdleMs = () => Number(process.env.WARM_IDLE_MS) || 15 * 60_000;
+const warmMaxAgeMs = () => Number(process.env.WARM_MAX_AGE_MS) || 2 * 3600_000;
+const isOperatorKey = (key) => { try { return String(key).startsWith(`${primaryAdminSlug()}:`); } catch { return false; } };
+
+function registerWarm(key, entry) {
+  if (warm.size >= warmMax()) {
+    if (!isOperatorKey(key)) return null;
+    // The operator's conversation takes the place of the least recently used other one.
+    const victim = [...warm.entries()].filter(([k, w]) => !w.busy && !isOperatorKey(k)).sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)[0];
+    if (!victim) return null;
+    endWarm(victim[0], 'room for the operator');
+  }
+  const w = { ...entry, busy: true, current: null, startedAt: Date.now(), lastUsedAt: Date.now(), idleTimer: null };
+  warm.set(key, w);
+  return w;
+}
+
+function warmTurnEnded(key, w, { error = false, sessionId = null } = {}) {
+  w.busy = false; w.current = null; w.lastUsedAt = Date.now();
+  if (!w.sessionId && sessionId) w.sessionId = sessionId;
+  if (warm.get(key) !== w) return;
+  if (error) return endWarm(key, 'error');
+  if (Date.now() - w.startedAt > warmMaxAgeMs()) return endWarm(key, 'age');
+  clearTimeout(w.idleTimer);
+  w.idleTimer = setTimeout(() => endWarm(key, 'idle'), warmIdleMs());
+  w.idleTimer.unref?.();
+}
+
+/** End a warm process: stdin closes, the CLI exits on its own; a stubborn one is killed after a moment. */
+export function endWarm(key, why = 'ended') {
+  const w = warm.get(key);
+  if (!w) return false;
+  warm.delete(key);
+  clearTimeout(w.idleTimer);
+  process.stderr.write(`[claude/warm] ${key}: ${why}\n`);
+  try { w.proc.stdin.end(); } catch { /* gone */ }
+  const t = setTimeout(() => { if (w.proc.exitCode === null) { try { w.proc.kill('SIGTERM'); } catch { /* gone */ } } }, 10_000);
+  t.unref?.();
+  return true;
+}
+
+/** The warm processes, for the operator's eye (and tests). */
+export function warmStatus() {
+  return [...warm.entries()].map(([key, w]) => ({ key, busy: w.busy, sessionId: w.sessionId, pid: w.proc.pid, startedAt: new Date(w.startedAt).toISOString(), lastUsedAt: new Date(w.lastUsedAt).toISOString() }));
 }
 
 /**

@@ -108,10 +108,11 @@ people in it.
 
 **Meetings you did not tell it about.** Connect a meeting notetaker and you
 need not recount your meetings: each night the coworker reads the meetings of
-the day, and what was said in them is remembered the way a conversation is —
-one fact per thing, a change as a dated remark, the meeting itself a click
-away. It only ever reads into your own memory; nothing from a meeting reaches
-the team unless you share it.
+the day, and each becomes one memory — a short brief of what it was about,
+what was decided and who committed to what, with its dates — the meeting
+itself a click away. Nothing is filed beside that brief. It only ever reads
+into your own memory; nothing from a meeting reaches the team unless you
+share it.
 
 **New and older workspaces.** A new workspace starts on this memory from day
 one, with empty cards and no "tidy up" banner; the first setup fills them. A workspace set up before it keeps its old notes until an admin moves it
@@ -255,11 +256,17 @@ two lines and took 100 s; off, the router paraphrased the lines it must copy):
   entity never crosses by itself — it asks. What crosses is the fact: a shared
   record carrying "Title. Text" (`tags.sharedFact`, `origin: user:<slug>`,
   speaker = the person) with the fact remembered on it, so the team's "See
-  source" opens the fact, not the conversation. The Sharing screen lists the
-  questions (with the fact and whom it concerns), what the person shared as
-  one row per fact (`POST /memory/v4/shared/:id/withdraw` hides the fact and
-  its record, `/restore` brings them back), their mode and rules — only while
-  team mode is on; alone, there is nobody to share with.
+  source" opens the fact, not the conversation. **A fact has one home**: sharing
+  moves it. The person's private copy is hidden with the reason `shared`
+  (`fileTeamFact`'s `privateId`, or the twin found by text or key —
+  `privateTwin`); the owner saw the same fact twice before, with and without
+  the Shared mark. A fact hidden for that reason is never purged. The Sharing
+  screen lists the questions (with the fact and whom it concerns), what the
+  person shared as one row per fact (`POST /memory/v4/shared/:id/withdraw`
+  hides the fact and its record and brings the private copy back; `/restore`
+  puts it away again), their mode and rules — only while team mode is on;
+  alone, there is nobody to share with. `lib/memory-tidy-once.js` hides, once
+  at boot, the private copies of facts shared before this rule.
 - **the notes pass** writes a few durable notes (two, one more per six lines
   the person wrote, six at most) — each a title, a description, verbatim
   evidence and the names it is about — plus any
@@ -300,12 +307,14 @@ never assigned, a person's employer only from the words): a status about
 the meeting on its day, titled by code ("Call with Szymon Kubicki (5 Oct
 2026)"), its summary as the description (what it was about, what was
 decided, who committed to what), the names it was about, on the notes record
-(standing `found`) or the first part. Only what lives on after the call and
-has a day — a follow-up, a deadline, at most two — is filed on its own,
-grounded in the words like any note (`whenFrom`, `dayStated`) and pinned
-to the part that holds them (standing `said`). Twenty-six parts read one by
-one once gave eleven facts from one hour, each meaningless outside the call.
-A chat-made "call with X" on the same day keys with the import and shows
+(standing `found`) or the first part. **Nothing is filed beside it.**
+Twenty-six parts read one by one once gave eleven facts from one hour, each
+meaningless outside the call; the "follow-ups" filed next to the summary
+after that (up to two dated items) were the same thing smaller — a sentence
+of a call out of its context, at times advice rather than a fact — and were
+dropped on 2026-11-03. What follows from a meeting is in the summary, with
+its date, where recall finds it; `lib/memory-tidy-once.js` hides the
+follow-ups already filed, once, at boot. A chat-made "call with X" on the same day keys with the import and shows
 once; two imported meetings with the same person on one day do not key with
 each other. The item id dedupes; an erased meeting is tombstoned like any
 record and never learned again.
@@ -401,7 +410,18 @@ fields came back — names and lengths only, never what was said.
   records join the block whatever the ranking said — a dozen old pages matching
   the words crowded out the one record that answered.
 - **Tools** (offered only with `read`/`on`): `memory_search`, `memory_timeline`,
-  `memory_note` (private by default, shared only when asked; a note in a
+  `memory_note` (private by default, shared only when asked. **Saved at once,
+  refined after**: while the person waits no model is asked — the note is
+  filed whole, in their words, with a key-and-text dedupe only, and the tool
+  answers `refining: true`; then, in the background (`refineNote`), the passes
+  below run: a detail the person never said hides the record and its fact
+  again, with a `note-refused` line in Changes; a note about several things is
+  split into one fact per thing on the same record; one piece lends the fact
+  its title, kind and day; the sharing gate runs. Four model calls in a row
+  once held a Telegram reply for three minutes while the model was slow.
+  `MEMORY_NOTE_SYNC=1`, or `sync: true` on the request, keeps every pass in
+  the request, as the tests that pin them expect; `MEMORY_NOTE_DEBUG=1` logs
+  each refinement. A note in a
   person's own memory then goes through the same sharing gate as a filed
   conversation — the router reads the person's words, each new fact goes to
   the team, to a question or stays by their mode, and the answer carries

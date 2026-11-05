@@ -56,7 +56,7 @@ E.configureEmbedder(async () => { throw new Error('none'); });
 (await import('./memory-llm.js')).configureRunner(async ({ user, schema }) => {
   const text = String(user);
   const bullets = text.split('\n').filter(l => /^- /.test(l)).map(l => l.slice(2));
-  if (schema?.properties?.summary) return { with: [], title: '', summary: bullets.join(' ').slice(0, 900), names: [], upcoming: [] };
+  if (schema?.properties?.summary) return { with: [], title: '', summary: bullets.join(' ').slice(0, 900), names: [] };
   if (schema?.properties?.notes) return { notes: bullets.slice(0, 4).map(q => ({ title: q.split(' ').slice(0, 4).join(' '), text: q, kind: 'fact', evidence: q, names: [] })) };
   if (schema?.properties?.decisions) return { decisions: [] };
   return {};

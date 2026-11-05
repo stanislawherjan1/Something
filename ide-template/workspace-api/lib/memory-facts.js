@@ -267,7 +267,7 @@ const pickFields = (c) => ({
  *   { op: 'replace', target, fact }           it changed; `fact` takes the place of `target`
  * Later candidates in the batch see the earlier ones.
  */
-export async function plan(scope, cands = [], { entities = [], conv = null } = {}) {
+export async function plan(scope, cands = [], { entities = [], conv = null, model = true } = {}) {
   const st = state(scope);
   let cur = [...st.facts.values()].filter(f => !f.hidden && !f.replacedBy && !f.retired);
   const out = [];
@@ -307,6 +307,9 @@ export async function plan(scope, cands = [], { entities = [], conv = null } = {
       // read from a notetaker meets the chat that planned it — is not a move:
       // the judgment below words the one fact, time kept.)
       else if (fact.when && twin.when && fact.when !== twin.when && !(fact.when.slice(0, 10) === twin.when.slice(0, 10) && (fact.when.length === 10 || twin.when.length === 10))) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
+      // No model in the turn (a note written while the person waits): the
+      // newer words take the place of the old; the night's pass folds the rest.
+      else if (!model) d = { op: 'replace', target: twin, fact: { ...fact, ...inheritStatus(fact, twin) } };
       else {
         const m = await decide({ ...fact, ts: c.ts }, [{ ...twin, kind: twin.kind || 'fact' }]);
         d = m.verdict === 'same' ? { op: 'confirm', target: twin }
@@ -324,7 +327,10 @@ export async function plan(scope, cands = [], { entities = [], conv = null } = {
       // fact it corrects for similarity to find it; the facts about the same
       // person or company are the next place to look — by name, in any language.
       if (!near.length && fact.entities?.length) near = byName(fact.entities, cur).map(f => ({ ...f, kind: f.kind || 'fact' }));
-      const m = await decide({ ...fact, ts: c.ts }, near);
+      // No model in the turn: the same words are a repeat, anything else is new
+      // (dedupeBacklog folds a near-duplicate later, with the model).
+      const exact = !model ? near.find(f => covers(fullText(f), fact.text)) : null;
+      const m = !model ? (exact ? { verdict: 'same', target: exact } : { verdict: 'new' }) : await decide({ ...fact, ts: c.ts }, near);
       if (m.verdict === 'same') d = { op: 'confirm', target: m.target };
       // No longer true as a whole: the new fact stands alone and the old one is
       // marked superseded by it — struck through on the screen, kept in history.
@@ -513,7 +519,9 @@ export async function purgeHidden(scopes, { now = Date.now() } = {}) {
   const cutoff = now - ledger.HIDE_GRACE_DAYS * 86400_000;
   let n = 0;
   for (const scope of scopes) {
-    const stale = all(scope).filter(f => f.hidden && f.hiddenAt && Date.parse(f.hiddenAt) < cutoff).map(f => f.id);
+    // A fact hidden because it was shared is not thrown away: it is the
+    // private copy a withdraw brings back.
+    const stale = all(scope).filter(f => f.hidden && f.hiddenWhy !== 'shared' && f.hiddenAt && Date.parse(f.hiddenAt) < cutoff).map(f => f.id);
     if (stale.length) n += (await erase(scope, stale)).erased;
     n += (await sweepOrphans(scope)).erased;
   }
