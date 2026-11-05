@@ -101,6 +101,9 @@ jobs:
           cache: npm
           cache-dependency-path: ide-template/frontend/package-lock.json
       - run: npm ci
+      # The markdown editor's file layer: round-trip over the repo's own markdown,
+      # tables, lists, raw blocks and the live merge, on headless BlockNote.
+      - run: npm test
       # Lint is not gated yet: `eslint .` currently reports 68 errors. Add
       # `npm run lint` here once that backlog is cleared.
       - run: npm run build

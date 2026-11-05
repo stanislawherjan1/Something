@@ -121,6 +121,7 @@ Beyond skills, the system deploys a global `~/.claude/CLAUDE.md` on every contai
 - Session Notes and Pending Reminders conventions
 - Session Handoff — read previous session notes on start, write summary on end
 - File routing (read `PROJECT_STRUCTURE.md` before saving)
+- Editing in place: change the part of an existing file that changes (`Edit`), keep its formatting, never rewrite it whole for a few lines — people may have it open, and the editor merges paragraph by paragraph
 
 Client-specific behavior (persona, project context, integrations) goes in `project/CLAUDE.md`.
 

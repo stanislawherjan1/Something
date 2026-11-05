@@ -485,3 +485,57 @@
 /* The wrapper's left padding holds the row grips; pull it back so the
  * table's edge lines up with the text above and below. */
 .bn-editor [data-content-type="table"] .tableWrapper { margin-left: calc(-1 * var(--bn-table-handle-size)); }
+
+/* A block that just changed on disk (the bot, a teammate): a brief warm wash
+ * on that block only, not a ring around the page. */
+.bn-block-outer.md-flash > .bn-block > .bn-block-content {
+  animation: md-flash 1.6s ease-out;
+  border-radius: 4px;
+}
+@keyframes md-flash {
+  from { background-color: rgb(16 185 129 / 0.14); }
+  to   { background-color: transparent; }
+}
+
+/* Raw markdown (HTML, footnotes, …): its source, editable as text. Quiet —
+ * muted monospace at the inline-code size, no frame — until it is hovered or
+ * edited, then it takes the code block's surface (secondary, hairline, 6px). */
+.md-raw {
+  position: relative;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.md-raw:hover,
+.md-raw:focus-within {
+  background: var(--secondary);
+  border-color: var(--border);
+}
+.md-raw-label {
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.md-raw:hover .md-raw-label,
+.md-raw:focus-within .md-raw-label { opacity: 0.8; }
+.md-raw-source {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 0.1em 0.5em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.md-raw:focus-within .md-raw-source { color: var(--foreground); }
