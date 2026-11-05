@@ -17,6 +17,18 @@ approve, and you are back. A few ask for an API key the service gives you;
 paste it and you are done. Either way, nothing to install, nothing to restart.
 The key is stored encrypted on your own server and never leaves it.
 
+Your bank (Mercury) asks one more thing before you sign in: read-only, or read
+and write. Read-only lets the coworker see balances, transactions, statements,
+cards and invoices, and Mercury itself refuses anything else. Read and write
+also lets it prepare payments and transfers, set categories and notes, manage
+budgets and file the receipts you send it. Money never moves from the chat: a
+payment or transfer waits in Mercury until someone approves it there. Connected
+for yourself, only your own conversations can reach it; connected for the team,
+everyone can ask about it, in team rooms too. To change read-only to read and
+write, disconnect and sign in again. Your role in Mercury has to allow
+connecting AI tools; if Mercury says it does not, ask an admin of your Mercury
+organisation.
+
 A meeting notetaker (Granola, Fireflies, Fathom, Otter, Read AI, Krisp) also
 feeds the coworker's memory: each night it reads the day's meetings, notes and
 transcripts, and remembers what was said the way it remembers a conversation.
@@ -133,6 +145,7 @@ it works. `open` = no auth at all (keyless hosted server, instant-activate).
 | **Krisp** | Meeting notes, transcripts and action items (read-only) | OAuth |
 | **Linear** | Issues, projects, cycles | OAuth |
 | **Mailchimp** | Audiences and campaigns | OAuth |
+| **Mercury** (beta) | Business banking: balances, transactions, statements; payment and transfer requests approved in Mercury | OAuth, read-only or read and write chosen at sign-in |
 | **Miro** | Boards and diagrams | OAuth |
 | **monday.com** | Boards, items, updates | OAuth |
 | **Neon** | Postgres branches and SQL | OAuth |
@@ -251,7 +264,8 @@ changes something (create, update, delete, send, post, move, append, replace, re
 catalog entry lists in `writeTools` — for tools that change something or spend
 money behind a harmless name (ElevenLabs' `creative_generate_speech`). The list
 only adds; it never lets a plainly named write through. A person's own connection is
-always `write`. Switching access is `PATCH /api/integrations/:id { access }`
+`write`, except for an entry with `mcp.scopes` (below): there the person chooses too,
+and a read-only choice is enforced by the provider, not by the hook. Switching access is `PATCH /api/integrations/:id { access }`
 — no reconnect, no restart; a new connection takes `?access=read` on `PUT`
 and on `…/oauth/start`.
 
@@ -430,6 +444,20 @@ can't slip a `custom` provider through without a host.
 optionally `clientIdMetadata: true` for an authorization server without dynamic
 registration that accepts a client ID metadata document (see
 [Remote-MCP one-click OAuth](#remote-mcp-one-click-oauth)).
+
+`mcp.scopes: { read: [...], write: [...] }` is for a provider whose writes are
+OAuth scopes of their own (Mercury: `read offline_access` to read,
+`transactions:request`, `transfers:request`, … to write). Without it the SDK asks
+for every scope the server advertises (`scopes_supported`), so a connection meant
+as read-only would hold payment scopes. With it the authorize request carries the
+read scopes always and the write scopes only on a read-and-write connection
+(`scopeFor` in `lib/integrations/oauth.js`); a read-only token is refused writes by
+the provider itself, whatever a turn tries. Such an entry offers the read-or-write
+choice before sign-in for a person's own connection too, and once connected the
+access can only change by signing in again (the token holds what was granted). Its
+write tools still go in `writeTools` when their names hide it (Mercury's are
+camelCase, `requestSendMoney`, which the name rule does not see), so the team's
+read-only hook refuses them as well.
 
 **Bundle MCPs** — `mcp.services: [{ name, command, args }, ...]` on a
 catalog entry tells the runtime to spawn **multiple** MCP processes from
@@ -623,7 +651,9 @@ A working MCP in the post-broker world is six steps. Follow them in order; each 
 
 6. **Deploy entry** in `ide-template/deploy.sh` — scp your `index.js`, `package.json` and `package-lock.json` to the remote build context (it ships a lockfile wherever one exists). Dockerfile LAYER 2d picks it up automatically as long as you copy with `COPY apps/your-thing-mcp /opt/ide/apps/your-thing-mcp` (already templated — bump only if you add unusual deps).
 
-7. **Memory** — decide, and write the decision down: does this integration hold things worth remembering about the person's life and work (a notetaker's meetings: yes; a shop's order numbers or ad metrics: no), is what it holds dated and bounded enough to read in nightly, and exactly what is read (today: a meeting's title, time, participants, notes and transcript)? If yes, declare it in the catalog entry — `"memory": { "kind": "meetings", "default": true, "what": "…" }` — and say so in [MEMORY.md](MEMORY.md#fed-by-integrations); `default: true` only for a kind where connecting it plainly means "read my meetings". If no, leave the block out: nothing is read.
+7. **Memory** — decide, and write the decision down (Mercury: no — bank data is
+   sensitive, and balances or transactions are not facts about the person's work to
+   read in nightly; it is asked live and never filed): does this integration hold things worth remembering about the person's life and work (a notetaker's meetings: yes; a shop's order numbers or ad metrics: no), is what it holds dated and bounded enough to read in nightly, and exactly what is read (today: a meeting's title, time, participants, notes and transcript)? If yes, declare it in the catalog entry — `"memory": { "kind": "meetings", "default": true, "what": "…" }` — and say so in [MEMORY.md](MEMORY.md#fed-by-integrations); `default: true` only for a kind where connecting it plainly means "read my meetings". If no, leave the block out: nothing is read.
 
 8. **Marketplace routines** (optional, recommended) — add a few entries to `workspace-api/routines.catalog.json` with `"requires": ["your-integration-id"]`: duties the bot can do with it on its own ("check X daily, tell me only when Y"). They appear in Routines → Marketplace once the integration is connected. See [ROUTINES.md](ROUTINES.md#marketplace). Then regenerate the routines skill's reference: `node workspace-api/lib/routines-reference.js` (a test fails until you do).
 8. **A skill** — `skills/optional/<id>/SKILL.md` with `requires: <mcp.name>` (the server **name**, not the catalog id) and `allowed-tools: mcp__<mcp.name>__*`: the real tools from the vendor's docs, which ones send/pay/publish/delete and need a yes first, gotchas, and the routines that use it. Mirror any existing integration skill. Without one the bot has the tools but no idea how to use them well.

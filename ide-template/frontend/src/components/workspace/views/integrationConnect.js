@@ -22,9 +22,14 @@ export const isOpenServer = (integration) =>
  * the fallback for when it can't reach the opener. Shared by Integrations and
  * the Routines Marketplace's Connect.
  */
+// A service whose writes are OAuth scopes of their own (a bank): read or write
+// is chosen before signing in, for the team and for a person alike, and the
+// token holds only what was chosen — changing it means signing in again.
+export const scopedWrites = (integration) => !!integration?.mcp?.scopes?.write?.length;
+
 export function openOAuthPopup(integration, onClosed, { reach = 'workspace', access = 'write' } = {}) {
   const popup = window.open(
-    `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start${reach === 'personal' ? '?reach=personal' : `?access=${access}`}`,
+    `/api/integrations/${encodeURIComponent(integration.id)}/oauth/start${reach === 'personal' ? `?reach=personal&access=${access}` : `?access=${access}`}`,
     `oauth-${integration.id}`,
     'popup,width=560,height=720',
   );

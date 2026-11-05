@@ -135,7 +135,10 @@ function keyFor(req, id, res) {
   // an admin point a person's mail at a server of their choosing with the
   // person's stored password, or put their own account under the person's name.
   if (forSlug !== actorSlug(req) && !(team.isAdmin(req.actor) && req.method === 'DELETE')) { res.status(403).json({ error: 'You can only change your own connections.' }); return null; }
-  return { key: store.personalKey(id, forSlug), owner: forSlug, reach: 'personal', access: 'write' };
+  // A person's own connection is read and write, except for a service whose
+  // writes come as their own OAuth scopes (`mcp.scopes.write`, a bank): there
+  // the person chooses, and a read-only choice gets a read-only token.
+  return { key: store.personalKey(id, forSlug), owner: forSlug, reach: 'personal', access: cat?.mcp?.scopes?.write?.length ? accessOf(req) : 'write' };
 }
 // After a change: files, skills, the bot's config (workspace and the
 // operator's own), the egress list; the bot restarts only when its own
@@ -275,7 +278,7 @@ export default function integrationsRouter() {
       // The actor's own connection of it, and (for an admin) everyone's.
       const mineKey = me ? store.personalKey(entry.id, me) : null;
       const mine = mineKey && status[mineKey]
-        ? { active: true, activatedAt: status[mineKey].activatedAt || null, summary: status[mineKey].summary || null, itemCount: status[mineKey].itemCount ?? null }
+        ? { active: true, activatedAt: status[mineKey].activatedAt || null, summary: status[mineKey].summary || null, itemCount: status[mineKey].itemCount ?? null, access: status[mineKey].access || 'write' }
         : { active: false, activatedAt: null };
       const people = isReady() ? store.peopleWith(entry.id) : [];
       const activeFor = admin ? people.map(personOf) : undefined;

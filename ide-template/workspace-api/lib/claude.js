@@ -271,7 +271,7 @@ export function integrationsCard(slug) {
     const team = integrationsStore.workspaceIds().filter(usable)
       .map((k) => `- ${label(k)} — the team's account${integrationsStore.accessOf(k) === 'read' ? ', read only' : ''}`);
     const own = (slug && slug !== 'default' ? integrationsStore.personalIds(slug) : []).filter(usable)
-      .map((k) => `- ${label(integrationsCatalog.baseId(k))} — their own account (its tools' server name ends in \`-mine\`)`);
+      .map((k) => `- ${label(integrationsCatalog.baseId(k))} — their own account (its tools' server name ends in \`-mine\`)${integrationsStore.accessOf(k) === 'read' ? ', read only' : ''}`);
     if (!team.length && !own.length) return 'Nothing is connected yet. Integrations are connected under Integrations: an admin for the team, anyone their own account.';
     return [
       ...team, ...own,
