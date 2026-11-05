@@ -7,6 +7,12 @@
  *
  *   GET  /api/files/read?path=<rel>
  *        Small text file content as JSON. Refuses binary or > READ_MAX_BYTES.
+ *        Carries `version` (sha256 of the bytes) for a versioned write.
+ *
+ *   POST /api/files/write  { path, content, baseVersion? }
+ *        With `baseVersion`, a file that changed since that version is not
+ *        overwritten: 409 { error: 'changed', version, content } so the
+ *        editor can merge. Without it the write is unconditional, as before.
  *
  *   GET  /api/files/raw?path=<rel>
  *        Streams file bytes with Content-Type. Used for image previews.
@@ -17,6 +23,7 @@
 
 import { Router } from 'express';
 import { statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import archiver from 'archiver';
 import {
   resolveSafePath, listDir, readTextFile, writeTextFile,
@@ -29,6 +36,10 @@ import * as locks from '../lib/locks.js';
 import { list as rosterList, getTeamMode } from '../lib/team.js';
 import { relative, resolve, sep } from 'node:path';
 import { PROJECT_DIR } from '../lib/config.js';
+
+// The version a versioned write compares against: the bytes, not the mtime
+// (two writes within one mtime tick, or a touch without a change, mislead it).
+const versionOf = (content) => createHash('sha256').update(String(content), 'utf8').digest('hex');
 
 export default function filesRouter() {
   const router = Router();
@@ -125,6 +136,7 @@ export default function filesRouter() {
       path: relPath.replace(/^\/+/, ''),
       size: result.size,
       mtime: result.mtime,
+      version: versionOf(result.content),
       content: result.content,
       ...(hit ? { locked: { path: hit.path, by: hit.by, byName: nameOf(hit.by) } } : {}),
     });
@@ -244,7 +256,7 @@ export default function filesRouter() {
   });
 
   router.post('/files/write', (req, res) => {
-    const { path: relPath, content } = req.body || {};
+    const { path: relPath, content, baseVersion } = req.body || {};
     if (typeof relPath !== 'string' || !relPath) {
       return res.status(400).json({ error: 'path is required' });
     }
@@ -252,12 +264,25 @@ export default function filesRouter() {
     if (!abs) return res.status(400).json({ error: 'invalid path' });
     if (!writable(abs, req, res)) return;
 
+    // A versioned write never overwrites what someone else (the bot, another
+    // person) wrote since the editor last saw the file: it gets theirs back.
+    if (typeof baseVersion === 'string') {
+      const now = readTextFile(abs);
+      if (now.kind !== 'error' && versionOf(now.content) !== baseVersion) {
+        return res.status(409).json({ error: 'changed', version: versionOf(now.content), content: now.content, mtime: now.mtime });
+      }
+      if (now.kind === 'error' && now.status === 404) {
+        return res.status(409).json({ error: 'deleted', version: null, content: null });
+      }
+    }
+
     const result = writeTextFile(abs, content);
     if (result.kind === 'error') return res.status(result.status).json({ error: result.error });
     res.json({
       path: relPath.replace(/^\/+/, ''),
       size: result.size,
       mtime: result.mtime,
+      version: versionOf(content),
     });
   });
 

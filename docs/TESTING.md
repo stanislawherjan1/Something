@@ -14,6 +14,7 @@ merge to main and after a deploy.
 | `node ide-template/apps/reminder-mcp/recur.test.mjs` | The reminder recurrence engine |
 | `node ide-template/apps/reminder-mcp/room-target.test.mjs` | A reminder's room target: a Telegram group or a Slack channel, and a room named in the reminder's words |
 | `cd ide-template/frontend && npm run build` | The workspace UI must build |
+| `cd ide-template/frontend && npm test` | The markdown editor's file layer on headless BlockNote: every repo markdown file written back byte for byte when untouched and with its meaning when every block is rewritten; tables, lists, raw blocks; the live merge |
 
 `.github/workflows/ci.yml` runs all three, plus the docs gate
 (`scripts/check-docs-impact.sh`), on every pull request into main.

@@ -102,6 +102,39 @@ New to the project? These terms recur throughout the docs.
 
 ---
 
+### The markdown editor
+
+Markdown files open in a BlockNote editor (`frontend/src/components/workspace/MarkdownEditor.jsx`)
+over `frontend/src/lib/md-blocks/`, which keeps the file on disk the truth:
+
+- **One block per unit of source.** Each paragraph, heading, table, code block or
+  top-level list item becomes one top-level block that remembers its bytes. On save a
+  block nobody touched is written back as those bytes with the whitespace around it;
+  only edited blocks are serialized (remark + GFM, in the file's own bullet and emphasis
+  markers; a table keeps the lines of rows that did not change). Anything without a
+  block — HTML, footnotes, definitions, a quote of several paragraphs — is a raw block
+  holding its source, edited as text. The schema has only what markdown can hold (no
+  underline, colours, toggles or media embeds). A round-trip test over the repo's own
+  markdown (`npm test` in the frontend) checks both: byte-identical when untouched,
+  meaning kept when every block is rewritten.
+- **Versioned saves, live merge.** Saves are debounced and carry the version the editor
+  last saw (`/api/files/write` `baseVersion`); a file changed meanwhile comes back as a
+  409 with its text. Every watcher event re-reads the open file's version, and a change
+  is merged in three-way at block level (base = last synced text, mine = the editor,
+  theirs = disk): blocks only they changed are patched in place outside the undo
+  history (one block changed into one is updated keeping its id, so a caret inside it
+  stays), blocks only the person changed stay, a block both changed keeps the person's
+  version and offers theirs in a notice ("Show theirs" / "Use theirs"). While the person
+  is typing a change from disk waits for a pause of about a second; the versioned write
+  makes waiting safe. Frontmatter is kept verbatim and never shown.
+- **Only the person's edits are written.** A change counts as theirs only with a key,
+  pointer, paste, cut or drop of theirs just before it and after the editor last took
+  text from disk; BlockNote settling a table, a merge, a remount or a hot reload never
+  writes. The file state is tied to the editor instance it was loaded into, and blocks
+  are snapshotted again once BlockNote has settled them. A failed save keeps the text
+  and retries with back-off (2–30 s); hiding the tab saves at once, closing it sends the
+  pending edit with `keepalive`.
+
 ## Component Architecture
 
 ### Docker Compose Services

@@ -146,9 +146,9 @@ Solo setups are untouched: team mode off means no roles, no split, no routing, j
 
 <br/>
 
-Everything your coworker works on is plain markdown: notes, skills, reports. The web app opens it in a clean, Notion-style editor (headings, checklists, tables, slash commands), but saves byte-for-byte markdown on disk, so git diffs and the bot's own edits stay clean.
+Everything your coworker works on is plain markdown: notes, skills, reports. The web app opens it in a clean, Notion-style editor (headings, checklists, tables, slash commands), but saves byte-for-byte markdown on disk: a paragraph you change is the only thing that changes in the file, so git diffs and the bot's own edits stay clean.
 
-It's a shared surface. You and your coworker edit the **same** files: write a launch checklist and the bot ticks items off as it does the work; ask it to draft a report, then polish it yourself. When it changes a file you have open, the edit flashes in live, and file paths (in chat or in a note) are clickable: mention `Products/pricing.md` and it opens.
+It's a shared surface. You and your coworker edit the **same** files: write a launch checklist and the bot ticks items off as it does the work; ask it to draft a report, then polish it yourself. When it changes a file you have open, the edit flashes in live while you keep typing; if you both changed the same paragraph, yours is kept and theirs is one click away. File paths (in chat or in a note) are clickable: mention `Products/pricing.md` and it opens.
 
 <br/>
 

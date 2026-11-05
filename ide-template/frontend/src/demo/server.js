@@ -108,12 +108,19 @@ function filesTree(path) {
     }));
   return { path: '/' + path, entries };
 }
+// A file's version for a versioned write. The real API hashes with sha256; the
+// editor only compares versions, so any stable hash of the text will do here.
+function versionOf(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return `demo-${(h >>> 0).toString(16)}-${text.length}`;
+}
 function fileRead(path) {
   if (!visible(path)) return json({ error: 'Not found' }, 404);
   const content = state.files.get(path);
   if (content == null) return json({ error: 'Not found' }, 404);
   const locked = lockOf(path);
-  return json({ content, path, encoding: 'utf8', ...(locked ? { locked: { path: locked.path, by: locked.by, byName: locked.byName } } : {}) });
+  return json({ content, path, encoding: 'utf8', version: versionOf(content), ...(locked ? { locked: { path: locked.path, by: locked.by, byName: locked.byName } } : {}) });
 }
 function filesSearch(q) {
   q = (q || '').trim().toLowerCase();
@@ -378,6 +385,10 @@ export async function handle(method, url, body) {
   if (path === '/api/files/write' || path === '/api/files/create') {
     if (b.path) {
       if (lockOf(b.path) && isMember) return json({ error: 'This is locked. Only an admin can change it.' }, 423);
+      if (path === '/api/files/write' && typeof b.baseVersion === 'string') {
+        const now = state.files.get(b.path);
+        if (now != null && versionOf(now) !== b.baseVersion) return json({ error: 'changed', version: versionOf(now), content: now }, 409);
+      }
       state.files.set(b.path, String(b.content ?? ''));
       addToTree(b.path, 'file');
       const m = String(b.path).match(/^(?:\.claude\/skills|users\/[^/]+\/\.skills)\/([^/]+)\/SKILL\.md$/);
@@ -387,7 +398,7 @@ export async function handle(method, url, body) {
         state.madeSkills.push({ name: m[1], origin: personal ? 'personal' : 'project', scope: personal ? 'personal' : 'team', source: personal ? 'personal' : 'project', editable: true, description: desc, tags: [], references: [] });
       }
     }
-    return json({ ok: true });
+    return json({ ok: true, ...(b.path && path === '/api/files/write' ? { version: versionOf(String(b.content ?? '')) } : {}) });
   }
   if (path === '/api/files/mkdir') { if (b.path) addToTree(b.path, 'dir'); return json({ ok: true }); }
   if (path === '/api/files/delete') {
