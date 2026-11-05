@@ -541,11 +541,12 @@ surface is roster-level and visible.
 Two processes can read the bot's Telegram updates; the deployment's `.env`
 picks one (`docker-compose.yml` passes it to the container):
 
-- `plugin` (the default): the channel plugin inside the operator's tmux
+- `plugin` (only when set, with `CLAUDE_CODE_VERSION=2.1.150`: newer CLIs
+  kill the plugin): the channel plugin inside the operator's tmux
   session (`bot/bot.sh`, [ARCHITECTURE.md](ARCHITECTURE.md#telegram-bot-architecture)).
   The operator's DM is that session's; a teammate's DM is a turn as them
   (`lib/integrations/member-dm.js`), handed over by the plugin's middleware.
-- `wsapi`: workspace-api polls the Bot API itself
+- `wsapi` (the default): workspace-api polls the Bot API itself
   (`lib/integrations/telegram-listener.js`, the Slack listener's shape) and
   there is no tmux brain at all. **Every DM is a turn as the person — the
   operator's included** — with their own session (`--resume`, one queue per

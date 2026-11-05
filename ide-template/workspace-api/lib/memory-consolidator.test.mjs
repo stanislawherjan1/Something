@@ -48,6 +48,7 @@ const LLM = await import('./memory-llm.js');
   const other = S.createSession('stan', { title: 'A web chat' });
   H.appendToSession('stan', other.id, { role: 'user', text: 'hello from the web', kind: 'web' });
   const ids = () => C.listSources().map(s => s.id);
+  process.env.TELEGRAM_TRANSPORT = 'plugin';
   ok('under the plugin transport the Telegram mirror chat is a source like any web chat', ids().includes(`web:stan:${mirror.id}.jsonl`) && ids().includes(`web:stan:${other.id}.jsonl`), ids());
   process.env.TELEGRAM_TRANSPORT = 'wsapi';
   ok('under the wsapi transport it is left out (the Telegram log is the record), other chats stay', !ids().includes(`web:stan:${mirror.id}.jsonl`) && ids().includes(`web:stan:${other.id}.jsonl`), ids());

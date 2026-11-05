@@ -68,7 +68,8 @@ r = await post('/reminder-deliver', { recipients: ['stan', 'ann'], channel: 'all
 ok("channel=all follows each person's preference: Stan on Slack, Ann on Telegram, both on the web", r.body.delivered.find(d => d.slug === 'ann')?.telegram === true && r.body.delivered.find(d => d.slug === 'ann')?.slack === false && r.body.delivered.find(d => d.slug === 'ann')?.web === true && !r.body.delivered.find(d => d.slug === 'stan'), r.body);
 ok('...the operator is not served here on other channels (the brain does that)', !sent.some(x => x.slug === 'stan'));
 
-// solo mode: Slack still goes through here
+// solo mode under the plugin transport (the tmux brain is the one person): Slack still goes through here
+process.env.TELEGRAM_TRANSPORT = 'plugin';
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: false }));
 sent.length = 0;
 r = await post('/reminder-deliver', { recipients: ['stan'], channel: 'slack', title: 'Solo ping' }, asBot);
@@ -79,14 +80,14 @@ r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=slac
 ok('a Slack-bound frame may run headlessly in solo mode', r.status === 202 || (r.status === 200 && !r.body.skipped), r);
 r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=web | x]' }, asBot);
 ok('...other frames are still the brain\'s in solo', r.body.skipped === 'solo');
-// With workspace-api as the Telegram transport there is no brain in solo either: the frame runs here.
+// With workspace-api as the Telegram transport (the default) there is no brain in solo either: the frame runs here.
 process.env.TELEGRAM_TRANSPORT = 'wsapi';
 r = await post('/invoke-turn', { actor: 'stan', message: '[REMINDER channel=telegram | x]' }, asBot);
 ok('under the wsapi transport a solo operator\'s frame runs headlessly', r.status === 202 && r.body.started === 'stan', r.body);
 // …and the monitor learns whose frames they are: the one person's slug, even in solo (the brain still keys on teamMode).
 let id = await (await fetch(base + '/operator-identity')).json();
 ok('operator-identity names the solo operator under the wsapi transport', id.teamMode === false && id.slug === 'stan' && id.transport === 'wsapi', id);
-delete process.env.TELEGRAM_TRANSPORT;
+process.env.TELEGRAM_TRANSPORT = 'plugin';
 id = await (await fetch(base + '/operator-identity')).json();
 ok('…and not under the plugin transport (the tmux brain is the one person)', id.teamMode === false && id.slug === null && id.transport === 'plugin', id);
 writeFileSync(join(ROOT, '.team-config.json'), JSON.stringify({ teamMode: true }));

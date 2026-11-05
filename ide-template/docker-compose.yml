@@ -64,7 +64,7 @@ services:
       args:
         # The Claude Code CLI in the image (see the Dockerfile): pinned for the
         # plugin Telegram transport; a wsapi deployment sets a current version.
-        - CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-2.1.150}
+        - CLAUDE_CODE_VERSION=${CLAUDE_CODE_VERSION:-2.1.311}
     container_name: ${IDE_NAME:-template-ide}
     restart: unless-stopped
     stop_grace_period: 30s
@@ -165,11 +165,12 @@ services:
       # Memory v4: off | shadow | read | on (docs/MEMORY.md). Off by default;
       # the move from the upgrade bar switches a shadow deployment to on.
       - MEMORY_V4=${MEMORY_V4:-shadow}
-      # Who reads Telegram: the channel plugin in the bot's session (plugin) or
-      # workspace-api's own poll (wsapi, docs/TEAM_MODE.md).
-      - TELEGRAM_TRANSPORT=${TELEGRAM_TRANSPORT:-plugin}
+      # Who reads Telegram: workspace-api's own poll (wsapi, the default) or the
+      # channel plugin in the bot's session (plugin, which needs
+      # CLAUDE_CODE_VERSION=2.1.150; docs/TEAM_MODE.md).
+      - TELEGRAM_TRANSPORT=${TELEGRAM_TRANSPORT:-wsapi}
       # The model every turn runs on (web, Telegram, Slack, groups, reminders);
-      # empty = the bootstrap settings' model. The group gate and memory jobs
+      # empty = the bootstrap settings' model (claude-opus-5-5). The group gate and memory jobs
       # pick their own, cheaper models.
       - IDE_WEB_MODEL=${IDE_WEB_MODEL:-}
       # Warm conversations (docs/DEPLOY.md): a person's CLI process stays open

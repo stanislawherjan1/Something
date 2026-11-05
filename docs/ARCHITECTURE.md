@@ -582,8 +582,9 @@ See `docs/CONTEXT_MCP.md` (the whole of it) and `docs/SECURITY.md` §19d.
 ## Telegram Bot Architecture
 
 Two transports exist (`TELEGRAM_TRANSPORT`, [TEAM_MODE.md §9](TEAM_MODE.md#who-reads-telegram--the-transport-telegram_transport)).
-What follows describes the default, `plugin`: the operator's brain in tmux
-with the channel plugin as its Telegram ear. With `wsapi` none of it runs:
+What follows describes `plugin`, which a deployment now has to choose (with the
+2.1.150 CLI): the operator's brain in tmux with the channel plugin as its
+Telegram ear. With `wsapi`, the default, none of it runs:
 `lib/integrations/telegram-listener.js` polls the Bot API from workspace-api,
 every DM is a `member-dm` turn as the person (the operator too), groups go
 through the watcher, reminders through `/internal/invoke-turn`, and `bot.sh`
