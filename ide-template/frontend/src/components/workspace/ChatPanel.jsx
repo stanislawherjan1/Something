@@ -9,6 +9,7 @@ import SpinningAvatar from './SpinningAvatar.jsx';
 import useNotifications from './useNotifications.js';
 import useNotificationReadState from './useNotificationReadState.js';
 import { readPanelCache, writePanelCache, panelMessages } from '@/lib/panelCache';
+import { channelOf, channelIconMask, CHANNEL_NAMES } from '@/lib/channel-chats';
 
 /**
  * useVisualViewport — tracks the iOS/Android virtual keyboard height.
@@ -80,6 +81,16 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
   const [messages, setMessages] = useState(seed);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // A messenger's chat (Telegram / Slack) is shown to read, without a composer.
+  const [channel, setChannel] = useState(null);
+  useEffect(() => {
+    if (!sessionId) return;
+    let live = true;
+    fetch('/api/chat/sessions').then(r => (r.ok ? r.json() : null)).then(d => {
+      if (live) setChannel(channelOf((d?.sessions || []).find(x => x.id === sessionId)));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [sessionId]);
   const [attachments, setAttachments] = useState([]);
   const [isDragging, setIsDragging]   = useState(false);
   // Lazy-load state for older history pages.
@@ -837,6 +848,7 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
 
       <UnreadOtherSessionsBanner currentSessionId={sessionId} />
 
+      {channel ? <ChannelFooter id={channel} /> : <>
       {composerAccessory}
       <Composer
         value={input}
@@ -851,6 +863,18 @@ export default function ChatPanel({ sessionId, onFileSelect, initialMessage, onI
         onFileSelect={handleFileSelect}
         fileInputRef={fileInputRef}
       />
+      </>}
+    </div>
+  );
+}
+
+// In place of the composer on a messenger's chat: the conversation goes on
+// there, and its turn would not see a reply written here.
+function ChannelFooter({ id }) {
+  return (
+    <div className="flex shrink-0 items-center justify-center gap-2 px-4 pt-7 pb-12 text-[12.5px] text-muted-foreground/75" data-testid="channel-footer">
+      <span aria-hidden className="size-3.5 shrink-0 bg-muted-foreground/60" style={channelIconMask(id)} />
+      Your {CHANNEL_NAMES[id]} conversation. Reply in {CHANNEL_NAMES[id]} to carry on.
     </div>
   );
 }
@@ -940,6 +964,8 @@ function ChatBubble({ message, onRetry, onFileSelect }) {
             {message.tools?.length
               ? <BodyWithTools message={message} onFileSelect={onFileSelect} />
               : <AssistantBody text={message.text} images={message.images} content={message.content} onFileSelect={onFileSelect} />}
+            {/* Files the bot sent on Telegram or Slack, kept with its message. */}
+            {message.attachments?.length > 0 && <UserAttachments attachments={message.attachments} />}
             {/* Interrupted-with-text marker — Phase 4 preserves the partial. */}
             {isInterrupted && message.text && (
               <span className="ml-2 inline-flex items-center gap-1 text-[11px] italic text-muted-foreground/70 align-baseline">

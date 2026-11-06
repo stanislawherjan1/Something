@@ -21,7 +21,7 @@ import { primaryAdminSlug, list as teamList, getTeamMode, addGroup, isAllowedGro
 import { reschedulePlanFor } from '../lib/planner-schedule.js';
 import { sendTelegramMessage, routeTelegramInbound, editTelegramMessage, deleteTelegramMessage } from '../lib/integrations/telegram-sync.js';
 import { telegramTransport, wsapiTransport } from '../lib/integrations/telegram-transport.js';
-import { startMemberDm } from '../lib/integrations/member-dm.js';
+import { startMemberDm, recordOnSurface } from '../lib/integrations/member-dm.js';
 import { routeGroupMessage, sayInGroup, postToGroup, roomRecent } from '../lib/integrations/group-watcher.js';
 import * as memoryEngine from '../lib/memory-engine.js';
 import { sweepIdle } from '../lib/memory-sweep.js';
@@ -108,6 +108,9 @@ async function deliverRunOutcome(member, deliver, reply, sentItself) {
   // A surface was named and reached: no web toast on top; otherwise the web
   // is where it is sure to be seen.
   const webToast = !((channel === 'telegram' || channel === 'slack') && legs[channel]);
+
+  // What reached Telegram is also in their "Telegram" chat, where it was said.
+  if (tgSent && wsapiTransport()) recordOnSurface(member.slug, 'telegram', { role: 'assistant', text, kind: 'bot', delivery: { channel: 'telegram', tgChatId: String(member.telegramChatId), at: new Date().toISOString() } });
 
   appendToSession(member.slug, sessionId, {
     role: 'assistant', text, kind: 'bot',
@@ -631,6 +634,10 @@ export default function internalRouter() {
       // a teammate's Telegram reply can thread back deterministically (their
       // reply_to_message_id → tgMessageId). For the operator-relay path tgMessageId
       // is null (no raw send) and threading rides the injected frame instead.
+      // A raw send to their Telegram is also in their "Telegram" chat (a
+      // relay framed to the operator's queue is recorded by that turn).
+      if (tgSent && !framedToBrain && wsapiTransport()) recordOnSurface(deliverTo.slug, 'telegram', { role: 'assistant', text, kind: 'bot', delivery: { channel: 'telegram', tgChatId: String(deliverTo.telegramChatId), at: new Date().toISOString() } });
+
       try {
         appendToSession(actor, destId, {
           role: 'assistant', text, kind: 'bot',

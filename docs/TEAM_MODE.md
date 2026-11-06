@@ -44,6 +44,10 @@ instructions are an admin's to set.
 
 Each person links their own Telegram, so a message from you is from you; on
 Slack it knows you by the email you sign in with, so there is nothing to link.
+Your conversation there also shows up in the workspace, as a "Telegram" or
+"Slack" chat at the top of your chat history, with the photos and files you
+sent each other and the reminders it sent you there. It is there to read;
+you carry on the conversation in Telegram or Slack.
 Write to it the way you would write to a colleague, on Telegram and on Slack
 alike: a few short messages in a row get one answer, and if you add something
 while it is still thinking, it takes that into account instead of answering
@@ -347,7 +351,17 @@ by a turn that runs **as that teammate** — their identity, their private memor
 and files, the tools a web turn of theirs has — never by the operator's
 assistant session. One conversation is kept per teammate (the turn resumes it),
 the reply goes back on Telegram, and the exchange is recorded in a "Telegram"
-chat in their web history. (`lib/integrations/member-dm.js`.) A Slack direct
+chat in their web history. (`lib/integrations/member-dm.js`.) That chat reads
+like the conversation on Telegram: a photo or file they sent is an attachment
+of their message, a file the bot sent is kept with its reply, and what the bot
+sent them there on its own (a reminder's outcome, a relay, a usage-limit
+notice) is recorded there too, besides its usual web record (`recordOnSurface`).
+A relay frame put on a person's queue is not recorded as their words. The web
+history lists the "Telegram" and "Slack" chats under **Channels**, above the
+other chats; they are found by that title, so the list offers no rename for them.
+They are there to read: the chat shows no composer, since the messenger's own
+session would not see a reply written on the web — the conversation goes on in
+the messenger. A Slack direct
 message takes the same path for everyone, the primary admin included — Slack
 has no tmux brain — with its own resumed session (`slack-session.json`) and a
 "Slack" chat in the web history; the sender is matched to the roster by the

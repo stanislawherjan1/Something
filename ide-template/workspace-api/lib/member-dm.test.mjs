@@ -160,5 +160,21 @@ r = await answerMemberDm(ann, 'just the file', { runTurn, send: slackSend, sendF
 ok('a file alone is delivered with no empty message after it', r.delivered && filesSent.length === 2 && slackSends.length === n0, r);
 ok('an unknown surface name falls back to Telegram', (await import('./integrations/member-dm.js')).surfaceOf('fax') === 'telegram');
 
+// the "Telegram" chat reads like the conversation on Telegram
+{
+  const { splitAttachments } = await import('./integrations/member-dm.js');
+  const before = readUndelivered('ann', listSessions('ann').find(s => s.title === 'Telegram').id, 0).total;
+  script = [{ text: 'Got it, thanks.', sessionId: 'S3' }];
+  await answerMemberDm(ann, 'my new number\n\n[Attachments — read these files to answer]\n- .attachments/telegram-ann/1/photo-9.jpg', { runTurn, send });
+  script = [{ text: '[[SEND_FILE Reports/audit.md]]', sessionId: 'S3' }];
+  await answerMemberDm(ann, 'the audit please', { runTurn, send, sendFile: async () => ({ ok: true }) });
+  await answerMemberDm(ann, '[RELAY from=tom name=Tom thread=x depth=1 await=reply | lunch?]', { runTurn, send });
+  const lines = readUndelivered('ann', listSessions('ann').find(s => s.title === 'Telegram').id, before).messages;
+  ok('a photo they sent is an attachment of their message, not text about it', lines[0]?.text === 'my new number' && lines[0]?.attachments?.[0]?.path === '.attachments/telegram-ann/1/photo-9.jpg', lines[0]);
+  ok('a file the bot sent with no words is still in the chat', lines.some(m => m.role === 'assistant' && m.attachments?.[0]?.name === 'audit.md'), lines);
+  ok('a teammate\'s relay frame is not recorded as their words', !lines.some(m => m.role === 'user' && /RELAY/.test(m.text)), lines);
+  ok('several files under one message are all kept', splitAttachments('x\n\n[Attachments — read these files to answer]\n- a/1.jpg\n- a/2.pdf').attachments.length === 2);
+}
+
 console.log(`member-dm: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

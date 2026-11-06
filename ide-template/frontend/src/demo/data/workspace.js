@@ -1180,6 +1180,28 @@ It's in Tom's drafts, not sent. I added a note to his "Prepare the Brewline reor
     A(at(-1, '11:14'), 'Any time.'),
   ],
 
+  // Her Telegram and Slack direct messages, recorded as one chat each
+  'nora-telegram': [
+    A(at(-1, '17:30'),
+      'End of day: 23 orders, €1,140. The Brewline reorder is still in Tom\'s drafts; want me to nudge him in the morning?'),
+    { ...U(at(-1, '17:34'), 'yes. and this is the new shelf label, add it to the shop folder'), attachments: [{ name: 'photo-212.jpg', path: '.attachments/telegram-nora/1/photo-212.jpg' }] },
+    A(at(-1, '17:35'), ['Write'], 'Saved as Shop/labels/shelf-label.jpg. I\'ll nudge Tom at 9.'),
+    A(at(0, '07:30'), 'Morning. I nudged Tom about the Brewline reorder; he says it goes out today.'),
+    U(at(0, '07:41'), 'anything on fire before I get in?'),
+    A(at(0, '07:41'),
+      ['mcp__shopify__get_orders'],
+      'Nothing on fire. 14 orders overnight, all paid. One customer asked whether the Harbour bowl is dishwasher safe; I answered from the care page.'),
+    U(at(0, '07:43'), 'great. remind me to call Lena at 2'),
+    A(at(0, '07:43'), ['mcp__reminders__create_reminder'], 'Done, 14:00 today.'),
+    U(at(0, '07:50'), 'send me the stock sheet'),
+    { ...A(at(0, '07:50'), 'Here it is.'), attachments: [{ name: 'stock.csv', path: 'Shop/stock.csv' }] },
+  ],
+  'nora-slack': [
+    U(at(-1, '16:20'), 'what did Leo decide on the Ember creatives?'),
+    A(at(-1, '16:20'),
+      'He is keeping the current ads until the lifestyle shoot is in, then swapping all four.'),
+  ],
+
   // (5) Yesterday's investor prep
   'nora-investor-prep': [
     U(at(-1, '18:05'), 'Can you put together my prep for tomorrow\'s investor call? Same format as last time.'),
@@ -1264,6 +1286,8 @@ const SESSION_META = {
     { id: 'nora-investor-prep', title: 'Investor call prep' },
     { id: 'nora-brewline',      title: 'Brewline reorder' },
     { id: 'nora-quick-stock',   title: 'Harbour and Ember stock' },
+    { id: 'nora-telegram',      title: 'Telegram' },
+    { id: 'nora-slack',         title: 'Slack' },
   ],
   mara: [
     { id: 'mara-subject-lines', title: 'Breakfast Bundle subject lines' },

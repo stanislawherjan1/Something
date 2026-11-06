@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, Edit3, Trash2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { channelOf, channelIconMask } from '@/lib/channel-chats';
+
+function ChannelIcon({ id }) {
+  return <span aria-hidden className="size-3.5 shrink-0 bg-foreground/55" style={channelIconMask(id)} />;
+}
 
 /**
  * ChatSessionDropdown — Claude-Code-style sessions popover.
@@ -126,6 +131,8 @@ export default function ChatSessionDropdown({
       .filter(s => !s.archived)
       .filter(s => !q || (s.title || '').toLowerCase().includes(q));
   }, [sessions, search]);
+  const channels = filtered.filter(channelOf);
+  const recent = filtered.filter(s => !channelOf(s));
 
   if (!open) return null;
 
@@ -177,7 +184,7 @@ export default function ChatSessionDropdown({
       )}
 
       <div className="flex items-center justify-between pr-2.5">
-        <span className="menu-label">Recent</span>
+        <span className="menu-label">{channels.length ? 'Channels' : 'Recent'}</span>
         {sessions.some(x => !x.archived) && !search && (
           <button
             type="button"
@@ -196,7 +203,8 @@ export default function ChatSessionDropdown({
             {search ? `No matches for "${search}"` : 'No chats yet.'}
           </li>
         )}
-        {filtered.map(s => (
+        {[...channels, ...recent].map((s, i) => [
+          i === channels.length && channels.length > 0 && <li key="recent" aria-hidden className="menu-label">Recent</li>,
           <li
             key={s.id}
             className={cn(
@@ -212,6 +220,7 @@ export default function ChatSessionDropdown({
             }}
             data-testid="session-row"
           >
+            {channelOf(s) && <ChannelIcon id={channelOf(s)} />}
             <div className="min-w-0 grow">
               {renamingId === s.id ? (
                 <input
@@ -255,19 +264,21 @@ export default function ChatSessionDropdown({
                 "group-hover/row:opacity-100",
                 s.id === activeSessionId && "opacity-100",
               )}>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRenamingId(s.id);
-                    setRenameText(s.title || '');
-                  }}
-                  className="rounded p-1 text-muted-foreground/65 hover:bg-background hover:text-foreground/85"
-                  aria-label="Rename"
-                  title="Rename"
-                >
-                  <Edit3 size={13} />
-                </button>
+                {!channelOf(s) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingId(s.id);
+                      setRenameText(s.title || '');
+                    }}
+                    className="rounded p-1 text-muted-foreground/65 hover:bg-background hover:text-foreground/85"
+                    aria-label="Rename"
+                    title="Rename"
+                  >
+                    <Edit3 size={13} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={(e) => {
@@ -282,8 +293,8 @@ export default function ChatSessionDropdown({
                 </button>
               </div>
             )}
-          </li>
-        ))}
+          </li>,
+        ])}
       </ul>
 
     </div>

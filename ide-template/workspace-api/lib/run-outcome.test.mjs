@@ -86,6 +86,11 @@ ok('the closing text goes out, without the narration before the tool call', r.se
 r = await run('Done.\\n[[SEND]]\\nAll set for the call.');
 ok('a stray marker never reaches the person', r.sent.length === 1 && !/\[\[/.test(r.sent[0].text) && /Done\.\n\nAll set|Done\.\nAll set/.test(r.sent[0].text), r);
 
+const { listSessions } = await import('./sessions.js');
+const { readUndelivered } = await import('./chatHistory.js');
+const tg = listSessions('ann').find(s => s.title === 'Telegram');
+ok('what a run said on Telegram is also in the person\'s "Telegram" chat', !!tg && readUndelivered('ann', tg.id, 0).messages.some(m => m.role === 'assistant' && /invoice from Orbis/.test(m.text)), tg);
+
 server.close();
 console.log(`run-outcome: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -101,6 +101,31 @@ function webSessionFor(slug, surface) {
   return createSession(slug, { title }).id;
 }
 
+// The listeners name a received file to the model in a block under the text;
+// the web record keeps it as an attachment, the way a web upload is kept.
+const ATTACHMENTS_RE = /\n*\[Attachments — read these files to answer\]\n((?:- [^\n]+(?:\n|$))+)/g;
+const RELAY_FRAME_RE = /^\[RELAY from=[^\n]*\]$/gm;
+export function splitAttachments(body) {
+  const attachments = [];
+  const text = String(body || '').replace(ATTACHMENTS_RE, (_, list) => {
+    for (const line of list.split('\n')) {
+      const path = line.replace(/^- /, '').trim();
+      if (path) attachments.push({ name: path.split('/').pop(), path });
+    }
+    return '';
+  }).trim();
+  return { text, attachments };
+}
+
+/**
+ * Write a line into the person's "Telegram" / "Slack" chat, so it reads like
+ * the conversation on the messenger: what they sent, what the bot answered,
+ * and what the bot sent them on its own there (a reminder, a relay).
+ */
+export function recordOnSurface(slug, surface, entry) {
+  try { appendToSession(slug, webSessionFor(slug, surfaceOf(surface)), entry); } catch { /* record only */ }
+}
+
 // The reset each person was last told about, per surface — said once, not on every message.
 const limitTold = new Map();
 
@@ -139,8 +164,18 @@ export async function answerMemberDm(member, body, deps = {}) {
   const sendFile = deps.sendFile || (async (chatId, f) => (await import('./telegram-sync.js')).sendGroupDocument(chatId, f.abs, { logKind: 'dm' }));
   const target = deps.target ?? member.telegramChatId;
   const slug = member.slug;
-  const webId = webSessionFor(slug, surface);
-  try { appendToSession(slug, webId, { role: 'user', text: body, kind: surface }); } catch { /* record only */ }
+  // What the person wrote; a teammate's relay frame on their queue is not
+  // theirs (the bot's message carrying it is recorded below).
+  const theirs = splitAttachments(body.replace(RELAY_FRAME_RE, ''));
+  if (theirs.text || theirs.attachments.length) recordOnSurface(slug, surface, { role: 'user', ...theirs, kind: surface });
+  const said = (text, ok, attachments) => recordOnSurface(slug, surface, {
+    role: 'assistant', text, attachments, kind: 'bot',
+    delivery: {
+      channel: ok ? surface : 'web',
+      ...(surface === 'telegram' ? { tgChatId: ok ? String(target) : null } : { slackChannel: ok ? String(target) : null }),
+      at: new Date().toISOString(),
+    },
+  });
 
   let sessionId = loadSession(slug, surface);
   const run = (sid) => { const t = runTurn({ member, body: message, sessionId: sid, surface }); deps.onTurn?.(t); return t; };
@@ -187,6 +222,7 @@ export async function answerMemberDm(member, body, deps = {}) {
       const notice = (deps.limitNotice || limitNotice)(secs, who, { tz, lang: noticeLang(member.preferredLanguage) });
       let sent = false;
       try { sent = !!(await send(target, notice))?.ok; } catch { sent = false; }
+      said(notice, sent);
       return { delivered: sent, reason: 'limit' };
     }
     process.stderr.write(`[member-dm] ${slug}: turn failed: ${String(r.error).slice(0, 200)}\n`);
@@ -196,28 +232,22 @@ export async function answerMemberDm(member, body, deps = {}) {
   if (!text && !files.length) return { delivered: !!reaction, reason: reaction ? 'reaction' : 'silent' };
   if (silent && !files.length) return { delivered: !!reaction, reason: reaction ? 'reaction' : 'silent' };
 
-  let sentFiles = 0;
+  const sentFiles = [];
   for (const p of files) {
     const f = confinedFile(p);
     const out = f.ok ? await sendFile(target, f).catch((e) => ({ ok: false, error: e.message })) : f;
-    if (out?.ok) sentFiles++;
+    if (out?.ok) sentFiles.push({ name: p.split('/').pop(), path: p });
     else text = `${text}\n(couldn't attach ${p}: ${out?.error || 'send failed'})`.trim();
   }
-  if (!text) return { delivered: sentFiles > 0, reason: sentFiles > 0 ? surface : 'silent' };
+  if (!text) {
+    if (sentFiles.length) said('', true, sentFiles);
+    return { delivered: sentFiles.length > 0, reason: sentFiles.length ? surface : 'silent' };
+  }
 
   let ok = false;
   try { ok = !!(await send(target, text))?.ok; }
   catch (err) { process.stderr.write(`[member-dm] ${slug}: send failed: ${err.message}\n`); }
-  try {
-    appendToSession(slug, webId, {
-      role: 'assistant', text, kind: 'bot',
-      delivery: {
-        channel: ok ? surface : 'web',
-        ...(surface === 'telegram' ? { tgChatId: ok ? String(target) : null } : { slackChannel: ok ? String(target) : null }),
-        at: new Date().toISOString(),
-      },
-    });
-  } catch { /* record only */ }
+  said(text, ok, sentFiles);
   return { delivered: ok, reason: ok ? surface : 'send failed' };
 }
 
