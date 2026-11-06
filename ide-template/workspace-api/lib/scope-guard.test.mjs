@@ -113,6 +113,11 @@ writeFileSync(join(ROOT, '.team', 'integration-access.json'), JSON.stringify({ e
 ok('a tool the catalog lists as a write is refused', mcp('mcp__elevenlabs__creative_generate_speech') === 2 && mcp('mcp__elevenlabs__agents_run_tests') === 2);
 ok('...and one the name gives away still is', mcp('mcp__elevenlabs__agents_delete') === 2 && mcp('mcp__elevenlabs__agents_update_prompt_settings') === 2);
 ok('...while reading passes', mcp('mcp__elevenlabs__agents_list_conversations') === 0 && mcp('mcp__elevenlabs__creative_list_voices') === 0);
+// A bank's write tools are camelCase (requestSendMoney): no separator for the
+// name rule to catch, so the catalog lists every one of them.
+writeFileSync(join(ROOT, '.team', 'integration-access.json'), JSON.stringify({ mercury: 'read' }));
+ok('a read-only bank: reading passes', mcp('mcp__mercury__getAccounts') === 0 && mcp('mcp__mercury__listTransactions') === 0 && mcp('mcp__mercury__listSendMoneyApprovalRequests') === 0);
+ok('…and every write tool is refused, payment requests first', ['requestSendMoney', 'requestTransferMoney', 'createCategory', 'editCategory', 'updateTransaction', 'createBudget', 'updateBudget', 'archiveBudget', 'assignTransactionToBudget', 'createReceiptUploadUrl', 'matchReceipt'].every(t => mcp(`mcp__mercury__${t}`) === 2));
 rmSync(join(ROOT, '.team', 'integration-access.json'));
 // ─── the team's skills and instructions: an admin's ──────────────────────────
 const writeTo = (file_path, env) => run('Write', { file_path, content: 'x' }, env);

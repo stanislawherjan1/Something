@@ -109,7 +109,9 @@ export const ACCESSES = ['read', 'write'];
 export function accessOf(key) {
   const e = readAll()[key];
   if (!e) return null;
-  if (isPersonalKey(key)) return 'write';
+  // A person's own connection is 'write' unless it was made read-only, which
+  // only an entry with write scopes of its own offers (routes/integrations.js
+  // keyFor): its token then holds no write scope, so the provider refuses.
   return ACCESSES.includes(e.access) ? e.access : 'write';
 }
 /**
@@ -323,7 +325,7 @@ export function listStatus() {
         summary:     null,
         owner:       entry.owner || null,
         reach:       isPersonalKey(id) ? 'personal' : 'workspace',
-        access:      isPersonalKey(id) ? 'write' : (ACCESSES.includes(entry.access) ? entry.access : 'write'),
+        access:      ACCESSES.includes(entry.access) ? entry.access : 'write',
       };
       continue;
     }
@@ -336,7 +338,7 @@ export function listStatus() {
       summary:     primary ? summariseRecord(primary) : null,
       owner:       entry.owner || null,
       reach:       isPersonalKey(id) ? 'personal' : 'workspace',
-      access:      isPersonalKey(id) ? 'write' : (ACCESSES.includes(entry.access) ? entry.access : 'write'),
+      access:      ACCESSES.includes(entry.access) ? entry.access : 'write',
     };
   }
   return out;
@@ -409,7 +411,7 @@ export function activate(id, body, { owner = null, reach = null, access = null }
   if (!cat || cat.comingSoon) throw new Error(`unknown integration: ${id}`);
   const who = owner || slugOf(id) || null;
   const how = reach || (isPersonalKey(id) ? 'personal' : 'workspace');
-  const level = how === 'personal' ? 'write' : (ACCESSES.includes(access) ? access : 'write');
+  const level = ACCESSES.includes(access) ? access : 'write';
   if (how === 'personal' && !isPersonalKey(id)) throw new Error('a personal connection is keyed by its owner');
   if (how === 'personal' && !cat.personal) throw new Error(`${cat.label} can only be connected for the workspace`);
 

@@ -30,6 +30,10 @@ keys to your services. Nothing is sent through anyone else's servers to work.
 - **Nothing goes out without your yes.** Sending an email, posting, or changing
   something in another service happens only after you say so; until then the
   coworker suggests it or prepares it.
+- **Your bank.** A bank connection (Mercury) gets exactly the access you choose
+  when you sign in: read-only means the bank itself refuses anything else. Even
+  with read and write, money never moves from a chat: a payment or transfer
+  waits in the bank until someone approves it there.
 - **Setting up.** During setup the coworker searches the web for your company and
   reads its public website, and looks you up on the web only if you ask it to — once, about you, and you
   see everything it found before anything is kept.
@@ -1495,6 +1499,23 @@ gets into memory and is read in every later turn.
 so an image holds the versions that were tested, not what resolved on build
 day. Remote MCP servers are third parties: read-only connections by default
 where the integration offers the choice.
+
+**A bank (Mercury).** The connection asks Mercury for exactly the access chosen
+before sign-in (`mcp.scopes`): read-only is `read offline_access`, so Mercury
+itself refuses every write; the SDK's default of asking for every advertised
+scope would have granted payment and transfer requests to a read-only
+connection. On read and write, money still does not move from a turn: a payment
+or transfer is a request that waits for approval in Mercury, which Mercury
+requires even where the organisation's policy would not. What the approval does
+not cover — and what the rest guards — is reading (balances, account and routing
+numbers go to the model; a person's own connection is never loaded in a room),
+injected instructions in transaction text (fenced as untrusted, and the skill
+never acts on them), and the changes that apply at once (categories, notes,
+budgets: listed in `writeTools` for the team's read-only hook, done one at a time
+or after a yes). Egress is `mcp.mercury.com` only; receipt uploads go to the
+presigned URL Mercury returns, whose host has to be added to the entry's
+`allowedHosts` (exactly that host, never a whole storage service) before they work.
+Nothing from Mercury feeds memory.
 
 **Residual risk.** Wrapping and flags lower the odds; they do not make an
 injection impossible. The operator's machine holds every client's `.env` and

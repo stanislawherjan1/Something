@@ -1175,6 +1175,77 @@
       "tagline": "Payments and invoices"
     },
     {
+      "id": "mercury",
+      "label": "Mercury",
+      "logo": "/integrations/mercury.svg",
+      "description": "Business banking: balances, transactions, statements, cards, recipients and invoices. With write access also payment and transfer requests (approved in Mercury before money moves), categories, notes, budgets and receipts.",
+      "category": "commerce",
+      "kind": "payments",
+      "fields": [
+        {
+          "name": "OAUTH_TOKENS",
+          "label": "Mercury connection",
+          "type": "remote-mcp-oauth"
+        }
+      ],
+      "mcp": {
+        "type": "http",
+        "url": "https://mcp.mercury.com/mcp",
+        "name": "mercury",
+        "allowedHosts": [
+          "mcp.mercury.com"
+        ],
+        "scopes": {
+          "read": [
+            "read",
+            "offline_access"
+          ],
+          "write": [
+            "transactions:request",
+            "transfers:request",
+            "categories:create",
+            "categories:edit",
+            "transactions:update",
+            "budgets:manage",
+            "receipts:manage"
+          ]
+        }
+      },
+      "writeTools": [
+        "requestSendMoney",
+        "requestTransferMoney",
+        "createCategory",
+        "editCategory",
+        "updateTransaction",
+        "createBudget",
+        "updateBudget",
+        "archiveBudget",
+        "assignTransactionToBudget",
+        "createReceiptUploadUrl",
+        "matchReceipt"
+      ],
+      "steps": [
+        {
+          "title": "Choose read-only or read and write",
+          "body": "**Read-only** (the default) lets {{botDisplayName}} see balances, transactions, statements, cards, recipients and invoices. **Read and write** also lets it create payment and transfer requests, set categories and notes, manage budgets and send receipts. Mercury gets asked for exactly what you choose here; to change it later, disconnect and sign in again."
+        },
+        {
+          "title": "Sign in to Mercury",
+          "body": "Click **Sign in to Mercury** and approve on Mercury's own page, which lists what is asked for. Your Mercury role must allow connecting AI tools (if Mercury says it does not, an admin of your Mercury organisation can allow it), and it still applies afterwards: {{botDisplayName}} can do no more than you can."
+        },
+        {
+          "title": "Money moves only in Mercury",
+          "body": "A payment or transfer request waits under **Needs approval** in Mercury until someone approves it there. A yes in the chat is not an approval."
+        },
+        {
+          "title": "Who can ask about it",
+          "body": "Connected **for the team**, everyone on the team can ask about the account, in team rooms too. Connected **for yourself**, only your own conversations reach it. What is read goes to the AI model to answer; nothing from Mercury is kept in memory. Revoke access any time in Mercury's settings."
+        }
+      ],
+      "tagline": "Business banking",
+      "beta": true
+    },
+    {
       "id": "miro",
       "label": "Miro",
       "logo": "/integrations/miro.svg",

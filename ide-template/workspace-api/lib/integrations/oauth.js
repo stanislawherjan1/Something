@@ -210,6 +210,22 @@ function makeProvider(id, redirectUrl, flow, metadataUrl = null) {
   };
 }
 
+/**
+ * The OAuth scope to ask for. Without one the SDK asks for every scope the
+ * server advertises — for a bank that is payment requests and transfers on a
+ * connection someone meant as read-only. An entry with `mcp.scopes`
+ * ({ read: [...], write: [...] }) gets its read scopes always and its write
+ * scopes only when the connection was made with write access, so a read-only
+ * connection is refused writes by the provider itself, whatever a turn tries.
+ * Entries without `mcp.scopes` behave as before (undefined: the SDK decides).
+ */
+export function scopeFor(cat, access = 'write') {
+  const s = cat?.mcp?.scopes;
+  if (!s) return undefined;
+  const list = [...(s.read || []), ...(access === 'write' ? (s.write || []) : [])];
+  return list.length ? [...new Set(list)].join(' ') : undefined;
+}
+
 // ─── public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -231,7 +247,7 @@ export async function startAuth(id, baseUrl, { owner = null, reach = 'workspace'
   const flow = { state: randomBytes(24).toString('base64url') };
   const provider = makeProvider(id, redirectUrl, flow, metadataUrl);
 
-  const result = await auth(provider, { serverUrl: cat.mcp.url, fetchFn: proxyFetch });
+  const result = await auth(provider, { serverUrl: cat.mcp.url, fetchFn: proxyFetch, scope: scopeFor(cat, access) });
   if (result !== 'REDIRECT' || !flow.authorizeUrl) {
     throw new Error(`unexpected auth result for ${id}: ${result}`);
   }

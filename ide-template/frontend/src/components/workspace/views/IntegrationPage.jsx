@@ -14,7 +14,7 @@ import { TabBar } from './MemoryV4View.jsx';
 import TileBanner from './TileBanner.jsx';
 import { useIntegrationToasts, IntegrationToasts } from './integrationToasts.jsx';
 import { Avatar } from './TeamDashboard.jsx';
-import { isRemoteMcpOauth, isOpenServer, openOAuthPopup } from './integrationConnect.js';
+import { isRemoteMcpOauth, isOpenServer, openOAuthPopup, scopedWrites } from './integrationConnect.js';
 
 /*
  * One integration's page (/integrations/<id>): what it is, the workspace's
@@ -130,8 +130,9 @@ function ConnectionCard({ integration, reach, solo = false, detail, canManage, o
   const connected = !!detail;
   // Under the banner: Settings and How to set it up as tabs (the Memory screen's bar).
   const [tab, setTab] = useState('settings');
-  const writeNow = connected ? (detail.access || 'write') === 'write' : (solo || write);
-  const q = reach === 'personal' ? '?reach=personal' : `?access=${writeNow ? 'write' : 'read'}`;
+  const scoped = scopedWrites(integration);
+  const writeNow = connected ? (detail.access || 'write') === 'write' : ((solo && !scoped) || write);
+  const q = reach === 'personal' ? `?reach=personal${scoped ? `&access=${writeNow ? 'write' : 'read'}` : ''}` : `?access=${writeNow ? 'write' : 'read'}`;
   const base = `/api/integrations/${encodeURIComponent(integration.id)}`;
   const oauth = isRemoteMcpOauth(integration);
   const open = isOpenServer(integration);
@@ -224,13 +225,19 @@ function ConnectionCard({ integration, reach, solo = false, detail, canManage, o
         {!connected && canManage && (oauth || open) && <Button size="sm" className="relative" disabled={saving} onClick={connect}><Plug />{oauth ? `Sign in to ${integration.label}` : 'Connect'}</Button>}
         {!canManage && <span className="relative text-[13px] text-muted-foreground/60">{reach === 'workspace' ? 'Admins connect this' : 'Not for your own account'}</span>}
       </div>
-      {canManage && reach === 'workspace' && !solo && (
+      {canManage && ((reach === 'workspace' && !solo) || scoped) && (
         <div className="flex items-center justify-between gap-4 border-t border-border/60 bg-card px-5 py-3">
           <span className="text-[13px] text-foreground/85">
             <span className="font-medium">{writeNow ? 'Read and write' : 'Read-only'}</span>
-            <span className="ml-2 text-muted-foreground/70">{writeNow ? `${botName} can also create, send and change things there.` : `${botName} reads through it; nothing is created, sent or changed.`}</span>
+            <span className="ml-2 text-muted-foreground/70">
+              {writeNow ? `${botName} can also create, send and change things there.` : `${botName} reads through it; nothing is created, sent or changed.`}
+              {scoped && connected && ' To change this, disconnect and sign in again.'}
+            </span>
           </span>
-          <Toggle on={writeNow} busy={saving} label="Write access for the team" onClick={() => { const v = !writeNow; if (connected) run(() => api('PATCH', `${base}`, { access: v ? 'write' : 'read' }), { done: v ? 'Read and write for the team' : 'Read-only for the team' }); else setWrite(v); }} />
+          {/* A scoped service's token holds what was chosen at sign-in: no switch once connected. */}
+          {!(scoped && connected) && (
+            <Toggle on={writeNow} busy={saving} label={reach === 'personal' ? 'Write access for your connection' : 'Write access for the team'} onClick={() => { const v = !writeNow; if (connected) run(() => api('PATCH', `${base}`, { access: v ? 'write' : 'read' }), { done: v ? 'Read and write for the team' : 'Read-only for the team' }); else setWrite(v); }} />
+          )}
         </div>
       )}
       </div>
